@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CatalogPage } from './CatalogPage';
@@ -55,21 +55,32 @@ function CatalogRoute() {
   </>;
 }
 
-function renderFlow(initialEntries: string[] = ['/?q=PLA&auth=login#results'], initialIndex?: number) {
+function mountFlow() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
+      <BrowserRouter>
         <Routes>
           <Route path="/" element={<CatalogRoute />} />
           <Route path="/previous" element={<p>Previous page</p>} />
           <Route path="/brands/:brand/filaments/:filament" element={<DetailStub />} />
         </Routes>
-      </MemoryRouter>
+      </BrowserRouter>
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
+}
+
+function renderFlow(url = '/?q=PLA&auth=login#results', withPrevious = false) {
+  if (withPrevious) {
+    window.history.replaceState({}, document.title, '/previous');
+    window.history.pushState({}, document.title, url);
+  } else {
+    window.history.replaceState({}, document.title, url);
+  }
+  return mountFlow();
 }
 
 describe('catalog detail return navigation', () => {
@@ -96,7 +107,7 @@ describe('catalog detail return navigation', () => {
   });
 
   it('returns through browser history and restores an item from a cached second page', async () => {
-    renderFlow();
+    const firstMount = renderFlow();
     fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.loadMore' }));
     const second = await screen.findByRole('link', { name: 'Second' });
     fireEvent.click(second);
@@ -105,23 +116,26 @@ describe('catalog detail return navigation', () => {
     expect(await screen.findByRole('link', { name: 'Second' })).toBeInTheDocument();
     await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'auto' }));
     expect(listFilamentsMock).toHaveBeenCalledTimes(2);
+    expect(window.history.state.filamentHubCatalogReturn).toBeUndefined();
+
+    firstMount.unmount();
+    mountFlow();
+    await screen.findByRole('link', { name: 'First' });
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the top when the recorded item is absent from rendered cache', async () => {
-    renderFlow();
-    fireEvent.click(await screen.findByRole('link', { name: 'First' }));
-    const state = window.history.state;
-    window.history.replaceState({
-      ...state,
-      filamentHubCatalogReturn: { ...state.filamentHubCatalogReturn, anchorId: 'catalog-filament-missing' },
-    }, document.title);
+    const { queryClient } = renderFlow();
+    fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.loadMore' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Second' }));
+    queryClient.removeQueries({ queryKey: ['filaments'] });
     fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
     await screen.findByRole('link', { name: 'First' });
     await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' }));
   });
 
   it('replaces transient filter changes while preserving auth, unrelated params and hash', async () => {
-    renderFlow(['/previous', '/?auth=login&future=1#results'], 1);
+    renderFlow('/?auth=login&future=1#results', true);
     fireEvent.change(await screen.findByPlaceholderText('catalogPage.searchPlaceholder'), {
       target: { value: 'ABS' },
     });

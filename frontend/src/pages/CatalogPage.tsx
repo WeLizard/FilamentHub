@@ -51,7 +51,7 @@ import type { FilamentColorGroup } from '../types/api';
 import {
   catalogItemAnchorId,
   parseCatalogSearch,
-  readCatalogReturn,
+  consumeCatalogReturn,
   recordCatalogReturn,
   updateCatalogSearch,
   type CatalogFilterParam,
@@ -88,7 +88,7 @@ export const CatalogPage: React.FC = () => {
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
 
-  const shouldApplyReaderCountry = useRef(!new URLSearchParams(location.search).has('country'));
+  const shouldApplyReaderCountry = useRef(initialUrlFilters.current.country === null);
   const restoredEntryRef = useRef<string | null>(null);
 
   const replaceCatalogParam = useCallback((name: CatalogFilterParam, value: string | number | null) => {
@@ -117,11 +117,12 @@ export const CatalogPage: React.FC = () => {
   }, [location.hash, location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
-    if (!readerCountry || !/^[a-z]{2}$/i.test(readerCountry) || !shouldApplyReaderCountry.current) return;
+    if (!readerCountry || !shouldApplyReaderCountry.current) return;
+    const parsedCountry = parseCatalogSearch(`?country=${encodeURIComponent(readerCountry)}`).filters.country;
+    if (!parsedCountry) return;
     shouldApplyReaderCountry.current = false;
-    const country = readerCountry.toUpperCase();
-    setCatalogCountry(country);
-    replaceCatalogParam('country', country);
+    setCatalogCountry(parsedCountry);
+    replaceCatalogParam('country', parsedCountry);
   }, [readerCountry, replaceCatalogParam]);
   
   // Загружаем список сохранённых пресетов
@@ -345,20 +346,34 @@ export const CatalogPage: React.FC = () => {
   useEffect(() => {
     if (!filamentsData || restoredEntryRef.current === location.key) return;
     restoredEntryRef.current = location.key;
-    const marker = readCatalogReturn(
+    const marker = consumeCatalogReturn(
       location.key,
       `${location.pathname}${location.search}${location.hash}`,
     );
     if (!marker) return;
-    window.requestAnimationFrame(() => {
-      const anchor = document.getElementById(marker.anchorId);
-      if (!anchor) {
-        window.scrollTo({ top: 0, behavior: 'auto' });
-        return;
-      }
-      const anchorTop = window.scrollY + anchor.getBoundingClientRect().top;
-      window.scrollTo({ top: Math.max(0, anchorTop + marker.anchorOffset), behavior: 'auto' });
+    // Browser restoration runs around POP rendering. Temporarily take ownership
+    // and wait through two frames so our item-relative position is the final one.
+    const previousScrollRestoration = 'scrollRestoration' in window.history
+      ? window.history.scrollRestoration
+      : null;
+    if (previousScrollRestoration !== null) window.history.scrollRestoration = 'manual';
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const anchor = document.getElementById(marker.anchorId);
+        if (!anchor) window.scrollTo({ top: 0, behavior: 'auto' });
+        else {
+          const anchorTop = window.scrollY + anchor.getBoundingClientRect().top;
+          window.scrollTo({ top: Math.max(0, anchorTop + marker.anchorOffset), behavior: 'auto' });
+        }
+        if (previousScrollRestoration !== null) window.history.scrollRestoration = previousScrollRestoration;
+      });
     });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      if (previousScrollRestoration !== null) window.history.scrollRestoration = previousScrollRestoration;
+    };
   }, [filamentsData, location.hash, location.key, location.pathname, location.search]);
 
   useEffect(() => {

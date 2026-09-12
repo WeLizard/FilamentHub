@@ -431,6 +431,20 @@ describe('CatalogPage', () => {
     expect(navigateMock).not.toHaveBeenCalledWith(expect.objectContaining({ search: '?country=DE' }), expect.anything());
   });
 
+  it('removes an unsupported country and then applies the valid reader default', async () => {
+    readerCountryMock.value = 'DE';
+    locationMock.search = '?country=ZZ&auth=login';
+    listFilamentsMock.mockResolvedValue(catalogResponse([]));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><CatalogPage /></QueryClientProvider>);
+
+    await waitFor(() => expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({ country: 'DE' })));
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ search: '?country=DE&auth=login' }), {
+      replace: true,
+      state: null,
+    });
+  });
+
   it('routes both a mobile card background and its material title through the return-state callback', async () => {
     listFilamentsMock.mockResolvedValue(catalogResponse([interactiveTableFilament]));
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

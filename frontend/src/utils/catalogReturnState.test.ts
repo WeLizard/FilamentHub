@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  consumeCatalogReturn,
   navigateBackToCatalog,
   parseCatalogSearch,
+  recordCatalogReturn,
   updateCatalogSearch,
 } from './catalogReturnState';
 
@@ -21,9 +23,26 @@ describe('catalog return state', () => {
   });
 
   it('drops malformed catalog filters while preserving unrelated parameters', () => {
-    const parsed = parseCatalogSearch('?auth=register&color=purple-ish&brand=0&printer=1.5&country=USA&x=1');
+    const parsed = parseCatalogSearch('?auth=register&color=purple-ish&brand=0&printer=1.5&country=ZZ&x=1');
     expect(parsed.filters).toMatchObject({ color: null, brand: null, printer: null, country: null });
     expect(parsed.canonicalSearch).toBe('auth=register&x=1');
+  });
+
+  it('consumes a matching return marker once and preserves router history state', () => {
+    window.history.replaceState({ idx: 4, key: 'router-key', usr: { kept: true } }, document.title);
+    const marker = {
+      version: 1 as const,
+      entryKey: 'entry-1',
+      catalogUrl: '/?q=PLA',
+      anchorId: 'catalog-filament-7',
+      scrollY: 320,
+      anchorOffset: -40,
+    };
+    recordCatalogReturn(marker);
+
+    expect(consumeCatalogReturn('entry-1', '/?q=PLA')).toEqual(marker);
+    expect(consumeCatalogReturn('entry-1', '/?q=PLA')).toBeNull();
+    expect(window.history.state).toEqual({ idx: 4, key: 'router-key', usr: { kept: true } });
   });
 
   it('updates one filter without losing auth or future parameters', () => {

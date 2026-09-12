@@ -1,4 +1,5 @@
 import type { FilamentColorGroup } from '../types/api';
+import { COUNTRY_CODES } from './countries';
 import { FILAMENT_COLOR_GROUPS } from './filamentColorGroups';
 
 export const CATALOG_FILTER_PARAMS = ['q', 'material', 'color', 'brand', 'printer', 'country'] as const;
@@ -24,6 +25,7 @@ export interface CatalogReturnMarker {
 
 const RETURN_STATE_KEY = 'filamentHubCatalogReturn';
 const COLOR_VALUES = new Set<string>([...FILAMENT_COLOR_GROUPS, 'multicolor']);
+const COUNTRY_CODE_VALUES = new Set<string>(COUNTRY_CODES);
 
 const boundedText = (value: string | null, maxLength: number): string | null => {
   if (value === null || value.length > maxLength || value.trim() === '') return null;
@@ -47,7 +49,8 @@ export function parseCatalogSearch(search: string): { filters: CatalogUrlFilters
   const brand = positiveInteger(params.get('brand'));
   const printer = positiveInteger(params.get('printer'));
   const rawCountry = params.get('country');
-  const country = rawCountry && /^[a-z]{2}$/i.test(rawCountry) ? rawCountry.toUpperCase() : null;
+  const normalizedCountry = rawCountry?.toUpperCase() ?? null;
+  const country = normalizedCountry && COUNTRY_CODE_VALUES.has(normalizedCountry) ? normalizedCountry : null;
   const values: Record<CatalogFilterParam, string | null> = {
     q: q || null,
     material,
@@ -80,12 +83,16 @@ export function recordCatalogReturn(marker: CatalogReturnMarker): void {
   window.history.replaceState({ ...safeState, [RETURN_STATE_KEY]: marker }, document.title);
 }
 
-export function readCatalogReturn(entryKey: string, catalogUrl: string): CatalogReturnMarker | null {
+export function consumeCatalogReturn(entryKey: string, catalogUrl: string): CatalogReturnMarker | null {
   if (typeof window === 'undefined') return null;
-  const candidate = window.history.state?.[RETURN_STATE_KEY] as Partial<CatalogReturnMarker> | undefined;
+  const currentState = window.history.state;
+  const candidate = currentState?.[RETURN_STATE_KEY] as Partial<CatalogReturnMarker> | undefined;
   if (candidate?.version !== 1 || candidate.entryKey !== entryKey || candidate.catalogUrl !== catalogUrl
     || typeof candidate.anchorId !== 'string' || typeof candidate.scrollY !== 'number'
     || typeof candidate.anchorOffset !== 'number') return null;
+  const nextState = { ...currentState };
+  delete nextState[RETURN_STATE_KEY];
+  window.history.replaceState(nextState, document.title);
   return candidate as CatalogReturnMarker;
 }
 
