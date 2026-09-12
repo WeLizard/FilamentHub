@@ -1,6 +1,6 @@
 /** Компонент уведомлений с колокольчиком */
 
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
@@ -17,9 +17,9 @@ import {
 import { ModalOverlay } from './ModalOverlay';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '../api/client';
-import type { Notification, NotificationListResponse, NotificationType } from '../types/api';
+import type { Notification, NotificationType } from '../types/api';
 import { DeletedPresetsModal } from './DeletedPresetsModal';
 
 interface NotificationsProps {
@@ -113,21 +113,33 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     isError: isNotificationsError,
     isLoading: isNotificationsLoading,
     refetch,
-  } = useQuery({
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery({
     queryKey: ['notifications', user?.id],
-    queryFn: ({ signal }) => notificationsAPI.list({ page: 1, size: 50 }, signal),
+    queryFn: ({ pageParam, signal }) => notificationsAPI.listFeed({
+      limit: 50,
+      ...(pageParam !== null ? { cursor: pageParam } : {}),
+    }, signal),
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!user,
     staleTime: 30_000,
     refetchInterval: 120_000,
     refetchOnWindowFocus: true,
   });
 
-  const notifications = notificationsData?.items || [];
+  const notifications = useMemo(
+    () => notificationsData?.pages.flatMap((page) => page.items) || [],
+    [notificationsData?.pages],
+  );
 
   // Brand approval happens in another admin session. Keep the active account
   // context in sync as soon as the corresponding notification reaches the user.
   useEffect(() => {
-    const accountChangeNotification = notificationsData?.items
+    const accountChangeNotification = notifications
       .filter((notification) => (
         notification.type === 'brand_request_approved'
         || notification.type === 'brand_verified'
@@ -146,12 +158,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
 
     lastAccountRefreshNotificationId.current = accountChangeNotification.id;
     void refreshUser();
-  }, [notificationsData?.items, refreshUser]);
+  }, [notifications, refreshUser]);
 
   // Для плавающей версии используем внешний счётчик (от C++), иначе счётчик из API
   const unreadCount = floating && externalUnreadCount !== null 
     ? externalUnreadCount 
-    : (notificationsData?.unread_count || 0);
+    : (notificationsData?.pages[0]?.unread_count || 0);
 
   // Мутация для отметки как прочитанное
   const markAsReadMutation = useMutation({
@@ -181,9 +193,6 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   const deleteAllNotificationsMutation = useMutation({
     mutationFn: () => notificationsAPI.deleteAll(),
     onSuccess: () => {
-      queryClient.setQueryData(['notifications', user?.id], (old: NotificationListResponse | undefined) =>
-        old ? { ...old, items: [], total: 0, unread_count: 0 } : old
-      );
       queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
       setIsOpen(false);
     },
@@ -329,6 +338,26 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   const viewNotificationPresentation = viewNotification
     ? getNotificationPresentation(viewNotification)
     : null;
+
+  const loadMoreControl = (hasNextPage || isFetchNextPageError) ? (
+    <div className="border-t border-white/10 p-3 text-center">
+      {hasNextPage && (
+        <button
+          type="button"
+          onClick={() => void fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="inline-flex min-h-10 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-white/10 hover:text-purple-200 disabled:cursor-wait disabled:opacity-60"
+        >
+          {isFetchingNextPage ? t('notifications.loadingMore') : t('notifications.loadMore')}
+        </button>
+      )}
+      {isFetchNextPageError && (
+        <p className="mt-1 text-xs text-rose-300" role="alert">
+          {t('notifications.loadMoreError')}
+        </p>
+      )}
+    </div>
+  ) : null;
 
   // Плавающая версия (для OrcaSlicer)
   if (floating) {
@@ -481,6 +510,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 </div>
               )}
             </div>
+
+            {loadMoreControl}
 
             {/* Footer - тот же код что ниже */}
             {notifications.length > 0 && (
@@ -769,6 +800,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               </div>
             )}
           </div>
+
+          {loadMoreControl}
 
           {/* Footer */}
           {notifications.length > 0 && (

@@ -242,7 +242,7 @@ describe('account request lifecycle', () => {
         if (resource === 'deletion-stats') return authAPI.getDeletionStats(signal);
         if (resource === 'preset-stats') return authAPI.getPresetsStats(signal);
         if (resource === 'notifications') {
-          return notificationsAPI.list({ page: 1, size: 50 }, signal);
+          return notificationsAPI.listFeed({ limit: 50 }, signal);
         }
         return savedPresetsAPI.list(signal);
       },

@@ -46,3 +46,10 @@ class NotificationListResponse(BaseModel):
     pages: int
     unread_count: int = Field(..., description="Количество непрочитанных уведомлений")
 
+
+class NotificationFeedResponse(BaseModel):
+    """Bounded keyset page of a user's notifications."""
+
+    items: list[NotificationResponse]
+    next_cursor: int | None = None
+    unread_count: int = Field(..., description="Количество непрочитанных уведомлений")

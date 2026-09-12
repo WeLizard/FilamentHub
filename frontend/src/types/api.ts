@@ -1295,6 +1295,12 @@ export interface NotificationListResponse {
   unread_count: number;
 }
 
+export interface NotificationFeedResponse {
+  items: Notification[];
+  next_cursor: number | null;
+  unread_count: number;
+}
+
 export type PresetLibraryScope = 'unscoped' | 'targeted' | 'compatible';
 
 export interface UserSavedPreset {

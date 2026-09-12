@@ -40,16 +40,15 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
   // Сообщение об успешной обработке
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
-  // Получаем актуальное уведомление из кэша после обновления
-  // Используем useQuery для получения актуальных данных
-  const { data: notificationsData } = useQuery({
-    queryKey: ['notifications', initialNotification.user_id],
-    queryFn: ({ signal }) => notificationsAPI.list({ page: 1, size: 50 }, signal),
+  // Detail state uses its own cache shape; the feed cache contains infinite pages.
+  const { data: currentNotification } = useQuery({
+    queryKey: ['notification', initialNotification.id],
+    queryFn: ({ signal }) => notificationsAPI.get(initialNotification.id, signal),
     enabled: isOpen && !!initialNotification.user_id,
     refetchInterval: false,
   });
   
-  const notification = notificationsData?.items?.find((n) => n.id === initialNotification.id) || initialNotification;
+  const notification = currentNotification || initialNotification;
 
   // Убираем обработанные пресеты из списка
   const allDeletedPresets: DeletedPreset[] = notification.extra_data?.deleted_presets || [];
@@ -163,7 +162,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
       
       // Обновляем уведомления в фоне
       await queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      await queryClient.refetchQueries({ queryKey: ['notifications', notification.user_id] });
+      await queryClient.invalidateQueries({ queryKey: ['notification', notification.id] });
       
       // Проверяем, остались ли необработанные пресеты
       const allRemainingPresets = allDeletedPresets.filter(
@@ -242,7 +241,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
         
         // Обновляем уведомления
         await queryClient.invalidateQueries({ queryKey: ['notifications'] });
-        await queryClient.refetchQueries({ queryKey: ['notifications', notification.user_id] });
+        await queryClient.invalidateQueries({ queryKey: ['notification', notification.id] });
         
         // Если все пресеты были необработанными, удаляем уведомление
         if (unprocessedPresetIds.length === allDeletedPresets.length) {

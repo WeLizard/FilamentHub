@@ -11,7 +11,11 @@ from app.core.errors import ERR_NOTIFICATION_NOT_FOUND, raise_error
 from app.db.session import get_db
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.notification import NotificationListResponse, NotificationResponse
+from app.schemas.notification import (
+    NotificationFeedResponse,
+    NotificationListResponse,
+    NotificationResponse,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -32,8 +36,10 @@ async def list_notifications(
         query = query.where(Notification.read == False)
 
     # Count total
-    count_query = select(func.count()).select_from(Notification).where(
-        Notification.user_id == current_user.id
+    count_query = (
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.user_id == current_user.id)
     )
     if unread_only:
         count_query = count_query.where(Notification.read == False)
@@ -42,9 +48,13 @@ async def list_notifications(
     total = total_result.scalar() or 0
 
     # Count unread
-    unread_count_query = select(func.count()).select_from(Notification).where(
-        Notification.user_id == current_user.id,
-        Notification.read == False,
+    unread_count_query = (
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.user_id == current_user.id,
+            Notification.read == False,
+        )
     )
     unread_count_result = await db.execute(unread_count_query)
     unread_count = unread_count_result.scalar() or 0
@@ -68,6 +78,42 @@ async def list_notifications(
     )
 
 
+@router.get("/feed", response_model=NotificationFeedResponse)
+async def list_notification_feed(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(50, ge=1, le=100),
+    cursor: int | None = Query(None, ge=1),
+    unread_only: bool = Query(False, description="Показать только непрочитанные"),
+) -> NotificationFeedResponse:
+    """Return a bounded, stable page of the current user's notifications."""
+    query = select(Notification).where(Notification.user_id == current_user.id)
+    if unread_only:
+        query = query.where(Notification.read == False)
+    if cursor is not None:
+        query = query.where(Notification.id < cursor)
+
+    result = await db.execute(query.order_by(Notification.id.desc()).limit(limit + 1))
+    rows = list(result.scalars().all())
+    has_more = len(rows) > limit
+    notifications = rows[:limit]
+
+    unread_count = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.user_id == current_user.id,
+            Notification.read == False,
+        )
+    )
+
+    return NotificationFeedResponse(
+        items=[NotificationResponse.model_validate(notification) for notification in notifications],
+        next_cursor=notifications[-1].id if has_more and notifications else None,
+        unread_count=unread_count or 0,
+    )
+
+
 @router.get("/unread-count")
 async def get_unread_count(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -75,7 +121,9 @@ async def get_unread_count(
 ) -> dict[str, int]:
     """Получить количество непрочитанных уведомлений."""
     result = await db.execute(
-        select(func.count()).select_from(Notification).where(
+        select(func.count())
+        .select_from(Notification)
+        .where(
             Notification.user_id == current_user.id,
             Notification.read == False,
         )
@@ -83,6 +131,24 @@ async def get_unread_count(
     count = result.scalar() or 0
 
     return {"unread_count": count}
+
+
+@router.get("/{notification_id}", response_model=NotificationResponse)
+async def get_notification(
+    notification_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> NotificationResponse:
+    """Return one notification owned by the current user."""
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id,
+        )
+    )
+    if notification is None:
+        raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
+    return NotificationResponse.model_validate(notification)
 
 
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
@@ -105,6 +171,7 @@ async def mark_as_read(
 
     if not notification.read:
         from datetime import datetime, timezone
+
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
         await db.commit()
