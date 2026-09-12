@@ -7,6 +7,10 @@ import { translateApiError } from '../utils/translateApiError';
 import { Dropdown } from './Dropdown';
 import { physicalPrinterQueryKeys } from '../utils/physicalPrinterQueries';
 
+function isMissingCandidate(error: unknown): boolean {
+  return (error as AxiosError | null)?.response?.status === 404;
+}
+
 function ConnectionChoice({
   connection,
   printers,
@@ -116,10 +120,14 @@ export function PrinterConnectionReview({
             connection={connection}
             printers={knownPrinters}
             candidateLookupPending={lookups.some((query) => query.isPending)}
-            candidateLookupError={lookups.some((query) => query.isError)}
+            candidateLookupError={lookups.some(
+              (query) => query.isError && !isMissingCandidate(query.error),
+            )}
             onRetryCandidateLookup={() => {
               void Promise.all(
-                lookups.filter((query) => query.isError).map((query) => query.refetch()),
+                lookups
+                  .filter((query) => query.isError && !isMissingCandidate(query.error))
+                  .map((query) => query.refetch()),
               );
             }}
           />

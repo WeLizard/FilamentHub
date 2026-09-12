@@ -86,6 +86,28 @@ describe('PrinterConnectionReview', () => {
     await waitFor(() => expect(resolveConnection).toHaveBeenCalledWith(44, null, 'c'.repeat(64)));
   });
 
+  it('treats an authoritative 404 as a stale candidate and permits a deliberate new device', async () => {
+    pendingConnections.mockResolvedValueOnce([{
+      id: 47,
+      revision: 'f'.repeat(64),
+      preset_name: 'Stale candidate',
+      candidate_printer_ids: [12],
+    }]);
+    getPrinter.mockRejectedValue({ response: { status: 404 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}>
+      <PrinterConnectionReview printers={[]} userId={1} />
+    </QueryClientProvider>);
+
+    const choice = await screen.findByRole('combobox');
+    await waitFor(() => expect(choice).toBeEnabled());
+    expect(screen.queryByText('printerConnections.retry')).toBeNull();
+    expect(screen.queryByRole('option', { name: /#12/ })).toBeNull();
+    fireEvent.change(choice, { target: { value: 'new' } });
+    fireEvent.click(screen.getByText('printerConnections.confirm'));
+    await waitFor(() => expect(resolveConnection).toHaveBeenCalledWith(47, null, 'f'.repeat(64)));
+  });
+
   it('gates only the connection whose candidate lookup is unresolved', async () => {
     pendingConnections.mockResolvedValueOnce([
       { id: 45, revision: 'd'.repeat(64), preset_name: 'Known', candidate_printer_ids: [8] },
