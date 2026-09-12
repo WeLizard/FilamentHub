@@ -4553,6 +4553,13 @@ export interface PendingPrinterConnection {
   last_seen_at: string;
 }
 
+export interface PhysicalPrinterFeedResponse {
+  items: PhysicalPrinter[];
+  next_cursor: string | null;
+  has_more: boolean;
+  total: number;
+}
+
 export interface PrinterMergePreview {
   source_id: number;
   target_id: number;
@@ -4767,6 +4774,25 @@ export const physicalPrintersAPI = {
     const response = await api.patch<PrinterEconomics>(
       `/physical-printers/${printerId}/economics`,
       payload,
+    );
+    return response.data;
+  },
+
+  feed: async (
+    params: { size?: number; cursor?: string },
+    signal?: AbortSignal,
+  ): Promise<PhysicalPrinterFeedResponse> => {
+    const response = await api.get<PhysicalPrinterFeedResponse>('/physical-printers/feed', {
+      params,
+      signal,
+    });
+    return response.data;
+  },
+
+  get: async (physicalPrinterId: number, signal?: AbortSignal): Promise<PhysicalPrinter> => {
+    const response = await api.get<PhysicalPrinter>(
+      `/physical-printers/${physicalPrinterId}`,
+      { signal },
     );
     return response.data;
   },

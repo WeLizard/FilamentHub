@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
 import { physicalPrintersAPI, type PendingPrinterConnection, type PhysicalPrinter } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { Dropdown } from './Dropdown';
+import { physicalPrinterQueryKeys } from '../utils/physicalPrinterQueries';
 
 function ConnectionChoice({ connection, printers }: {
   connection: PendingPrinterConnection; printers: PhysicalPrinter[];
@@ -44,11 +45,37 @@ function ConnectionChoice({ connection, printers }: {
   );
 }
 
-export function PrinterConnectionReview({ printers }: { printers: PhysicalPrinter[] }) {
+export function PrinterConnectionReview({
+  printers,
+  userId,
+}: {
+  printers: PhysicalPrinter[];
+  userId: number | null | undefined;
+}) {
   const { t } = useTranslation();
   const { data = [], isError, refetch } = useQuery({
     queryKey: ['printer-connections-pending'], queryFn: physicalPrintersAPI.pendingConnections,
   });
+  const visibleIds = new Set(printers.map((printer) => printer.id));
+  const missingCandidateIds = Array.from(
+    new Set(data.flatMap((connection) => connection.candidate_printer_ids)),
+  ).filter((printerId) => !visibleIds.has(printerId));
+  const candidateQueries = useQueries({
+    queries: missingCandidateIds.map((printerId) => ({
+      queryKey: physicalPrinterQueryKeys.lookup(userId, printerId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => physicalPrintersAPI.get(printerId, signal),
+      enabled: userId != null,
+      staleTime: 30_000,
+    })),
+  });
+  const knownPrinters = [...printers];
+  const knownIds = new Set(visibleIds);
+  for (const query of candidateQueries) {
+    if (query.data && !knownIds.has(query.data.id)) {
+      knownIds.add(query.data.id);
+      knownPrinters.push(query.data);
+    }
+  }
   if (isError) return <button type="button" onClick={() => void refetch()} className="text-sm text-amber-300">
     {t('printerConnections.retry')}
   </button>;
@@ -57,7 +84,7 @@ export function PrinterConnectionReview({ printers }: { printers: PhysicalPrinte
     <section className="space-y-3 rounded-xl border border-amber-400/30 bg-amber-500/5 p-4">
       <h4 className="font-semibold text-amber-200">{t('printerConnections.title')}</h4>
       <p className="text-sm text-gray-300">{t('printerConnections.hint')}</p>
-      {data.map((connection) => <ConnectionChoice key={`${connection.id}-${connection.revision}`} connection={connection} printers={printers} />)}
+      {data.map((connection) => <ConnectionChoice key={`${connection.id}-${connection.revision}`} connection={connection} printers={knownPrinters} />)}
     </section>
   );
 }

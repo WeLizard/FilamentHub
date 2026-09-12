@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   isPluginEmbed: vi.fn(),
   requestCapabilities: vi.fn(),
   listPrinters: vi.fn(),
+  getPrinter: vi.fn(),
+  pendingConnections: vi.fn(),
   getPrinterProfile: vi.fn(),
   listPrintProfiles: vi.fn(),
   capabilityListener: null as ((capabilities: ReadonlySet<string>) => void) | null,
@@ -26,9 +28,10 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: {
-    list: (...args: unknown[]) => mocks.listPrinters(...args),
+    feed: (...args: unknown[]) => mocks.listPrinters(...args),
+    get: (...args: unknown[]) => mocks.getPrinter(...args),
     listBindings: vi.fn().mockResolvedValue([]),
-    pendingConnections: vi.fn().mockResolvedValue([]),
+    pendingConnections: (...args: unknown[]) => mocks.pendingConnections(...args),
     downloadOrcaBundle: (...args: unknown[]) => mocks.downloadBundle(...args),
   },
   printerProfilesAPI: {
@@ -91,13 +94,23 @@ function renderList(
   );
 }
 
+const feedPage = (
+  items: Array<Record<string, unknown>>,
+  nextCursor: string | null = null,
+) => ({
+  items,
+  next_cursor: nextCursor,
+  has_more: nextCursor !== null,
+  total: items.length,
+});
+
 describe('MyPrintersList Orca bundle action', () => {
   it('passes a cancellable signal to the printer list and aborts on unmount', async () => {
     mocks.listPrinters.mockImplementation(() => new Promise(() => {}));
     const view = renderList();
     try {
       await waitFor(() => expect(mocks.listPrinters).toHaveBeenCalled());
-      const signal = mocks.listPrinters.mock.calls[0][0];
+      const signal = mocks.listPrinters.mock.calls[0][1];
       expect(signal).toBeInstanceOf(AbortSignal);
       view.unmount();
       expect(signal.aborted).toBe(true);
@@ -111,7 +124,10 @@ describe('MyPrintersList Orca bundle action', () => {
     mocks.capabilityListener = null;
     mocks.downloadBundle.mockResolvedValue(new Blob(['bundle']));
     mocks.listPrintProfiles.mockResolvedValue([]);
-    mocks.listPrinters.mockResolvedValue([
+    mocks.getPrinter.mockReset();
+    mocks.pendingConnections.mockReset();
+    mocks.pendingConnections.mockResolvedValue([]);
+    mocks.listPrinters.mockResolvedValue(feedPage([
       {
         id: 1,
         name: 'Printer One',
@@ -124,7 +140,7 @@ describe('MyPrintersList Orca bundle action', () => {
         printer_profile_ids: [22],
         material_systems: [],
       },
-    ]);
+    ]));
   });
 
   it('shows one explicit Recovery Center only after the plugin advertises it', async () => {
@@ -219,14 +235,14 @@ describe('MyPrintersList Orca bundle action', () => {
 
   it('loads an official configuration linked to a physical printer by id', async () => {
     mocks.isPluginEmbed.mockReturnValue(false);
-    mocks.listPrinters.mockResolvedValue([
+    mocks.listPrinters.mockResolvedValue(feedPage([
       {
         id: 3,
         name: 'Printer with official configuration',
         printer_profile_ids: [33],
         material_systems: [],
       },
-    ]);
+    ]));
     mocks.getPrinterProfile.mockResolvedValue({
       id: 33,
       name: 'Official machine configuration',
@@ -247,14 +263,14 @@ describe('MyPrintersList Orca bundle action', () => {
 
   it('keeps configurations compact, then orders and progressively reveals them', async () => {
     mocks.isPluginEmbed.mockReturnValue(false);
-    mocks.listPrinters.mockResolvedValue([
+    mocks.listPrinters.mockResolvedValue(feedPage([
       {
         id: 7,
         name: 'Voron 2.4 350',
         printer_profile_ids: [11, 12, 13, 14, 15, 16],
         material_systems: [],
       },
-    ]);
+    ]));
     const profiles = [
       { id: 11, name: 'Nozzle 0.8', nozzle_diameters: [0.8], owner_user_id: 7 },
       { id: 12, name: 'Nozzle 0.15', nozzle_diameters: [0.15], owner_user_id: 7 },
@@ -300,5 +316,85 @@ describe('MyPrintersList Orca bundle action', () => {
     expect(
       screen.getByRole('button', { name: 'profilePage.hideDetails' }),
     ).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('loads a second page and stops at the terminal page', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.listPrinters
+      .mockResolvedValueOnce(feedPage([{
+        id: 41, name: 'Page one', printer_profile_ids: [], material_systems: [], connectors: [],
+      }], 'next-page'))
+      .mockResolvedValueOnce(feedPage([{
+        id: 42, name: 'Page two', printer_profile_ids: [], material_systems: [], connectors: [],
+      }]));
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'myPrinters.loadMore' }));
+    expect(await screen.findByText('Page two')).toBeInTheDocument();
+    expect(screen.getByText('Page one')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'myPrinters.loadMore' })).toBeNull();
+    expect(mocks.listPrinters).toHaveBeenLastCalledWith(
+      { cursor: 'next-page', size: 12 },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('retries an initial error without hiding the rest of the printer screen', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.listPrinters
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(feedPage([{
+        id: 51, name: 'Recovered printer', printer_profile_ids: [], material_systems: [], connectors: [],
+      }]));
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'myPrinters.retry' }));
+    expect(await screen.findByText('Recovered printer')).toBeInTheDocument();
+    expect(mocks.listPrinters).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps page one and a retryable load-more action after page two fails', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.listPrinters
+      .mockResolvedValueOnce(feedPage([{
+        id: 61, name: 'Still visible', printer_profile_ids: [], material_systems: [], connectors: [],
+      }], 'next-page'))
+      .mockRejectedValueOnce(new Error('page two failed'))
+      .mockResolvedValueOnce(feedPage([{
+        id: 62, name: 'Recovered page two', printer_profile_ids: [], material_systems: [], connectors: [],
+      }]));
+    renderList();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'myPrinters.loadMore' }));
+    expect(await screen.findByText('myPrinters.loadMoreError')).toBeInTheDocument();
+    expect(screen.getByText('Still visible')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'myPrinters.loadMore' }));
+    expect(await screen.findByText('Recovered page two')).toBeInTheDocument();
+    expect(screen.queryByText('myPrinters.loadMoreError')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'myPrinters.loadMore' })).toBeNull();
+  });
+
+  it('loads exact owned details for pending candidates outside the visible page', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.pendingConnections.mockResolvedValueOnce([{
+      id: 71,
+      revision: 'r1',
+      preset_name: 'Observed machine',
+      provider: 'orca',
+      candidate_printer_ids: [72],
+      last_seen_at: '2026-09-12T12:00:00Z',
+    }]);
+    mocks.getPrinter.mockResolvedValueOnce({
+      id: 72,
+      name: 'Candidate on later page',
+      printer_profile_ids: [],
+      material_systems: [],
+      connectors: [],
+    });
+    renderList();
+
+    await waitFor(() => expect(mocks.getPrinter).toHaveBeenCalledWith(72, expect.any(AbortSignal)));
+    fireEvent.focus(screen.getByPlaceholderText('printerConnections.choose'));
+    expect(await screen.findByText('Candidate on later page · #72')).toBeInTheDocument();
   });
 });

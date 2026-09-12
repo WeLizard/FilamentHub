@@ -1,13 +1,26 @@
 """Endpoints for physical printers, Orca configurations, and material systems."""
 
 import asyncio
+import base64
+import binascii
+import json
 import random
 import time
 from contextlib import suppress
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +29,7 @@ from app.core.dependencies import get_current_active_user, require_printer_bundl
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
     ERR_EXPORT_PRINTER_DISABLED,
+    ERR_PHYSICAL_PRINTER_CURSOR_INVALID,
     ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE,
     ERR_SERVER_BUSY,
     raise_error,
@@ -33,6 +47,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterConnectionSetup,
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
+    PhysicalPrinterFeedResponse,
     PhysicalPrinterMergeRequest,
     PhysicalPrinterResponse,
     PhysicalPrinterUpdate,
@@ -55,6 +70,7 @@ from app.services.material_contract_service import (
     create_physical_printer,
     delete_material_system,
     delete_physical_printer,
+    list_physical_printer_page,
     list_physical_printers,
     require_physical_printer,
     set_physical_printer_configurations,
@@ -82,6 +98,45 @@ from app.services.printer_economics_service import (
 )
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
+
+
+def _encode_printer_cursor(printer: UserPrinterDevice) -> str:
+    created_at = printer.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    payload = json.dumps(
+        [created_at.astimezone(timezone.utc).isoformat(), printer.id],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_printer_cursor(cursor: str) -> tuple[datetime, int]:
+    try:
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        payload = json.loads(raw.decode("utf-8"))
+        if (
+            not isinstance(payload, list)
+            or len(payload) != 2
+            or not isinstance(payload[0], str)
+            or not isinstance(payload[1], int)
+            or isinstance(payload[1], bool)
+            or not 1 <= payload[1] <= 2_147_483_647
+        ):
+            raise ValueError("invalid cursor payload")
+        created_at = datetime.fromisoformat(payload[0])
+        if created_at.tzinfo is None:
+            raise ValueError("cursor timestamp must include timezone")
+        return created_at.astimezone(timezone.utc), payload[1]
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        OverflowError,
+    ):
+        raise_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ERR_PHYSICAL_PRINTER_CURSOR_INVALID)
 
 
 @router.post("/contact-ticket")
@@ -211,6 +266,31 @@ async def list_items(
 ) -> list[PhysicalPrinterResponse]:
     printers = await list_physical_printers(db, current_user.id)
     return [PhysicalPrinterResponse.from_model(printer) for printer in printers]
+
+
+@router.get("/feed", response_model=PhysicalPrinterFeedResponse)
+async def list_feed(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    size: Annotated[int, Query(ge=1, le=50)] = 12,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+) -> PhysicalPrinterFeedResponse:
+    cursor_created_at, cursor_id = (
+        _decode_printer_cursor(cursor) if cursor is not None else (None, None)
+    )
+    printers, total, has_more = await list_physical_printer_page(
+        db,
+        current_user.id,
+        size=size,
+        cursor_created_at=cursor_created_at,
+        cursor_id=cursor_id,
+    )
+    return PhysicalPrinterFeedResponse(
+        items=[PhysicalPrinterResponse.from_model(printer) for printer in printers],
+        next_cursor=(_encode_printer_cursor(printers[-1]) if has_more and printers else None),
+        has_more=has_more,
+        total=total,
+    )
 
 
 @router.post("/orcaslicer-recovery-plan", response_model=None)

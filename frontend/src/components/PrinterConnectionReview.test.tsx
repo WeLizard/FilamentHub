@@ -22,7 +22,7 @@ describe('PrinterConnectionReview', () => {
   });
   it.each([['8', 8], ['new', null]])('saves only an explicit selection: %s', async (choice, target) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><PrinterConnectionReview printers={[{ id: 8, name: 'Workshop' } as never]} /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><PrinterConnectionReview printers={[{ id: 8, name: 'Workshop' } as never]} userId={1} /></QueryClientProvider>);
     const button = await screen.findByText('printerConnections.confirm');
     expect(button).toBeDisabled();
     expect(resolveConnection).not.toHaveBeenCalled();

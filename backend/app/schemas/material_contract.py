@@ -496,6 +496,13 @@ class PhysicalPrinterResponse(BaseModel):
         )
 
 
+class PhysicalPrinterFeedResponse(BaseModel):
+    items: list[PhysicalPrinterResponse]
+    next_cursor: str | None = None
+    has_more: bool
+    total: int
+
+
 PrinterBridgeState = Literal[
     "unknown",
     "idle",

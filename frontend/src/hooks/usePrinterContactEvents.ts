@@ -1,7 +1,16 @@
 import { useEffect } from 'react';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { physicalPrintersAPI, type PhysicalPrinter } from '../api/client';
+import {
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query';
+import {
+  physicalPrintersAPI,
+  type PhysicalPrinter,
+  type PhysicalPrinterFeedResponse,
+} from '../api/client';
 import { latestDeviceContact } from '../utils/deviceLink';
+import { physicalPrinterQueryKeys } from '../utils/physicalPrinterQueries';
 
 export interface PrinterContactEvent {
   type: 'contact';
@@ -12,7 +21,7 @@ export interface PrinterContactEvent {
   reports_feed: boolean | null;
 }
 
-const PRINTERS_KEY = ['physical-printers'];
+const PRINTERS_KEY = physicalPrinterQueryKeys.root;
 const MAX_FRAME_BYTES = 64 * 1024;
 const managers = new WeakMap<QueryClient, Map<number, { count: number; stop: () => void }>>();
 
@@ -32,6 +41,23 @@ export function applyPrinterContact(printers: PhysicalPrinter[], event: PrinterC
         : connector),
     };
   });
+}
+
+export function applyPrinterContactToFeed(
+  data: InfiniteData<PhysicalPrinterFeedResponse, string | undefined>,
+  event: PrinterContactEvent,
+): InfiniteData<PhysicalPrinterFeedResponse, string | undefined> {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: applyPrinterContact(page.items, event),
+    })),
+  };
+}
+
+function isPrinterFeedQuery(key: readonly unknown[]): boolean {
+  return key[0] === PRINTERS_KEY[0] && key[1] === 'feed';
 }
 
 /** Serialize snapshot-before-contact delivery, with a bounded slow-screen queue. */
@@ -116,8 +142,14 @@ function startContactStream(client: QueryClient): () => void {
   };
 
   const onContact = async (event: PrinterContactEvent) => {
-    const printers = client.getQueryData<PhysicalPrinter[]>(PRINTERS_KEY);
-    const printer = printers?.find((item) => item.id === event.printer_id);
+    const legacyPrinters = client.getQueryData<PhysicalPrinter[]>(PRINTERS_KEY);
+    const feedEntries = client.getQueriesData<
+      InfiniteData<PhysicalPrinterFeedResponse, string | undefined>
+    >({ predicate: (query) => isPrinterFeedQuery(query.queryKey) });
+    const printer = legacyPrinters?.find((item) => item.id === event.printer_id)
+      ?? feedEntries.flatMap(([, data]) => data?.pages ?? [])
+        .flatMap((page) => page.items)
+        .find((item) => item.id === event.printer_id);
     const connector = printer?.connectors.find((item) => item.id === event.connector_id);
     if (!printer || (event.connector_id !== null && (!connector || !connector.active))
       || !event.active || !event.last_seen_at) {
@@ -126,7 +158,26 @@ function startContactStream(client: QueryClient): () => void {
       requestResync();
       return;
     }
-    client.setQueryData<PhysicalPrinter[]>(PRINTERS_KEY, (old) => old && applyPrinterContact(old, event));
+    if (legacyPrinters) {
+      client.setQueryData<PhysicalPrinter[]>(
+        PRINTERS_KEY,
+        (old) => old && applyPrinterContact(old, event),
+      );
+    } else {
+      void client.invalidateQueries({ queryKey: PRINTERS_KEY, exact: true });
+    }
+    client.setQueriesData<InfiniteData<PhysicalPrinterFeedResponse, string | undefined>>(
+      { predicate: (query) => isPrinterFeedQuery(query.queryKey) },
+      (old) => old && applyPrinterContactToFeed(old, event),
+    );
+    client.setQueriesData<PhysicalPrinter>(
+      {
+        predicate: (query) => query.queryKey[0] === PRINTERS_KEY[0]
+          && query.queryKey[1] === 'lookup'
+          && query.queryKey[3] === printer.id,
+      },
+      (old) => old && applyPrinterContact([old], event)[0],
+    );
     if (connector) {
       const matchingBridge = ({ queryKey }: { queryKey: readonly unknown[] }) => isBridgeQuery(queryKey, printer.id)
           && queryKey[2] === connector.material_system_id

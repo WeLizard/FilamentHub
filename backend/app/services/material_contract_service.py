@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -135,6 +135,42 @@ async def list_physical_printers(db: AsyncSession, user_id: int) -> list[UserPri
         .order_by(UserPrinterDevice.created_at, UserPrinterDevice.id)
     )
     return list(result.scalars().unique().all())
+
+
+async def list_physical_printer_page(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    size: int,
+    cursor_created_at: datetime | None = None,
+    cursor_id: int | None = None,
+) -> tuple[list[UserPrinterDevice], int, bool]:
+    """Return one stable page without changing the complete-list contract."""
+    query = select(UserPrinterDevice).where(UserPrinterDevice.user_id == user_id)
+    if cursor_created_at is not None and cursor_id is not None:
+        query = query.where(
+            or_(
+                UserPrinterDevice.created_at > cursor_created_at,
+                and_(
+                    UserPrinterDevice.created_at == cursor_created_at,
+                    UserPrinterDevice.id > cursor_id,
+                ),
+            )
+        )
+    result = await db.execute(
+        query.options(*_printer_load_options())
+        .order_by(UserPrinterDevice.created_at, UserPrinterDevice.id)
+        .limit(size + 1)
+    )
+    rows = list(result.scalars().unique().all())
+    has_more = len(rows) > size
+    total = int(
+        await db.scalar(
+            select(func.count(UserPrinterDevice.id)).where(UserPrinterDevice.user_id == user_id)
+        )
+        or 0
+    )
+    return rows[:size], total, has_more
 
 
 async def _validate_profile_ids(

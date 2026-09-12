@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyPrinterContact, usePrinterContactEvents, type PrinterContactEvent } from './usePrinterContactEvents';
-import type { PhysicalPrinter } from '../api/client';
+import type { PhysicalPrinter, PhysicalPrinterFeedResponse } from '../api/client';
+import { physicalPrinterQueryKeys } from '../utils/physicalPrinterQueries';
 
 const api = vi.hoisted(() => ({ list: vi.fn(), contactEvents: vi.fn(), bridgeStatus: vi.fn() }));
 vi.mock('../api/client', () => ({ physicalPrintersAPI: api }));
@@ -32,6 +33,11 @@ function BridgeSurface() {
     queryFn: api.bridgeStatus,
     staleTime: Infinity,
   });
+  usePrinterContactEvents(7);
+  return null;
+}
+
+function HookOnly() {
   usePrinterContactEvents(7);
   return null;
 }
@@ -107,6 +113,35 @@ describe('visible printer contact updates', () => {
     expect(streams[1].signal.aborted).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
     expect(api.contactEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('patches a printer on page two without treating the feed as a flat array', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    clients.push(client);
+    const key = physicalPrinterQueryKeys.feed(7, 12);
+    client.setQueryData(key, {
+      pages: [
+        { items: [{ ...printer, id: 12 }], next_cursor: 'page-two', has_more: true, total: 2 },
+        { items: [printer], next_cursor: null, has_more: false, total: 2 },
+      ],
+      pageParams: [undefined, 'page-two'],
+    });
+    const view = render(
+      <QueryClientProvider client={client}><HookOnly /></QueryClientProvider>,
+    );
+    await waitFor(() => expect(api.contactEvents).toHaveBeenCalledTimes(1));
+
+    await act(async () => send(0, 'contact', update));
+
+    const data = client.getQueryData<{
+      pages: PhysicalPrinterFeedResponse[];
+      pageParams: Array<string | undefined>;
+    }>(key);
+    expect(data?.pages[1].items[0].connectors[0].last_seen_at).toBe(newTime);
+    expect(data?.pages[0].items[0].id).toBe(12);
+    view.unmount();
   });
 
   it('does not open on a hidden screen and backs off after connection failure', async () => {

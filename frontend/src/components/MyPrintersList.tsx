@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Activity, ArchiveRestore, ChevronDown, Download, History, Loader2, Plus, Settings, Wifi } from 'lucide-react';
 import {
@@ -32,6 +32,10 @@ import { PrinterRecoveryModal } from './PrinterRecoveryModal';
 import { PrinterConnectionReview } from './PrinterConnectionReview';
 import { usePrinterContactEvents } from '../hooks/usePrinterContactEvents';
 import { latestFreshStatusConnector, useNow } from '../utils/deviceLink';
+import {
+  mergePhysicalPrinterPages,
+  physicalPrinterQueryKeys,
+} from '../utils/physicalPrinterQueries';
 
 const COLLAPSED_CONFIGURATION_LIMIT = 4;
 
@@ -106,9 +110,15 @@ export function MyPrintersList({
     return unsubscribe;
   }, [pluginEmbed]);
 
-  const { data: printers, isLoading, isError } = useQuery({
-    queryKey: ['physical-printers'],
-    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
+  const printersQuery = useInfiniteQuery({
+    queryKey: physicalPrinterQueryKeys.feed(currentUserId, 12),
+    queryFn: ({ pageParam, signal }) => physicalPrintersAPI.feed(
+      { size: 12, cursor: pageParam },
+      signal,
+    ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: currentUserId != null,
   });
   const { data: bindings } = useQuery({
     queryKey: ['printer-bindings'],
@@ -123,12 +133,14 @@ export function MyPrintersList({
     () =>
       Array.from(
         new Set(
-          (printers ?? []).flatMap((printer) => printer.printer_profile_ids),
+          mergePhysicalPrinterPages(printersQuery.data).flatMap(
+            (printer) => printer.printer_profile_ids,
+          ),
         ),
       )
         .filter((profileId) => !knownProfileIds.has(profileId))
         .sort((left, right) => left - right),
-    [knownProfileIds, printers],
+    [knownProfileIds, printersQuery.data],
   );
   const linkedProfileQueries = useQueries({
     queries: missingLinkedProfileIds.map((profileId) => ({
@@ -203,7 +215,7 @@ export function MyPrintersList({
     return map;
   }, [bindings]);
 
-  const list = printers ?? [];
+  const list = mergePhysicalPrinterPages(printersQuery.data);
   const handlePrinterBundle = async (printer: PhysicalPrinter) => {
     if (
       !hasRestorableBundle(printer) ||
@@ -270,11 +282,20 @@ export function MyPrintersList({
         </div>
       </div>
 
-      <PrinterConnectionReview printers={list} />
-      {isLoading ? (
+      <PrinterConnectionReview printers={list} userId={currentUserId} />
+      {printersQuery.isPending ? (
         <p className="text-sm text-gray-400">{t('myPrinters.loading')}</p>
-      ) : isError ? (
-        <p className="text-sm text-amber-300/80">{t('myPrinters.loadError')}</p>
+      ) : printersQuery.isError && !printersQuery.isFetchNextPageError ? (
+        <div className="space-y-2 text-sm text-amber-300/80">
+          <p>{t('myPrinters.loadError')}</p>
+          <button
+            type="button"
+            onClick={() => void printersQuery.refetch()}
+            className="inline-flex min-h-10 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-amber-100 transition-colors hover:bg-amber-300/10"
+          >
+            {t('myPrinters.retry')}
+          </button>
+        </div>
       ) : list.length === 0 ? (
         showNewcomerGuide ? (
           <GuidedEmptyState
@@ -557,6 +578,24 @@ export function MyPrintersList({
               </div>
             );
           })}
+        </div>
+      )}
+      {printersQuery.hasNextPage && !(printersQuery.isError && !printersQuery.isFetchNextPageError) && (
+        <div className="flex flex-col items-start gap-2">
+          <button
+            type="button"
+            onClick={() => void printersQuery.fetchNextPage()}
+            disabled={printersQuery.isFetchingNextPage}
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10 disabled:opacity-60"
+          >
+            {printersQuery.isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
+            {printersQuery.isFetchingNextPage
+              ? t('myPrinters.loadingMore')
+              : t('myPrinters.loadMore')}
+          </button>
+          {printersQuery.isFetchNextPageError && (
+            <p className="text-sm text-amber-300/80">{t('myPrinters.loadMoreError')}</p>
+          )}
         </div>
       )}
     </div>
