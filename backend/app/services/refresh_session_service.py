@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.security import create_refresh_token, token_fingerprint
+from app.models.account_email_change_confirmation import AccountEmailChangeConfirmation
 from app.models.admin_action_confirmation import AdminActionConfirmation
 from app.models.audit_event import AuditAction, AuditReason
 from app.models.password_reset_token import PasswordResetToken
@@ -46,6 +47,7 @@ class AuthCleanupResult:
     refresh_sessions: int
     password_reset_tokens: int
     admin_confirmations: int = 0
+    account_email_confirmations: int = 0
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -375,11 +377,28 @@ async def cleanup_expired_auth_state(
     confirmation_result = await db.execute(
         delete(AdminActionConfirmation).where(AdminActionConfirmation.id.in_(confirmation_ids))
     )
+    account_email_confirmation_ids = (
+        select(AccountEmailChangeConfirmation.id)
+        .where(AccountEmailChangeConfirmation.created_at < cutoff - timedelta(days=2))
+        .order_by(
+            AccountEmailChangeConfirmation.created_at,
+            AccountEmailChangeConfirmation.id,
+        )
+        .limit(batch_size)
+    )
+    account_email_confirmation_result = await db.execute(
+        delete(AccountEmailChangeConfirmation).where(
+            AccountEmailChangeConfirmation.id.in_(account_email_confirmation_ids)
+        )
+    )
     return AuthCleanupResult(
         revoked_tokens=max(revoked_result.rowcount or 0, 0),
         refresh_sessions=max(refresh_result.rowcount or 0, 0),
         password_reset_tokens=max(password_reset_result.rowcount or 0, 0),
         admin_confirmations=max(confirmation_result.rowcount or 0, 0),
+        account_email_confirmations=max(
+            account_email_confirmation_result.rowcount or 0, 0
+        ),
     )
 
 
@@ -398,14 +417,17 @@ async def run_auth_state_sweeper(
                 or removed.refresh_sessions
                 or removed.password_reset_tokens
                 or removed.admin_confirmations
+                or removed.account_email_confirmations
             ):
                 logger.info(
                     "Removed expired auth state: revoked_tokens=%s "
-                    "refresh_sessions=%s password_reset_tokens=%s admin_confirmations=%s",
+                    "refresh_sessions=%s password_reset_tokens=%s admin_confirmations=%s "
+                    "account_email_confirmations=%s",
                     removed.revoked_tokens,
                     removed.refresh_sessions,
                     removed.password_reset_tokens,
                     removed.admin_confirmations,
+                    removed.account_email_confirmations,
                 )
         except asyncio.CancelledError:
             raise

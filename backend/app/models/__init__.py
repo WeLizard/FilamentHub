@@ -1,5 +1,6 @@
 """SQLAlchemy models."""
 
+from app.models.account_email_change_confirmation import AccountEmailChangeConfirmation
 from app.models.admin_action_confirmation import AdminActionConfirmation
 from app.models.app_setting import AppSetting
 from app.models.audit_event import AuditEvent
@@ -139,6 +140,7 @@ from app.models.wiki_revision import (
 from app.models.wiki_space import WikiSpace
 
 __all__ = [
+    "AccountEmailChangeConfirmation",
     "AdminActionConfirmation",
     "AuditEvent",
     "BadWord",

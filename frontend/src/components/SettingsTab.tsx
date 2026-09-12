@@ -17,6 +17,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
 import { AdminConfirmationDialog } from './AdminConfirmationDialog';
 import { ActiveSessions } from './ActiveSessions';
+import { AccountEmailChangeDialog } from './AccountEmailChangeDialog';
 
 interface SettingsTabProps {
   user: User;
@@ -152,6 +153,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   const [emailSuccess, setEmailSuccess] = useState(false);
   const [isEmailEditing, setIsEmailEditing] = useState(false);
   const [pendingAdminEmail, setPendingAdminEmail] = useState<string | null>(null);
+  const [pendingAccountEmail, setPendingAccountEmail] = useState<string | null>(null);
 
   // Мутация для обновления настроек
   const updateSettingsMutation = useMutation({
@@ -351,13 +353,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       return;
     }
 
-    try {
-      await updateEmailMutation.mutateAsync({
-        new_email: nextEmail,
-      });
-    } catch (error) {
-      // Ошибка обрабатывается в onError мутации
-    }
+    setPendingAccountEmail(nextEmail);
   };
 
   const { currency } = useUserCurrency();
@@ -602,6 +598,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   {t('settings.email')}
                 </div>
                 <p className="mt-1 truncate text-sm text-white">{user.email}</p>
+                {!user.email_verified && (
+                  <p className="mt-1 text-xs text-amber-300/90">
+                    {t('settings.emailVerificationRequired')}
+                  </p>
+                )}
               </div>
               {!isEmailEditing && (
                 <button
@@ -612,7 +613,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                     setEmailSuccess(false);
                     setIsEmailEditing(true);
                   }}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                  disabled={!user.email_verified}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   {t('settings.edit')}
@@ -632,9 +634,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   placeholder={t('settings.newEmailPlaceholder')}
                 />
                 <p className="text-xs text-blue-300/80">
-                  {t(user.role === 'admin'
-                    ? 'settings.adminEmailConfirmationHint'
-                    : 'settings.emailConfirmationHint')}
+                  {t(!user.email_verified
+                    ? 'settings.emailVerificationRequired'
+                    : user.role === 'admin'
+                      ? 'settings.adminEmailConfirmationHint'
+                      : 'settings.emailConfirmationHint')}
                 </p>
                 {emailError && (
                   <div className="flex items-center gap-2 text-xs text-red-400">
@@ -990,6 +994,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           confirmation,
         })}
         onClose={() => setPendingAdminEmail(null)}
+      />
+
+      <AccountEmailChangeDialog
+        isOpen={pendingAccountEmail !== null}
+        newEmail={pendingAccountEmail ?? ''}
+        onComplete={() => {
+          setEmailSuccess(true);
+          setIsEmailEditing(false);
+          setEmailError(null);
+        }}
+        onClose={() => setPendingAccountEmail(null)}
       />
 
       <DeleteAccountModal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} />

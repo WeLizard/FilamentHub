@@ -36,6 +36,18 @@
     "button": "Confirm email",
     "note": "The link is valid for 24 hours. If you did not request an email change, simply ignore this email."
   },
+  "accountEmailChangeCode": {
+    "subject": "Confirm your email change — FilamentHub",
+    "heading": "Confirm the change from your current address",
+    "intro": "Enter this code in FilamentHub to continue changing your email to {new_email}.",
+    "note": "The code is valid for 10 minutes and only for this new address. If you did not request this change, do not share the code."
+  },
+  "emailChangeCompleted": {
+    "subject": "Your FilamentHub email was changed",
+    "heading": "Email address changed",
+    "intro": "Your FilamentHub account email was changed to {new_email}. All browser sessions were ended.",
+    "note": "If you did not make this change, contact FilamentHub support immediately."
+  },
   "brandStatus": {
     "subjectApproved": "Brand “{brand_name}” approved — FilamentHub",
     "subjectRejected": "Brand request for “{brand_name}” declined — FilamentHub",

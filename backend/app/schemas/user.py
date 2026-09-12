@@ -14,6 +14,7 @@ from pydantic import (
 
 from app.models.organization import OrganizationMemberRole
 from app.models.user import UserRole
+from app.schemas.account_email_change import AccountEmailChangeProof
 from app.schemas.admin_confirmation import AdminConfirmationProof
 
 
@@ -110,7 +111,7 @@ class UserEmailUpdate(BaseModel):
     """Schema for updating user email."""
 
     new_email: EmailStr = Field(..., description="Новый email")
-    confirmation: AdminConfirmationProof | None = None
+    confirmation: AdminConfirmationProof | AccountEmailChangeProof | None = None
     language: str | None = Field(
         default=None,
         pattern=r"^[a-z]{2}$",

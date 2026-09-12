@@ -1,0 +1,14 @@
+{% extends "_layout.html" %}
+
+{% block content %}
+<h2 style="margin:0 0 16px;color:#f1f5f9;font-size:20px;">{{ t('accountEmailChangeCode.heading') }}</h2>
+<p style="margin:0 0 18px;color:#94a3b8;line-height:1.6;">
+  {{ t('accountEmailChangeCode.intro', new_email=new_email) }}
+</p>
+<div style="margin:0 0 18px;padding:16px;border-radius:12px;background:#0f172a;text-align:center;color:#f8fafc;font-family:monospace;font-size:28px;letter-spacing:0.3em;">
+  {{ code }}
+</div>
+<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">
+  {{ t('accountEmailChangeCode.note') }}
+</p>
+{% endblock %}

@@ -36,6 +36,18 @@
     "button": "确认邮箱",
     "note": "链接有效期为 24 小时。如果您没有请求更换邮箱，请忽略此邮件。"
   },
+  "accountEmailChangeCode": {
+    "subject": "确认更换邮箱 — FilamentHub",
+    "heading": "通过当前邮箱确认更换",
+    "intro": "请在 FilamentHub 中输入此验证码，以继续将邮箱更换为 {new_email}。",
+    "note": "验证码有效期为 10 分钟，并且仅适用于此新邮箱。如果您没有请求更换，请勿分享验证码。"
+  },
+  "emailChangeCompleted": {
+    "subject": "您的 FilamentHub 邮箱已更换",
+    "heading": "邮箱地址已更换",
+    "intro": "您的 FilamentHub 账户邮箱已更换为 {new_email}。所有浏览器会话均已结束。",
+    "note": "如果这不是您本人操作，请立即联系 FilamentHub 支持。"
+  },
   "brandStatus": {
     "subjectApproved": "品牌“{brand_name}”已通过审核 — FilamentHub",
     "subjectRejected": "品牌“{brand_name}”的申请已被拒绝 — FilamentHub",

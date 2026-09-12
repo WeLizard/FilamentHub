@@ -71,7 +71,7 @@ export function ConfirmEmailChangePage() {
             <h2 className="text-2xl font-bold text-white mb-2">{t('confirmEmailChange.successTitle')}</h2>
             <p className="text-gray-300 mb-6">
               {t(reauthRequired
-                ? 'confirmEmailChange.adminSuccessMessage'
+                ? 'confirmEmailChange.sessionRevokedMessage'
                 : 'confirmEmailChange.successMessage')}
             </p>
             <Link

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   refreshUser: vi.fn(),
   updateSettings: vi.fn(),
   updateEmail: vi.fn(),
+  createEmailChangeChallenge: vi.fn(),
   createReauthChallenge: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock('../api/client', () => ({
     updateProfile: vi.fn(),
     updatePassword: vi.fn(),
     updateEmail: (...args: unknown[]) => mocks.updateEmail(...args),
+    createEmailChangeChallenge: (...args: unknown[]) => mocks.createEmailChangeChallenge(...args),
     updatePreferences: vi.fn(),
   },
   adminAPI: {
@@ -100,6 +102,11 @@ describe('SettingsTab printer sync settings', () => {
     vi.clearAllMocks();
     mocks.updateSettings.mockResolvedValue(user);
     mocks.updateEmail.mockResolvedValue({ message: 'sent' });
+    mocks.createEmailChangeChallenge.mockResolvedValue({
+      challenge_id: 'account-challenge-1',
+      expires_at: '2026-09-05T20:10:00Z',
+      masked_email: 'u***@example.com',
+    });
     mocks.createReauthChallenge.mockResolvedValue({
       challenge_id: 'challenge-1',
       expires_at: '2026-09-05T20:10:00Z',
@@ -139,7 +146,7 @@ describe('SettingsTab printer sync settings', () => {
     expect(screen.getByTestId('active-sessions')).toHaveTextContent('1');
   });
 
-  it('keeps the ordinary user email change as a direct request', async () => {
+  it('requires the ordinary user to prove the current email before requesting the new link', async () => {
     renderSettings();
     const emailRow = screen.getByText('user@example.com').closest<HTMLElement>('.p-4')!;
     fireEvent.click(within(emailRow).getByRole('button', { name: 'settings.edit' }));
@@ -147,9 +154,22 @@ describe('SettingsTab printer sync settings', () => {
     fireEvent.change(input, { target: { value: 'next@example.com' } });
     fireEvent.submit(input.closest('form')!);
 
-    await waitFor(() => expect(mocks.updateEmail).toHaveBeenCalled());
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'emailChangeConfirmation.sendCode' }));
+    await waitFor(() => expect(mocks.createEmailChangeChallenge).toHaveBeenCalledWith(
+      'next@example.com',
+    ));
+    fireEvent.change(within(dialog).getByRole('textbox', {
+      name: /emailChangeConfirmation\.codeLabel/,
+    }), { target: { value: '123456' } });
+    fireEvent.click(within(dialog).getByRole('button', {
+      name: 'emailChangeConfirmation.continue',
+    }));
+
+    await waitFor(() => expect(mocks.updateEmail).toHaveBeenCalledOnce());
     expect(mocks.updateEmail.mock.calls[0][0]).toEqual({
       new_email: 'next@example.com',
+      confirmation: { challenge_id: 'account-challenge-1', code: '123456' },
     });
     expect(mocks.createReauthChallenge).not.toHaveBeenCalled();
   });

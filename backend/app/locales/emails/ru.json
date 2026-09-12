@@ -36,6 +36,18 @@
     "button": "Подтвердить email",
     "note": "Ссылка действительна 24 часа. Если вы не запрашивали смену email — проигнорируйте это письмо."
   },
+  "accountEmailChangeCode": {
+    "subject": "Подтвердите смену email — FilamentHub",
+    "heading": "Подтвердите смену с текущего адреса",
+    "intro": "Введите этот код в FilamentHub, чтобы продолжить смену email на {new_email}.",
+    "note": "Код действует 10 минут и только для этого нового адреса. Если вы не запрашивали смену, никому не передавайте код."
+  },
+  "emailChangeCompleted": {
+    "subject": "Email вашего аккаунта FilamentHub изменён",
+    "heading": "Email-адрес изменён",
+    "intro": "Email вашего аккаунта FilamentHub изменён на {new_email}. Все браузерные сессии завершены.",
+    "note": "Если это сделали не вы, немедленно обратитесь в поддержку FilamentHub."
+  },
   "brandStatus": {
     "subjectApproved": "Бренд «{brand_name}» подтверждён — FilamentHub",
     "subjectRejected": "Заявка на бренд «{brand_name}» отклонена — FilamentHub",

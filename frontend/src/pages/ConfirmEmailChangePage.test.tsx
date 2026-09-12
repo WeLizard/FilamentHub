@@ -36,7 +36,7 @@ describe('ConfirmEmailChangePage', () => {
     mocks.refreshUser = vi.fn().mockResolvedValue(undefined);
   });
 
-  it('validates the current replacement session after a late admin confirmation', async () => {
+  it('validates the current replacement session after a late confirmation', async () => {
     let resolve!: (value: { message: string; session_revoked: boolean; user_id: number | null }) => void;
     mocks.confirmEmailChange.mockReturnValue(new Promise((done) => { resolve = done; }));
     const firstRefresh = mocks.refreshUser;
@@ -49,23 +49,23 @@ describe('ConfirmEmailChangePage', () => {
 
     await waitFor(() => expect(replacementRefresh).toHaveBeenCalledOnce());
     expect(firstRefresh).not.toHaveBeenCalled();
-    expect(await screen.findByText('confirmEmailChange.adminSuccessMessage')).toBeInTheDocument();
+    expect(await screen.findByText('confirmEmailChange.sessionRevokedMessage')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'confirmEmailChange.signInAgain' }))
       .toHaveAttribute('href', '/?auth=login');
   });
 
-  it('keeps the ordinary email confirmation success flow unchanged', async () => {
+  it('requires a fresh sign-in after an ordinary email confirmation', async () => {
     mocks.confirmEmailChange.mockResolvedValue({
       message: 'changed',
-      session_revoked: false,
-      user_id: null,
+      session_revoked: true,
+      user_id: 7,
     });
     render(page());
 
-    expect(await screen.findByText('confirmEmailChange.successMessage')).toBeInTheDocument();
-    expect(mocks.refreshUser).not.toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'confirmEmailChange.goHome' }))
-      .toHaveAttribute('href', '/');
+    expect(await screen.findByText('confirmEmailChange.sessionRevokedMessage')).toBeInTheDocument();
+    expect(mocks.refreshUser).toHaveBeenCalledOnce();
+    expect(screen.getByRole('link', { name: 'confirmEmailChange.signInAgain' }))
+      .toHaveAttribute('href', '/?auth=login');
   });
 
   it('does not disturb a different account established before the response arrives', async () => {

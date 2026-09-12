@@ -8,6 +8,7 @@ from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ERR_SESSION_NOT_FOUND, ERR_SESSION_REQUIRED, raise_error
+from app.models.account_email_change_confirmation import AccountEmailChangeConfirmation
 from app.models.admin_action_confirmation import AdminActionConfirmation
 from app.models.audit_event import AuditAction, AuditReason
 from app.models.refresh_session import RefreshSession
@@ -19,6 +20,7 @@ from app.schemas.session import (
     OtherSessionsRevokeResponse,
 )
 from app.services.account_auth_service import lock_user_auth_state
+from app.services.account_email_change_service import invalidate_account_email_change_confirmations
 from app.services.admin_confirmation_service import invalidate_admin_confirmations
 from app.services.audit_service import record_audit_event
 
@@ -264,6 +266,9 @@ async def revoke_account_session(
         target.revoked_at = now
         user.legacy_access_revoked_at = user.legacy_access_revoked_at or now
         await invalidate_admin_confirmations(db, actor_id=user.id, session_id=target.id)
+        await invalidate_account_email_change_confirmations(
+            db, user_id=user.id, session_id=target.id
+        )
         await record_audit_event(
             db,
             action=AuditAction.AUTH_REVOKED,
@@ -306,6 +311,19 @@ async def revoke_other_account_sessions(
         )
         .values(
             delivered_at=None, consumed_at=func.coalesce(AdminActionConfirmation.consumed_at, now)
+        )
+    )
+    await db.execute(
+        update(AccountEmailChangeConfirmation)
+        .where(
+            AccountEmailChangeConfirmation.user_id == user.id,
+            AccountEmailChangeConfirmation.session_id != sid,
+            AccountEmailChangeConfirmation.email_changed_at.is_(None),
+        )
+        .values(
+            delivered_at=None,
+            link_delivered_at=None,
+            consumed_at=func.coalesce(AccountEmailChangeConfirmation.consumed_at, now),
         )
     )
     if revoked_count or legacy_changed:

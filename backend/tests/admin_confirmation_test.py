@@ -271,16 +271,14 @@ async def test_rolled_back_email_link_cannot_be_revived_by_resend_or_demotion(
     assert token not in caplog.text and proof["code"] not in caplog.text
 
 
-async def test_legacy_email_change_is_rejected_for_admin_but_preserved_for_regular_user(
+async def test_legacy_email_change_is_rejected_for_every_account(
     client, db_session
 ):
     actor, target, _, _ = await actors(db_session)
-    for user, expected in ((actor, 400), (target, 200)):
+    for user in (actor, target):
         token = generate_email_change_token(user.id, f"new-{user.id}@example.com")
         result = await client.post("/api/v1/auth/confirm-email-change", params={"token": token})
-        assert result.status_code == expected
-        if expected == 200:
-            assert result.json()["session_revoked"] is False
+        assert result.status_code == 400
 
 
 async def test_delivery_failure_or_unverified_email_never_issues_a_usable_proof(

@@ -1,7 +1,6 @@
 """One-time email confirmation, bound to an administrator's exact operation."""
 
 import asyncio
-import hashlib
 import hmac
 import json
 import secrets
@@ -11,7 +10,6 @@ from fastapi import Request
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_ADMIN_CONFIRMATION_ATTEMPTS_EXCEEDED,
@@ -26,16 +24,24 @@ from app.core.errors import (
     raise_error,
 )
 from app.core.i18n import resolve_language
-from app.core.security import decode_access_token, token_auth_version_matches, token_fingerprint
 from app.core.utils import normalize_email
 from app.models.admin_action_confirmation import AdminActionConfirmation, AdminConfirmationAction
 from app.models.refresh_session import RefreshSession
-from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.schemas.admin_confirmation import (
     AdminConfirmationProof,
     AdminConfirmationRequest,
     AdminConfirmationResponse,
+)
+from app.services.auth_confirmation_primitives import (
+    as_utc,
+    require_current_refresh_family,
+)
+from app.services.auth_confirmation_primitives import (
+    confirmation_digest as scoped_confirmation_digest,
+)
+from app.services.auth_confirmation_primitives import (
+    email_digest as scoped_email_digest,
 )
 from app.services.email_service import send_admin_confirmation_email
 
@@ -44,24 +50,12 @@ EMAIL_CHANGE_LIFETIME = timedelta(hours=24)
 MAX_CONFIRMATION_ATTEMPTS = 5
 
 
-def as_utc(value: datetime) -> datetime:
-    return (
-        value.replace(tzinfo=timezone.utc)
-        if value.tzinfo is None
-        else value.astimezone(timezone.utc)
-    )
-
-
 def confirmation_digest(purpose: str, value: str) -> str:
-    return hmac.new(
-        settings.SECRET_KEY.encode(),
-        f"admin-confirmation:{purpose}:{value}".encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    return scoped_confirmation_digest("admin-confirmation", purpose, value)
 
 
 def email_digest(email: str) -> str:
-    return confirmation_digest("email", normalize_email(email))
+    return scoped_email_digest("admin-confirmation", email)
 
 
 def parameters_digest(
@@ -100,41 +94,14 @@ async def lock_confirmation_users(
 async def require_confirmation_session(
     db: AsyncSession, request: Request, actor: User, now: datetime
 ) -> str:
-    authorization = request.headers.get("Authorization", "")
-    token = authorization.split(" ", 1)[1] if authorization.lower().startswith("bearer ") else None
-    if not token and settings.AUTH_WEB_MODE in {"cookie", "dual"}:
-        token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
-    payload = decode_access_token(token) if token else None
-    sid = payload.get("sid") if payload else None
-    if (
-        not payload
-        or not isinstance(sid, str)
-        or not 1 <= len(sid) <= 43
-        or payload.get("user_id") != actor.id
-        or payload.get("sub") != actor.email
-        or not token_auth_version_matches(payload, actor.auth_version)
-    ):
-        raise_error(403, ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED)
-    family = await db.scalar(
-        select(RefreshSession)
-        .where(RefreshSession.id == sid)
-        .with_for_update()
-        .execution_options(populate_existing=True)
+    return await require_current_refresh_family(
+        db,
+        request=request,
+        user=actor,
+        now=now,
+        session_error=ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED,
+        verified_email_error=ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED,
     )
-    revoked_access = await db.scalar(
-        select(RevokedToken.id).where(RevokedToken.jti == token_fingerprint(token))
-    )
-    if (
-        family is None
-        or family.user_id != actor.id
-        or family.revoked_at is not None
-        or as_utc(family.expires_at) <= now
-        or revoked_access is not None
-    ):
-        raise_error(403, ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED)
-    if not actor.email_verified:
-        raise_error(403, ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED)
-    return sid
 
 
 async def issue_admin_confirmation(

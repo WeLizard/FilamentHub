@@ -357,7 +357,11 @@ def decode_password_reset_token(token: str) -> dict[str, Any] | None:
 
 
 def generate_email_change_token(
-    user_id: int, new_email: str, *, admin_confirmation_id: str | None = None
+    user_id: int,
+    new_email: str,
+    *,
+    admin_confirmation_id: str | None = None,
+    account_confirmation_id: str | None = None,
 ) -> str:
     """Generate a token to confirm email change. Valid for 24 hours."""
     expire = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -370,6 +374,8 @@ def generate_email_change_token(
     }
     if admin_confirmation_id is not None:
         payload["admin_confirmation_id"] = admin_confirmation_id
+    if account_confirmation_id is not None:
+        payload["account_confirmation_id"] = account_confirmation_id
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

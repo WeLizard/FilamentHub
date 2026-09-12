@@ -60,6 +60,10 @@ from app.models.preset import Preset
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
+from app.schemas.account_email_change import (
+    AccountEmailChangeChallengeRequest,
+    AccountEmailChangeChallengeResponse,
+)
 from app.schemas.preset import PresetListResponse, PresetResponse
 from app.schemas.session import (
     AccountSessionListResponse,
@@ -108,6 +112,13 @@ from app.services.account_auth_service import (
     revoke_all_account_auth,
     token_data_for_user,
 )
+from app.services.account_email_change_service import (
+    consume_account_email_change_link,
+    consume_account_email_change_proof,
+    invalidate_account_email_change_confirmations,
+    issue_account_email_change_challenge,
+    mark_account_email_change_link_delivered,
+)
 from app.services.account_session_service import (
     list_account_sessions,
     revoke_account_session,
@@ -124,6 +135,7 @@ from app.services.calculator_defaults_service import (
     starting_defaults_for_user,
 )
 from app.services.email_service import (
+    send_email_change_completed,
     send_email_change_email,
     send_email_verification_email,
     send_password_reset_email,
@@ -171,8 +183,11 @@ logger = logging.getLogger(__name__)
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_ACCOUNT_INACTIVE,
+    ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED,
     ERR_BRAND_NOT_FOUND,
     ERR_DEVICE_NOT_FOUND,
+    ERR_EMAIL_CHANGE_DELIVERY_FAILED,
+    ERR_EMAIL_CHANGE_INVALID,
     ERR_EMAIL_EXISTS,
     ERR_EMAIL_MISMATCH,
     ERR_INVALID_REFRESH_TOKEN,
@@ -870,6 +885,9 @@ async def logout(
         if access_payload:
             await invalidate_admin_confirmations(
                 db, actor_id=current_user.id, session_id=access_payload.get("sid")
+            )
+            await invalidate_account_email_change_confirmations(
+                db, user_id=current_user.id, session_id=access_payload.get("sid")
             )
 
     refresh_token = data.refresh_token if data and data.refresh_token else None
@@ -1766,6 +1784,26 @@ async def update_user_username(
     return UserResponse.model_validate(current_user)
 
 
+@router.post(
+    "/me/email-change/challenges",
+    response_model=AccountEmailChangeChallengeResponse,
+)
+@limiter.limit("5/hour")
+async def create_account_email_change_challenge(
+    request: Request,
+    data: AccountEmailChangeChallengeRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccountEmailChangeChallengeResponse:
+    """Send a new-address-bound code to the regular account's current email."""
+    return await issue_account_email_change_challenge(
+        db,
+        request=request,
+        user_id=current_user.id,
+        data=data,
+    )
+
+
 @router.patch("/me/email", response_model=EmailChangeResponse)
 @limiter.limit("5/hour")
 async def update_user_email(
@@ -1774,11 +1812,7 @@ async def update_user_email(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EmailChangeResponse:
-    """Request email change. Sends confirmation link to the new address; email is NOT changed yet."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
+    """Prove control of the current address, then send a link to the new one."""
     requested_email = normalize_email(data.new_email)
     if requested_email == normalize_email(current_user.email):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
@@ -1788,7 +1822,6 @@ async def update_user_email(
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
-    confirmation_id = None
     if current_user.role == UserRole.ADMIN:
         current_user, _, confirmation = await consume_admin_confirmation(
             db,
@@ -1799,7 +1832,6 @@ async def update_user_email(
             proof=data.confirmation,
             new_email=requested_email,
         )
-        confirmation_id = confirmation.id
         await record_audit_event(
             db,
             action=AuditAction.EMAIL_CHANGE_REQUESTED,
@@ -1807,28 +1839,57 @@ async def update_user_email(
             target_user_id=current_user.id,
             reason=AuditReason.ADMIN_EMAIL_CODE,
         )
+        token = generate_email_change_token(
+            current_user.id,
+            requested_email,
+            admin_confirmation_id=confirmation.id,
+        )
+        confirm_url = f"{settings.BASE_URL}/confirm-email-change?token={token}"
+        sent = await asyncio.to_thread(
+            send_email_change_email,
+            to=requested_email,
+            confirm_url=confirm_url,
+            language=resolve_language(
+                data.language, current_user.legal_acceptance_language
+            ),
+        )
+        if not sent:
+            raise_error(503, ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED)
+        await db.commit()
+        return EmailChangeResponse()
+
+    current_user, confirmation, requested_email = await consume_account_email_change_proof(
+        db,
+        request=request,
+        user_id=current_user.id,
+        proof=data.confirmation,
+        new_email=requested_email,
+    )
     token = generate_email_change_token(
-        current_user.id, data.new_email, admin_confirmation_id=confirmation_id
+        current_user.id,
+        requested_email,
+        account_confirmation_id=confirmation.id,
     )
     confirm_url = f"{settings.BASE_URL}/confirm-email-change?token={token}"
-    mail_arguments = {
-        "to": data.new_email,
-        "confirm_url": confirm_url,
-        "language": resolve_language(data.language, current_user.legal_acceptance_language),
-    }
-    sent = (
-        await asyncio.to_thread(send_email_change_email, **mail_arguments)
-        if confirmation_id
-        else send_email_change_email(**mail_arguments)
+    language = resolve_language(data.language, current_user.legal_acceptance_language)
+    await db.commit()
+    sent = await asyncio.to_thread(
+        send_email_change_email,
+        to=requested_email,
+        confirm_url=confirm_url,
+        language=language,
     )
     if not sent:
-        if confirmation_id:
-            from app.core.errors import ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED
-
-            raise_error(503, ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED)
-        logger.info(f"Email change confirmation link (email not sent): {confirm_url}")
-    if confirmation_id:
-        await db.commit()
+        raise_error(503, ERR_EMAIL_CHANGE_DELIVERY_FAILED)
+    await mark_account_email_change_link_delivered(db, challenge_id=confirmation.id)
+    await record_audit_event(
+        db,
+        action=AuditAction.EMAIL_CHANGE_REQUESTED,
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        reason=AuditReason.AUTHENTICATED_CHANGE,
+    )
+    await db.commit()
 
     return EmailChangeResponse()
 
@@ -1863,24 +1924,50 @@ async def confirm_email_change(
     if taken.scalar_one_or_none():
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
-    protected_change = user.role == UserRole.ADMIN or "admin_confirmation_id" in payload
-    if protected_change:
+    admin_change = user.role == UserRole.ADMIN or "admin_confirmation_id" in payload
+    account_change = "account_confirmation_id" in payload
+    if admin_change:
         await consume_admin_email_change_link(db, user=user, payload=payload)
+    elif account_change:
+        await consume_account_email_change_link(db, user=user, payload=payload)
+    else:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_CHANGE_INVALID)
+    if admin_change or account_change:
         await revoke_all_account_auth(db, user=user)
         await record_audit_event(
             db,
             action=AuditAction.EMAIL_CHANGED,
             actor_user_id=user.id,
             target_user_id=user.id,
-            reason=AuditReason.ADMIN_EMAIL_CODE,
+            reason=(
+                AuditReason.ADMIN_EMAIL_CODE
+                if admin_change
+                else AuditReason.AUTHENTICATED_CHANGE
+            ),
         )
+    old_email = user.email
+    language = user.legal_acceptance_language
     user.email = new_email
     user.email_verified = True
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
     logger.info("Email changed: user_id=%s", user_id)
+    if account_change:
+        notified = await asyncio.to_thread(
+            send_email_change_completed,
+            to=old_email,
+            new_email=new_email,
+            language=language,
+        )
+        if not notified:
+            logger.warning("Email-change completion notice failed: user_id=%s", user_id)
 
     return ConfirmEmailChangeResponse(
-        session_revoked=protected_change, user_id=user.id if protected_change else None
+        session_revoked=True,
+        user_id=user.id,
     )
 
 

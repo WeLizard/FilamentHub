@@ -393,6 +393,34 @@ describe('admin action confirmation requests', () => {
     expect(axiosState.apiInstance.patch).toHaveBeenCalledWith('/auth/me/email',
       expect.objectContaining({ new_email: 'next@example.com', confirmation }));
   });
+
+  it('refreshes once before issuing a regular-account email challenge from a legacy session', async () => {
+    const { authAPI } = await loadClientModule();
+    axiosState.apiInstance.post
+      .mockRejectedValueOnce({
+        response: { data: { detail: { code: 'ERR_EMAIL_CHANGE_SESSION_REQUIRED' } } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          challenge_id: 'account-challenge-1',
+          expires_at: '2026-09-05T20:10:00Z',
+          masked_email: 'u***@example.com',
+        },
+      });
+    axiosState.post.mockResolvedValueOnce({
+      data: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' },
+    });
+
+    const challenge = await authAPI.createEmailChangeChallenge('next@example.com');
+
+    expect(challenge.challenge_id).toBe('account-challenge-1');
+    expect(axiosState.post).toHaveBeenCalledTimes(1);
+    expect(axiosState.apiInstance.post).toHaveBeenCalledTimes(2);
+    expect(axiosState.apiInstance.post).toHaveBeenLastCalledWith(
+      '/auth/me/email-change/challenges',
+      expect.objectContaining({ new_email: 'next@example.com', language: expect.any(String) }),
+    );
+  });
 });
 
 describe('calculator G-code uploads', () => {

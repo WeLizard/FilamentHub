@@ -352,6 +352,35 @@ def send_email_change_email(*, to: str, confirm_url: str, language: str | None =
     return send_email(to=to, subject=subject, html=html)
 
 
+def send_account_email_change_code(
+    *, to: str, code: str, new_email: str, language: str | None = None
+) -> bool:
+    """Send the current-address proof for a regular account email change."""
+    subject = translate("accountEmailChangeCode.subject", language)
+    html = _render(
+        "account_email_change_code.html",
+        language=language,
+        subject=subject,
+        code=code,
+        new_email=new_email,
+    )
+    return send_email(to=to, subject=subject, html=html)
+
+
+def send_email_change_completed(
+    *, to: str, new_email: str, language: str | None = None
+) -> bool:
+    """Notify the previous address after an email change has committed."""
+    subject = translate("emailChangeCompleted.subject", language)
+    html = _render(
+        "email_change_completed.html",
+        language=language,
+        subject=subject,
+        new_email=new_email,
+    )
+    return send_email(to=to, subject=subject, html=html)
+
+
 def send_brand_status_email(
     *,
     to: str,

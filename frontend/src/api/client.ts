@@ -750,13 +750,32 @@ export const authAPI = {
 
   updateEmail: async (data: {
     new_email: string;
-    confirmation?: AdminReauthConfirmation;
+    confirmation?: AdminReauthConfirmation | AccountEmailChangeProof;
   }) => {
     const response = await api.patch<{ message: string }>('/auth/me/email', {
       ...data,
       language: currentRequestLanguage(),
     });
     return response.data;
+  },
+
+  createEmailChangeChallenge: async (
+    newEmail: string,
+  ): Promise<AccountEmailChangeChallenge> => {
+    const request = () => api.post<AccountEmailChangeChallenge>(
+      '/auth/me/email-change/challenges',
+      { new_email: newEmail, language: currentRequestLanguage() },
+    ).then((response) => response.data);
+    try {
+      return await request();
+    } catch (error) {
+      const code = (error as {
+        response?: { data?: { detail?: { code?: string } } };
+      })?.response?.data?.detail?.code;
+      if (code !== 'ERR_EMAIL_CHANGE_SESSION_REQUIRED') throw error;
+      await authAPI.refresh();
+      return request();
+    }
   },
 
   verifyEmail: async (token: string) => {
@@ -817,6 +836,17 @@ export interface ConfirmEmailChangeResponse {
   message: string;
   session_revoked: boolean;
   user_id: number | null;
+}
+
+export interface AccountEmailChangeProof {
+  challenge_id: string;
+  code: string;
+}
+
+export interface AccountEmailChangeChallenge {
+  challenge_id: string;
+  expires_at: string;
+  masked_email: string;
 }
 
 export const brandTeamAPI = {
