@@ -147,27 +147,39 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div className="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preset-history-title"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gray-900 sm:max-h-[85vh]"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">{t('presetVersions.title')}</h2>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
+          <h2 id="preset-history-title" className="min-w-0 break-words text-lg font-semibold text-white">{t('presetVersions.title')}</h2>
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
+            <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-gray-400 sm:flex-none">
               <input
                 type="checkbox"
                 checked={labeledOnly}
                 onChange={(e) => setLabeledOnly(e.target.checked)}
-                className="accent-purple-500"
+                className="h-5 w-5 shrink-0 accent-purple-500"
               />
-              {t('presetVersions.timeline.labeledOnly')}
+              <span className="min-w-0 break-words">{t('presetVersions.timeline.labeledOnly')}</span>
             </label>
-            <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">×</button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('common.close')}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-gray-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+            >
+              ×
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-1 min-h-0">
+        <div data-testid="preset-history-layout" className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
           {/* Timeline */}
-          <div className="w-2/5 border-r border-white/10 overflow-y-auto">
+          <div data-testid="preset-history-timeline" className="min-h-0 w-full flex-1 overflow-y-auto border-b border-white/10 md:w-2/5 md:flex-none md:border-b-0 md:border-r">
             {versionsQuery.isLoading && (
               <div className="p-6 text-gray-500 text-sm">{t('common.loading')}</div>
             )}
@@ -183,15 +195,16 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                   return (
                     <li key={v.id}>
                       <button
+                        type="button"
                         onClick={() => {
                           setSelectedId(v.id);
                           setEditingLabel(false);
                         }}
-                        className={`w-full text-left px-4 py-3 border-b border-white/5 transition-colors ${
+                        className={`min-h-11 w-full min-w-0 border-b border-white/5 px-4 py-3 text-left transition-colors ${
                           isSel ? 'bg-purple-500/10' : 'hover:bg-white/5'
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
                           <span className="text-white font-medium text-sm">v{v.version_number}</span>
                           {isLat && (
                             <span className="text-[10px] uppercase tracking-wide text-emerald-400">
@@ -217,7 +230,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                           )}
                         </div>
                         {v.label && (
-                          <div className="text-xs text-amber-300 font-medium">🏷 {v.label}</div>
+                          <div className="min-w-0 break-words text-xs font-medium text-amber-300">🏷 {v.label}</div>
                         )}
                         <div className="text-[11px] text-gray-500">{formatDateTime(v.created_at) || v.created_at}</div>
                       </button>
@@ -228,7 +241,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
           </div>
 
           {/* Diff panel */}
-          <div className="flex-1 overflow-y-auto p-5">
+          <div data-testid="preset-history-diff" className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">
             {selected === null && (
               <div className="text-gray-500 text-sm">{t('presetVersions.diff.selectPrompt')}</div>
             )}
@@ -244,7 +257,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                       onChange={(e) => setLabelValue(e.target.value)}
                       maxLength={120}
                       placeholder={t('presetVersions.label.placeholder')}
-                      className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                      className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
                     />
                     <textarea
                       value={labelDescValue}
@@ -254,7 +267,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                       placeholder={t('presetVersions.label.descPlaceholder')}
                       className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() =>
                           labelMutation.mutate({
@@ -264,30 +277,30 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                           })
                         }
                         disabled={labelMutation.isPending || !labelValue.trim()}
-                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg disabled:opacity-50"
+                        className="min-h-11 rounded-lg bg-purple-600 px-3 py-2 text-xs font-medium text-white hover:bg-purple-500 disabled:opacity-50"
                       >
                         {t('presetVersions.label.save')}
                       </button>
                       <button
                         onClick={() => setEditingLabel(false)}
-                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-200 text-xs rounded-lg"
+                        className="min-h-11 rounded-lg bg-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/20"
                       >
                         {t('common.cancel')}
                       </button>
                     </div>
                   </div>
                 ) : selected.label ? (
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-sm text-amber-300 font-medium">🏷 {selected.label}</div>
                       {selected.label_description && (
                         <div className="text-xs text-gray-400 mt-0.5">{selected.label_description}</div>
                       )}
                     </div>
-                    <div className="flex gap-1 shrink-0">
+                    <div className="flex w-full flex-wrap gap-1 sm:w-auto sm:shrink-0">
                       <button
                         onClick={() => startEditLabel(selected)}
-                        className="px-2 py-1 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded"
+                        className="min-h-11 rounded px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white"
                       >
                         {t('presetVersions.label.edit')}
                       </button>
@@ -296,7 +309,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                           labelMutation.mutate({ versionId: selected.id, label: '', description: null })
                         }
                         disabled={labelMutation.isPending}
-                        className="px-2 py-1 text-xs text-gray-400 hover:text-red-300 hover:bg-white/10 rounded disabled:opacity-50"
+                        className="min-h-11 rounded px-3 py-2 text-xs text-gray-400 hover:bg-white/10 hover:text-red-300 disabled:opacity-50"
                       >
                         {t('presetVersions.label.remove')}
                       </button>
@@ -305,7 +318,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                 ) : (
                   <button
                     onClick={() => startEditLabel(selected)}
-                    className="text-xs text-gray-400 hover:text-white transition-colors"
+                    className="min-h-11 rounded px-3 py-2 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
                   >
                     {t('presetVersions.label.add')}
                   </button>
@@ -338,14 +351,14 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                       )}
 
                     {diffQuery.data.changes.map((c) => (
-                      <div key={c.key} className="text-sm flex flex-wrap items-baseline gap-2">
-                        <span className="text-gray-300 min-w-[180px]">{c.label}</span>
-                        <span className="text-red-400 line-through">
+                      <div key={c.key} className="flex min-w-0 flex-wrap items-baseline gap-2 text-sm">
+                        <span className="w-full min-w-0 break-words text-gray-300 md:w-[11.25rem] md:shrink-0">{c.label}</span>
+                        <span className="min-w-0 break-all text-red-400 line-through">
                           {c.old ?? '—'}
                           {c.unit && c.old != null ? ` ${c.unit}` : ''}
                         </span>
                         <span className="text-gray-500">→</span>
-                        <span className="text-emerald-400">
+                        <span className="min-w-0 break-all text-emerald-400">
                           {c.new ?? '—'}
                           {c.unit && c.new != null ? ` ${c.unit}` : ''}
                         </span>
@@ -354,18 +367,18 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
 
                     {diffQuery.data.unmapped_changes.length > 0 && (
                       <details className="mt-3">
-                        <summary className="text-xs text-gray-500 cursor-pointer">
+                        <summary className="flex min-h-11 cursor-pointer items-center text-xs text-gray-500">
                           {t('presetVersions.diff.technicalFields', {
                             count: diffQuery.data.unmapped_changes.length,
                           })}
                         </summary>
                         <div className="mt-2 space-y-1">
                           {diffQuery.data.unmapped_changes.map((c) => (
-                            <div key={c.key} className="text-[11px] text-gray-500 flex flex-wrap gap-2">
-                              <span className="font-mono min-w-[180px]">{c.key}</span>
-                              <span className="text-red-400/70 line-through">{c.old ?? '—'}</span>
+                            <div key={c.key} className="flex min-w-0 flex-wrap gap-2 text-[11px] text-gray-500">
+                              <span className="w-full min-w-0 break-all font-mono md:w-[11.25rem] md:shrink-0">{c.key}</span>
+                              <span className="min-w-0 break-all text-red-400/70 line-through">{c.old ?? '—'}</span>
                               <span>→</span>
-                              <span className="text-emerald-400/70">{c.new ?? '—'}</span>
+                              <span className="min-w-0 break-all text-emerald-400/70">{c.new ?? '—'}</span>
                             </div>
                           ))}
                         </div>
@@ -385,7 +398,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                           })
                         }
                         disabled={selectionMutation.isPending}
-                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                        className="min-h-11 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50"
                       >
                         {t('presetVersions.selection.useVersion', {
                           version: selected.version_number,
@@ -403,7 +416,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                               })
                             }
                             disabled={selectionMutation.isPending}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                            className="min-h-11 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
                           >
                             {t('presetVersions.selection.acceptUpdate', {
                               version: latest.version_number,
@@ -417,7 +430,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                               })
                             }
                             disabled={selectionMutation.isPending}
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-gray-200 text-sm rounded-lg disabled:opacity-50"
+                            className="min-h-11 rounded-lg bg-white/10 px-4 py-2 text-sm text-gray-200 hover:bg-white/20 disabled:opacity-50"
                           >
                             {t('presetVersions.selection.keepVersion', {
                               version: savedPreset.selected_version_number,
@@ -433,7 +446,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                     {!confirmRestore ? (
                       <button
                         onClick={() => setConfirmRestore(true)}
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg transition-colors"
+                        className="min-h-11 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-500"
                       >
                         {t('presetVersions.restore.button', { version: selected.version_number })}
                       </button>
@@ -442,17 +455,17 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                         <p className="text-sm text-gray-300">
                           {t('presetVersions.restore.confirmBody', { version: selected.version_number })}
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => restoreMutation.mutate(selected.id)}
                             disabled={restoreMutation.isPending}
-                            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                            className="min-h-11 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
                           >
                             {t('presetVersions.restore.confirm')}
                           </button>
                           <button
                             onClick={() => setConfirmRestore(false)}
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-gray-200 text-sm rounded-lg"
+                            className="min-h-11 rounded-lg bg-white/10 px-4 py-2 text-sm text-gray-200 hover:bg-white/20"
                           >
                             {t('common.cancel')}
                           </button>
