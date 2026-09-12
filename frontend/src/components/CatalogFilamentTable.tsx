@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState, type MouseEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
@@ -24,6 +24,7 @@ import {
 import { formatDate } from '../utils/formatDate';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { isPluginEmbed } from '../utils/pluginBridge';
+import { catalogItemAnchorId } from '../utils/catalogReturnState';
 import { FilamentHandlingBadges } from './FilamentHandlingBadges';
 import { FilamentPreview } from './FilamentPreview';
 import { MarketNotice } from './MarketNotice';
@@ -37,6 +38,7 @@ interface CatalogFilamentTableProps {
   savedPresetIds?: Set<number>;
   configuredNozzleHrc?: number | null;
   printerMatchedIds?: Set<number>;
+  onOpenFilament: (filament: Filament) => void;
 }
 
 const EMPTY_IDS = new Set<number>();
@@ -50,6 +52,7 @@ export function CatalogFilamentTable({
   savedPresetIds = EMPTY_IDS,
   configuredNozzleHrc = null,
   printerMatchedIds = EMPTY_IDS,
+  onOpenFilament,
 }: CatalogFilamentTableProps) {
   const { t } = useTranslation();
 
@@ -88,6 +91,7 @@ export function CatalogFilamentTable({
               savedPresetIds={savedPresetIds}
               configuredNozzleHrc={configuredNozzleHrc}
               fitsPrinter={printerMatchedIds.has(filament.id)}
+              onOpenFilament={onOpenFilament}
             />
           ))}
         </tbody>
@@ -104,6 +108,7 @@ interface CatalogFilamentTableRowProps {
   savedPresetIds: Set<number>;
   configuredNozzleHrc: number | null;
   fitsPrinter: boolean;
+  onOpenFilament: (filament: Filament) => void;
 }
 
 const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
@@ -114,9 +119,9 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
   savedPresetIds,
   configuredNozzleHrc,
   fitsPrinter,
+  onOpenFilament,
 }: CatalogFilamentTableRowProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
   const presetSummaries = filament.preset_summaries && filament.preset_summaries.length > 0
     ? filament.preset_summaries
@@ -162,7 +167,7 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
   const openFilament = (event: MouseEvent<HTMLTableRowElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest('a, button')) return;
-    navigate(materialPath);
+    onOpenFilament(filament);
   };
 
   const presetBadge = currentPreset
@@ -177,6 +182,7 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
   return (
     <Fragment>
       <tr
+        id={catalogItemAnchorId(filament.id)}
         onClick={openFilament}
         className="cursor-pointer align-top text-sm text-gray-300 transition-colors hover:bg-white/[0.05]"
       >
@@ -208,6 +214,12 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
         <th scope="row" className="px-3 py-4 font-normal">
           <Link
             to={materialPath}
+            onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenFilament(filament);
+            }}
             className="block font-semibold text-white transition-colors hover:text-purple-300 hover:underline"
           >
             {filament.name}

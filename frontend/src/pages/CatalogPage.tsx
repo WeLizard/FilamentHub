@@ -48,6 +48,14 @@ import { filamentPublicPath } from '../utils/catalogUrls';
 import { sortedCountries } from '../utils/countries';
 import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
 import type { FilamentColorGroup } from '../types/api';
+import {
+  catalogItemAnchorId,
+  parseCatalogSearch,
+  readCatalogReturn,
+  recordCatalogReturn,
+  updateCatalogSearch,
+  type CatalogFilterParam,
+} from '../utils/catalogReturnState';
 
 const CATALOG_PAGE_SIZE = 24;
 const DESKTOP_TABLE_MEDIA_QUERY = '(min-width: 1280px)';
@@ -62,26 +70,59 @@ export const CatalogPage: React.FC = () => {
   const canUseTableView = useDesktopCatalogTable();
   const effectiveViewMode = canUseTableView ? viewMode : 'grid';
   const queryClient = useQueryClient();
-  const [searchQuery, setSearchQuery] = useState('');
+  const initialUrlFilters = useRef(parseCatalogSearch(location.search).filters);
+  const [searchQuery, setSearchQuery] = useState(initialUrlFilters.current.q);
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
-  const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
-  const [colorGroupFilter, setColorGroupFilter] = useState<FilamentColorGroup | 'multicolor' | null>(null);
-  const [brandFilter, setBrandFilter] = useState<number | null>(null);
+  const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(initialUrlFilters.current.material);
+  const [colorGroupFilter, setColorGroupFilter] = useState<FilamentColorGroup | 'multicolor' | null>(initialUrlFilters.current.color);
+  const [brandFilter, setBrandFilter] = useState<number | null>(initialUrlFilters.current.brand);
   const [brandSearch, setBrandSearch] = useState('');
   const debouncedBrandSearch = useDebounce(brandSearch.trim(), 250);
-  const [printerFilter, setPrinterFilter] = useState<number | null>(null);
+  const [printerFilter, setPrinterFilter] = useState<number | null>(initialUrlFilters.current.printer);
   const [printerSearch, setPrinterSearch] = useState('');
   const debouncedPrinterSearch = useDebounce(printerSearch.trim(), 250);
-  const [catalogCountry, setCatalogCountry] = useState<string | null>(readerCountry ?? null);
+  const [catalogCountry, setCatalogCountry] = useState<string | null>(initialUrlFilters.current.country);
   const [countrySearch, setCountrySearch] = useState('');
   const configuredNozzleHrc = useConfiguredNozzleHrc();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
 
+  const shouldApplyReaderCountry = useRef(!new URLSearchParams(location.search).has('country'));
+  const restoredEntryRef = useRef<string | null>(null);
+
+  const replaceCatalogParam = useCallback((name: CatalogFilterParam, value: string | number | null) => {
+    const search = updateCatalogSearch(location.search, name, value);
+    navigate(
+      { pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash },
+      { replace: true, state: location.state },
+    );
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
   useEffect(() => {
-    setCatalogCountry(readerCountry ?? null);
-  }, [readerCountry]);
+    const { filters, canonicalSearch } = parseCatalogSearch(location.search);
+    setSearchQuery(filters.q);
+    setMaterialTypeFilter(filters.material);
+    setColorGroupFilter(filters.color);
+    setBrandFilter(filters.brand);
+    setPrinterFilter(filters.printer);
+    setCatalogCountry(filters.country);
+    const currentSearch = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    if (canonicalSearch !== currentSearch) {
+      navigate(
+        { pathname: location.pathname, search: canonicalSearch ? `?${canonicalSearch}` : '', hash: location.hash },
+        { replace: true, state: location.state },
+      );
+    }
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    if (!readerCountry || !/^[a-z]{2}$/i.test(readerCountry) || !shouldApplyReaderCountry.current) return;
+    shouldApplyReaderCountry.current = false;
+    const country = readerCountry.toUpperCase();
+    setCatalogCountry(country);
+    replaceCatalogParam('country', country);
+  }, [readerCountry, replaceCatalogParam]);
   
   // Загружаем список сохранённых пресетов
   const { data: savedPresets } = useQuery({
@@ -192,8 +233,19 @@ export const CatalogPage: React.FC = () => {
   }, []);
 
   const handleOpenFilament = useCallback((filament: Filament) => {
-    navigate(filamentPublicPath(filament));
-  }, [navigate]);
+    const anchorId = catalogItemAnchorId(filament.id);
+    const anchor = document.getElementById(anchorId);
+    const scrollY = window.scrollY;
+    recordCatalogReturn({
+      version: 1,
+      entryKey: location.key,
+      catalogUrl: `${location.pathname}${location.search}${location.hash}`,
+      anchorId,
+      scrollY,
+      anchorOffset: anchor ? -anchor.getBoundingClientRect().top : 0,
+    });
+    navigate(filamentPublicPath(filament), { state: { from: 'catalog', catalogEntryKey: location.key } });
+  }, [location.hash, location.key, location.pathname, location.search, navigate]);
 
   // Загружаем материалы
   const {
@@ -291,6 +343,25 @@ export const CatalogPage: React.FC = () => {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!filamentsData || restoredEntryRef.current === location.key) return;
+    restoredEntryRef.current = location.key;
+    const marker = readCatalogReturn(
+      location.key,
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    if (!marker) return;
+    window.requestAnimationFrame(() => {
+      const anchor = document.getElementById(marker.anchorId);
+      if (!anchor) {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        return;
+      }
+      const anchorTop = window.scrollY + anchor.getBoundingClientRect().top;
+      window.scrollTo({ top: Math.max(0, anchorTop + marker.anchorOffset), behavior: 'auto' });
+    });
+  }, [filamentsData, location.hash, location.key, location.pathname, location.search]);
+
+  useEffect(() => {
     const target = loadMoreRef.current;
     if (!target || !hasNextPage || typeof IntersectionObserver === 'undefined') {
       return;
@@ -376,9 +447,13 @@ export const CatalogPage: React.FC = () => {
               <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
+                maxLength={200}
                 placeholder={t('catalogPage.searchPlaceholder')}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  replaceCatalogParam('q', e.target.value);
+                }}
                 className="w-full rounded-xl border border-white/20 bg-white/10 py-3 pl-10 pr-4 text-sm text-white placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 sm:pl-12 sm:text-base"
               />
             </div>
@@ -399,6 +474,7 @@ export const CatalogPage: React.FC = () => {
               value={materialTypeFilter || ''}
               onChange={(val) => {
                 setMaterialTypeFilter(val === '' ? null : (val as string));
+                replaceCatalogParam('material', val === '' ? null : String(val));
               }}
               options={[
                 { value: '', label: t('catalogPage.allTypes') },
@@ -417,6 +493,7 @@ export const CatalogPage: React.FC = () => {
                       ? next as FilamentColorGroup
                       : null,
                 );
+                replaceCatalogParam('color', next === '' ? null : next);
               }}
               options={[
                 { value: '', label: t('catalogPage.allColors') },
@@ -431,7 +508,9 @@ export const CatalogPage: React.FC = () => {
             <Dropdown
               value={brandFilter || ''}
               onChange={(val) => {
-                setBrandFilter(val === '' ? null : Number(val));
+                const next = val === '' ? null : Number(val);
+                setBrandFilter(next);
+                replaceCatalogParam('brand', next);
               }}
               options={[
                 { value: '', label: t('catalogPage.allBrands') },
@@ -445,7 +524,9 @@ export const CatalogPage: React.FC = () => {
             <Dropdown
               value={printerFilter ?? ''}
               onChange={(value) => {
-                setPrinterFilter(value === '' ? null : Number(value));
+                const next = value === '' ? null : Number(value);
+                setPrinterFilter(next);
+                replaceCatalogParam('printer', next);
               }}
               options={printerOptions}
               placeholder={t('catalogPage.allPrinters')}
@@ -455,7 +536,12 @@ export const CatalogPage: React.FC = () => {
             />
             <Dropdown
               value={catalogCountry ?? ''}
-              onChange={(value) => setCatalogCountry(value === '' ? null : String(value))}
+              onChange={(value) => {
+                shouldApplyReaderCountry.current = false;
+                const next = value === '' ? null : String(value);
+                setCatalogCountry(next);
+                replaceCatalogParam('country', next);
+              }}
               options={[
                 { value: '', label: t('catalogPage.generalMarket') },
                 ...countryOptions,
@@ -515,6 +601,7 @@ export const CatalogPage: React.FC = () => {
                 savedPresetIds={savedPresetIds}
                 configuredNozzleHrc={configuredNozzleHrc}
                 printerMatchedIds={printerMatchedIds}
+                onOpenFilament={handleOpenFilament}
               />
             )}
           </OffscreenSection>
@@ -705,6 +792,7 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
 
   return (
     <div 
+      id={catalogItemAnchorId(filament.id)}
       onClick={handleCardClick}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '620px' }}
       className="bg-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
@@ -732,6 +820,12 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
             <h3 className="min-w-0 truncate text-lg font-bold sm:text-xl">
               <Link
                 to={filamentPublicPath(filament)}
+                onClick={(event) => {
+                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onClick(filament);
+                }}
                 className="text-white transition-colors group-hover:text-purple-300 hover:underline"
               >
                 {filament.name}

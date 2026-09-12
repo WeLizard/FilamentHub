@@ -61,6 +61,7 @@ import {
   filamentVariantLabel,
 } from '../utils/catalogUrls';
 import { absoluteLocalizedUrl, normalizeSiteLocale } from '../utils/siteLocale';
+import { navigateBackToCatalog } from '../utils/catalogReturnState';
 import { useConfigurationPresetRecommendation } from '../hooks/useConfigurationPresetRecommendation';
 import {
   PresetRecommendationEvidence,
@@ -216,6 +217,7 @@ export const FilamentDetailPage: React.FC = () => {
   
   // Определяем откуда пришли (из каталога или профиля)
   const cameFrom = location.state?.from || 'catalog';
+  const handleBackToCatalog = () => navigateBackToCatalog(navigate, location.state);
 
   const openDetailTab = (tab: 'presets' | 'reviews') => {
     setActiveTab(tab);
@@ -572,7 +574,7 @@ export const FilamentDetailPage: React.FC = () => {
         aria-label={t('filamentDetailPage.backToCatalog')}
         className="flex min-w-0 items-center gap-1.5 text-xs text-gray-400 md:text-sm"
       >
-        <button onClick={() => navigate('/')} className="shrink-0 hover:text-white">
+        <button onClick={handleBackToCatalog} className="shrink-0 hover:text-white">
           {t('filamentDetailPage.backToCatalog')}
         </button>
         <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

@@ -3,16 +3,18 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CatalogPage } from './CatalogPage';
 
-const { listFilamentsMock, listBrandsMock, listPrintersMock, navigateMock } = vi.hoisted(() => ({
+const { listFilamentsMock, listBrandsMock, listPrintersMock, navigateMock, locationMock, readerCountryMock } = vi.hoisted(() => ({
   listFilamentsMock: vi.fn(),
   listBrandsMock: vi.fn(),
   listPrintersMock: vi.fn(),
   navigateMock: vi.fn(),
+  locationMock: { pathname: '/', search: '', hash: '', state: null as unknown, key: 'test' },
+  readerCountryMock: { value: null as string | null },
 }));
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => navigateMock,
-  useLocation: () => ({ pathname: '/', search: '', hash: '', state: null, key: 'test' }),
+  useLocation: () => locationMock,
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
     <a href={to} {...props}>{children}</a>
   ),
@@ -33,6 +35,10 @@ vi.mock('../hooks/useConfiguredNozzleHrc', () => ({
   useConfiguredNozzleHrc: () => null,
 }));
 
+vi.mock('../hooks/useReaderCountry', () => ({
+  useReaderCountry: () => readerCountryMock.value,
+}));
+
 vi.mock('../components/SEOHead', () => ({
   SEOHead: () => null,
 }));
@@ -44,7 +50,7 @@ vi.mock('../api/client', () => ({
   },
   brandsAPI: {
     list: (...args: unknown[]) => listBrandsMock(...args),
-    get: vi.fn(),
+    get: vi.fn().mockResolvedValue({ id: 3, name: 'FiberLab' }),
   },
   printersAPI: {
     list: (...args: unknown[]) => listPrintersMock(...args),
@@ -147,6 +153,10 @@ describe('CatalogPage', () => {
     window.localStorage.clear();
     stubDesktopLayout(false);
     navigateMock.mockReset();
+    Object.assign(locationMock, { pathname: '/', search: '', hash: '', state: null, key: 'test' });
+    readerCountryMock.value = null;
+    window.history.replaceState({}, document.title);
+    vi.stubGlobal('scrollTo', vi.fn());
     intersectionCallback = null;
     class FakeIntersectionObserver {
       observe = vi.fn();
@@ -332,7 +342,14 @@ describe('CatalogPage', () => {
     expect(await screen.findByRole('img', { name: 'QR PETG CF' })).toBeInTheDocument();
 
     fireEvent.click(row!);
-    expect(navigateMock).toHaveBeenCalledWith('/brands/fiberlab/filaments/petg-cf');
+    expect(navigateMock).toHaveBeenCalledWith('/brands/fiberlab/filaments/petg-cf', {
+      state: { from: 'catalog', catalogEntryKey: 'test' },
+    });
+    navigateMock.mockClear();
+    fireEvent.click(screen.getByRole('link', { name: 'PETG CF' }));
+    expect(navigateMock).toHaveBeenCalledWith('/brands/fiberlab/filaments/petg-cf', {
+      state: { from: 'catalog', catalogEntryKey: 'test' },
+    });
 
     firstRender.unmount();
     renderCatalog();
@@ -360,6 +377,76 @@ describe('CatalogPage', () => {
     expect(screen.queryByRole('table', { name: 'catalogPage.tableCaption' })).not.toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
       anonymous: { 'catalog.resultsView': 'list' },
+    });
+  });
+
+  it('hydrates canonical URL filters and replaces invalid values without losing auth or hash', async () => {
+    Object.assign(locationMock, {
+      search: '?auth=login&q=PETG&material=PETG&color=red&brand=3&printer=7&country=de&bad=kept',
+      hash: '#results',
+    });
+    listFilamentsMock.mockResolvedValue(catalogResponse([]));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(<QueryClientProvider client={queryClient}><CatalogPage /></QueryClientProvider>);
+
+    expect(await screen.findByPlaceholderText('catalogPage.searchPlaceholder')).toHaveValue('PETG');
+    await waitFor(() => expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({
+      search: 'PETG', material_type: 'PETG', color_group: 'red', brand_id: 3, printer_id: 7, country: 'DE',
+    })));
+    expect(navigateMock).toHaveBeenCalledWith({
+      pathname: '/',
+      search: '?auth=login&q=PETG&material=PETG&color=red&brand=3&printer=7&country=DE&bad=kept',
+      hash: '#results',
+    }, { replace: true, state: null });
+  });
+
+  it('uses replace for transient search changes and preserves unrelated URL state', async () => {
+    Object.assign(locationMock, { search: '?auth=login&future=1', hash: '#results', state: { modal: true } });
+    listFilamentsMock.mockResolvedValue(catalogResponse([]));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><CatalogPage /></QueryClientProvider>);
+
+    fireEvent.change(await screen.findByPlaceholderText('catalogPage.searchPlaceholder'), { target: { value: 'ABS' } });
+    expect(navigateMock).toHaveBeenLastCalledWith({
+      pathname: '/', search: '?auth=login&future=1&q=ABS', hash: '#results',
+    }, { replace: true, state: { modal: true } });
+  });
+
+  it('uses reader country only as a default when the URL has no country', async () => {
+    readerCountryMock.value = 'DE';
+    listFilamentsMock.mockResolvedValue(catalogResponse([]));
+    const firstClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = render(<QueryClientProvider client={firstClient}><CatalogPage /></QueryClientProvider>);
+    await waitFor(() => expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({ country: 'DE' })));
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ search: '?country=DE' }), expect.objectContaining({ replace: true }));
+    first.unmount();
+
+    navigateMock.mockReset();
+    listFilamentsMock.mockClear();
+    locationMock.search = '?country=FR';
+    const secondClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={secondClient}><CatalogPage /></QueryClientProvider>);
+    await waitFor(() => expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({ country: 'FR' })));
+    expect(navigateMock).not.toHaveBeenCalledWith(expect.objectContaining({ search: '?country=DE' }), expect.anything());
+  });
+
+  it('routes both a mobile card background and its material title through the return-state callback', async () => {
+    listFilamentsMock.mockResolvedValue(catalogResponse([interactiveTableFilament]));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><CatalogPage /></QueryClientProvider>);
+
+    const title = await screen.findByRole('link', { name: 'PETG CF' });
+    const card = document.getElementById('catalog-filament-17');
+    expect(card).not.toBeNull();
+    fireEvent.click(card!);
+    expect(navigateMock).toHaveBeenLastCalledWith('/brands/fiberlab/filaments/petg-cf', {
+      state: { from: 'catalog', catalogEntryKey: 'test' },
+    });
+    navigateMock.mockClear();
+    fireEvent.click(title);
+    expect(navigateMock).toHaveBeenCalledWith('/brands/fiberlab/filaments/petg-cf', {
+      state: { from: 'catalog', catalogEntryKey: 'test' },
     });
   });
 });
