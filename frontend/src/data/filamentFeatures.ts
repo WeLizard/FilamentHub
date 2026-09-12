@@ -5,7 +5,11 @@ export const DECORATIVE_VISUAL_EFFECT_CODES = [
 export const ADDITIVE_CODES = [
   'carbon_fiber', 'glass_fiber', 'aramid_fiber', 'basalt_fiber', 'natural_fiber',
   'wood', 'bamboo', 'cork', 'metal_powder', 'mineral', 'ceramic', 'glass_beads',
-  'carbon_nanotubes', 'carbon_black', 'graphene', 'hollow_spheres', 'ptfe',
+  'debinding_metal', 'carbon_nanotubes', 'carbon_black', 'graphene', 'phosphor',
+  'tungsten_fill', 'bismuth_fill', 'hollow_spheres', 'ptfe', 'active_foaming_agent',
+  'flame_retardant_additives', 'uv_stabilizers_hals', 'impact_modifiers',
+  'compatibilizers', 'chain_extenders', 'nucleating_agents',
+  'antioxidants_heat_stabilizers', 'antimicrobial_additives', 'laser_marking_additives',
 ] as const;
 
 export const PROPERTY_CLAIM_CODES = [

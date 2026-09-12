@@ -214,6 +214,52 @@ async def test_create_filament_with_combined_material_features(
 
 
 @pytest.mark.asyncio
+async def test_known_functional_additives_round_trip_for_unverified_brand(
+    auth_client: AsyncClient, db_session: AsyncSession
+):
+    """Workbook-backed additives are catalog vocabulary, not custom values."""
+    brand = Brand(
+        name="Known Additives",
+        slug="known-additives",
+        verified=False,
+        active=True,
+    )
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    additive_codes = [
+        "debinding_metal",
+        "phosphor",
+        "tungsten_fill",
+        "bismuth_fill",
+        "active_foaming_agent",
+        "flame_retardant_additives",
+        "uv_stabilizers_hals",
+        "impact_modifiers",
+        "compatibilizers",
+        "chain_extenders",
+        "nucleating_agents",
+        "antioxidants_heat_stabilizers",
+        "antimicrobial_additives",
+        "laser_marking_additives",
+    ]
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Functional Additive Reference",
+            "material_type": "PLA",
+            "additives": [{"code": code} for code in additive_codes],
+        },
+    )
+
+    assert response.status_code == 201
+    assert [item["code"] for item in response.json()["additives"]] == additive_codes
+
+
+@pytest.mark.asyncio
 async def test_custom_material_feature_rejected_for_unverified_brand(
     auth_client: AsyncClient, db_session: AsyncSession
 ):
