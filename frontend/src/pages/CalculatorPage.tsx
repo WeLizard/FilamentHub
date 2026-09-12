@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
   BriefcaseBusiness,
@@ -92,6 +92,7 @@ import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/qu
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import { formatBytes } from '../utils/formatBytes';
+import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
 import {
   enqueueEconomicsSave,
   economicsReadinessResultNoteKey,
@@ -2295,12 +2296,21 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     },
   });
 
-  const historyQuery = useQuery({
-    queryKey: ['calculator-pro', 'history'],
-    queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
+  const historyQuery = useInfiniteQuery({
+    queryKey: calculatorHistoryKeys.feed(20),
+    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistory(
+      { size: 20, cursor: pageParam },
+      signal,
+    ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     staleTime: 30_000,
     enabled: hasCalculatorAccess,
   });
+  const historyEntries = useMemo(
+    () => historyQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [historyQuery.data?.pages],
+  );
 
   const saveHistoryMutation = useMutation({
     mutationFn: (payload: CalculatorHistoryEntryCreate) => calculatorAPI.saveHistory(payload),
@@ -4173,7 +4183,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             <div className="grid gap-3 sm:min-w-[24rem] sm:grid-cols-3">
               <MetricTile
                 label={tc('workspaceSavedEstimates')}
-                value={historyQuery.isPending ? '—' : String(historyQuery.data?.total ?? 0)}
+                value={historyQuery.isPending ? '—' : String(historyQuery.data?.pages[0]?.total ?? 0)}
               />
               <MetricTile label={tc('workspaceQuoteDraft')} value={String(quoteItems.length)} />
               <MetricTile label={tc('workspaceCurrentJobs')} value={String(currentJobCount)} />
@@ -4318,11 +4328,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         />
       ) : (
         <HistoryView
-          entries={historyQuery.data?.items ?? []}
+          entries={historyEntries}
           historyLoadError={historyLoadError}
+          historyLoadMoreError={historyQuery.isFetchNextPageError ? tc('historyLoadMoreError') : null}
           isDeletingHistory={deleteHistoryMutation.isPending}
           isLoading={historyQuery.isPending}
-          total={historyQuery.data?.total ?? 0}
+          isLoadingMore={historyQuery.isFetchingNextPage}
+          hasMore={historyQuery.hasNextPage}
+          total={historyQuery.data?.pages[0]?.total ?? 0}
+          onLoadMore={() => void historyQuery.fetchNextPage()}
           onDeleteEntry={handleDeleteHistory}
           onRestoreEntry={handleRestoreHistory}
           formatCurrency={formatCurrency}
@@ -7279,20 +7293,28 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 interface HistoryViewProps {
   entries: CalculatorHistoryEntry[];
   historyLoadError: string | null;
+  historyLoadMoreError: string | null;
   isDeletingHistory: boolean;
   isLoading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
   total: number;
+  onLoadMore: () => void;
   onDeleteEntry: (entry: CalculatorHistoryEntry) => void;
   onRestoreEntry: (entry: CalculatorHistoryEntry) => void;
   formatCurrency: (value: number | null | undefined) => string;
 }
 
-const HistoryView: React.FC<HistoryViewProps> = ({
+export const HistoryView: React.FC<HistoryViewProps> = ({
   entries,
   historyLoadError,
+  historyLoadMoreError,
   isDeletingHistory,
   isLoading,
+  isLoadingMore,
+  hasMore,
   total,
+  onLoadMore,
   onDeleteEntry,
   onRestoreEntry,
   formatCurrency,
@@ -7387,6 +7409,20 @@ const HistoryView: React.FC<HistoryViewProps> = ({
               </div>
             );
           })}
+          {historyLoadMoreError ? (
+            <p className="text-sm text-red-200">{historyLoadMoreError}</p>
+          ) : null}
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={isLoadingMore}
+              className={`${ghostButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isLoadingMore ? tc('historyLoadingMore') : tc('historyLoadMore')}
+            </button>
+          ) : null}
         </div>
       )}
     </SurfaceCard>

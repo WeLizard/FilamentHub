@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -13,6 +13,9 @@ class CalculatorHistoryEntry(Base):
     """Persisted Calculator Pro estimate snapshot for a user."""
 
     __tablename__ = "calculator_history_entries"
+    __table_args__ = (
+        Index("ix_calc_history_user_created_id", "user_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(

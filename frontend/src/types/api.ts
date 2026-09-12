@@ -1969,6 +1969,8 @@ export interface CalculatorHistoryEntryCreate {
 export interface CalculatorHistoryListResponse {
   items: CalculatorHistoryEntry[];
   total: number;
+  next_cursor?: string | null;
+  has_more?: boolean;
 }
 
 export interface CalculatorProfileResponse {

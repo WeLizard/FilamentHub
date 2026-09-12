@@ -1,5 +1,8 @@
 """Calculator endpoints."""
 
+import base64
+import binascii
+import json
 import logging
 import math
 import re
@@ -11,7 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +22,7 @@ from app.core.capacity import Gate
 from app.core.config import settings
 from app.core.dependencies import get_current_verified_user, require_calculator_access
 from app.core.errors import (
+    ERR_CALCULATOR_HISTORY_CURSOR_INVALID,
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
     ERR_CALCULATOR_TRIAL_ALREADY_USED,
     ERR_FILE_TOO_LARGE,
@@ -444,6 +448,39 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )
+
+
+def _encode_history_cursor(entry: CalculatorHistoryEntry) -> str:
+    created_at = entry.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    payload = json.dumps(
+        [created_at.astimezone(timezone.utc).isoformat(), entry.id],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_history_cursor(cursor: str) -> tuple[datetime, int]:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        raw = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
+        payload = json.loads(raw.decode("utf-8"))
+        if (
+            not isinstance(payload, list)
+            or len(payload) != 2
+            or not isinstance(payload[0], str)
+            or not isinstance(payload[1], int)
+            or isinstance(payload[1], bool)
+            or payload[1] < 1
+        ):
+            raise ValueError("invalid cursor payload")
+        created_at = datetime.fromisoformat(payload[0])
+        if created_at.tzinfo is None:
+            raise ValueError("cursor timestamp must include a timezone")
+        return created_at.astimezone(timezone.utc), payload[1]
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+        raise_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ERR_CALCULATOR_HISTORY_CURSOR_INVALID)
 
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
@@ -1090,6 +1127,7 @@ async def list_calculator_history(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    cursor: str | None = Query(None, min_length=1, max_length=512),
 ) -> CalculatorHistoryEntryListResponse:
     """List saved Calculator Pro history entries for the current user."""
     query = select(CalculatorHistoryEntry).where(CalculatorHistoryEntry.user_id == current_user.id)
@@ -1101,15 +1139,37 @@ async def list_calculator_history(
         )
     ).scalar_one()
 
-    offset = (page - 1) * size
+    if cursor is not None:
+        cursor_created_at, cursor_id = _decode_history_cursor(cursor)
+        query = query.where(
+            or_(
+                CalculatorHistoryEntry.created_at < cursor_created_at,
+                and_(
+                    CalculatorHistoryEntry.created_at == cursor_created_at,
+                    CalculatorHistoryEntry.id < cursor_id,
+                ),
+            )
+        )
+        offset = 0
+    else:
+        offset = (page - 1) * size
     result = await db.execute(
-        query.order_by(CalculatorHistoryEntry.created_at.desc()).offset(offset).limit(size)
+        query.order_by(
+            CalculatorHistoryEntry.created_at.desc(),
+            CalculatorHistoryEntry.id.desc(),
+        )
+        .offset(offset)
+        .limit(size + 1)
     )
-    entries = result.scalars().all()
+    rows = list(result.scalars().all())
+    has_more = len(rows) > size
+    entries = rows[:size]
 
     return CalculatorHistoryEntryListResponse(
         items=[_serialize_history_entry(entry) for entry in entries],
         total=total,
+        next_cursor=_encode_history_cursor(entries[-1]) if has_more and entries else None,
+        has_more=has_more,
     )
 
 

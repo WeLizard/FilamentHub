@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+const fetchNextHistoryPage = vi.fn();
+
 const job = {
   id: 41,
   logical_id: 'job-41',
@@ -63,6 +65,18 @@ vi.mock('@tanstack/react-query', () => ({
     queryKey[0] === 'print-jobs'
       ? { data: { items: [job], total: 1 }, isLoading: false, isError: false, isFetching: false }
       : { data: undefined, isLoading: false, isError: false, isFetching: false },
+  useInfiniteQuery: () => ({
+    data: {
+      pages: [
+        { items: [], total: 51, next_cursor: 'next-page' },
+        { items: [{ id: 51, title: 'Estimate beyond first page', parsed_jobs: [] }], total: 51, next_cursor: null },
+      ],
+    },
+    hasNextPage: true,
+    fetchNextPage: fetchNextHistoryPage,
+    isFetchingNextPage: false,
+    isFetchNextPageError: false,
+  }),
   useMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -95,5 +109,21 @@ describe('PrintJobHistoryModal usage segments', () => {
     expect(screen.getByText('printJobs.usageSegments.spool:id=102')).toBeInTheDocument();
     expect(screen.getByText('printJobs.usageSegments.evidence.route_proof')).toBeInTheDocument();
     expect(screen.getByText('printJobs.usageSegments.evidence.current_assignment')).toBeInTheDocument();
+  });
+
+  it('keeps calculations beyond the first page selectable and can request another page', async () => {
+    const { PrintJobHistoryModal } = await import('../components/PrintJobHistoryModal');
+
+    render(
+      <PrintJobHistoryModal
+        printer={{ id: 7, name: 'Workshop printer', material_systems: [] } as never}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'printJobs.new' }));
+    expect(screen.getByRole('option', { name: 'Estimate beyond first page' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.calculator.historyLoadMore' }));
+    expect(fetchNextHistoryPage).toHaveBeenCalledTimes(1);
   });
 });

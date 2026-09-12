@@ -859,6 +859,8 @@ class CalculatorHistoryEntryListResponse(BaseModel):
 
     items: list[CalculatorHistoryEntryResponse]
     total: int
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 # ── Calculator profile (server-persisted settings) ──────────────────────

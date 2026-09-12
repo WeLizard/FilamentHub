@@ -65,6 +65,7 @@ import {
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 import { filamentPublicPath } from '../utils/catalogUrls';
+import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -329,8 +330,8 @@ export const ProfilePage: React.FC = () => {
     navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
   };
   const workspaceHistoryQuery = useQuery({
-    queryKey: ['calculator-pro', 'history'],
-    queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
+    queryKey: calculatorHistoryKeys.summary,
+    queryFn: ({ signal }) => calculatorAPI.listHistory({ page: 1, size: 1 }, signal),
     enabled: userTab === 'calculator-pro' && (user?.has_calculator_access ?? false),
   });
   const workspaceSummaryQuery = useQuery({

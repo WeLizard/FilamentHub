@@ -2239,8 +2239,14 @@ export const calculatorAPI = {
     await api.delete(`/calculator/gcode-artifacts/${artifactId}`);
   },
 
-  listHistory: async (params?: { page?: number; size?: number }) => {
-    const response = await api.get<import('../types/api').CalculatorHistoryListResponse>('/calculator/history', { params });
+  listHistory: async (
+    params?: { page?: number; size?: number; cursor?: string | null },
+    signal?: AbortSignal,
+  ) => {
+    const response = await api.get<import('../types/api').CalculatorHistoryListResponse>(
+      '/calculator/history',
+      { params, signal },
+    );
     return response.data;
   },
 

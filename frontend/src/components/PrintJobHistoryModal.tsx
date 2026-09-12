@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   CalendarClock,
@@ -33,6 +33,7 @@ import type {
   PrintJobStatus,
 } from '../types/api';
 import { translateApiError } from '../utils/translateApiError';
+import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
 import {
   clearIdempotencyAttempt,
   idempotencyKeyForAttempt,
@@ -120,12 +121,21 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
     queryFn: () =>
       printJobsAPI.list({ physical_printer_id: printer.id, page, size: PAGE_SIZE }),
   });
-  const calculationsQuery = useQuery({
-    queryKey: ['calculator-pro', 'history'],
-    queryFn: () => calculatorAPI.listHistory({ page: 1, size: 50 }),
+  const calculationsQuery = useInfiniteQuery({
+    queryKey: calculatorHistoryKeys.selectable(50),
+    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistory(
+      { size: 50, cursor: pageParam },
+      signal,
+    ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: creating,
     staleTime: 30_000,
   });
+  const calculations = useMemo(
+    () => calculationsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [calculationsQuery.data?.pages],
+  );
   const slicesQuery = useQuery({
     queryKey: ['orca-slices'],
     queryFn: () => orcaSlicesAPI.list(50),
@@ -155,7 +165,7 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
     if (creating) setSelectedSpools(new Set(assignedSpoolIds));
   }, [assignedSpoolIds, creating]);
 
-  const selectedCalculation = calculationsQuery.data?.items.find(
+  const selectedCalculation = calculations.find(
     (entry) => entry.id === Number(calculationId),
   );
   const selectedCalculationJobs = calculationJobs(selectedCalculation);
@@ -240,7 +250,7 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
     setCalculationId(value);
     setCalculatorJobKey('');
     if (!value || title.trim()) return;
-    const entry = calculationsQuery.data?.items.find((item) => item.id === Number(value));
+    const entry = calculations.find((item) => item.id === Number(value));
     if (entry) setTitle(entry.title);
   };
 
@@ -322,10 +332,28 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                     className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/40"
                   >
                     <option value="">{t('printJobs.fields.withoutCalculation')}</option>
-                    {(calculationsQuery.data?.items ?? []).map((entry) => (
+                    {calculations.map((entry) => (
                       <option key={entry.id} value={entry.id}>{entry.title}</option>
                     ))}
                   </select>
+                  {calculationsQuery.hasNextPage ? (
+                    <button
+                      type="button"
+                      onClick={() => void calculationsQuery.fetchNextPage()}
+                      disabled={calculationsQuery.isFetchingNextPage}
+                      className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {calculationsQuery.isFetchingNextPage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      {calculationsQuery.isFetchingNextPage
+                        ? t('profilePage.calculator.historyLoadingMore')
+                        : t('profilePage.calculator.historyLoadMore')}
+                    </button>
+                  ) : null}
+                  {calculationsQuery.isFetchNextPageError ? (
+                    <span className="mt-2 block text-xs text-red-300">
+                      {t('profilePage.calculator.historyLoadMoreError')}
+                    </span>
+                  ) : null}
                 </label>
                 <label>
                   <span className="mb-1.5 block text-xs font-medium text-slate-300">
