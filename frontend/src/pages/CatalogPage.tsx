@@ -53,6 +53,7 @@ import {
   parseCatalogSearch,
   consumeCatalogReturn,
   recordCatalogReturn,
+  readCatalogReturn,
   updateCatalogSearch,
   type CatalogFilterParam,
 } from '../utils/catalogReturnState';
@@ -90,6 +91,7 @@ export const CatalogPage: React.FC = () => {
 
   const shouldApplyReaderCountry = useRef(initialUrlFilters.current.country === null);
   const restoredEntryRef = useRef<string | null>(null);
+  const restorationInFlightRef = useRef<symbol | null>(null);
 
   const replaceCatalogParam = useCallback((name: CatalogFilterParam, value: string | number | null) => {
     const search = updateCatalogSearch(location.search, name, value);
@@ -345,12 +347,13 @@ export const CatalogPage: React.FC = () => {
 
   useEffect(() => {
     if (!filamentsData || restoredEntryRef.current === location.key) return;
-    restoredEntryRef.current = location.key;
-    const marker = consumeCatalogReturn(
+    const marker = readCatalogReturn(
       location.key,
       `${location.pathname}${location.search}${location.hash}`,
     );
-    if (!marker) return;
+    if (!marker || restorationInFlightRef.current) return;
+    const attempt = Symbol('catalog-scroll-restoration');
+    restorationInFlightRef.current = attempt;
     // Browser restoration runs around POP rendering. Temporarily take ownership
     // and wait through two frames so our item-relative position is the final one.
     const previousScrollRestoration = 'scrollRestoration' in window.history
@@ -366,12 +369,16 @@ export const CatalogPage: React.FC = () => {
           const anchorTop = window.scrollY + anchor.getBoundingClientRect().top;
           window.scrollTo({ top: Math.max(0, anchorTop + marker.anchorOffset), behavior: 'auto' });
         }
+        consumeCatalogReturn(marker);
+        restoredEntryRef.current = location.key;
+        if (restorationInFlightRef.current === attempt) restorationInFlightRef.current = null;
         if (previousScrollRestoration !== null) window.history.scrollRestoration = previousScrollRestoration;
       });
     });
     return () => {
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      if (restorationInFlightRef.current === attempt) restorationInFlightRef.current = null;
       if (previousScrollRestoration !== null) window.history.scrollRestoration = previousScrollRestoration;
     };
   }, [filamentsData, location.hash, location.key, location.pathname, location.search]);

@@ -40,8 +40,8 @@ describe('catalog return state', () => {
     };
     recordCatalogReturn(marker);
 
-    expect(consumeCatalogReturn('entry-1', '/?q=PLA')).toEqual(marker);
-    expect(consumeCatalogReturn('entry-1', '/?q=PLA')).toBeNull();
+    expect(consumeCatalogReturn(marker)).toBe(true);
+    expect(consumeCatalogReturn(marker)).toBe(false);
     expect(window.history.state).toEqual({ idx: 4, key: 'router-key', usr: { kept: true } });
   });
 

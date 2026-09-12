@@ -83,17 +83,25 @@ export function recordCatalogReturn(marker: CatalogReturnMarker): void {
   window.history.replaceState({ ...safeState, [RETURN_STATE_KEY]: marker }, document.title);
 }
 
-export function consumeCatalogReturn(entryKey: string, catalogUrl: string): CatalogReturnMarker | null {
+export function readCatalogReturn(entryKey: string, catalogUrl: string): CatalogReturnMarker | null {
   if (typeof window === 'undefined') return null;
   const currentState = window.history.state;
   const candidate = currentState?.[RETURN_STATE_KEY] as Partial<CatalogReturnMarker> | undefined;
   if (candidate?.version !== 1 || candidate.entryKey !== entryKey || candidate.catalogUrl !== catalogUrl
     || typeof candidate.anchorId !== 'string' || typeof candidate.scrollY !== 'number'
     || typeof candidate.anchorOffset !== 'number') return null;
+  return candidate as CatalogReturnMarker;
+}
+
+export function consumeCatalogReturn(expected: CatalogReturnMarker): boolean {
+  const candidate = readCatalogReturn(expected.entryKey, expected.catalogUrl);
+  if (!candidate || candidate.anchorId !== expected.anchorId || candidate.scrollY !== expected.scrollY
+    || candidate.anchorOffset !== expected.anchorOffset) return false;
+  const currentState = window.history.state;
   const nextState = { ...currentState };
   delete nextState[RETURN_STATE_KEY];
   window.history.replaceState(nextState, document.title);
-  return candidate as CatalogReturnMarker;
+  return true;
 }
 
 export function isCatalogDetailOrigin(value: unknown): value is { from: 'catalog'; catalogEntryKey: string } {

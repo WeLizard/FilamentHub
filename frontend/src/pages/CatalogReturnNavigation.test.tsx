@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode, type ReactNode } from 'react';
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +8,14 @@ import { CatalogPage } from './CatalogPage';
 import { navigateBackToCatalog } from '../utils/catalogReturnState';
 
 const { listFilamentsMock } = vi.hoisted(() => ({ listFilamentsMock: vi.fn() }));
+let nextFrameId = 1;
+let frameQueue = new Map<number, FrameRequestCallback>();
+
+async function flushAnimationFrame() {
+  const callbacks = [...frameQueue.values()];
+  frameQueue.clear();
+  await act(async () => callbacks.forEach((callback) => callback(0)));
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -55,45 +64,59 @@ function CatalogRoute() {
   </>;
 }
 
-function mountFlow() {
+function mountFlow(strict = false) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
+  const router = <BrowserRouter>
+    <Routes>
+      <Route path="/" element={<CatalogRoute />} />
+      <Route path="/previous" element={<p>Previous page</p>} />
+      <Route path="/brands/:brand/filaments/:filament" element={<DetailStub />} />
+    </Routes>
+  </BrowserRouter>;
+  const content: ReactNode = strict ? <StrictMode>{router}</StrictMode> : router;
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<CatalogRoute />} />
-          <Route path="/previous" element={<p>Previous page</p>} />
-          <Route path="/brands/:brand/filaments/:filament" element={<DetailStub />} />
-        </Routes>
-      </BrowserRouter>
+      {content}
     </QueryClientProvider>,
   );
   return { ...view, queryClient };
 }
 
-function renderFlow(url = '/?q=PLA&auth=login#results', withPrevious = false) {
+function renderFlow(url = '/?q=PLA&auth=login#results', withPrevious = false, strict = false) {
   if (withPrevious) {
     window.history.replaceState({}, document.title, '/previous');
     window.history.pushState({}, document.title, url);
   } else {
     window.history.replaceState({}, document.title, url);
   }
-  return mountFlow();
+  return mountFlow(strict);
 }
 
 describe('catalog detail return navigation', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.history.replaceState({}, document.title);
+    Object.defineProperty(window.history, 'scrollRestoration', {
+      configurable: true,
+      writable: true,
+      value: 'auto',
+    });
+    nextFrameId = 1;
+    frameQueue = new Map();
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(),
     }));
     vi.stubGlobal('IntersectionObserver', class {
       observe() {} disconnect() {} unobserve() {} takeRecords() { return []; }
     });
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = nextFrameId++;
+      frameQueue.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frameQueue.delete(id); });
     vi.stubGlobal('scrollTo', vi.fn());
     vi.stubGlobal('scrollY', 500);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -107,20 +130,28 @@ describe('catalog detail return navigation', () => {
   });
 
   it('returns through browser history and restores an item from a cached second page', async () => {
-    const firstMount = renderFlow();
+    const firstMount = renderFlow('/?q=PLA&auth=login#results', false, true);
     fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.loadMore' }));
     const second = await screen.findByRole('link', { name: 'Second' });
     fireEvent.click(second);
     fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
 
     expect(await screen.findByRole('link', { name: 'Second' })).toBeInTheDocument();
+    await waitFor(() => expect(firstMount.queryClient.isFetching({ queryKey: ['filaments'] })).toBe(0));
+    expect(window.history.state.filamentHubCatalogReturn).toBeDefined();
+    expect(frameQueue.size).toBeGreaterThan(0);
+    expect(window.history.scrollRestoration).toBe('manual');
+    await flushAnimationFrame();
+    await flushAnimationFrame();
     await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'auto' }));
-    expect(listFilamentsMock).toHaveBeenCalledTimes(2);
     expect(window.history.state.filamentHubCatalogReturn).toBeUndefined();
+    expect(window.history.scrollRestoration).toBe('auto');
 
     firstMount.unmount();
     mountFlow();
     await screen.findByRole('link', { name: 'First' });
+    await flushAnimationFrame();
+    await flushAnimationFrame();
     expect(window.scrollTo).toHaveBeenCalledTimes(1);
   });
 
@@ -131,6 +162,9 @@ describe('catalog detail return navigation', () => {
     queryClient.removeQueries({ queryKey: ['filaments'] });
     fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
     await screen.findByRole('link', { name: 'First' });
+    await waitFor(() => expect(queryClient.isFetching({ queryKey: ['filaments'] })).toBe(0));
+    await flushAnimationFrame();
+    await flushAnimationFrame();
     await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' }));
   });
 
