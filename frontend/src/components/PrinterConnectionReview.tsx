@@ -7,8 +7,18 @@ import { translateApiError } from '../utils/translateApiError';
 import { Dropdown } from './Dropdown';
 import { physicalPrinterQueryKeys } from '../utils/physicalPrinterQueries';
 
-function ConnectionChoice({ connection, printers }: {
-  connection: PendingPrinterConnection; printers: PhysicalPrinter[];
+function ConnectionChoice({
+  connection,
+  printers,
+  candidateLookupPending,
+  candidateLookupError,
+  onRetryCandidateLookup,
+}: {
+  connection: PendingPrinterConnection;
+  printers: PhysicalPrinter[];
+  candidateLookupPending: boolean;
+  candidateLookupError: boolean;
+  onRetryCandidateLookup: () => void;
 }) {
   const { t } = useTranslation();
   const client = useQueryClient();
@@ -33,11 +43,19 @@ function ConnectionChoice({ connection, printers }: {
     <div className="space-y-2 rounded-lg border border-amber-400/20 p-3">
       <p className="text-sm text-white">{connection.preset_name ?? connection.provider}</p>
       <Dropdown size="sm" value={target} options={options} onChange={(value) => setTarget(String(value))}
-        placeholder={t('printerConnections.choose')} />
-      <button type="button" disabled={!target || mutation.isPending} onClick={() => mutation.mutate()}
+        placeholder={t('printerConnections.choose')}
+        disabled={candidateLookupPending || candidateLookupError} />
+      <button type="button"
+        disabled={!target || mutation.isPending || candidateLookupPending || candidateLookupError}
+        onClick={() => mutation.mutate()}
         className="rounded-lg bg-purple-600 px-3 py-2 text-sm text-white disabled:opacity-50">
         {t('printerConnections.confirm')}
       </button>
+      {candidateLookupError && (
+        <button type="button" onClick={onRetryCandidateLookup} className="text-sm text-amber-300">
+          {t('printerConnections.retry')}
+        </button>
+      )}
       {error && <p role="alert" className="text-sm text-rose-300">{
         translateApiError(t, error.response?.data?.detail, t('printerConnections.failed'))
       }</p>}
@@ -68,6 +86,9 @@ export function PrinterConnectionReview({
       staleTime: 30_000,
     })),
   });
+  const candidateQueryById = new Map(
+    missingCandidateIds.map((printerId, index) => [printerId, candidateQueries[index]]),
+  );
   const knownPrinters = [...printers];
   const knownIds = new Set(visibleIds);
   for (const query of candidateQueries) {
@@ -84,7 +105,26 @@ export function PrinterConnectionReview({
     <section className="space-y-3 rounded-xl border border-amber-400/30 bg-amber-500/5 p-4">
       <h4 className="font-semibold text-amber-200">{t('printerConnections.title')}</h4>
       <p className="text-sm text-gray-300">{t('printerConnections.hint')}</p>
-      {data.map((connection) => <ConnectionChoice key={`${connection.id}-${connection.revision}`} connection={connection} printers={knownPrinters} />)}
+      {data.map((connection) => {
+        const lookups = connection.candidate_printer_ids
+          .filter((printerId) => !visibleIds.has(printerId))
+          .map((printerId) => candidateQueryById.get(printerId))
+          .filter((query) => query !== undefined);
+        return (
+          <ConnectionChoice
+            key={`${connection.id}-${connection.revision}`}
+            connection={connection}
+            printers={knownPrinters}
+            candidateLookupPending={lookups.some((query) => query.isPending)}
+            candidateLookupError={lookups.some((query) => query.isError)}
+            onRetryCandidateLookup={() => {
+              void Promise.all(
+                lookups.filter((query) => query.isError).map((query) => query.refetch()),
+              );
+            }}
+          />
+        );
+      })}
     </section>
   );
 }

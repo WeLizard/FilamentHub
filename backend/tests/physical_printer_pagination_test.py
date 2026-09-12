@@ -2,11 +2,13 @@
 
 import base64
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
-from app.models.material_system import MaterialSystem
+from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
+from app.models.physical_printer_profile import UserPrinterProfileLink
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from tests.conftest import accepted_legal
@@ -26,7 +28,7 @@ async def test_physical_printer_feed_is_stable_owned_and_keeps_nested_shape(
     timestamp = datetime(2026, 9, 12, 12, tzinfo=timezone.utc)
     first = await _printer(db_session, auth_user.id, "First", timestamp)
     second = await _printer(db_session, auth_user.id, "Second", timestamp)
-    third = await _printer(db_session, auth_user.id, "Third", timestamp + timedelta(minutes=1))
+    third = await _printer(db_session, auth_user.id, "Third", timestamp)
     system = MaterialSystem(
         user_id=auth_user.id,
         physical_printer_id=first.id,
@@ -44,6 +46,37 @@ async def test_physical_printer_feed_is_stable_owned_and_keeps_nested_shape(
     )
     db_session.add_all([system, stranger])
     await db_session.flush()
+    slot = MaterialSlot(
+        user_id=auth_user.id,
+        material_system_id=system.id,
+        provider_index=0,
+        label="Direct",
+    )
+    connector = PhysicalPrinterConnector(
+        user_id=auth_user.id,
+        physical_printer_id=first.id,
+        material_system_id=system.id,
+        provider="manual",
+        transport="local",
+    )
+    profile = PrinterProfile(
+        owner_user_id=auth_user.id,
+        name="First configuration",
+        slug=f"printer-feed-{auth_user.id}",
+        is_official=False,
+        active=True,
+        source="user",
+        orcaslicer_settings={},
+    )
+    db_session.add_all([slot, connector, profile])
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=first.id,
+            printer_profile_id=profile.id,
+        )
+    )
     foreign = await _printer(db_session, stranger.id, "Foreign", timestamp)
     await db_session.commit()
 
@@ -52,14 +85,15 @@ async def test_physical_printer_feed_is_stable_owned_and_keeps_nested_shape(
     body_one = page_one.json()
     assert [item["id"] for item in body_one["items"]] == [first.id, second.id]
     assert body_one["items"][0]["material_systems"][0]["name"] == "Direct feed"
+    assert body_one["items"][0]["material_systems"][0]["slots"][0]["provider_index"] == 0
+    assert body_one["items"][0]["connectors"][0]["provider"] == "manual"
+    assert body_one["items"][0]["printer_profile_ids"] == [profile.id]
     assert body_one["total"] == 3
     assert body_one["has_more"] is True
     assert body_one["next_cursor"]
     assert foreign.id not in [item["id"] for item in body_one["items"]]
 
-    inserted = await _printer(
-        db_session, auth_user.id, "Inserted", timestamp + timedelta(minutes=2)
-    )
+    inserted = await _printer(db_session, auth_user.id, "Inserted", timestamp)
     await db_session.commit()
     page_two = await auth_client.get(
         "/api/v1/physical-printers/feed",
