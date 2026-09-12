@@ -457,32 +457,47 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
     )
 
 
-def _truncate_utf8(value: str | None, max_bytes: int) -> str | None:
+def _json_string_payload_bytes(value: str) -> int:
+    serialized = json.dumps(value, ensure_ascii=False)
+    return len(serialized.encode("utf-8")) - 2
+
+
+def _truncate_json_string(value: str | None, max_bytes: int) -> str | None:
     if value is None:
         return None
-    encoded = value.encode("utf-8")
-    if len(encoded) <= max_bytes:
+    if _json_string_payload_bytes(value) <= max_bytes:
         return value
-    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+    lower = 0
+    upper = len(value)
+    while lower < upper:
+        midpoint = (lower + upper + 1) // 2
+        if _json_string_payload_bytes(value[:midpoint]) <= max_bytes:
+            lower = midpoint
+        else:
+            upper = midpoint - 1
+    return value[:lower]
 
 
 def _history_summary_from_mapping(row) -> CalculatorHistoryEntrySummary:
     snapshot = None
     if row.filament_name:
         snapshot = {
-            "name": _truncate_utf8(row.filament_name, HISTORY_SUMMARY_FILAMENT_NAME_BYTES),
-            "brand_name": _truncate_utf8(
+            "name": _truncate_json_string(
+                row.filament_name,
+                HISTORY_SUMMARY_FILAMENT_NAME_BYTES,
+            ),
+            "brand_name": _truncate_json_string(
                 row.filament_brand_name,
                 HISTORY_SUMMARY_FILAMENT_BRAND_BYTES,
             ),
         }
     return CalculatorHistoryEntrySummary(
         id=row.id,
-        title=_truncate_utf8(row.title, HISTORY_SUMMARY_TITLE_BYTES) or row.title,
+        title=_truncate_json_string(row.title, HISTORY_SUMMARY_TITLE_BYTES) or "",
         total_cost=float(row.total_cost or 0),
         quantity=int(row.quantity or 1),
         source="gcode" if row.has_gcode else "manual",
-        gcode_file=_truncate_utf8(row.gcode_file, HISTORY_SUMMARY_GCODE_FILE_BYTES),
+        gcode_file=_truncate_json_string(row.gcode_file, HISTORY_SUMMARY_GCODE_FILE_BYTES),
         filament_snapshot=snapshot,
         created_at=row.created_at,
     )
