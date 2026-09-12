@@ -100,8 +100,10 @@ api_router.include_router(octoprint_bridge.router)
 api_router.include_router(notification_campaigns.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
-api_router.include_router(spools.router)
+# Register the static QR collection path before /spools/{spool_id}; Starlette
+# matches routes in declaration order and otherwise parses "qr-codes" as an id.
 api_router.include_router(spool_qr.router)
+api_router.include_router(spools.router)
 api_router.include_router(spool_tags.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)

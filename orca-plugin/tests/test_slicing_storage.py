@@ -211,16 +211,11 @@ def test_runtime_stop_closes_every_owned_resource(plugin_module, monkeypatch):
         "BAMBU_REVOKE_SCHEDULER",
         SimpleNamespace(stop=lambda: stopped.append("revoke-scheduler")),
     )
-    monkeypatch.setattr(
-        plugin_module,
-        "SHELL_SERVER",
-        SimpleNamespace(stop=lambda: stopped.append("loopback")),
-    )
     monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", True)
     monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 1)
 
     assert plugin_module.stop_plugin_runtime() is True
-    assert stopped == ["revoke-scheduler", "worker", "bambu", "loopback"]
+    assert stopped == ["revoke-scheduler", "worker", "bambu"]
     assert plugin_module._PLUGIN_RUNTIME_ACTIVE is False
 
 def test_runtime_load_starts_pending_bambu_revoke_scheduler(
@@ -249,7 +244,6 @@ def test_runtime_load_starts_pending_bambu_revoke_scheduler(
             stop=lambda: calls.append("revoke-stop"),
         ),
     )
-    monkeypatch.setattr(plugin_module, "SHELL_SERVER", SimpleNamespace(stop=lambda: None))
     monkeypatch.setattr(plugin_module, "refresh_ui_language", lambda: None)
     monkeypatch.setattr(
         plugin_module,
@@ -285,11 +279,6 @@ def test_pages_host_delivers_plugin_messages_through_post_message():
 def test_pages_host_opens_https_without_creating_a_loopback_socket(monkeypatch):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
-    monkeypatch.setattr(
-        module.SHELL_SERVER,
-        "url_for",
-        lambda _html: (_ for _ in ()).throw(AssertionError("loopback started")),
-    )
 
     html = page.get_ui()
 
@@ -302,17 +291,32 @@ def test_pages_host_opens_https_without_creating_a_loopback_socket(monkeypatch):
     assert module.ui_text("retry") in html
 
 
-def test_pages_host_enters_the_local_shell_only_after_an_explicit_action(monkeypatch):
+def test_pages_host_opens_a_separately_bound_local_credential_dialog(monkeypatch):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
     page.get_ui()
-    calls = []
-    monkeypatch.setattr(
-        module.SHELL_SERVER,
-        "url_for",
-        lambda _html: calls.append(True) or "http://127.0.0.1:4567/private",
-    )
-    monkeypatch.setattr(page._catalog, "_auto_sync", lambda **_kwargs: False)
+    created = []
+
+    class LocalWindow:
+        def __init__(self):
+            self.closed = False
+            self.messages = []
+
+        def is_open(self):
+            return not self.closed
+
+        def post(self, payload):
+            self.messages.append(payload)
+
+        def close(self):
+            self.closed = True
+
+    def create_window(**kwargs):
+        window = LocalWindow()
+        created.append((kwargs, window))
+        return window
+
+    module.orca.host.ui.create_window = create_window
     action = {
         "source": "filamenthub-plugin",
         "type": "configure-bambu",
@@ -324,29 +328,20 @@ def test_pages_host_enters_the_local_shell_only_after_an_explicit_action(monkeyp
 
     page.on_message(json.dumps(action))
 
-    assert calls == [True]
+    assert len(created) == 1
+    options, _window = created[0]
+    assert options["title"] == "FilamentHub"
+    assert "localDialogSession" in options["html"]
+    assert "127.0.0.1" not in options["html"]
+    assert page._catalog._direct_bridge_session not in options["html"]
     assert page.posted_messages == [{
         "source": "filamenthub-host",
-        "type": "switch-to-local-shell",
-        "url": "http://127.0.0.1:4567/private",
+        "type": "local-printer-setup-state",
+        "provider": "bambu",
+        "open": True,
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
     }]
-
-    page.on_message(json.dumps({
-        "source": "filamenthub-plugin",
-        "type": "host-ready",
-    }))
-
-    assert page.posted_messages[-2] == {
-        "source": "filamenthub-host",
-        "type": "transport",
-        "push": True,
-    }
-    assert page.posted_messages[-1] == {
-        "source": "filamenthub-host",
-        "type": "resume-local-action",
-        "action": action,
-    }
-
 
 def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypatch):
     module, _ = _module_with_pages()
@@ -364,6 +359,12 @@ def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypat
         "type": "read-diagnostics",
         "bridgeSession": "wrong-session-token-1234567890",
     }))
+    monkeypatch.setattr(module, "SHOW_DIAGNOSTICS", False)
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "read-diagnostics",
+        "bridgeSession": page._catalog._direct_bridge_session,
+    }))
     page.on_message(json.dumps({
         "source": "filamenthub-plugin",
         "type": "configure-bambu-local",
@@ -376,30 +377,84 @@ def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypat
     assert page.posted_messages == []
 
 
-def test_pages_host_keeps_the_remote_page_when_local_socket_is_denied(monkeypatch):
+def test_local_credential_submission_requires_the_separate_dialog_binding(monkeypatch):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
     page.get_ui()
+    submitted = []
+
+    class LocalWindow:
+        def is_open(self):
+            return True
+
+        def post(self, _payload):
+            return None
+
+        def close(self):
+            return None
+
+    module.orca.host.ui.create_window = lambda **_kwargs: LocalWindow()
     monkeypatch.setattr(
-        module.SHELL_SERVER,
-        "url_for",
-        lambda _html: (_ for _ in ()).throw(PermissionError("blocked by audit")),
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args)),
     )
+    monkeypatch.setattr(module, "observe_printer_presets", lambda: [])
+    monkeypatch.setattr(module, "load_saved_auth", lambda: {"accessToken": "token"})
 
     page.on_message(json.dumps({
         "source": "filamenthub-plugin",
-        "type": "printer-setup-manual",
+        "type": "configure-bambu",
         "bridgeSession": page._catalog._direct_bridge_session,
-        "requestId": "setup-request",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
     }))
+    local_session = page._catalog._local_dialog_session
 
-    assert page._catalog._local_shell_active is False
-    assert page.posted_messages == [{
+    payload = {
+        "source": "filamenthub-plugin",
+        "type": "prepare-bambu-local",
+        "requestId": "search-1",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
+    }
+    page.on_message(json.dumps(dict(payload, localDialogSession="wrong-binding-token")))
+    assert submitted == []
+
+    page.on_message(json.dumps(dict(payload, localDialogSession=local_session)))
+    assert len(submitted) == 1
+    assert submitted[0][0] == page._catalog._do_prepare_bambu
+
+
+def test_external_oauth_opens_only_the_bound_filamenthub_flow(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    opened = []
+    monkeypatch.setattr(module, "open_in_system_browser", lambda url: opened.append(url) or True)
+
+    common = {
+        "source": "filamenthub-plugin",
+        "type": "open-oauth",
+        "provider": "yandex",
+        "requestId": "oauth-request-1",
+        "bridgeSession": page._catalog._direct_bridge_session,
+    }
+    page.on_message(json.dumps(dict(common, path="https://evil.example/steal")))
+    page.on_message(json.dumps(dict(common, path="/oauth/plugin-start/yandex?flow=short")))
+    assert opened == []
+
+    flow = "a" * 32
+    page.on_message(json.dumps(dict(common, path=f"/oauth/plugin-start/yandex?flow={flow}")))
+    assert opened == [f"{module.SITE_URL}/oauth/plugin-start/yandex?flow={flow}"]
+    assert page.posted_messages[-1] == {
         "source": "filamenthub-host",
-        "type": "plugin-notice",
-        "text": module.ui_text("localPermissionRetryFailed"),
-        "status": "warning",
-    }]
+        "type": "oauth-browser-opened",
+        "opened": True,
+        "requestId": "oauth-request-1",
+    }
 
 
 def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch):
@@ -419,24 +474,6 @@ def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch)
         "type": "plugin-capabilities",
         "pluginVersion": module.PLUGIN_VERSION,
         "capabilities": list(module.PLUGIN_CAPABILITIES),
-    }]
-
-def test_notice_uses_typed_loopback_fallback_without_a_push_transport(
-    plugin_module, monkeypatch
-):
-    captured = []
-    monkeypatch.setattr(
-        plugin_module.SHELL_SERVER,
-        "set_sync_result",
-        lambda payload: captured.append(payload),
-    )
-
-    plugin_module.FilamentHubCatalog()._deliver_notice("Saved", "success")
-
-    assert captured == [{
-        "text": "Saved",
-        "status": "success",
-        "resultType": "plugin-notice",
     }]
 
 def test_page_icon_materializes_for_a_single_file_install(

@@ -1357,8 +1357,10 @@ def test_printer_bundle_message_is_explicit_and_uses_saved_session(
     )
 
     catalog = plugin_module.FilamentHubCatalog()
+    catalog._direct_bridge_session = "test-session"
     catalog.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "install-printer-bundle",
         "requestId": "bundle-1",
         "physicalPrinterId": 12,
@@ -1372,12 +1374,14 @@ def test_printer_bundle_message_is_explicit_and_uses_saved_session(
 
     catalog.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "remove-printer-bundle",
         "requestId": "bundle-2",
         "physicalPrinterId": 12,
     })
     catalog.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "printer-bundle-status",
         "requestId": "bundle-3",
         "physicalPrinterIds": [12, 13, 12],
@@ -1417,8 +1421,10 @@ def test_recovery_state_observes_originals_before_background_inventory(
     )
 
     catalog = plugin_module.FilamentHubCatalog()
+    catalog._direct_bridge_session = "test-session"
     catalog.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "printer-recovery-state",
         "requestId": "recovery-state-1",
         "ownerUserId": 7,
@@ -1436,22 +1442,26 @@ def test_printer_bundle_messages_reject_boolean_ids(plugin_module, monkeypatch):
         SimpleNamespace(submit=lambda *args: submitted.append(args)),
     )
     catalog = plugin_module.FilamentHubCatalog()
+    catalog._direct_bridge_session = "test-session"
 
     for message in (
         {
             "source": "filamenthub-plugin",
+            "bridgeSession": "test-session",
             "type": "install-printer-bundle",
             "requestId": "bundle-1",
             "physicalPrinterId": True,
         },
         {
             "source": "filamenthub-plugin",
+            "bridgeSession": "test-session",
             "type": "remove-printer-bundle",
             "requestId": "bundle-2",
             "physicalPrinterId": True,
         },
         {
             "source": "filamenthub-plugin",
+            "bridgeSession": "test-session",
             "type": "printer-bundle-status",
             "requestId": "bundle-3",
             "physicalPrinterIds": [True],
@@ -1469,8 +1479,10 @@ def test_happy_hare_mutation_message_rejects_boolean_ids(plugin_module, monkeypa
         SimpleNamespace(submit=lambda *args: submitted.append(args)),
     )
     capability = plugin_module.FilamentHubCatalog()
+    capability._direct_bridge_session = "test-session"
     common = {
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "happy-hare-adopt",
         "requestId": "request-1",
         "materialSystemId": 7,
@@ -1488,11 +1500,13 @@ def test_happy_hare_mutation_message_rejects_boolean_ids(plugin_module, monkeypa
 
 def test_profile_change_reports_automatic_sync_result(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
+    capability._direct_bridge_session = "test-session"
     calls = []
     capability._auto_sync = lambda **kwargs: calls.append(kwargs) or True
 
     capability.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "profile-changed",
     })
 
@@ -1507,15 +1521,22 @@ def test_plugin_load_never_opens_a_window_automatically(plugin_module):
 
 def test_host_ready_starts_sync_once(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
+    capability._direct_bridge_session = "test-session"
     calls = []
+    delivered = []
+    capability._deliver = lambda message_type, **payload: delivered.append(
+        (message_type, payload)
+    )
     capability._auto_sync = lambda **kwargs: calls.append(kwargs) or True
 
     capability.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "host-ready",
     })
     capability.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "host-ready",
     })
     assert calls == [{
@@ -1523,9 +1544,14 @@ def test_host_ready_starts_sync_once(plugin_module):
         "scope": "all",
         "trigger": "session-start",
     }]
+    assert delivered == [
+        ("transport", {"push": True, "showDiagnostics": plugin_module.SHOW_DIAGNOSTICS}),
+        ("transport", {"push": True, "showDiagnostics": plugin_module.SHOW_DIAGNOSTICS}),
+    ]
 
 def test_token_refresh_does_not_start_a_second_session_sync(plugin_module, monkeypatch):
     capability = plugin_module.FilamentHubCatalog()
+    capability._direct_bridge_session = "test-session"
     calls = []
     saved = []
     monkeypatch.setattr(plugin_module, "save_auth", saved.append)
@@ -1534,11 +1560,13 @@ def test_token_refresh_does_not_start_a_second_session_sync(plugin_module, monke
 
     capability.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "auth-token",
         "accessToken": "first-token",
     })
     capability.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "auth-token",
         "accessToken": "refreshed-token",
     })

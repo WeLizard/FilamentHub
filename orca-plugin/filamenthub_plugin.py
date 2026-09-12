@@ -16,37 +16,34 @@
 # ///
 """FilamentHub plugin for OrcaSlicer's Python plugin system.
 
-Current Pages hosts navigate directly to the real React catalog at
-https://filamenthub.ru/embed/catalog and use the official injected window.orca
-bridge without opening a Python socket. Every direct command carries a random
-per-tab binding. Explicit LAN credential and external OAuth actions activate the
-plugin-owned loopback shell only when requested, keeping local addresses and
-credentials outside the remote document. Older hosts use the same direct page in
-a managed plugin window. Python downloads the authenticated OrcaSlicer export,
+Current Pages hosts receive a small bootstrap from ``get_ui`` and navigate the
+top-level plugin WebView to the real React catalog. The catalog renders the
+compact plugin toolbar and talks to Python through OrcaSlicer's official injected
+``window.orca`` bridge. Every command carries a random per-tab binding and the
+plugin never starts a local HTTP server. LAN addresses and credentials are
+collected in a separate host-owned window with its own binding, so they never
+enter the remote document. Older hosts use the same direct page in a managed
+plugin window. Python downloads the authenticated export,
 writes it into the user preset folder, then shows a native "restart required"
 dialog. A separate explicit
 Recovery Center can restore selected managed machine and process profile copies;
 they are never pulled automatically and never overwrite unmanaged or differently
 scoped Orca profiles.
 
-The local shell renders an Orca-themed toolbar (host --orca-* CSS variables, same
-role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
-the catalog by posting {type:'navigate', path} down into the iframe — the SPA
-listens and switches routes without reloading. The catalog reports the signed-in
+The React embed renders an Orca-themed toolbar (host --orca-* CSS variables,
+same role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and
+switches its own routes without an iframe. The catalog reports the signed-in
 user (auth-state) for the toolbar label, and hands tokens over (auth-token) so
 Python persists the scoped plugin capability in .auth.json next to the plugin.
 
 External-browser OAuth: Google/Yandex refuse their consent pages inside an
-embedded WebView, so the "Sign in with Google/Yandex" buttons post open-oauth up
-here; Python opens the user's real browser at /oauth/plugin-start (falling back to
-a copy-the-link overlay if the browser can't be launched). After the provider
-round-trip the site redirects the minted session back to a loopback /d/<secret>
-endpoint (guarded by a one-time nonce); the shell polls /s/<secret>, then hands
-the session down to the iframe (auth-restore), which signs in exactly like the
-normal flow. Account tokens are held in memory only — never written to disk.
+embedded WebView, so the plugin creates a short-lived server handoff, opens its
+HTTPS URL in the user's real browser and polls the matching one-shot HTTPS
+endpoint. No local listener or browser callback to localhost is involved.
 
-  React catalog --window.orca.postMessage({source:'filamenthub-plugin',...})-->
-      Python on_message
+  React catalog
+      --window.orca.postMessage({source:'filamenthub-plugin', bridgeSession,...})-->
+          Python on_message
           --GET /presets/{id}/export/orcaslicer.json (Bearer token from the page)-->
               write {data_dir}/user/<active>/_local/filamenthub/filament/<name>.json
                   --> host restart dialog
@@ -59,10 +56,10 @@ Runtime surface used (confirmed against the current upstream plugin API):
   * orca.host.plugin.storage(), app_language()              — private state/locale
   * the injected window.orca bridge (PluginWebDialog.cpp:ORCA_BRIDGE_JS)
 
-Login/token: the user signs in inside the iframe on our own site (normal flow).
+Login/token: the user signs in inside the embedded page on our own site.
 The page mints a short-lived, plugin-scoped capability for preset read/write
 and reading an explicitly selected owned printer bundle;
-the account access/refresh credentials never cross the iframe boundary. The
+the account access/refresh credentials never cross the plugin bridge. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
 
@@ -70,7 +67,6 @@ import csv
 import datetime
 import hashlib
 import hmac
-import http.server
 import ipaddress
 import json
 import os
@@ -1014,288 +1010,12 @@ def read_sync_log():
 
 
 # These are import-time legacy locations. configure_plugin_storage() redirects
-# them to durable private storage during capability registration. The iframe's
+# them to durable private storage during capability registration. The page's
 # own storage is partitioned and dies with the window.
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
-
-
-# Shown in the user's real browser at the end of the external OAuth flow, right
-# after the session has been handed back to the plugin over loopback.
-OAUTH_DELIVER_OK_HTML = (
-    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>FilamentHub</title></head>"
-    "<body style='font-family:sans-serif;background:#1e1e2e;color:#e0e0e0;"
-    "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-    "<div style='text-align:center'><h2>Signed in to FilamentHub</h2>"
-    "<p>You can close this tab and return to OrcaSlicer.</p></div></body></html>"
-)
-OAUTH_DELIVER_ERR_HTML = (
-    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>FilamentHub</title></head>"
-    "<body style='font-family:sans-serif;background:#1e1e2e;color:#e0e0e0;"
-    "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-    "<div style='text-align:center'><h2>Sign-in link expired</h2>"
-    "<p>Return to OrcaSlicer and start the sign-in again.</p></div></body></html>"
-)
-
-
-class ShellServer:
-    """Loopback-only HTTP host for the shell page.
-
-    The host loads plugin HTML via WebView2 SetPage, which gives the document
-    an opaque (null) origin — the site's frame-ancestors CSP can never match
-    it, so the catalog iframe comes up as "refused to connect". Chromium also
-    forbids navigating from an opaque page to file://, so a real origin needs
-    HTTP. This server binds 127.0.0.1 on an ephemeral port and serves exactly
-    one page under an unguessable path; the SetPage bootstrap hops onto it and
-    the shell gains the http://127.0.0.1:* origin the site CSP allows. The
-    page embeds the saved session tokens, hence the secret path and loopback
-    bind — the exposure equals the plaintext .auth.json sitting next door.
-    """
-
-    def __init__(self):
-        self._server = None
-        self._server_stop = None
-        self._server_thread = None
-        self._html = b""
-        self._path = ""
-        # OAuth handoff: Google/Yandex refuse to render their consent pages in an
-        # embedded WebView, so the provider flow runs in the user's real browser
-        # and returns the session here over loopback. Two secret sibling paths on
-        # the same server: /s/<secret> the shell polls for state, /d/<secret> the
-        # external browser posts the session to. A per-attempt nonce guards /d.
-        self._oauth_secret = secrets.token_urlsafe(24)
-        self._oauth = None
-        self._oauth_lock = threading.Lock()
-        self._sync_lock = threading.Lock()
-        self._sync_result = {"text": ""}
-        self._recover_lock = threading.Lock()
-        self._recover_items = None
-        self._slice_lock = threading.Lock()
-        self._slice_parse = None
-        self._slice_alive = None
-
-    def status_path(self):
-        return "/s/" + self._oauth_secret
-
-    def sync_status_path(self):
-        return "/y/" + self._oauth_secret
-
-    def recover_status_path(self):
-        return "/r/" + self._oauth_secret
-
-    def log_path(self):
-        return "/l/" + self._oauth_secret
-
-    def slice_parse_path(self):
-        return "/g/" + self._oauth_secret
-
-    def slice_alive_path(self):
-        return "/k/" + self._oauth_secret
-
-    def set_sync_result(self, payload):
-        with self._sync_lock:
-            self._sync_result = dict(payload)
-
-    def _sync_status(self):
-        with self._sync_lock:
-            result = dict(self._sync_result)
-            self._sync_result = {"text": ""}
-        return result
-
-    def set_recover_items(self, items):
-        with self._recover_lock:
-            self._recover_items = list(items)
-
-    def _recover_status(self):
-        with self._recover_lock:
-            items = self._recover_items
-            self._recover_items = None
-        return {"ready": items is not None, "items": items or []}
-
-    def set_slice_parse(self, payload):
-        with self._slice_lock:
-            self._slice_parse = payload
-
-    def _slice_parse_status(self):
-        with self._slice_lock:
-            payload = self._slice_parse
-            self._slice_parse = None
-        return {"ready": payload is not None, "result": payload}
-
-    def set_slice_alive(self, keys, hook=None):
-        with self._slice_lock:
-            self._slice_alive = {"alive": list(keys), "hook": hook}
-
-    def _slice_alive_status(self):
-        with self._slice_lock:
-            payload = self._slice_alive
-            self._slice_alive = None
-        if payload is None:
-            return {"ready": False, "alive": [], "hook": None}
-        return {"ready": True, "alive": payload["alive"], "hook": payload["hook"]}
-
-    def deliver_url(self):
-        # Absolute loopback URL the external browser is redirected to with the
-        # freshly minted session; empty until the server is bound (window open).
-        if self._server is None:
-            return ""
-        return "http://127.0.0.1:%d/d/%s" % (self._server.server_address[1], self._oauth_secret)
-
-    def arm_oauth(self, nonce, browser_opened, start_url):
-        with self._oauth_lock:
-            self._oauth = {"nonce": nonce, "browser_opened": bool(browser_opened),
-                           "start_url": start_url, "delivered": None}
-
-    def _oauth_status(self):
-        with self._oauth_lock:
-            state = self._oauth
-            if not state:
-                return {"stage": "idle"}
-            if state.get("delivered"):
-                tokens = state["delivered"]
-                self._oauth = None  # one-shot: hand off exactly once
-                return {"stage": "delivered",
-                        "accessToken": tokens.get("access", ""),
-                        "refreshToken": tokens.get("refresh", "")}
-            out = {"stage": "awaiting", "browserOpened": bool(state.get("browser_opened"))}
-            if not state.get("browser_opened"):
-                out["startUrl"] = state.get("start_url", "")
-            return out
-
-    def _oauth_deliver(self, query):
-        nonce = (query.get("nonce") or [""])[0]
-        access = (query.get("access") or [""])[0]
-        refresh = (query.get("refresh") or [""])[0]
-        with self._oauth_lock:
-            state = self._oauth
-            if not state or not nonce or not secrets.compare_digest(state.get("nonce", ""), nonce):
-                return False
-            if not access or len(access) > MAX_TOKEN_LENGTH or len(refresh) > MAX_TOKEN_LENGTH:
-                return False
-            state["delivered"] = {"access": access, "refresh": refresh}
-            return True
-
-    @staticmethod
-    def _serve(server, stop_event):
-        server.timeout = 0.25
-        try:
-            while not stop_event.is_set():
-                server.handle_request()
-        finally:
-            server.server_close()
-
-    def url_for(self, html):
-        self._html = html.encode("utf-8")
-        if self._server is None:
-            self._path = "/" + secrets.token_urlsafe(32)
-            owner = self
-
-            class Handler(http.server.BaseHTTPRequestHandler):
-                def _send(self, status, content_type, body):
-                    self.send_response(status)
-                    self.send_header("Content-Type", content_type)
-                    self.send_header("Content-Length", str(len(body)))
-                    self.send_header("Cache-Control", "no-store")
-                    self.send_header(
-                        "Content-Security-Policy",
-                        "default-src 'none'; "
-                        "script-src 'unsafe-inline'; "
-                        "style-src 'unsafe-inline'; "
-                        "img-src data:; "
-                        "connect-src 'self'; "
-                        "frame-src %s; "
-                        "object-src 'none'; "
-                        "base-uri 'none'; "
-                        "form-action 'none'" % SITE_ORIGIN,
-                    )
-                    self.end_headers()
-                    self.wfile.write(body)
-
-                def do_GET(self):
-                    path = self.path.split("?", 1)[0]
-                    if path == owner._path:
-                        self._send(200, "text/html; charset=utf-8", owner._html)
-                        return
-                    if path == owner.status_path():
-                        body = json.dumps(owner._oauth_status()).encode("utf-8")
-                        self._send(200, "application/json; charset=utf-8", body)
-                        return
-                    if path == owner.sync_status_path():
-                        body = json.dumps(owner._sync_status()).encode("utf-8")
-                        self._send(200, "application/json; charset=utf-8", body)
-                        return
-                    if path == owner.recover_status_path():
-                        body = json.dumps(owner._recover_status()).encode("utf-8")
-                        self._send(200, "application/json; charset=utf-8", body)
-                        return
-                    if path == owner.slice_parse_path():
-                        body = json.dumps(owner._slice_parse_status()).encode("utf-8")
-                        self._send(200, "application/json; charset=utf-8", body)
-                        return
-                    if path == owner.slice_alive_path():
-                        body = json.dumps(owner._slice_alive_status()).encode("utf-8")
-                        self._send(200, "application/json; charset=utf-8", body)
-                        return
-                    if path == owner.log_path():
-                        self._send(200, "text/plain; charset=utf-8",
-                                   read_sync_log().encode("utf-8"))
-                        return
-                    if path == "/d/" + owner._oauth_secret:
-                        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                        ok = owner._oauth_deliver(query)
-                        html = OAUTH_DELIVER_OK_HTML if ok else OAUTH_DELIVER_ERR_HTML
-                        self._send(200 if ok else 400, "text/html; charset=utf-8",
-                                   html.encode("utf-8"))
-                        return
-                    self.send_error(404)
-
-                def log_message(self, *args):
-                    pass  # keep the secret paths out of stderr
-
-            # Requests are tiny loopback shell/OAuth hand-offs. A single server
-            # thread is sufficient and avoids creating one Python thread for
-            # every status request.
-            self._server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-            self._server_stop = threading.Event()
-            server = self._server
-            stop_event = self._server_stop
-            worker = threading.Thread(
-                target=self._serve,
-                args=(server, stop_event),
-                name="filamenthub-loopback",
-                daemon=True,
-            )
-            self._server_thread = worker
-            try:
-                worker.start()
-            except Exception:
-                stop_event.set()
-                server.server_close()
-                self._server = None
-                self._server_stop = None
-                self._server_thread = None
-                raise
-        return "http://127.0.0.1:%d%s" % (self._server.server_address[1], self._path)
-
-    def stop(self, wait_timeout=0.5):
-        server, self._server = self._server, None
-        stop_event, self._server_stop = self._server_stop, None
-        worker, self._server_thread = self._server_thread, None
-        with self._oauth_lock:
-            self._oauth = None
-        if server is not None and stop_event is not None:
-            stop_event.set()
-        if (
-            worker is not None
-            and worker is not threading.current_thread()
-            and wait_timeout > 0
-        ):
-            worker.join(wait_timeout)
-
-
-SHELL_SERVER = ShellServer()
 
 
 def load_saved_auth():
@@ -4008,7 +3728,7 @@ def bambu_host_candidates(observations, context, physical_printer_id):
 
     A server binding may identify the exact Orca preset. If it cannot, only the
     currently selected printer preset is offered as a convenience. Addresses
-    remain inside the plugin shell and are never posted to FilamentHub.
+    remain inside the host-owned local dialog and are never posted to FilamentHub.
     """
     bindings = context.get("bindings") if isinstance(context, dict) else []
     bound_refs = {
@@ -6691,1145 +6411,8 @@ def recovery_connection_observation(candidate):
 
 
 # --------------------------------------------------------------------------- #
-# The shell page — an Orca-themed toolbar (host CSS variables, like the fork's
-# native FilamentHubPanel buttons) above a full-window iframe, plus two relays:
-# catalog -> Python (import) and toolbar -> catalog (SPA navigation, no reload).
+# Direct plugin page bootstrap
 # --------------------------------------------------------------------------- #
-PAGE = r"""<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8">
-<style>
-  html, body { margin:0; height:100%; }
-  body {
-    display:flex; flex-direction:column;
-    background:var(--orca-bg,#1e1e2e);
-    font-family:var(--orca-font,sans-serif);
-  }
-  #bar {
-    flex:0 0 auto; display:flex; align-items:center;
-    padding:4px 10px; gap:2px;
-    background:var(--orca-bg,#1e1e2e);
-    border-bottom:1px solid var(--orca-border,#3c3c4c);
-  }
-  #left { margin-right:auto; display:flex; align-items:center; gap:8px; }
-  #brand {
-    appearance:none; padding:4px 10px; border-radius:4px;
-    border:1px solid var(--orca-border,#3c3c4c); background:transparent;
-    color:var(--orca-fg,#e0e0e0); font:inherit; font-size:12px; font-weight:600;
-  }
-  #brand:not(:disabled):hover {
-    border-color:var(--orca-accent,#8b7cf8);
-    background:color-mix(in srgb, var(--orca-accent,#8b7cf8) 12%, transparent);
-  }
-  #brand:disabled { border-color:transparent; opacity:1; }
-  #logout {
-    display:none; padding:2px 8px; font-size:11px;
-    color:var(--orca-muted,#a0a0a0); border-color:var(--orca-border,#3c3c4c);
-  }
-  #bar button {
-    appearance:none; background:transparent; cursor:pointer;
-    border:1px solid transparent; border-radius:0;
-    color:var(--orca-fg,#e0e0e0); font:inherit; font-size:12px; padding:4px 14px;
-  }
-  #bar button:hover { border-color:var(--orca-border,#3c3c4c); }
-  #bar button.active {
-    color:var(--orca-fg,#e0e0e0);
-    border-color:var(--orca-accent,#8b7cf8);
-    background:color-mix(in srgb, var(--orca-accent,#8b7cf8) 14%, transparent);
-  }
-  #content { position:relative; flex:1 1 auto; min-height:0; display:flex; }
-  iframe { flex:1 1 auto; border:0; width:100%; display:block; visibility:hidden; }
-  #service-status {
-    position:absolute; inset:0; z-index:10;
-    display:flex; align-items:center; justify-content:center;
-    padding:24px; box-sizing:border-box;
-    background:var(--orca-bg,#1e1e2e); color:var(--orca-fg,#e0e0e0);
-    text-align:center;
-  }
-  #service-status-card { max-width:520px; }
-  #service-status h2 { margin:14px 0 8px; font-size:20px; font-weight:600; }
-  #service-status p {
-    margin:0; color:var(--orca-muted,#a0a0a0); font-size:13px; line-height:1.55;
-  }
-  #service-spinner {
-    width:28px; height:28px; margin:0 auto;
-    border:3px solid var(--orca-border,#3c3c4c);
-    border-top-color:var(--orca-accent,#8b7cf8); border-radius:50%;
-    animation:fh-spin .9s linear infinite;
-  }
-  #service-retry {
-    display:none; margin:18px auto 0; padding:7px 18px;
-    border:1px solid var(--orca-accent,#8b7cf8); border-radius:6px;
-    background:transparent; color:var(--orca-accent,#8b7cf8);
-    font:inherit; font-size:13px; cursor:pointer;
-  }
-  #service-retry:hover { background:rgba(139,124,248,.1); }
-  #service-retry:focus-visible {
-    outline:2px solid var(--orca-accent,#8b7cf8); outline-offset:3px;
-  }
-  .fh-local-setup {
-    --fh-local-bg:#111827; --fh-local-fg:#f3f4f6; --fh-local-muted:#9ca3af;
-    --fh-local-border:rgba(255,255,255,.2); --fh-local-accent:#9810fa;
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    backdrop-filter:blur(4px);
-  }
-  .fh-local-setup button { font:inherit; padding:8px 14px; border-radius:8px;
-    border:1px solid var(--fh-local-border); background:transparent;
-    color:var(--fh-local-fg); cursor:pointer; }
-  .fh-local-setup button:disabled { opacity:.45; cursor:wait; }
-  .fh-local-setup :is(input,select,button,summary):focus-visible {
-    outline:2px solid #c084fc; outline-offset:3px;
-  }
-  .fh-local-setup input, .fh-local-setup select { min-width:0; }
-  .fh-local-setup summary { line-height:1.5; }
-  @keyframes fh-spin { to { transform:rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) {
-    #service-spinner { animation:none; }
-  }
-</style></head>
-<body>
-  <div id="bar">
-    <span id="left">
-      <button id="brand" type="button">Sign in</button>
-      <button id="logout" title="Sign out">Sign out</button>
-    </span>
-    <button id="catalog" data-path="/" class="active">Catalog</button>
-    <button id="profile" data-path="/profile">Profile</button>
-    <button id="wiki" data-path="/wiki">Wiki</button>
-    <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
-    <button id="recover" title="Find your local OrcaSlicer filament presets and import the ones you pick as drafts">Recover</button>
-    <button id="diag" __DIAG_HIDDEN__ title="Copy the plugin log to the clipboard">Log</button>
-  </div>
-  <div id="content">
-    <div id="service-status" role="status" aria-live="polite">
-      <div id="service-status-card">
-        <div id="service-spinner"></div>
-        <h2 id="service-status-title">Connecting to FilamentHub...</h2>
-        <p id="service-status-message">Please wait while the catalog is loaded.</p>
-        <button id="service-retry" type="button">Try again</button>
-      </div>
-    </div>
-    <iframe id="fh" src="__EMBED_URL__" title="FilamentHub catalog"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
-      allow="clipboard-write"></iframe>
-  </div>
-<script>
-'use strict';
-var SITE_ORIGIN = '__SITE_ORIGIN__';
-var EMBED_URL = '__EMBED_URL__';
-var OAUTH_STATUS_PATH = '__OAUTH_STATUS_PATH__';
-var SYNC_STATUS_PATH = '__SYNC_STATUS_PATH__';
-var RECOVER_STATUS_PATH = '__RECOVER_STATUS_PATH__';
-var SLICE_PARSE_PATH = '__SLICE_PARSE_PATH__';
-var SLICE_ALIVE_PATH = '__SLICE_ALIVE_PATH__';
-var LOG_PATH = '__LOG_PATH__';
-var frame = document.getElementById('fh');
-var wasLoggedIn = false;
-var hostPush = false;
-var oauthPollTimer = null;
-var oauthDeadline = 0;
-var catalogReady = false;
-var catalogReadyTimer = null;
-var pendingBambuSetup = null;
-var activeBambuResult = null;
-var bambuSetupTimer = null;
-var bambuAttemptTimer = null;
-var UI_COPY = __UI_COPY__;
-var hostLanguage = '__HOST_UI_LANGUAGE__';
-function normalizeUiLocale(value) {
-  var token = String(value || '').replace(/-/g, '_');
-  var lowered = token.toLowerCase();
-  var aliases = { zh: 'zh_CN', zh_hans: 'zh_CN', zh_hans_cn: 'zh_CN',
-                  zh_hant: 'zh_TW', zh_hant_tw: 'zh_TW' };
-  if (aliases[lowered]) return aliases[lowered];
-  var exact = Object.keys(UI_COPY).find(function(key) {
-    return key.toLowerCase() === lowered;
-  });
-  if (exact) return exact;
-  var base = lowered.split('_', 1)[0];
-  return Object.prototype.hasOwnProperty.call(UI_COPY, base) ? base : 'en';
-}
-function resolveUiCopy(value) {
-  var locale = normalizeUiLocale(value);
-  var base = locale.split('_', 1)[0];
-  return Object.assign({}, UI_COPY.en || {}, UI_COPY[base] || {}, UI_COPY[locale] || {});
-}
-var uiLocale = normalizeUiLocale(hostLanguage || navigator.language || 'en');
-var uiCopy = resolveUiCopy(uiLocale);
-document.documentElement.lang = uiLocale;
-
-function applyShellCopy() {
-  var setText = function (id, text) {
-    var element = document.getElementById(id);
-    if (element && typeof text === 'string' && text.length > 0) {
-      element.textContent = text;
-    }
-  };
-  var setTitle = function (id, text) {
-    var element = document.getElementById(id);
-    if (element && typeof text === 'string' && text.length > 0) {
-      element.title = text;
-    }
-  };
-  setText('brand', uiCopy.signIn);
-  setText('logout', uiCopy.signOut);
-  setText('catalog', uiCopy.catalog);
-  setText('profile', uiCopy.profile);
-  setText('wiki', uiCopy.wiki);
-  setText('sync', uiCopy.sync);
-  setText('recover', uiCopy.recover);
-  setText('diag', uiCopy.log);
-  setTitle('logout', uiCopy.signOut);
-  setTitle('sync', uiCopy.syncTitle);
-  setTitle('recover', uiCopy.recoverTitle);
-  setTitle('diag', uiCopy.logTitle);
-  if (typeof uiCopy.catalogTitle === 'string' && uiCopy.catalogTitle.length > 0) {
-    frame.title = uiCopy.catalogTitle;
-  }
-}
-applyShellCopy();
-
-
-function showCatalogStatus(mode) {
-  var unavailable = mode === 'unavailable';
-  document.getElementById('service-status').style.display = 'flex';
-  document.getElementById('service-spinner').style.display = unavailable ? 'none' : 'block';
-  document.getElementById('service-status-title').textContent = unavailable
-    ? uiCopy.unavailableTitle
-    : uiCopy.connectTitle;
-  document.getElementById('service-status-message').textContent = unavailable
-    ? uiCopy.unavailableMessage
-    : uiCopy.connectMessage;
-  document.getElementById('service-retry').textContent = uiCopy.retry;
-  document.getElementById('service-retry').style.display = unavailable ? 'block' : 'none';
-}
-function waitForCatalog() {
-  catalogReady = false;
-  frame.style.visibility = 'hidden';
-  showCatalogStatus('connecting');
-  if (catalogReadyTimer) clearTimeout(catalogReadyTimer);
-  catalogReadyTimer = setTimeout(function () {
-    if (!catalogReady) showCatalogStatus('unavailable');
-  }, 10000);
-}
-function markCatalogReady() {
-  catalogReady = true;
-  if (catalogReadyTimer) {
-    clearTimeout(catalogReadyTimer);
-    catalogReadyTimer = null;
-  }
-  document.getElementById('service-status').style.display = 'none';
-  frame.style.visibility = 'visible';
-}
-document.getElementById('service-retry').addEventListener('click', function () {
-  waitForCatalog();
-  var separator = EMBED_URL.indexOf('?') === -1 ? '?' : '&';
-  frame.src = EMBED_URL + separator + 'fh_retry=' + Date.now();
-});
-waitForCatalog();
-
-// Auth-only toolbar controls: Profile and Sync only make sense when signed in.
-// When signed out, the "FilamentHub" brand label doubles as a sign-in trigger.
-function setAuthControls(loggedIn) {
-  var profileBtn = document.querySelector('#bar button[data-path="/profile"]');
-  if (profileBtn) profileBtn.style.display = loggedIn ? '' : 'none';
-  document.getElementById('sync').style.display = loggedIn ? 'inline-block' : 'none';
-  var recoverBtn = document.getElementById('recover');
-  if (recoverBtn) recoverBtn.style.display = loggedIn ? 'inline-block' : 'none';
-  var brand = document.getElementById('brand');
-  brand.disabled = loggedIn;
-  brand.style.cursor = loggedIn ? 'default' : 'pointer';
-  brand.title = loggedIn ? '' : (
-    typeof uiCopy.signInTitle === 'string' && uiCopy.signInTitle.length > 0
-      ? uiCopy.signInTitle
-      : brand.textContent
-  );
-  // Keep the signed-out action readable even when the host accent is too dark
-  // for the toolbar background.
-  brand.style.color = 'var(--orca-fg,#e0e0e0)';
-}
-// Re-open the currently active tab inside the catalog (used right after sign-in).
-function navigateActive() {
-  var active = document.querySelector('#bar button[data-path].active') ||
-               document.querySelector('#bar button[data-path]');
-  if (!active) return;
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'navigate', path: active.getAttribute('data-path') },
-      SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-}
-function sendPluginCapabilities() {
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'plugin-capabilities',
-        pluginVersion: '__PLUGIN_VERSION__',
-        capabilities: __PLUGIN_CAPABILITIES__ },
-      SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-}
-setAuthControls(false);  // hidden until the catalog reports a signed-in state
-
-// Catalog -> shell. auth-state updates the toolbar label; open-oauth runs the
-// provider sign-in in the real browser and waits for the session over loopback;
-// everything else relays to Python.
-window.addEventListener('message', function (event) {
-  var data = event.data;
-  if (event.source !== frame.contentWindow || event.origin !== SITE_ORIGIN) return;
-  if (!data || data.source !== 'filamenthub-plugin') return;
-  // Only the local shell collects a LAN address/key; the remote iframe cannot
-  // impersonate a submission of its credential form.
-  if (['printer-setup-local', 'prepare-bambu-local', 'configure-bambu-local'].indexOf(data.type) !== -1) return;
-  markCatalogReady();
-  if (data.type === 'plugin-capabilities-request') {
-    sendPluginCapabilities();
-    return;
-  }
-  if (data.type === 'auth-state') {
-    // label present = signed in: show the username + a sign-out button, and the
-    // auth-only controls (Profile, Sync). On a fresh sign-in, return the catalog
-    // to the active tab so the user isn't dropped on the app's default page.
-    var loggedIn = !!data.label;
-    document.getElementById('brand').textContent = data.label || uiCopy.signIn || 'Sign in';
-    document.getElementById('logout').style.display = loggedIn ? 'inline-block' : 'none';
-    setAuthControls(loggedIn);
-    if (loggedIn && !wasLoggedIn) navigateActive();
-    wasLoggedIn = loggedIn;
-    return;
-  }
-  if (data.type === 'parse-slice') {
-    // The catalog cannot read a file on disk; Python can, and sends it to the
-    // same parser a manual upload goes through.
-    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
-    startSlicePolling();
-    return;
-  }
-  if (data.type === 'check-slices') {
-    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
-    startSliceKeysPolling();
-    return;
-  }
-  if (data.type === 'open-oauth') {
-    // Google/Yandex refuse their consent pages inside this WebView. Hand the
-    // request to Python (opens the system browser) and start polling loopback
-    // for the session the external browser will deliver back.
-    try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
-    startOAuthPolling();
-    return;
-  }
-  if (data.type === 'configure-bambu') {
-    prepareBambuOverlay(data);
-    return;
-  }
-  if (data.type === 'printer-setup-manual') {
-    showPrinterSetupOverlay(data);
-    return;
-  }
-  if (data.type === 'printer-setup') startSyncPolling(data.requestId || '');
-  if (data.type === 'sync' || data.type === 'profile-changed' ||
-      data.type === 'install-printer-bundle' ||
-      data.type === 'remove-printer-bundle' ||
-      data.type === 'printer-bundle-status') {
-    startSyncPolling(
-      typeof data.operationId === 'string' ? data.operationId :
-      typeof data.requestId === 'string' ? data.requestId : ''
-    );
-  }
-  try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
-});
-
-// Poll the loopback status endpoint (same origin as this shell) for the session
-// the external browser posts back after the provider flow completes.
-function stopOAuthPolling() {
-  if (oauthPollTimer) { clearTimeout(oauthPollTimer); oauthPollTimer = null; }
-}
-function startOAuthPolling() {
-  stopOAuthPolling();
-  oauthDeadline = Date.now() + 5 * 60 * 1000;  // give up after 5 minutes
-  pollOAuthOnce();
-}
-function pollOAuthOnce() {
-  if (Date.now() > oauthDeadline) { stopOAuthPolling(); hideOAuthOverlay(); return; }
-  fetch(OAUTH_STATUS_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (st) {
-      if (st.stage === 'delivered') {
-        stopOAuthPolling();
-        hideOAuthOverlay();
-        try {
-          frame.contentWindow.postMessage(
-            { source: 'filamenthub-plugin', type: 'auth-restore',
-              accessToken: st.accessToken || '', refreshToken: st.refreshToken || '' },
-            SITE_ORIGIN);
-        } catch (e) { /* iframe not ready */ }
-        return;
-      }
-      // Show the link proactively: even when the browser reports opened, we can't
-      // be sure it actually surfaced (embedded-Python quirks), so the user always
-      // has a manual path. Loopback delivery is identical either way.
-      if (st.stage === 'awaiting' && st.startUrl) {
-        showOAuthOverlay(st.startUrl);
-      }
-      oauthPollTimer = setTimeout(pollOAuthOnce, 1500);
-    })
-    .catch(function () { oauthPollTimer = setTimeout(pollOAuthOnce, 2000); });
-}
-function hideOAuthOverlay() {
-  var ov = document.getElementById('oauth-overlay');
-  if (ov) ov.remove();
-}
-function showOAuthOverlay(url) {
-  var existing = document.getElementById('oauth-url');
-  if (existing) { existing.value = url; return; }
-  var ov = document.createElement('div');
-  ov.id = 'oauth-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,0.7);';
-  var box = document.createElement('div');
-  box.style.cssText = 'max-width:520px;margin:16px;padding:20px;border-radius:10px;' +
-    'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
-    'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
-  var title = document.createElement('div');
-  title.textContent = uiCopy.oauthTitle;
-  title.style.cssText = 'font-weight:600;margin-bottom:8px;';
-  var hint = document.createElement('div');
-  hint.textContent = uiCopy.oauthHint;
-  hint.style.cssText = 'margin-bottom:10px;color:var(--orca-muted,#a0a0a0);';
-  var input = document.createElement('input');
-  input.id = 'oauth-url';
-  input.readOnly = true;
-  input.value = url;
-  input.style.cssText = 'width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px;' +
-    'background:rgba(255,255,255,0.06);color:inherit;' +
-    'border:1px solid var(--orca-border,#3c3c4c);border-radius:6px;';
-  var row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
-  var copy = document.createElement('button');
-  copy.textContent = uiCopy.copyLink;
-  copy.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
-    'border:1px solid var(--orca-accent,#8b7cf8);background:transparent;' +
-    'color:var(--orca-accent,#8b7cf8);font:inherit;';
-  copy.addEventListener('click', function () {
-    input.focus();
-    input.select();
-    var done = function () { copy.textContent = uiCopy.copied; };
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(input.value).then(done, function () {
-          try { document.execCommand('copy'); done(); } catch (e) {}
-        });
-      } else { document.execCommand('copy'); done(); }
-    } catch (e) {}
-  });
-  var close = document.createElement('button');
-  close.textContent = uiCopy.cancel;
-  close.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
-    'border:1px solid var(--orca-border,#3c3c4c);background:transparent;' +
-    'color:var(--orca-fg,#e0e0e0);font:inherit;';
-  close.addEventListener('click', function () { stopOAuthPolling(); hideOAuthOverlay(); });
-  row.appendChild(copy);
-  row.appendChild(close);
-  box.appendChild(title);
-  box.appendChild(hint);
-  box.appendChild(input);
-  box.appendChild(row);
-  ov.appendChild(box);
-  document.body.appendChild(ov);
-}
-
-var localSetupState = null;
-var localSetupFocus = null;
-function reportLocalSetup(state, open, outcome) {
-  var message = { source:'filamenthub-plugin', type:'local-printer-setup-state',
-    provider:state.provider, open:open };
-  if (state.provider === 'bambu') {
-    message.physicalPrinterId = Number(state.physicalPrinterId);
-    message.materialSystemId = Number(state.materialSystemId);
-  }
-  if (!open) message.outcome = outcome || 'cancelled';
-  frame.contentWindow.postMessage(message, SITE_ORIGIN);
-}
-function mountLocalSetup(overlay, state, close, canClose) {
-  if (!localSetupState) localSetupFocus = document.activeElement;
-  localSetupState = state;
-  overlay.className = 'fh-local-setup';
-  frame.inert = true;
-  document.getElementById('bar').inert = true;
-  overlay.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      if (canClose()) close();
-    } else if (event.key === 'Tab') {
-      var fields = Array.prototype.slice.call(overlay.querySelectorAll(
-        'button:not(:disabled),input:not(:disabled),select:not(:disabled),summary'
-      )).filter(function (item) { return item.getClientRects().length > 0; });
-      if (!fields.length) { event.preventDefault(); return; }
-      var first = fields[0], last = fields[fields.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    }
-  });
-  document.body.appendChild(overlay);
-  reportLocalSetup(state, true);
-}
-function closeLocalSetup(overlay, outcome) {
-  overlay.remove();
-  var state = localSetupState;
-  localSetupState = null;
-  frame.inert = false;
-  document.getElementById('bar').inert = false;
-  if (state) reportLocalSetup(state, false, outcome);
-  if (localSetupFocus && localSetupFocus.isConnected) localSetupFocus.focus();
-  localSetupFocus = null;
-}
-function hideBambuOverlay(outcome) {
-  activeBambuResult = null;
-  pendingBambuSetup = null;
-  if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
-  if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
-  var overlay = document.getElementById('bambu-overlay');
-  if (overlay) {
-    if (outcome === 'replacing') overlay.remove();
-    else closeLocalSetup(overlay, typeof outcome === 'string' ? outcome : 'cancelled');
-  }
-}
-function showPrinterSetupOverlay(request) {
-  var previous = document.getElementById('printer-setup-overlay');
-  if (previous) return;
-  var copy = request.copy || {};
-  var overlay = document.createElement('div');
-  overlay.id = 'printer-setup-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
-  var form = document.createElement('form');
-  form.style.cssText = 'width:min(576px,calc(100% - 32px));padding:24px;box-sizing:border-box;border-radius:16px;max-height:calc(100dvh - 32px);overflow-y:auto;border:1px solid rgba(255,255,255,.2);' +
-    'background:var(--fh-local-bg,#1e1e2e);color:var(--fh-local-fg,#e0e0e0);';
-  var title = document.createElement('h3');
-  title.textContent = copy.title || 'Moonraker';
-  form.appendChild(title);
-  var hint = document.createElement('p');
-  hint.textContent = copy.hint || '';
-  form.appendChild(hint);
-  function input(labelText, type, required) {
-    var label = document.createElement('label');
-    label.textContent = labelText;
-    label.style.cssText = 'display:block;margin-top:14px;';
-    var field = document.createElement('input');
-    field.type = type;
-    field.required = required;
-    field.autocomplete = 'off';
-    field.maxLength = type === 'password' ? 1024 : 500;
-    field.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:9px;margin-top:5px;' +
-      'background:transparent;color:inherit;border:1px solid #888;border-radius:6px;';
-    label.appendChild(field);
-    form.appendChild(label);
-    return field;
-  }
-  var host = input(copy.address || uiCopy.bambuAddress, 'text', true);
-  host.value = request.host || '';
-  if (request.connectionRef) host.readOnly = true;
-  var key = input(copy.apiKey || 'API key', 'password', false);
-  var cancel = document.createElement('button');
-  cancel.type = 'button';
-  cancel.textContent = uiCopy.cancel;
-  cancel.onclick = function () {
-    stopSyncPolling();
-    key.value = '';
-    closeLocalSetup(overlay, 'cancelled');
-    frame.contentWindow.postMessage({ source:'filamenthub-plugin', type:'printer-setup-result',
-      requestId:request.requestId, result:{ok:false, code:'cancelled'} }, SITE_ORIGIN);
-  };
-  var submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.textContent = copy.submit || uiCopy.bambuSave;
-  submit.style.margin = cancel.style.margin = '18px 8px 0 0';
-  submit.style.background = 'var(--fh-local-accent)';
-  form.appendChild(cancel);
-  form.appendChild(submit);
-  form.onsubmit = function (event) {
-    event.preventDefault();
-    orca.postMessage({source:'filamenthub-plugin', type:'printer-setup-local', operation:'probe',
-      requestId:request.requestId, host:host.value.trim(), apiKey:key.value, connectionRef:request.connectionRef || ''});
-    key.value = '';
-    closeLocalSetup(overlay, 'saved');
-    startSyncPolling(request.requestId);
-  };
-  overlay.appendChild(form);
-  form.setAttribute('role', 'dialog'); form.setAttribute('aria-modal', 'true');
-  title.id = 'local-printer-setup-title'; form.setAttribute('aria-labelledby', title.id);
-  mountLocalSetup(overlay, {provider:'moonraker'}, function () { cancel.click(); }, function () { return true; });
-  (request.connectionRef ? key : host).focus();
-}
-function prepareBambuOverlay(binding) {
-  binding = Object.assign({}, binding, { requestId: 'bambu-search-' + Date.now() + '-' + Math.random().toString(16).slice(2) });
-  var searchRequested = binding.refresh === true;
-  showBambuOverlay(Object.assign({}, binding, { searching: searchRequested }));
-  pendingBambuSetup = binding;
-  try {
-    orca.postMessage({ source:'filamenthub-plugin', type:'prepare-bambu-local',
-      requestId:binding.requestId,
-      refresh:binding.refresh === true,
-      physicalPrinterId:binding.physicalPrinterId, materialSystemId:binding.materialSystemId,
-      connectionRef:binding.connectionRef || '', pairingCode:binding.pairingCode || '' });
-    startSyncPolling(binding.requestId);
-  } catch (e) {
-    showBambuOverlay(Object.assign({}, binding, { discoveryComplete: false }));
-    return;
-  }
-  bambuSetupTimer = setTimeout(function () {
-    if (pendingBambuSetup === binding) showBambuOverlay(Object.assign({}, binding, { discoveryComplete: false }));
-  }, 30000);
-}
-function handleLocalPrinterSetup(data) {
-  var type = data.type || data.resultType;
-  if (type === 'printer-setup-auth-required') { showPrinterSetupOverlay(data); return true; }
-  if (type === 'bambu-setup-result') {
-    if (activeBambuResult) activeBambuResult(data);
-    return true;
-  }
-  if (type !== 'bambu-setup-candidates') return false;
-  var pending = pendingBambuSetup;
-  if (pending && pending.requestId === data.requestId && Number(pending.physicalPrinterId) === Number(data.physicalPrinterId) &&
-      Number(pending.materialSystemId) === Number(data.materialSystemId) && pending.pairingCode === data.pairingCode) {
-    showBambuOverlay(Object.assign({}, pending, { candidates: data.candidates || [], discoveryComplete: data.discoveryComplete,
-      discoveryAttempted: data.discoveryAttempted === true,
-      hasSavedConnection: data.hasSavedConnection === true }));
-  }
-  return true;
-}
-function showBambuOverlay(binding) {
-  if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
-  pendingBambuSetup = null;
-  var printerId = Number(binding.physicalPrinterId);
-  var systemId = Number(binding.materialSystemId);
-  var pairingCode = typeof binding.pairingCode === 'string' ? binding.pairingCode : '';
-  if (!Number.isInteger(printerId) || printerId < 1 ||
-      !Number.isInteger(systemId) || systemId < 1 || !pairingCode) return;
-  hideBambuOverlay('replacing');
-  var overlay = document.createElement('div');
-  overlay.id = 'bambu-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
-  var box = document.createElement('form');
-  box.style.cssText = 'width:min(576px,calc(100% - 32px));padding:24px;box-sizing:border-box;' +
-    'max-height:calc(100dvh - 32px);overflow-y:auto;' +
-    'border-radius:16px;background:var(--fh-local-bg,#1e1e2e);color:var(--fh-local-fg,#e0e0e0);' +
-    'border:1px solid var(--fh-local-border,#3c3c4c);font-size:14px;box-shadow:0 25px 50px -12px rgba(0,0,0,.5);';
-  var title = document.createElement('div');
-  title.textContent = uiCopy.bambuTitle + (binding.printerName ? ' · ' + binding.printerName : '');
-  title.id = 'bambu-setup-title';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-modal', 'true');
-  box.setAttribute('aria-labelledby', title.id);
-  title.style.cssText = 'font-weight:600;font-size:18px;margin-bottom:7px;';
-  var hint = document.createElement('div');
-  hint.textContent = uiCopy.bambuHint;
-  hint.style.cssText = 'color:var(--fh-local-muted,#a0a0a0);line-height:1.45;margin-bottom:16px;';
-  function field(labelText, type, placeholder, required) {
-    var wrap = document.createElement('label');
-    wrap.style.cssText = 'display:block;margin-top:11px;color:var(--fh-local-muted,#a0a0a0);';
-    var label = document.createElement('span');
-    label.textContent = labelText;
-    label.style.cssText = 'display:block;margin-bottom:5px;';
-    var input = document.createElement('input');
-    input.type = type;
-    input.placeholder = placeholder || '';
-    input.required = !!required;
-    input.autocomplete = 'off';
-    input.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
-      'background:rgba(255,255,255,.06);color:inherit;' +
-      'border:1px solid var(--fh-local-border,#3c3c4c);font:inherit;';
-    wrap.appendChild(label);
-    wrap.appendChild(input);
-    box.appendChild(wrap);
-    return input;
-  }
-  box.appendChild(title);
-  box.appendChild(hint);
-  if (binding.searching) {
-    hint.textContent = uiCopy.bambuSearching;
-    var stop = document.createElement('button');
-    stop.type = 'button'; stop.textContent = uiCopy.cancel;
-    stop.addEventListener('click', hideBambuOverlay);
-    box.appendChild(stop); overlay.appendChild(box);
-    mountLocalSetup(overlay, Object.assign({}, binding, {provider:'bambu'}), hideBambuOverlay, function () { return true; });
-    stop.focus();
-    return;
-  }
-  var candidates = Array.isArray(binding.candidates) ? binding.candidates.filter(function (item) {
-    return item && typeof item.host === 'string' && item.host &&
-      typeof item.label === 'string';
-  }).slice(0, 16) : [];
-  var candidateSelect = null;
-  if (candidates.length) {
-    var candidateWrap = document.createElement('label');
-    candidateWrap.style.cssText = 'display:block;margin-top:11px;color:var(--fh-local-muted,#a0a0a0);';
-    var candidateLabel = document.createElement('span');
-    candidateLabel.textContent = uiCopy.bambuChoosePrinter;
-    candidateLabel.style.cssText = 'display:block;margin-bottom:5px;';
-    candidateSelect = document.createElement('select');
-    candidateSelect.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
-      'background:var(--fh-local-bg,#1e1e2e);color:inherit;' +
-      'border:1px solid var(--fh-local-border,#3c3c4c);font:inherit;';
-    candidates.forEach(function (item, index) {
-      var option = document.createElement('option');
-      option.value = String(index);
-      option.textContent = item.label + ' · ' + item.host;
-      candidateSelect.appendChild(option);
-    });
-    candidateWrap.appendChild(candidateLabel);
-    candidateWrap.appendChild(candidateSelect);
-    box.appendChild(candidateWrap);
-  }
-  var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
-  hint.textContent = candidates.some(function (item) { return item.source === 'network'; })
-    ? uiCopy.bambuFound
-    : binding.discoveryAttempted !== true
-      ? uiCopy.bambuHint
-      : binding.discoveryComplete === false
-        ? uiCopy.bambuSearchIncomplete
-        : uiCopy.bambuNotFound;
-  if (candidateSelect) {
-    host.value = candidates[0].host;
-    var hostDetails = document.createElement('details');
-    hostDetails.style.marginTop = '12px';
-    var hostSummary = document.createElement('summary');
-    hostSummary.textContent = uiCopy.bambuManual;
-    hostSummary.style.cursor = 'pointer';
-    hostDetails.appendChild(hostSummary);
-    hostDetails.appendChild(host.parentElement);
-    box.appendChild(hostDetails);
-  }
-  var code = field(uiCopy.bambuCode, 'password', '', true);
-  var serial = field(uiCopy.bambuSerial, 'text', uiCopy.bambuSerialHint, false);
-  if (candidateSelect) {
-    serial.value = candidates[0].serial || '';
-    candidateSelect.addEventListener('change', function () {
-      var item = candidates[Number(candidateSelect.value)];
-      host.value = item.host; serial.value = item.serial || ''; code.value = '';
-    });
-  }
-  host.addEventListener('input', function () { serial.value = ''; });
-  var serialDetails = document.createElement('details');
-  serialDetails.style.marginTop = '12px';
-  var serialSummary = document.createElement('summary');
-  serialSummary.textContent = uiCopy.bambuSerial;
-  serialSummary.style.cursor = 'pointer';
-  serialDetails.appendChild(serialSummary);
-  serialDetails.appendChild(serial.parentElement);
-  box.appendChild(serialDetails);
-  var local = document.createElement('div');
-  local.textContent = uiCopy.bambuLocalOnly;
-  local.style.cssText = 'margin-top:12px;color:var(--fh-local-muted,#a0a0a0);font-size:11px;line-height:1.45;';
-  box.appendChild(local);
-  var row = document.createElement('div');
-  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:18px;';
-  function button(text, accent) {
-    var element = document.createElement('button');
-    element.type = 'button';
-    element.textContent = text;
-    element.style.cssText = 'padding:7px 14px;border-radius:7px;cursor:pointer;font:inherit;' +
-      'border:1px solid ' + (accent ? 'var(--fh-local-accent,#8b7cf8)' : 'var(--fh-local-border,#3c3c4c)') + ';' +
-      'background:' + (accent ? 'var(--fh-local-accent,#8b7cf8)' : 'transparent') + ';' +
-      'color:' + (accent ? '#fff' : 'var(--fh-local-fg,#e0e0e0)') + ';';
-    return element;
-  }
-  var remove = button(uiCopy.bambuRemove, false);
-  remove.style.marginRight = 'auto';
-  remove.addEventListener('click', function () {
-    try {
-      orca.postMessage({ source:'filamenthub-plugin', type:'remove-bambu-local',
-        physicalPrinterId:printerId });
-      startSyncPolling();
-    } catch (e) {}
-    hideBambuOverlay('removed');
-  });
-  var cancel = button(uiCopy.cancel, false);
-  cancel.addEventListener('click', hideBambuOverlay);
-  var save = button(uiCopy.bambuSave, true);
-  var refresh = button(binding.discoveryAttempted === true ? uiCopy.bambuSearchAgain : uiCopy.bambuSearch, false);
-  refresh.addEventListener('click', function () { prepareBambuOverlay(Object.assign({}, binding, { refresh:true })); });
-  save.type = 'submit';
-  if (binding.hasSavedConnection) row.appendChild(remove);
-  row.appendChild(refresh);
-  row.appendChild(cancel);
-  row.appendChild(save);
-  box.appendChild(row);
-  var setupRequestId = '';
-  activeBambuResult = function (data) {
-    if (!setupRequestId || data.requestId !== setupRequestId) return;
-    if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
-    if (data.ok) { hideBambuOverlay('saved'); return; }
-    save.disabled = false; cancel.disabled = false; refresh.disabled = false; remove.disabled = false;
-    hint.textContent = uiCopy[data.code] || uiCopy.bambuInvalid;
-    code.focus();
-  };
-  box.addEventListener('submit', function (event) {
-    event.preventDefault();
-    if (!host.value.trim() || !code.value.trim()) return;
-    setupRequestId = 'bambu-setup-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-    save.disabled = true; cancel.disabled = true; refresh.disabled = true; remove.disabled = true;
-    hint.textContent = uiCopy.bambuConnecting;
-    bambuAttemptTimer = setTimeout(function () {
-      if (activeBambuResult) activeBambuResult({ requestId:setupRequestId, ok:false, code:'bambuSetupTimeout' });
-    }, 120000);
-    try {
-      orca.postMessage({ source:'filamenthub-plugin', type:'configure-bambu-local',
-        requestId:setupRequestId,
-        physicalPrinterId:printerId, materialSystemId:systemId,
-        host:host.value.trim(), accessCode:code.value.trim(), serial:serial.value.trim(),
-        pairingCode:pairingCode });
-      startSyncPolling(setupRequestId, 120000);
-    } catch (e) { activeBambuResult({ requestId:setupRequestId, ok:false, code:'bambuInvalid' }); }
-    code.value = '';
-  });
-  overlay.addEventListener('click', function (event) {
-    if (event.target === overlay && !save.disabled) hideBambuOverlay();
-  });
-  overlay.appendChild(box);
-  mountLocalSetup(overlay, Object.assign({}, binding, {provider:'bambu'}), hideBambuOverlay, function () { return !save.disabled; });
-  (candidateSelect ? code : host).focus();
-}
-
-// Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
-var buttons = Array.prototype.slice.call(document.querySelectorAll('#bar button[data-path]'));
-buttons.forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    buttons.forEach(function (b) { b.classList.remove('active'); });
-    btn.classList.add('active');
-    try {
-      frame.contentWindow.postMessage(
-        { source: 'filamenthub-plugin', type: 'navigate', path: btn.getAttribute('data-path') },
-        SITE_ORIGIN);
-    } catch (e) { /* iframe not ready */ }
-  });
-});
-
-// Brand label doubles as a sign-in trigger when signed out — opens the catalog's
-// login modal (?auth=login). When signed in it just shows the username.
-document.getElementById('brand').addEventListener('click', function () {
-  if (wasLoggedIn) return;
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'navigate', path: '/?auth=login' }, SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-});
-
-// Python writes the sync summary to loopback; poll it and relay a toast to the embed.
-var syncPollTimer = null;
-var syncDeadline = 0;
-var syncExpectedOperationId = '';
-function stopSyncPolling() {
-  if (syncPollTimer) { clearTimeout(syncPollTimer); syncPollTimer = null; }
-}
-function startSyncPolling(operationId, timeoutMs) {
-  if (hostPush) return;
-  stopSyncPolling();
-  syncExpectedOperationId = operationId || '';
-  syncDeadline = Date.now() + (timeoutMs || 30000);
-  pollSyncOnce();
-}
-function pollSyncOnce() {
-  if (Date.now() > syncDeadline) { stopSyncPolling(); return; }
-  fetch(SYNC_STATUS_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (st) {
-      if (syncExpectedOperationId && (st.operationId || st.requestId || '') !== syncExpectedOperationId) {
-        syncPollTimer = setTimeout(pollSyncOnce, 500);
-        return;
-      }
-      if (handleLocalPrinterSetup(st)) { stopSyncPolling(); return; }
-      if (st.text || st.resultType === 'printer-bundle-status-result' || st.resultType === 'printer-setup-result') {
-        var resultId = st.operationId || st.requestId || '';
-        if (syncExpectedOperationId && resultId !== syncExpectedOperationId) {
-          syncPollTimer = setTimeout(pollSyncOnce, 500);
-          return;
-        }
-        stopSyncPolling();
-        try {
-          st.source = 'filamenthub-plugin';
-          st.type = st.resultType || 'sync-result';
-          frame.contentWindow.postMessage(st, SITE_ORIGIN);
-        } catch (e) { /* iframe not ready */ }
-        return;
-      }
-      syncPollTimer = setTimeout(pollSyncOnce, 1000);
-    })
-    .catch(function () { syncPollTimer = setTimeout(pollSyncOnce, 1500); });
-}
-document.getElementById('sync').addEventListener('click', function () {
-  var operationId = 'sync-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-  try { orca.postMessage({ source: 'filamenthub-plugin', type: 'sync',
-    scope: 'all', operationId: operationId }); } catch (e) { /* bridge not ready */ }
-  startSyncPolling(operationId);
-});
-
-// Recover: Python scans local presets and writes the list to loopback; poll it and
-// hand the list to the embed, which shows a checkbox picker and posts back the choice.
-var recoverPollTimer = null;
-var recoverDeadline = 0;
-function stopRecoverPolling() {
-  if (recoverPollTimer) { clearTimeout(recoverPollTimer); recoverPollTimer = null; }
-}
-function startRecoverPolling() {
-  if (hostPush) return;
-  stopRecoverPolling();
-  recoverDeadline = Date.now() + 30 * 1000;
-  pollRecoverOnce();
-}
-function pollRecoverOnce() {
-  if (Date.now() > recoverDeadline) { stopRecoverPolling(); return; }
-  fetch(RECOVER_STATUS_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (st) {
-      if (st.ready) {
-        stopRecoverPolling();
-        try {
-          frame.contentWindow.postMessage(
-            { source: 'filamenthub-plugin', type: 'recover-list', items: st.items || [] }, SITE_ORIGIN);
-        } catch (e) { /* iframe not ready */ }
-        return;
-      }
-      recoverPollTimer = setTimeout(pollRecoverOnce, 800);
-    })
-    .catch(function () { recoverPollTimer = setTimeout(pollRecoverOnce, 1200); });
-}
-document.getElementById('recover').addEventListener('click', function () {
-  try { orca.postMessage({ source: 'filamenthub-plugin', type: 'recover' }); } catch (e) { /* bridge not ready */ }
-  startRecoverPolling();
-});
-
-var slicePollTimer = null;
-var sliceDeadline = 0;
-function stopSlicePolling() {
-  if (slicePollTimer) { clearTimeout(slicePollTimer); slicePollTimer = null; }
-}
-function startSlicePolling() {
-  if (hostPush) return;
-  stopSlicePolling();
-  // A big slice takes a while to travel and parse.
-  sliceDeadline = Date.now() + 180 * 1000;
-  pollSliceOnce();
-}
-function pollSliceOnce() {
-  if (Date.now() > sliceDeadline) {
-    stopSlicePolling();
-    relaySliceResult({ error: 'timeout' });
-    return;
-  }
-  fetch(SLICE_PARSE_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (st) {
-      if (st.ready) {
-        stopSlicePolling();
-        relaySliceResult(st.result || { error: 'empty' });
-        return;
-      }
-      slicePollTimer = setTimeout(pollSliceOnce, 800);
-    })
-    .catch(function () { slicePollTimer = setTimeout(pollSliceOnce, 1200); });
-}
-var sliceKeysTimer = null;
-var sliceKeysDeadline = 0;
-function startSliceKeysPolling() {
-  if (hostPush) return;
-  if (sliceKeysTimer) { clearTimeout(sliceKeysTimer); sliceKeysTimer = null; }
-  sliceKeysDeadline = Date.now() + 20 * 1000;
-  pollSliceKeysOnce();
-}
-function pollSliceKeysOnce() {
-  if (Date.now() > sliceKeysDeadline) { sliceKeysTimer = null; return; }
-  fetch(SLICE_ALIVE_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
-    .then(function (st) {
-      if (st.ready) {
-        sliceKeysTimer = null;
-        try {
-          frame.contentWindow.postMessage(
-            { source: 'filamenthub-plugin', type: 'slices-alive',
-              keys: st.alive || [], hook: st.hook || null },
-            SITE_ORIGIN);
-        } catch (e) { /* iframe not ready */ }
-        return;
-      }
-      sliceKeysTimer = setTimeout(pollSliceKeysOnce, 500);
-    })
-    .catch(function () { sliceKeysTimer = setTimeout(pollSliceKeysOnce, 800); });
-}
-function relaySliceResult(result) {
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'parsed-slice', result: result }, SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-}
-
-function relaySyncResult(data) {
-  try {
-    frame.contentWindow.postMessage(
-      {
-        source: 'filamenthub-plugin',
-        type: 'sync-result',
-        text: data.text || '',
-        draftCount: Number(data.draftCount) || 0,
-        operationId: data.operationId || '',
-        scope: data.scope || 'all',
-        status: data.status || 'success',
-        contours: Array.isArray(data.contours) ? data.contours : []
-      }, SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-}
-function relayNote(text, status) {
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'plugin-notice',
-        text: text || '', status: status || 'info' }, SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-}
-function copyDiagnostics(text) {
-  if (!text) {
-    relayNote(uiCopy.logEmpty);
-    return;
-  }
-  navigator.clipboard.writeText(text).then(function () {
-    relayNote(uiCopy.logCopied);
-  }, function () {
-    relayNote(uiCopy.logCopyFailed);
-  });
-}
-// The host handle can push worker results directly into this page. Keep the
-// loopback status endpoints only as a compatibility fallback for older builds.
-try {
-  orca.onMessage(function (data) {
-    if (!data || data.source !== 'filamenthub-host') return;
-    hostPush = true;
-    if (data.type === 'resume-local-action') {
-      var action = data.action || {};
-      if (action.type === 'configure-bambu') {
-        prepareBambuOverlay(action);
-      } else if (action.type === 'printer-setup-manual') {
-        showPrinterSetupOverlay(action);
-      } else if (action.type === 'open-oauth') {
-        try { orca.postMessage(action); } catch (e) { /* bridge not ready */ }
-        startOAuthPolling();
-      }
-      return;
-    }
-    if (handleLocalPrinterSetup(data)) return;
-    if (data.type === 'transport') return;
-    if (data.type === 'sync-result') {
-      stopSyncPolling();
-      relaySyncResult(data);
-    } else if (data.type === 'plugin-notice') {
-      relayNote(data.text || '', data.status || 'info');
-    } else if (data.type === 'printer-bundle-result') {
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'printer-bundle-result',
-            requestId: data.requestId || '', text: data.text || '',
-            status: data.status || 'success',
-            physicalPrinterId: Number(data.physicalPrinterId) || 0,
-            installed: data.installed === true }, SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'printer-bundle-status-result') {
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'printer-bundle-status-result',
-            requestId: data.requestId || '', status: data.status || 'success',
-            installedPrinterIds: Array.isArray(data.installedPrinterIds)
-              ? data.installedPrinterIds : [] }, SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'recover-list') {
-      stopRecoverPolling();
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'recover-list', items: data.items || [] },
-          SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'parsed-slice') {
-      stopSlicePolling();
-      relaySliceResult(data.result || { error: 'empty' });
-    } else if (data.type === 'slices-alive') {
-      if (sliceKeysTimer) { clearTimeout(sliceKeysTimer); sliceKeysTimer = null; }
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'slices-alive',
-            keys: data.keys || [], hook: data.hook || null },
-          SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'printer-setup-result') {
-      stopSyncPolling();
-      frame.contentWindow.postMessage({source:'filamenthub-plugin', type:data.type,
-        requestId:data.requestId, result:data.result}, SITE_ORIGIN);
-    } else if (data.type === 'happy-hare-result') {
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'happy-hare-result',
-            requestId: data.requestId || '', result: data.result || {} },
-          SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'bambu-material-result') {
-      try {
-        frame.contentWindow.postMessage(
-          { source: 'filamenthub-plugin', type: 'bambu-material-result',
-            requestId: data.requestId || '', result: data.result || {} },
-          SITE_ORIGIN);
-      } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'diagnostics') {
-      copyDiagnostics(data.text || '');
-    }
-  });
-  orca.postMessage({ source: 'filamenthub-plugin', type: 'host-ready' });
-} catch (e) { /* old bridge: loopback polling remains available */ }
-document.getElementById('diag').addEventListener('click', function () {
-  if (hostPush) {
-    try {
-      orca.postMessage({ source: 'filamenthub-plugin', type: 'read-diagnostics' });
-      return;
-    } catch (e) { /* use the loopback fallback below */ }
-  }
-  fetch(LOG_PATH, { cache: 'no-store' })
-    .then(function (r) { return r.text(); })
-    .then(copyDiagnostics)
-    .catch(function () { relayNote(uiCopy.logReadFailed); });
-});
-
-// Sign out: tell the catalog to log out; it clears the session and reports back
-// (auth-state with no label), which hides this button again.
-document.getElementById('logout').addEventListener('click', function () {
-  try {
-    frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'do-logout' }, SITE_ORIGIN);
-  } catch (e) { /* iframe not ready */ }
-});
-</script>
-</body>
-</html>
-""".replace("__SITE_ORIGIN__", SITE_ORIGIN).replace(
-    "__PLUGIN_VERSION__", PLUGIN_VERSION).replace(
-    "__PLUGIN_CAPABILITIES__", json.dumps(PLUGIN_CAPABILITIES)).replace(
-    "__UI_COPY__", json.dumps(UI_COPY, ensure_ascii=False).replace("</", "<\\/")).replace(
-    "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
-    "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
-    "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path()).replace(
-    "__SLICE_PARSE_PATH__", SHELL_SERVER.slice_parse_path()).replace(
-    "__SLICE_ALIVE_PATH__", SHELL_SERVER.slice_alive_path()).replace(
-    "__LOG_PATH__", SHELL_SERVER.log_path()).replace(
-    "__DIAG_HIDDEN__", "" if SHOW_DIAGNOSTICS else "hidden")
-
-
-def render_page():
-    language = refresh_ui_language()
-    return PAGE.replace("__HOST_UI_LANGUAGE__", language).replace(
-        "__EMBED_URL__", localized_embed_url(language))
-
-
-def direct_embed_url(bridge_session, language=None):
-    """Bind the injected Pages bridge to this one trusted tab navigation."""
-    url = localized_embed_url(language)
-    fragment = urllib.parse.urlencode({"fh_bridge": bridge_session})
-    return urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:4], fragment))
-
-
 DIRECT_PAGE = r"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#171724;
@@ -7864,8 +6447,15 @@ retry.textContent=copy.retry;retry.addEventListener('click',connect);connect();
 </script></body></html>"""
 
 
+def direct_embed_url(bridge_session, language=None):
+    """Bind the official injected bridge to this one plugin-page navigation."""
+    url = localized_embed_url(language)
+    fragment = urllib.parse.urlencode({"fh_bridge": bridge_session})
+    return urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:4], fragment))
+
+
 def render_direct_page(bridge_session):
-    """Probe in WebView before navigation so network failure stays readable."""
+    """Probe the service before navigating the host page to the HTTPS embed UI."""
     language = refresh_ui_language()
     copy = {
         key: resolved_ui_catalog(language).get(key, key)
@@ -7882,6 +6472,103 @@ def render_direct_page(bridge_session):
         json.dumps(direct_embed_url(bridge_session, language)).replace("</", "<\\/"),
     ).replace(
         "__COPY__", json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
+    )
+
+
+LOCAL_DIALOG_PAGE = r"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{background:#171724;color:#e8e8ef;font:14px system-ui,-apple-system,"Segoe UI",sans-serif;padding:22px}
+main{max-width:620px;margin:0 auto}h1{font-size:19px;margin:0 0 8px}p{color:#b8b8c5;line-height:1.5;margin:0 0 16px}
+label{display:block;margin-top:13px;color:#c9c9d4}input,select{display:block;width:100%;margin-top:6px;padding:9px 10px;
+border:1px solid #49495c;border-radius:7px;background:#232334;color:#f5f5f8;font:inherit}
+details{margin-top:13px}summary{cursor:pointer;color:#c9c9d4}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;justify-content:flex-end}
+button{padding:8px 14px;border:1px solid #55556a;border-radius:7px;background:transparent;color:#ededf4;font:inherit;cursor:pointer}
+button.primary{border-color:#8b5cf6;background:#7c3aed;color:#fff}button.danger{margin-right:auto;color:#fca5a5}
+button:disabled{opacity:.5;cursor:wait}#status{min-height:21px;margin-top:14px;color:#c4b5fd}#candidate-wrap{display:none}
+:focus-visible{outline:2px solid #c084fc;outline-offset:2px}
+</style></head><body><main><h1 id="title"></h1><p id="hint"></p>
+<form id="form"><div id="candidate-wrap"><label id="candidate-label"><span id="candidate-title"></span><select id="candidate"></select></label></div>
+<label id="host-label"><input id="host" required autocomplete="off" maxlength="500"></label>
+<label id="secret-label"><input id="secret" type="password" autocomplete="off" maxlength="1024"></label>
+<details id="serial-wrap"><summary id="serial-summary"></summary><label><input id="serial" autocomplete="off" maxlength="200"></label></details>
+<div id="status" role="status" aria-live="polite"></div><div class="actions">
+<button id="remove" class="danger" type="button"></button><button id="search" type="button"></button>
+<button id="cancel" type="button"></button><button id="save" class="primary" type="submit"></button>
+</div></form></main><script>
+'use strict';
+var action=__ACTION__,copy=__COPY__,session=__SESSION__,kind=action.type==='configure-bambu'?'bambu':'moonraker';
+var form=document.getElementById('form'),host=document.getElementById('host'),secret=document.getElementById('secret'),
+serial=document.getElementById('serial'),candidate=document.getElementById('candidate'),status=document.getElementById('status'),
+save=document.getElementById('save'),search=document.getElementById('search'),remove=document.getElementById('remove');
+function send(message){orca.postMessage(Object.assign({source:'filamenthub-plugin',localDialogSession:session},message));}
+function finish(outcome){send({type:'local-dialog-close',outcome:outcome,provider:kind});}
+function setBusy(value){save.disabled=value;search.disabled=value;remove.disabled=value;}
+document.getElementById('cancel').textContent=copy.cancel||'Cancel';
+document.getElementById('cancel').onclick=function(){finish('cancelled')};
+if(kind==='bambu'){
+ document.getElementById('title').textContent=(copy.bambuTitle||'Bambu LAN')+(action.printerName?' · '+action.printerName:'');
+ document.getElementById('hint').textContent=copy.bambuHint||'';
+ document.getElementById('host-label').prepend(document.createTextNode(copy.bambuAddress||'Printer address'));
+ document.getElementById('secret-label').prepend(document.createTextNode(copy.bambuCode||'LAN access code'));
+ document.getElementById('serial-summary').textContent=copy.bambuSerial||'Serial number';
+ host.placeholder=copy.bambuAddressPlaceholder||'';serial.placeholder=copy.bambuSerialHint||'';secret.required=true;
+ save.textContent=copy.bambuSave||'Connect';search.textContent=copy.bambuSearch||'Search local network';
+ remove.textContent=copy.bambuRemove||'Remove local connection';remove.style.display='none';
+ function prepare(refresh){status.textContent=refresh?(copy.bambuSearching||'Searching…'):'';
+  send({type:'prepare-bambu-local',requestId:'bambu-search-'+Date.now(),refresh:refresh===true,
+   physicalPrinterId:action.physicalPrinterId,materialSystemId:action.materialSystemId,
+   connectionRef:action.connectionRef||'',pairingCode:action.pairingCode||''});}
+ search.onclick=function(){prepare(true)};
+ remove.onclick=function(){send({type:'remove-bambu-local',physicalPrinterId:action.physicalPrinterId});finish('removed')};
+ form.onsubmit=function(event){event.preventDefault();if(!host.value.trim()||!secret.value.trim())return;
+  setBusy(true);status.textContent=copy.bambuConnecting||'Connecting…';
+  send({type:'configure-bambu-local',requestId:'bambu-setup-'+Date.now(),physicalPrinterId:action.physicalPrinterId,
+   materialSystemId:action.materialSystemId,host:host.value.trim(),accessCode:secret.value.trim(),
+   serial:serial.value.trim(),pairingCode:action.pairingCode||''});secret.value=''};
+ function candidates(data){var items=Array.isArray(data.candidates)?data.candidates:[];candidate.textContent='';
+  if(items.length){document.getElementById('candidate-wrap').style.display='block';
+   document.getElementById('candidate-title').textContent=copy.bambuChoosePrinter||'Printer';
+   items.forEach(function(item,index){var option=document.createElement('option');option.value=String(index);
+    option.textContent=String(item.label||item.host||'')+' · '+String(item.host||'');candidate.appendChild(option)});
+   function choose(){var item=items[Number(candidate.value)]||{};host.value=item.host||'';serial.value=item.serial||'';secret.value=''}
+   candidate.onchange=choose;choose();status.textContent=copy.bambuFound||'';
+  }else{status.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):''}
+  remove.style.display=data.hasSavedConnection?'':'none';search.textContent=data.discoveryAttempted?(copy.bambuSearchAgain||copy.bambuSearch):copy.bambuSearch;}
+ orca.onMessage(function(data){if(!data||data.source!=='filamenthub-host')return;
+  if(data.type==='bambu-setup-candidates')candidates(data);
+  if(data.type==='bambu-setup-result'){if(data.ok){finish('saved')}else{setBusy(false);status.textContent=copy[data.code]||copy.bambuInvalid||'Connection failed';secret.focus()}}});
+ prepare(false);host.focus();
+}else{
+ var labels=action.copy||{};document.getElementById('title').textContent=labels.title||'Moonraker';
+ document.getElementById('hint').textContent=labels.hint||'';
+ document.getElementById('host-label').prepend(document.createTextNode(labels.address||'Moonraker address'));
+ document.getElementById('secret-label').prepend(document.createTextNode(labels.apiKey||'API key'));
+ host.value=action.host||'';host.readOnly=!!action.connectionRef;secret.required=false;
+ document.getElementById('serial-wrap').style.display='none';search.style.display='none';remove.style.display='none';
+ save.textContent=labels.submit||copy.save||'Connect';
+ form.onsubmit=function(event){event.preventDefault();if(!host.value.trim())return;setBusy(true);
+  send({type:'printer-setup-local',operation:'probe',requestId:action.requestId,host:host.value.trim(),
+   apiKey:secret.value,connectionRef:action.connectionRef||'',copy:labels});secret.value='';finish('saved')};
+ (action.connectionRef?secret:host).focus();
+}
+</script></body></html>"""
+
+
+def render_local_dialog(action, local_dialog_session):
+    """Render a credential form owned by the plugin process, never by the site."""
+    language = refresh_ui_language()
+    copy = resolved_ui_catalog(language)
+    return (
+        LOCAL_DIALOG_PAGE.replace(
+            "__ACTION__", json.dumps(action, ensure_ascii=False).replace("</", "<\\/")
+        )
+        .replace(
+            "__COPY__", json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
+        )
+        .replace(
+            "__SESSION__", json.dumps(local_dialog_session).replace("</", "<\\/")
+        )
     )
 
 
@@ -9213,7 +7900,6 @@ def stop_plugin_runtime():
     BAMBU_REVOKE_SCHEDULER.stop()
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
-    SHELL_SERVER.stop()
     return True
 
 
@@ -9617,8 +8303,9 @@ class FilamentHubCatalog(
         if self.win is not None and self.win.is_open():
             return False
         self._session_sync_started = False
-        self._local_shell_active = False
-        self._pending_local_action = None
+        self._local_window = None
+        self._local_dialog_session = ""
+        self._local_dialog_context = None
         self._direct_bridge_session = secrets.token_urlsafe(32)
         self.win = orca.host.ui.create_window(
             title="FilamentHub", html=render_direct_page(self._direct_bridge_session),
@@ -9629,16 +8316,89 @@ class FilamentHubCatalog(
         )
         return True
 
-    def _activate_local_shell(self, action):
-        """Enter the credential-safe local shell after an explicit UI action."""
+    def _report_local_dialog_state(self, open_, outcome=None):
+        context = self._local_dialog_context or {}
+        provider = context.get("provider")
+        if provider not in {"bambu", "moonraker"}:
+            return
+        payload = {"provider": provider, "open": bool(open_)}
+        if provider == "bambu":
+            payload.update(
+                physicalPrinterId=context.get("physicalPrinterId"),
+                materialSystemId=context.get("materialSystemId"),
+            )
+        if not open_ and outcome in {"saved", "cancelled", "removed"}:
+            payload["outcome"] = outcome
+        self._deliver("local-printer-setup-state", **payload)
+
+    def _on_local_dialog_close(self):
+        if self._local_window is None:
+            return
+        self._local_window = None
+        self._local_dialog_session = ""
+        self._report_local_dialog_state(False, "cancelled")
+        self._local_dialog_context = None
+
+    def _close_local_dialog(self, outcome="cancelled"):
+        window = self._local_window
+        if window is None:
+            return
+        self._report_local_dialog_state(False, outcome)
+        self._local_window = None
+        self._local_dialog_session = ""
+        self._local_dialog_context = None
         try:
-            shell_url = SHELL_SERVER.url_for(render_page())
-        except OSError:
-            self._deliver_notice(ui_text("localPermissionRetryFailed"), "warning")
+            window.close()
+        except Exception:
+            pass
+
+    def _open_local_dialog(self, action):
+        """Open one host-owned credential dialog without any local listener."""
+        if not isinstance(action, dict):
             return False
-        self._pending_local_action = dict(action)
-        self._local_shell_active = True
-        self._deliver("switch-to-local-shell", url=shell_url)
+        action_type = action.get("type")
+        provider = "bambu" if action_type == "configure-bambu" else "moonraker"
+        if action_type not in {"configure-bambu", "printer-setup-manual"}:
+            return False
+        if provider == "bambu":
+            action = {
+                key: action.get(key)
+                for key in (
+                    "type",
+                    "physicalPrinterId",
+                    "materialSystemId",
+                    "printerName",
+                    "pairingCode",
+                    "connectionRef",
+                )
+            }
+        else:
+            action = {
+                key: action.get(key)
+                for key in ("type", "requestId", "host", "connectionRef", "copy")
+            }
+        current = self._local_window
+        if current is not None:
+            try:
+                if current.is_open():
+                    return False
+            except Exception:
+                pass
+        self._local_dialog_session = secrets.token_urlsafe(32)
+        self._local_dialog_context = {
+            "provider": provider,
+            "physicalPrinterId": action.get("physicalPrinterId"),
+            "materialSystemId": action.get("materialSystemId"),
+        }
+        self._local_window = orca.host.ui.create_window(
+            title="FilamentHub",
+            html=render_local_dialog(action, self._local_dialog_session),
+            width=640,
+            height=720 if provider == "bambu" else 460,
+            on_message=self.on_message,
+            on_close=self._on_local_dialog_close,
+        )
+        self._report_local_dialog_state(True)
         return True
 
     def _host_profiles(self, scope):
@@ -9704,10 +8464,8 @@ class FilamentHubCatalog(
         return orca.ExecutionResult.success(ui_text("catalogOpened"))
 
     def on_close(self):
+        self._close_local_dialog()
         self.win = None
-        # Stop serving the token-bearing shell while no window needs it; a
-        # reopen spins up a fresh server with a new secret path.
-        SHELL_SERVER.stop()
 
     def on_unload(self):
         self.on_close()
@@ -9751,6 +8509,11 @@ class FilamentHubCatalog(
         payload.update(data)
         return post_window(self.win, payload)
 
+    def _deliver_local(self, message_type, **data):
+        payload = {"source": "filamenthub-host", "type": message_type}
+        payload.update(data)
+        return post_window(self._local_window, payload)
+
     def _deliver_sync_result(self, text, draft_count=0, operation_id="", scope="all",
                              status="success", contours=None):
         draft_count = max(0, int(draft_count or 0))
@@ -9762,15 +8525,11 @@ class FilamentHubCatalog(
             "status": status,
             "contours": list(contours or []),
         }
-        if not self._deliver("sync-result", **payload):
-            SHELL_SERVER.set_sync_result(payload)
+        self._deliver("sync-result", **payload)
 
     def _deliver_notice(self, text, status="info"):
         payload = {"text": text, "status": status}
-        if not self._deliver("plugin-notice", **payload):
-            SHELL_SERVER.set_sync_result(
-                dict(payload, resultType="plugin-notice")
-            )
+        self._deliver("plugin-notice", **payload)
 
     def _deliver_printer_bundle_result(
         self,
@@ -9787,10 +8546,7 @@ class FilamentHubCatalog(
             "physicalPrinterId": int(physical_printer_id or 0),
             "installed": bool(installed),
         }
-        if not self._deliver("printer-bundle-result", **payload):
-            SHELL_SERVER.set_sync_result(
-                dict(payload, resultType="printer-bundle-result")
-            )
+        self._deliver("printer-bundle-result", **payload)
 
     def _deliver_printer_bundle_status(self, request_id, installed_printer_ids):
         payload = {
@@ -9798,24 +8554,18 @@ class FilamentHubCatalog(
             "status": "success",
             "installedPrinterIds": sorted(set(installed_printer_ids)),
         }
-        if not self._deliver("printer-bundle-status-result", **payload):
-            SHELL_SERVER.set_sync_result(
-                dict(payload, resultType="printer-bundle-status-result")
-            )
+        self._deliver("printer-bundle-status-result", **payload)
 
     def _deliver_printer_recovery(self, message_type, request_id, status="success", **data):
         payload = {"requestId": request_id, "status": status}
         payload.update(data)
-        if not self._deliver(message_type, **payload):
-            SHELL_SERVER.set_sync_result(dict(payload, resultType=message_type))
+        self._deliver(message_type, **payload)
 
     def _deliver_recovery(self, items):
-        if not self._deliver("recover-list", items=items):
-            SHELL_SERVER.set_recover_items(items)
+        self._deliver("recover-list", items=items)
 
     def _deliver_slice_result(self, result):
-        if not self._deliver("parsed-slice", result=result):
-            SHELL_SERVER.set_slice_parse(result)
+        self._deliver("parsed-slice", result=result)
 
     def _deliver_happy_hare_result(self, request_id, result):
         self._deliver(
@@ -9984,7 +8734,7 @@ class FilamentHubCatalog(
         candidates.extend(dict(item, source="profile") for item in bambu_host_candidates(
             observations, context, binding["physicalPrinterId"],
         ) if item["host"].lower() not in seen)
-        # Only the native shell receives addresses/serials. The web gets opaque refs.
+        # Only the host-owned local dialog receives addresses/serials. The web gets opaque refs.
         self._deliver_native_setup(
             "bambu-setup-candidates",
             requestId=binding.get("requestId", ""),
@@ -10002,13 +8752,19 @@ class FilamentHubCatalog(
         )
 
     def _deliver_native_setup(self, message_type, **payload):
-        if not self._deliver(message_type, **payload):
-            SHELL_SERVER.set_sync_result(dict(payload, resultType=message_type))
+        if message_type == "printer-setup-auth-required":
+            action = dict(payload)
+            action["type"] = "printer-setup-manual"
+            self._open_local_dialog(action)
+            return
+        if message_type in {"bambu-setup-candidates", "bambu-setup-result"}:
+            if self._deliver_local(message_type, **payload):
+                return
+        self._deliver(message_type, **payload)
 
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
-        if not self._deliver("slices-alive", keys=alive, hook=hook):
-            SHELL_SERVER.set_slice_alive(alive, hook)
+        self._deliver("slices-alive", keys=alive, hook=hook)
 
     def _do_configure_bambu(
         self,
@@ -10938,10 +9694,7 @@ class FilamentHubCatalog(
         request_id = msg["requestId"]
 
         def finish(**result):
-            if not self._deliver("printer-setup-result", requestId=request_id, result=result):
-                SHELL_SERVER.set_sync_result({
-                    "requestId": request_id, "resultType": "printer-setup-result", "result": result,
-                })
+            self._deliver("printer-setup-result", requestId=request_id, result=result)
 
         try:
             context = printer_setup_context(token)
@@ -11082,29 +9835,41 @@ class FilamentHubCatalog(
         if msg.get("source") != "filamenthub-plugin":
             return
         msg_type = msg.get("type")
-        local_shell_active = getattr(self, "_local_shell_active", False)
-        if not local_shell_active and not secrets.compare_digest(
+        direct_session = str(getattr(self, "_direct_bridge_session", ""))
+        direct_message = bool(direct_session) and secrets.compare_digest(
             str(msg.get("bridgeSession") or ""),
-            str(getattr(self, "_direct_bridge_session", "")),
-        ):
+            direct_session,
+        )
+        local_message = secrets.compare_digest(
+            str(msg.get("localDialogSession") or ""),
+            str(getattr(self, "_local_dialog_session", "")),
+        ) and bool(getattr(self, "_local_dialog_session", ""))
+        if not direct_message and not local_message:
             return
-        if msg_type in {"configure-bambu", "printer-setup-manual", "open-oauth"} and not local_shell_active:
-            self._activate_local_shell(msg)
-            return
-        if msg_type in {
+        local_only = {
             "printer-setup-local",
             "prepare-bambu-local",
             "configure-bambu-local",
-        } and not local_shell_active:
-            # LAN credentials are accepted only from the plugin-owned local page,
-            # never from the remotely served catalog document.
+            "local-dialog-close",
+        }
+        if local_message and msg_type not in local_only | {"remove-bambu-local"}:
+            return
+        if direct_message and msg_type in local_only:
+            # A remote page may request a local dialog, but can never submit the
+            # credentials collected by that separately bound host window.
+            return
+        if direct_message and msg_type in {"configure-bambu", "printer-setup-manual"}:
+            self._open_local_dialog(msg)
+            return
+        if local_message and msg_type == "local-dialog-close":
+            self._close_local_dialog(str(msg.get("outcome") or "cancelled"))
             return
         if msg_type == "host-ready":
-            self._deliver("transport", push=True)
-            pending_local_action = getattr(self, "_pending_local_action", None)
-            if pending_local_action is not None:
-                self._pending_local_action = None
-                self._deliver("resume-local-action", action=pending_local_action)
+            self._deliver(
+                "transport",
+                push=True,
+                showDiagnostics=SHOW_DIAGNOSTICS,
+            )
             if not getattr(self, "_session_sync_started", False):
                 self._session_sync_started = self._auto_sync(
                     announce=True,
@@ -11128,6 +9893,8 @@ class FilamentHubCatalog(
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
         elif msg_type == "read-diagnostics":
+            if not SHOW_DIAGNOSTICS:
+                return
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=read_sync_log())
             )
@@ -11557,7 +10324,11 @@ class FilamentHubCatalog(
                 trigger="profile-change",
             )
         elif msg_type == "open-oauth":
-            self._start_external_oauth(msg.get("provider"))
+            self._start_external_oauth(
+                msg.get("provider"),
+                msg.get("path"),
+                msg.get("requestId"),
+            )
         elif msg_type == "open-external":
             self._open_site_path(msg.get("path"))
         elif msg_type == "auth-logout":
@@ -11843,24 +10614,34 @@ class FilamentHubCatalog(
         # disabled. The Recovery Center scans durable local markers instead.
         self._deliver_printer_bundle_status(request_id, installed)
 
-    def _start_external_oauth(self, provider):
-        # Google/Yandex block their consent pages in embedded WebViews, so run the
-        # provider flow in the user's real browser. Python opens a dedicated site
-        # route that carries a loopback callback (cb) + one-time nonce; after the
-        # provider round-trip the site redirects the session back to /d/<secret>,
-        # which the shell is polling for. If the browser can't be launched (sandbox
-        # or headless), the shell shows the URL so the user can open it manually.
-        if provider not in ("google", "yandex"):
+    def _start_external_oauth(self, provider, path, request_id=None):
+        """Open a server-created OAuth handoff without accepting an arbitrary URL."""
+        if provider not in ("google", "yandex") or not isinstance(path, str):
             return
-        deliver = SHELL_SERVER.deliver_url()
-        if not deliver:
+        parsed = urllib.parse.urlsplit(path)
+        expected_path = "/oauth/plugin-start/%s" % provider
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or parsed.fragment
+            or parsed.path != expected_path
+            or not parsed.query
+        ):
             return
-        nonce = secrets.token_urlsafe(24)
-        start_url = "%s/oauth/plugin-start/%s?%s" % (
-            SITE_URL, provider,
-            urllib.parse.urlencode({"cb": deliver, "nonce": nonce}))
-        opened = open_in_system_browser(start_url)
-        SHELL_SERVER.arm_oauth(nonce, opened, start_url)
+        try:
+            query = urllib.parse.parse_qs(parsed.query, strict_parsing=True)
+        except ValueError:
+            return
+        flow_id = query.get("flow", [])
+        if (
+            set(query) != {"flow"}
+            or len(flow_id) != 1
+            or re.fullmatch(r"[A-Za-z0-9_-]{24,160}", flow_id[0]) is None
+        ):
+            return
+        request_id = request_id if isinstance(request_id, str) and len(request_id) <= 100 else ""
+        opened = open_in_system_browser(SITE_URL + path)
+        self._deliver("oauth-browser-opened", opened=opened, requestId=request_id)
 
     def _open_site_path(self, path):
         # A wiki page links to other parts of the site. Inside this panel there is
@@ -12657,6 +11438,9 @@ if _PAGE_CAPABILITY_BASE is not None:
             self._catalog.win = _PageWindowProxy(self)
             self._catalog._session_sync_started = False
             self._catalog._direct_bridge_session = ""
+            self._catalog._local_window = None
+            self._catalog._local_dialog_session = ""
+            self._catalog._local_dialog_context = None
 
         def get_name(self):
             return "FilamentHub"
@@ -12665,8 +11449,6 @@ if _PAGE_CAPABILITY_BASE is not None:
             return ensure_icon()
 
         def get_ui(self):
-            self._catalog._local_shell_active = False
-            self._catalog._pending_local_action = None
             self._catalog._direct_bridge_session = secrets.token_urlsafe(32)
             return render_direct_page(self._catalog._direct_bridge_session)
 

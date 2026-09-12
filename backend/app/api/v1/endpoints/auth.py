@@ -5,8 +5,8 @@ import logging
 import math
 import secrets
 from datetime import datetime, timezone
-from typing import Annotated, Literal
-from urllib.parse import urlparse
+from typing import Annotated, Literal, NoReturn
+from urllib.parse import urlencode, urlparse
 
 from fastapi import (
     APIRouter,
@@ -87,6 +87,14 @@ from app.schemas.user import (
     LogoutRequest,
     OAuthCallbackRequest,
     OAuthUrlResponse,
+    PluginOAuthFlowAuthorizeResponse,
+    PluginOAuthFlowCompleteRequest,
+    PluginOAuthFlowCreateRequest,
+    PluginOAuthFlowCreateResponse,
+    PluginOAuthFlowFailureRequest,
+    PluginOAuthFlowPollRequest,
+    PluginOAuthFlowPollResponse,
+    PluginOAuthFlowStatusResponse,
     PluginSessionTokenResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
@@ -156,6 +164,19 @@ from app.services.legal_document_service import (
     resolve_legal_pack,
 )
 from app.services.organization_access import can_select_active_workspace, list_accessible_brands
+from app.services.plugin_oauth_handoff_service import (
+    POLL_INTERVAL_SECONDS,
+    PluginOAuthHandoffConflict,
+    PluginOAuthHandoffError,
+    PluginOAuthHandoffExpired,
+    PluginOAuthHandoffNotFound,
+    PluginOAuthHandoffUnavailable,
+    authorize_flow,
+    bind_oauth_state,
+    create_flow,
+    fail_flow,
+    poll_flow,
+)
 from app.services.printer_economics_service import (
     clear_incompatible_account_money,
     lock_account_economics_profile,
@@ -204,6 +225,11 @@ from app.core.errors import (
     ERR_OAUTH_PROVIDER_NOT_AVAILABLE,
     ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
     ERR_PASSWORD_HASH_ERROR,
+    ERR_PLUGIN_OAUTH_FLOW_CONFLICT,
+    ERR_PLUGIN_OAUTH_FLOW_EXPIRED,
+    ERR_PLUGIN_OAUTH_FLOW_FAILED,
+    ERR_PLUGIN_OAUTH_FLOW_INVALID,
+    ERR_PLUGIN_OAUTH_FLOW_UNAVAILABLE,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
     ERR_RECAPTCHA_FAILED,
@@ -1066,20 +1092,24 @@ async def get_my_presets_stats(
     Получить статистику пресетов пользователя.
 
     Возвращает:
-    - total_presets: всего пресетов (созданные + добавленные из каталога)
+    - total_presets: рабочие пресеты филамента (созданные + добавленные из каталога)
     - synced_presets: количество пресетов с включенной синхронизацией (sync_enabled=True)
     """
-    eligible = or_(Preset.active.is_(True), Preset.user_id == current_user.id)
+    # Unbound/inactive Orca imports are preparation drafts. They remain in the
+    # user's draft list but must not inflate the visible filament-preset count.
+    library_preset = and_(Preset.active.is_(True), Preset.filament_id.isnot(None))
     saved_preset_ids_query = (
         select(UserSavedPreset.preset_id)
         .join(Preset)
-        .where(UserSavedPreset.user_id == current_user.id, eligible)
+        .where(UserSavedPreset.user_id == current_user.id, library_preset)
     )
     saved_preset_ids_result = await db.execute(saved_preset_ids_query)
     saved_preset_ids = {row[0] for row in saved_preset_ids_result.all()}
 
-    # Own drafts are part of the user's library even before catalog activation.
-    direct_preset_ids_query = select(Preset.id).where(Preset.user_id == current_user.id)
+    direct_preset_ids_query = select(Preset.id).where(
+        Preset.user_id == current_user.id,
+        library_preset,
+    )
     direct_preset_ids_result = await db.execute(direct_preset_ids_query)
     direct_preset_ids = {row[0] for row in direct_preset_ids_result.all()}
 
@@ -2018,6 +2048,41 @@ def _oauth_public_origin(request: Request) -> str:
     return settings.BASE_URL.rstrip("/")
 
 
+def _oauth_authorization_url(provider: str, state: str, public_origin: str) -> str:
+    url = (
+        get_google_auth_url(state, public_origin)
+        if provider == "google"
+        else get_yandex_auth_url(state, public_origin)
+    )
+    if not url:
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+            params={"provider": provider},
+        )
+    return url
+
+
+def _set_oauth_state_cookie(response: Response, state: str) -> None:
+    response.set_cookie(
+        key=_OAUTH_STATE_COOKIE,
+        value=state,
+        httponly=True,
+        max_age=_OAUTH_STATE_MAX_AGE,
+        **_cookie_common_kwargs(),
+    )
+
+
+def _raise_plugin_oauth_handoff_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, PluginOAuthHandoffNotFound):
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_PLUGIN_OAUTH_FLOW_INVALID)
+    if isinstance(exc, PluginOAuthHandoffExpired):
+        raise_error(status.HTTP_410_GONE, ERR_PLUGIN_OAUTH_FLOW_EXPIRED)
+    if isinstance(exc, PluginOAuthHandoffConflict):
+        raise_error(status.HTTP_409_CONFLICT, ERR_PLUGIN_OAUTH_FLOW_CONFLICT)
+    raise_error(status.HTTP_503_SERVICE_UNAVAILABLE, ERR_PLUGIN_OAUTH_FLOW_UNAVAILABLE)
+
+
 @router.get("/methods", response_model=AuthMethodsResponse)
 async def get_auth_methods(request: Request, response: Response) -> AuthMethodsResponse:
     """Return server-authoritative methods for the current request region."""
@@ -2062,28 +2127,205 @@ async def get_oauth_url(
 
     state = generate_oauth_state()
     public_origin = _oauth_public_origin(request)
+    url = _oauth_authorization_url(provider, state, public_origin)
+    _set_oauth_state_cookie(response, state)
 
-    if provider == "google":
-        url = get_google_auth_url(state, public_origin)
-    else:
-        url = get_yandex_auth_url(state, public_origin)
+    return OAuthUrlResponse(url=url, state=state)
 
-    if not url:
+
+@router.post(
+    "/plugin-oauth/flows",
+    response_model=PluginOAuthFlowCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("10/minute")
+async def create_plugin_oauth_flow(
+    data: PluginOAuthFlowCreateRequest,
+    request: Request,
+    response: Response,
+) -> PluginOAuthFlowCreateResponse:
+    """Create separate browser and plugin legs for an external OAuth login."""
+    provider = data.provider
+    _require_provider_allowed(provider, resolve_access_region(request))
+    if not is_provider_configured(provider):
         raise_error(
             status.HTTP_400_BAD_REQUEST,
             ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
             params={"provider": provider},
         )
-
-    response.set_cookie(
-        key=_OAUTH_STATE_COOKIE,
-        value=state,
-        httponly=True,
-        max_age=_OAUTH_STATE_MAX_AGE,
-        **_cookie_common_kwargs(),
+    try:
+        flow = await create_flow(provider)
+    except PluginOAuthHandoffUnavailable as exc:
+        _raise_plugin_oauth_handoff_error(exc)
+    public_origin = _oauth_public_origin(request)
+    query = urlencode(
+        {
+            "flow": flow.flow_id,
+        }
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return PluginOAuthFlowCreateResponse(
+        flow_id=flow.flow_id,
+        poll_secret=flow.poll_secret,
+        browser_url=f"{public_origin}/oauth/plugin-start/{provider}?{query}",
+        expires_in=max(0, flow.expires_at - int(datetime.now(timezone.utc).timestamp())),
+        interval=POLL_INTERVAL_SECONDS,
     )
 
-    return OAuthUrlResponse(url=url, state=state)
+
+@router.post(
+    "/plugin-oauth/flows/{flow_id}/authorize/{provider}",
+    response_model=PluginOAuthFlowAuthorizeResponse,
+)
+@limiter.limit("10/minute")
+async def authorize_plugin_oauth_flow(
+    flow_id: Annotated[str, Path(min_length=24, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+    provider: str,
+    request: Request,
+    response: Response,
+) -> PluginOAuthFlowAuthorizeResponse:
+    """Validate the browser leg and issue its provider authorization URL."""
+    if provider not in _VALID_PROVIDERS:
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_INVALID_PROVIDER,
+            params={"provider": provider},
+        )
+    _require_provider_allowed(provider, resolve_access_region(request))
+    if not is_provider_configured(provider):
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+            params={"provider": provider},
+        )
+    oauth_state = generate_oauth_state()
+    try:
+        expires_in = await bind_oauth_state(
+            flow_id,
+            provider=provider,
+            oauth_state=oauth_state,
+        )
+    except PluginOAuthHandoffError as exc:
+        _raise_plugin_oauth_handoff_error(exc)
+    public_origin = _oauth_public_origin(request)
+    url = _oauth_authorization_url(provider, oauth_state, public_origin)
+    _set_oauth_state_cookie(response, oauth_state)
+    response.headers["Cache-Control"] = "no-store"
+    return PluginOAuthFlowAuthorizeResponse(
+        url=url,
+        state=oauth_state,
+        expires_in=expires_in,
+    )
+
+
+@router.post(
+    "/plugin-oauth/flows/{flow_id}/complete",
+    response_model=PluginOAuthFlowStatusResponse,
+)
+@limiter.limit("10/minute")
+async def complete_plugin_oauth_flow(
+    flow_id: Annotated[str, Path(min_length=24, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+    data: PluginOAuthFlowCompleteRequest,
+    request: Request,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
+) -> PluginOAuthFlowStatusResponse:
+    """Bind the authenticated browser account to the waiting desktop plugin."""
+    try:
+        expires_in = await authorize_flow(
+            flow_id,
+            oauth_state=data.state,
+            user_id=current_user.id,
+            auth_version=current_user.auth_version,
+        )
+    except PluginOAuthHandoffError as exc:
+        _raise_plugin_oauth_handoff_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    return PluginOAuthFlowStatusResponse(status="authorized", expires_in=expires_in)
+
+
+@router.post(
+    "/plugin-oauth/flows/{flow_id}/fail",
+    response_model=PluginOAuthFlowStatusResponse,
+)
+@limiter.limit("10/minute")
+async def fail_plugin_oauth_flow(
+    flow_id: Annotated[str, Path(min_length=24, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+    data: PluginOAuthFlowFailureRequest,
+    request: Request,
+    response: Response,
+) -> PluginOAuthFlowStatusResponse:
+    """Report a bounded provider/browser failure to the polling plugin."""
+    try:
+        expires_in = await fail_flow(
+            flow_id,
+            oauth_state=data.state,
+            error=data.error,
+        )
+    except PluginOAuthHandoffError as exc:
+        _raise_plugin_oauth_handoff_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    return PluginOAuthFlowStatusResponse(status="failed", expires_in=expires_in)
+
+
+@router.post(
+    "/plugin-oauth/flows/{flow_id}/poll",
+    response_model=PluginOAuthFlowPollResponse,
+)
+@limiter.limit("120/minute")
+async def poll_plugin_oauth_flow(
+    flow_id: Annotated[str, Path(min_length=24, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+    data: PluginOAuthFlowPollRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PluginOAuthFlowPollResponse:
+    """Return pending state or issue the authorized account session exactly once."""
+    try:
+        handoff = await poll_flow(flow_id, poll_secret=data.poll_secret)
+    except PluginOAuthHandoffError as exc:
+        _raise_plugin_oauth_handoff_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    if handoff.status == "pending":
+        return PluginOAuthFlowPollResponse(
+            status="pending",
+            expires_in=handoff.expires_in,
+            interval=POLL_INTERVAL_SECONDS,
+        )
+    if handoff.status == "failed":
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_PLUGIN_OAUTH_FLOW_FAILED,
+            params={"reason": handoff.error or "oauth_failed"},
+        )
+    if handoff.status == "consumed":
+        raise_error(status.HTTP_409_CONFLICT, ERR_PLUGIN_OAUTH_FLOW_CONFLICT)
+
+    user = await lock_user_auth_state(db, handoff.user_id or 0)
+    if (
+        user is None
+        or not user.active
+        or user.auth_version != handoff.auth_version
+    ):
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_PLUGIN_OAUTH_FLOW_FAILED)
+    token_data = token_data_for_user(user)
+    refresh_token = await issue_refresh_session(
+        db,
+        user_id=user.id,
+        token_data=token_data,
+        user_agent=request.headers.get("user-agent", "")[:512],
+    )
+    access_token = create_session_access_token(token_data, refresh_token)
+    await db.commit()
+    return PluginOAuthFlowPollResponse(
+        status="complete",
+        expires_in=handoff.expires_in,
+        interval=POLL_INTERVAL_SECONDS,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        legal_onboarding_required=requires_current_legal_acceptance(user),
+    )
 
 
 @router.post("/oauth/{provider}/callback", response_model=Token)

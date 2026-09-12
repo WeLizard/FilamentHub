@@ -11,6 +11,7 @@ import { useTokenRefresh } from './hooks/useTokenRefresh';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   isPluginEmbed,
+  preserveDirectPluginBridgeBinding,
   subscribeToPluginNavigation,
   subscribeToPluginNotice,
   subscribeToPluginSyncResult,
@@ -75,6 +76,9 @@ function AppContent() {
   const location = useLocation();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
   useTokenRefresh(Boolean(user));
+  useEffect(() => {
+    preserveDirectPluginBridgeBinding();
+  }, [location.pathname, location.search]);
   // The onboarding modal links to these pages; covering them makes the documents
   // a person is asked to accept unreadable.
   const onLegalPage = LEGAL_PATHS.includes(location.pathname);
@@ -96,7 +100,7 @@ function AppContent() {
     }
   }, [navigate]);
 
-  // Навигация от кнопок шелла плагина OrcaSlicer (Catalog/Profile/Wiki над iframe)
+  // Compatibility navigation from already installed iframe-shell plugin builds.
   useEffect(() => {
     if (!isPluginEmbed()) {
       return;
@@ -346,8 +350,8 @@ function AppContent() {
             </Layout>
           }
         />
-        {/* Каталог для плагина OrcaSlicer: прямой Pages host использует обычную
-            навигацию, а совместимый iframe shell скрывает chrome через Layout. */}
+        {/* Current Pages hosts render their compact toolbar directly. Installed
+            iframe-shell builds keep using the same catalog route. */}
         <Route path="/embed" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/embed/catalog" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/about" element={<Layout><Suspense fallback={<PageLoader />}><AboutPage /></Suspense></Layout>} />

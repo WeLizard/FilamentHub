@@ -5,7 +5,7 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.1.10
-- Opening the FilamentHub tab no longer creates a local Python socket. A localized connection screen checks the site without leaving the WebView on a raw browser error, then the catalog uses OrcaSlicer's Pages bridge directly; the credential-safe local shell starts only after an explicit local-printer or external sign-in action.
+- Opening the FilamentHub tab no longer creates a local Python socket. The familiar plugin toolbar and embedded catalog remain intact, including navigation, sign-in, sync and recovery. An unavailable site gets a localized retry screen instead of a raw browser error. Local printer credentials use a separate host-owned dialog, while external sign-in uses a short-lived server handoff; neither path starts a local HTTP server.
 - Opening Bambu setup no longer searches the local network automatically. Saved and current-profile addresses remain available, while network discovery starts only when you choose **Search local network**.
 - If OrcaSlicer denies a socket requested by an explicit local action, the remote catalog remains usable and explains that no printer or account data changed.
 

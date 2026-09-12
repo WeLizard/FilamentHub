@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
+const oauthApiMocks = vi.hoisted(() => ({
+  createPluginOAuthFlow: vi.fn(),
+  pollPluginOAuthFlow: vi.fn(),
+}));
+
+vi.mock('../api/client', () => ({ authAPI: oauthApiMocks }));
+
 import {
   configureBambuBridgeInPlugin,
   importPresetToPlugin,
   installPrinterBundleInPlugin,
   removePrinterBundleFromPlugin,
   PLUGIN_MESSAGE_SOURCE,
+  preserveDirectPluginBridgeBinding,
   reportPluginSessionToPlugin,
   requestBambuMaterialAction,
   requestBambuObservationRefresh,
@@ -14,15 +22,141 @@ import {
   requestHappyHareSlotAssignment,
   requestPluginProfileSync,
   requestPluginCapabilities,
+  requestPluginDiagnostics,
+  requestPluginRecovery,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
   subscribeToPluginCapabilities,
+  subscribeToPluginDiagnostics,
   subscribeToLocalPrinterSetup,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
+  subscribeToPluginRuntime,
+  startPluginOAuth,
 } from './pluginBridge';
 
 describe('pluginBridge inbound messages', () => {
+  it('opens a bounded browser path and polls the server without exposing the poll secret', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    Object.defineProperty(window, 'parent', { configurable: true, value: { postMessage } });
+    window.history.pushState({}, '', '/embed/catalog');
+    const flowId = 'flow-id-123456789012345678901234';
+    const pollSecret = 'poll-secret-12345678901234567890123456789012';
+    oauthApiMocks.createPluginOAuthFlow.mockResolvedValue({
+      flow_id: flowId,
+      poll_secret: pollSecret,
+      browser_url: `${window.location.origin}/oauth/plugin-start/google?flow=${flowId}`,
+      expires_in: 600,
+      interval: 2,
+    });
+    oauthApiMocks.pollPluginOAuthFlow.mockResolvedValueOnce({
+      status: 'complete',
+      expires_in: 590,
+      interval: 2,
+      access_token: 'account-access',
+      refresh_token: 'account-refresh',
+    });
+
+    try {
+      await expect(startPluginOAuth('google')).resolves.toEqual({
+        accessToken: 'account-access',
+        refreshToken: 'account-refresh',
+      });
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage.mock.calls[0]?.[0]).toMatchObject({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'open-oauth',
+        provider: 'google',
+        path: `/oauth/plugin-start/google?flow=${flowId}`,
+      });
+      expect(postMessage.mock.calls[0]?.[0].requestId).toMatch(/^oauth-/);
+      expect(postMessage.mock.calls[0]?.[1]).toBe('*');
+      expect(JSON.stringify(postMessage.mock.calls)).not.toContain(pollSecret);
+      expect(oauthApiMocks.pollPluginOAuthFlow).toHaveBeenCalledWith(
+        flowId,
+        pollSecret,
+        expect.any(AbortSignal),
+      );
+    } finally {
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+      vi.clearAllMocks();
+    }
+  });
+
+  it('routes recovery and diagnostics through the bound plugin bridge', () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/catalog');
+    const onDiagnostics = vi.fn();
+    const unsubscribe = subscribeToPluginDiagnostics(onDiagnostics);
+    try {
+      requestPluginRecovery();
+      requestPluginDiagnostics();
+      expect(postMessage.mock.calls.map(([message]) => message.type)).toEqual([
+        'recover',
+        'read-diagnostics',
+      ]);
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'diagnostics', text: 'healthy' },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      expect(onDiagnostics).toHaveBeenCalledWith('healthy');
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('accepts the installed iframe-shell OAuth handoff during a rolling update', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/catalog');
+    const flowId = 'legacy-flow-123456789012345678901234';
+    oauthApiMocks.createPluginOAuthFlow.mockResolvedValue({
+      flow_id: flowId,
+      poll_secret: 'legacy-poll-secret-123456789012345678901234',
+      browser_url: `${window.location.origin}/oauth/plugin-start/google?flow=${flowId}`,
+      expires_in: 600,
+      interval: 2,
+    });
+    oauthApiMocks.pollPluginOAuthFlow.mockResolvedValue({
+      status: 'pending',
+      expires_in: 590,
+      interval: 2,
+    });
+
+    try {
+      const pending = startPluginOAuth('google');
+      await vi.waitFor(() => expect(postMessage).toHaveBeenCalled());
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'auth-restore',
+          accessToken: 'legacy-access',
+          refreshToken: 'legacy-refresh',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(pending).resolves.toEqual({
+        accessToken: 'legacy-access',
+        refreshToken: 'legacy-refresh',
+      });
+    } finally {
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+      vi.clearAllMocks();
+    }
+  });
+
   it('uses the bound official Pages bridge in the top-level embed', () => {
     const bridgeSession = 'test-bridge-session-1234567890';
     const originalOrca = window.orca;
@@ -37,7 +171,9 @@ describe('pluginBridge inbound messages', () => {
     });
     window.history.pushState({}, '', `/embed/catalog#fh_bridge=${bridgeSession}`);
     const onCapabilities = vi.fn();
+    const onRuntime = vi.fn();
     const unsubscribe = subscribeToPluginCapabilities(onCapabilities);
+    const unsubscribeRuntime = subscribeToPluginRuntime(onRuntime);
 
     try {
       requestPluginCapabilities();
@@ -54,6 +190,8 @@ describe('pluginBridge inbound messages', () => {
       });
 
       window.history.pushState({}, '', '/profile');
+      preserveDirectPluginBridgeBinding();
+      expect(window.location.hash).toBe(`#fh_bridge=${bridgeSession}`);
       requestPluginCapabilities();
       expect(postMessage).toHaveBeenNthCalledWith(3, {
         source: PLUGIN_MESSAGE_SOURCE,
@@ -67,8 +205,16 @@ describe('pluginBridge inbound messages', () => {
         capabilities: ['profile-sync'],
       });
       expect(onCapabilities).toHaveBeenCalledWith(new Set(['profile-sync']));
+      deliver?.({
+        source: 'filamenthub-host',
+        type: 'transport',
+        push: true,
+        showDiagnostics: true,
+      });
+      expect(onRuntime).toHaveBeenLastCalledWith({ showDiagnostics: true });
     } finally {
       unsubscribe();
+      unsubscribeRuntime();
       Object.defineProperty(window, 'orca', { configurable: true, value: originalOrca });
       window.history.pushState({}, '', '/');
     }

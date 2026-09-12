@@ -8,21 +8,15 @@ from .filamenthub_plugin_test_support import (
     _retire_running_job_during_action,
     SimpleNamespace,
     threading,
-    urllib,
 )
 
 
-def test_shell_accepts_messages_only_from_catalog_frame(plugin_module):
-    assert "event.source !== frame.contentWindow" in plugin_module.PAGE
-    assert "event.origin !== SITE_ORIGIN" in plugin_module.PAGE
-
-def test_worker_results_use_host_push_with_loopback_fallback(plugin_module):
-    page = plugin_module.PAGE
-    assert "orca.onMessage(function (data)" in page
-    assert "data.source !== 'filamenthub-host'" in page
-    assert "type: 'host-ready'" in page
-    assert "if (hostPush) return;" in page
-    assert "http.server.ThreadingHTTPServer" not in PLUGIN_PATH.read_text(encoding="utf-8")
+def test_plugin_uses_host_bridges_without_a_local_http_server(plugin_module):
+    source = PLUGIN_PATH.read_text(encoding="utf-8")
+    assert "http.server" not in source
+    assert "ShellServer" not in source
+    assert "127.0.0.1" not in source
+    assert "orca.onMessage(function(data)" in plugin_module.LOCAL_DIALOG_PAGE
 
 def test_post_window_tolerates_closed_or_legacy_handles(plugin_module):
     posted = []
@@ -728,24 +722,3 @@ def test_bambu_connect_does_not_continue_to_tls_after_worker_unload(
     assert tls_started == []
     assert raw.closed is True
     worker.stop()
-
-def test_shell_server_stops_without_starting_a_shutdown_worker(plugin_module):
-    server = plugin_module.ShellServer()
-    url = server.url_for("<!doctype html><title>fixture</title>")
-    stop_event = server._server_stop
-    worker = server._server_thread
-
-    assert url.startswith("http://127.0.0.1:")
-    assert stop_event is not None
-    assert worker is not None and worker.is_alive()
-    with urllib.request.urlopen(url, timeout=2) as response:
-        policy = response.headers["Content-Security-Policy"]
-        assert "frame-src %s" % plugin_module.SITE_ORIGIN in policy
-        assert "connect-src 'self'" in policy
-        assert "default-src 'none'" in policy
-        assert "frame-src *" not in policy
-    server.stop(wait_timeout=2)
-    assert stop_event.is_set()
-    assert not worker.is_alive()
-    assert server._server is None
-    assert server._server_thread is None

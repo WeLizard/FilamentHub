@@ -2,10 +2,10 @@
  * OAuth entry point for the OrcaSlicer plugin, opened in the user's real browser.
  *
  * The plugin can't run provider consent inside its embedded WebView, so
- * Python opens this route in the system browser with a loopback callback (cb) and
- * a one-time nonce. Here we stash cb+nonce, start the normal provider flow (which
- * sets the httpOnly state cookie in THIS browser), and let the standard
- * OAuthCallbackPage deliver the resulting session back to the plugin over cb.
+ * The embedded SPA first creates a server-backed one-time handoff, then asks
+ * the host to open its browser URL here. The high-entropy flow ID stays in this tab's sessionStorage while
+ * the provider flow runs; account tokens are delivered only to the plugin's
+ * separate polling secret and never appear in a browser URL.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -14,7 +14,10 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
-import { PLUGIN_OAUTH_HANDOFF_KEY, isLoopbackDeliveryUrl } from '../utils/pluginBridge';
+import {
+  clearPluginOAuthHandoff,
+  rememberPluginOAuthHandoff,
+} from '../utils/pluginBridge';
 
 const VALID_PROVIDERS = new Set(['google', 'yandex']);
 
@@ -29,24 +32,27 @@ export function OAuthPluginStartPage() {
     if (startedRef.current) return;
     startedRef.current = true;
 
-    const cb = searchParams.get('cb') || '';
-    const nonce = searchParams.get('nonce') || '';
+    const flowId = searchParams.get('flow') || '';
+    window.history.replaceState(window.history.state, '', window.location.pathname);
 
-    if (!provider || !VALID_PROVIDERS.has(provider) || !cb || !nonce || !isLoopbackDeliveryUrl(cb)) {
+    if (
+      !provider
+      || !VALID_PROVIDERS.has(provider)
+      || !rememberPluginOAuthHandoff(flowId)
+    ) {
       setError(t('pluginOAuth.startError'));
       return;
     }
 
     (async () => {
       try {
-        const methods = await authAPI.getAuthMethods();
-        if (!methods.oauth_providers.includes(provider as 'google' | 'yandex')) {
-          throw new Error('OAuth provider is not available on this service surface');
-        }
-        sessionStorage.setItem(PLUGIN_OAUTH_HANDOFF_KEY, JSON.stringify({ cb, nonce }));
-        const { url } = await authAPI.getOAuthUrl(provider);
+        const { url } = await authAPI.authorizePluginOAuthFlow(
+          flowId,
+          provider as 'google' | 'yandex',
+        );
         window.location.href = url;
       } catch (err: any) {
+        clearPluginOAuthHandoff();
         const detail = err?.response?.data?.detail;
         setError(translateApiError(t, detail, t('pluginOAuth.startError')));
       }

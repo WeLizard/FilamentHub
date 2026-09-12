@@ -8,7 +8,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { authAPI, qrAPI } from '../api/client';
 import { ownQrShortCode } from '../utils/qrScanner';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { isDirectPluginHost, isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
+import {
+  isDirectPluginHost,
+  isPluginEmbed,
+  reportAuthStateToPlugin,
+  subscribeToPluginRuntime,
+} from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 import type { QrScanResponse } from '../api/client';
@@ -16,6 +21,7 @@ import { filamentPublicPath } from '../utils/catalogUrls';
 import { PageBackground } from './PageBackground';
 import { SUPPORT_URL } from '../utils/support';
 import { GitHubIcon } from './serviceIcons';
+import { OrcaPluginToolbar } from './OrcaPluginToolbar';
 
 const GITHUB_PROJECT_URL = 'https://github.com/WeLizard/FilamentHub';
 
@@ -40,6 +46,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
   const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
+  const [showPluginDiagnostics, setShowPluginDiagnostics] = useState(false);
 
   const handleScanDetected = async (rawCode: string): Promise<boolean> => {
     const code = ownQrShortCode(rawCode);
@@ -122,11 +129,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.wx?.postMessage
   );
 
-  // Скрываем хедер/футер и в форковой WebView, и во встроенном режиме плагина
-  // (iframe), чтобы навигация внутри iframe не показывала хром сайта.
+  // The direct plugin route owns a compact Orca toolbar; the normal site
+  // header/footer remain hidden on every slicer surface.
   const pluginEmbed = isPluginEmbed();
   const directPluginHost = pluginEmbed && isDirectPluginHost();
-  const hideChrome = !directPluginHost && (isInOrcaSlicer || pluginEmbed);
+  const hideChrome = isInOrcaSlicer || pluginEmbed;
+
+  useEffect(() => {
+    if (!directPluginHost) {
+      setShowPluginDiagnostics(false);
+      return;
+    }
+    return subscribeToPluginRuntime(({ showDiagnostics }) => {
+      setShowPluginDiagnostics(showDiagnostics);
+    });
+  }, [directPluginHost]);
 
   // Статус сессии для тулбара шелла плагина: имя + счётчик пресетов
   // (тот же /auth/me/presets-stats, что использовала форковая панель)
@@ -135,6 +152,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     queryFn: ({ signal }) => authAPI.getPresetsStats(signal),
     enabled: pluginEmbed && !!user,
   });
+  const pluginAccountLabel = user
+    ? `${user.username}${pluginPresetStats
+      ? ` · ${t('layout.pluginPresetsStats', { total: pluginPresetStats.total_presets, synced: pluginPresetStats.synced_presets })}`
+      : ''}`
+    : null;
   useEffect(() => {
     if (!pluginEmbed) {
       return;
@@ -143,11 +165,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       reportAuthStateToPlugin(null);
       return;
     }
-    const stats = pluginPresetStats
-      ? ` · ${t('layout.pluginPresetsStats', { total: pluginPresetStats.total_presets, synced: pluginPresetStats.synced_presets })}`
-      : '';
-    reportAuthStateToPlugin(`${user.username}${stats}`);
-  }, [pluginEmbed, user, pluginPresetStats, t]);
+    reportAuthStateToPlugin(pluginAccountLabel);
+  }, [pluginEmbed, user, pluginAccountLabel]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -158,6 +177,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <PageBackground className="app-shell flex w-full min-w-0 flex-col" ambient>
+
+      {directPluginHost && (
+        <OrcaPluginToolbar
+          authenticated={Boolean(user)}
+          accountLabel={pluginAccountLabel}
+          showDiagnostics={showPluginDiagnostics}
+          onLogin={() => setIsAuthModalOpen(true)}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* Header - скрываем если открыто через OrcaSlicer или в iframe плагина */}
       {!hideChrome && (

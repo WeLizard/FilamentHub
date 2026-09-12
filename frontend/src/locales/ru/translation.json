@@ -445,7 +445,9 @@
   "pluginOAuth": {
     "continueInBrowser": "Мы открыли ваш браузер, чтобы завершить вход. Вернитесь в OrcaSlicer, когда закончите.",
     "startRedirecting": "Перенаправляем на страницу входа…",
-    "startError": "Ссылка для входа недействительна или устарела. Вернитесь в OrcaSlicer и начните заново."
+    "startError": "Ссылка для входа недействительна или устарела. Вернитесь в OrcaSlicer и начните заново.",
+    "completeTitle": "Вход в FilamentHub выполнен",
+    "completeHint": "Эту вкладку можно закрыть и вернуться в OrcaSlicer."
   },
   "notFound": {
     "title": "Страница не найдена",
@@ -489,7 +491,10 @@
     "footer_geoip_attribution": "IP-геолокация: DB-IP",
     "footer_about": "О проекте",
     "footer_copyright": "© {{year}} FilamentHub",
-    "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})"
+    "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})",
+    "plugin_sync": "Синхронизация",
+    "plugin_recover": "Восстановить",
+    "plugin_log": "Журнал"
   },
   "legalDocument": {
     "backHome": "Вернуться на главную",
@@ -7493,6 +7498,11 @@
     "ERR_OAUTH_INVALID_PROVIDER": "Неизвестный провайдер: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "Этот email уже привязан к аккаунту через {{provider}}",
     "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} не подтвердил этот адрес, поэтому войти в существующий аккаунт нельзя. Войдите по паролю или подтвердите адрес у {{provider}}",
+    "ERR_PLUGIN_OAUTH_FLOW_INVALID": "Запрос входа из OrcaSlicer недействителен. Начните вход заново в плагине.",
+    "ERR_PLUGIN_OAUTH_FLOW_EXPIRED": "Срок действия запроса входа из OrcaSlicer истёк. Начните вход заново в плагине.",
+    "ERR_PLUGIN_OAUTH_FLOW_CONFLICT": "Этот запрос входа из OrcaSlicer уже завершён. Если вход в плагине не выполнен, начните новый.",
+    "ERR_PLUGIN_OAUTH_FLOW_FAILED": "Не удалось завершить вход в OrcaSlicer.",
+    "ERR_PLUGIN_OAUTH_FLOW_UNAVAILABLE": "Вход в OrcaSlicer временно недоступен. Повторите попытку позже.",
     "ERR_COULD_NOT_VALIDATE": "Не удалось проверить учётные данные",
     "ERR_USER_INACTIVE": "Пользователь неактивен",
     "ERR_NOT_BRAND_USER": "Вы не являетесь представителем бренда",

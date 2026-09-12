@@ -1317,9 +1317,9 @@ async def test_plugin_header_counts_only_what_reaches_the_slicer(
     stats = await client.get("/api/v1/auth/me/presets-stats", headers=headers)
     assert stats.status_code == 200
     body = stats.json()
-    # The draft belongs to the library and is shown there, but it synchronises
-    # nowhere until it is bound to a filament.
-    assert body["total_presets"] == 1
+    # The draft is shown in the preparation list, but is not a filament preset
+    # and therefore does not inflate either profile counter.
+    assert body["total_presets"] == 0
     assert body["synced_presets"] == 0
 
     listed = await client.get("/api/v1/auth/my-presets", headers=headers)

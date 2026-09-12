@@ -445,7 +445,9 @@
   "pluginOAuth": {
     "continueInBrowser": "我们已打开您的网页浏览器以完成登录。完成后请返回 OrcaSlicer。",
     "startRedirecting": "正在跳转到登录页面…",
-    "startError": "此登录链接无效或已过期。请返回 OrcaSlicer 重新开始。"
+    "startError": "此登录链接无效或已过期。请返回 OrcaSlicer 重新开始。",
+    "completeTitle": "已登录 FilamentHub",
+    "completeHint": "您可以关闭此标签页并返回 OrcaSlicer。"
   },
   "notFound": {
     "title": "页面未找到",
@@ -489,7 +491,10 @@
     "footer_geoip_attribution": "IP 地理定位：DB-IP",
     "footer_about": "关于项目",
     "footer_copyright": "© {{year}} FilamentHub",
-    "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）"
+    "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）",
+    "plugin_sync": "同步",
+    "plugin_recover": "恢复",
+    "plugin_log": "日志"
   },
   "legalDocument": {
     "backHome": "返回首页",
@@ -7320,6 +7325,11 @@
     "ERR_OAUTH_INVALID_PROVIDER": "未知的提供商：{{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "此邮箱已通过 {{provider}} 关联",
     "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} 未验证该邮箱地址，因此无法登录已有账号。请使用密码登录，或在 {{provider}} 完成邮箱验证",
+    "ERR_PLUGIN_OAUTH_FLOW_INVALID": "此 OrcaSlicer 登录请求无效。请从插件重新开始登录。",
+    "ERR_PLUGIN_OAUTH_FLOW_EXPIRED": "此 OrcaSlicer 登录请求已过期。请从插件重新开始登录。",
+    "ERR_PLUGIN_OAUTH_FLOW_CONFLICT": "此 OrcaSlicer 登录请求已完成。如果插件仍未登录，请发起新的请求。",
+    "ERR_PLUGIN_OAUTH_FLOW_FAILED": "无法完成 OrcaSlicer 登录。",
+    "ERR_PLUGIN_OAUTH_FLOW_UNAVAILABLE": "OrcaSlicer 登录暂时不可用，请稍后重试。",
     "ERR_COULD_NOT_VALIDATE": "无法验证凭证",
     "ERR_USER_INACTIVE": "用户未激活",
     "ERR_NOT_BRAND_USER": "您不是品牌代表",

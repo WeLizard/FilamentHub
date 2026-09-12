@@ -12,29 +12,32 @@ embed route in our existing frontend.
 
 ---
 
-## Approach: direct Pages bridge with a local secret boundary
+## Approach: direct embedded page with a local secret boundary
 
-On current OrcaSlicer builds, a tiny `SetPage` bootstrap checks the site from
-the WebView and navigates the native Pages tab directly to
-`https://filamenthub.ru/embed/catalog`. A failed check stays on a localized
-retry screen instead of exposing the browser's connection-error page. The site uses the
-official top-level `window.orca` bridge, bound to a random per-tab value carried
-in the URL fragment. Opening the tab therefore does not create a Python socket.
+On current OrcaSlicer builds, `get_ui()` returns a small localized bootstrap that
+navigates the top-level Pages WebView to
+`https://filamenthub.ru/embed/catalog`. The React route renders the compact
+Catalog/Profile/Wiki, Sync and Recovery toolbar and communicates through the
+official injected `window.orca` bridge with a random per-tab binding. Opening the
+tab never creates a Python socket or local HTTP server. If the site is
+unavailable, the bootstrap keeps a localized retry state visible instead of
+exposing the browser's connection-error page.
 
-Actions that need LAN credentials or external OAuth activate the loopback shell
-only after the user explicitly starts them. That plugin-owned page contains the
-Bambu/Moonraker address and credential forms; the remote React page never
-receives those values. Older host builds keep the window fallback with the same
-split. We reuse the React frontend rather than duplicating the catalog UI.
+Actions that need LAN credentials open a separate host-owned window with a
+second random binding. That window contains the Bambu/Moonraker address and
+credential forms; the remote React page never receives those values. External
+OAuth uses a short-lived server handoff completed in the system browser and
+polled over normal HTTPS by the embedded React page. Older host builds use the
+same direct page in their managed-window fallback.
 
 ```
 React /embed/catalog  ── window.orca.postMessage(... + per-tab binding) ──▶
-   ▼
 Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer token)──▶
    write <data_dir>/user/<active>/_local/filamenthub/filament/<name>__fh_<id>.json
       ──▶  native "restart required" dialog
 
-explicit local setup/OAuth ──▶ local loopback shell ──▶ local credential form/callback
+explicit local setup ──▶ host-owned local dialog ──▶ Python LAN adapter
+external OAuth ──▶ server handoff + system browser ──▶ embedded page HTTPS poll
 ```
 
 ### postMessage protocol
@@ -46,8 +49,8 @@ explicit local setup/OAuth ──▶ local loopback shell ──▶ local creden
 { source: 'filamenthub-plugin', type: 'profile-sync', scope: 'all' | 'filament' | 'machine' | 'process', requestId }
 ```
 
-- `source` namespaces messages, and the direct bridge adds the random binding
-  from the current tab's URL fragment. Python rejects an absent or stale binding.
+- `source` namespaces messages, and the direct page includes its random per-tab
+  binding. Python rejects an absent or stale binding.
 - Authentication is a short-lived OrcaSlicer plugin capability (`aud=orcaslicer-plugin`,
   `presets:read`/`presets:write`, 30-minute expiry). Browser access and refresh
   credentials never cross the plugin bridge.
@@ -60,39 +63,35 @@ explicit local setup/OAuth ──▶ local loopback shell ──▶ local creden
   and one rejected profile does not prevent valid profiles in the same batch
   from synchronizing.
 
-After an explicit local setup or OAuth action, the **local shell → iframe**
-compatibility path renders an
-Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
-Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
+The direct embed renders an Orca-themed toolbar (host `--orca-*` CSS variables —
+the same role as the native Catalog/Profile/Wiki buttons of the C++ fork panel).
+Navigation stays inside the React application and uses
 
 ```js
 { source: 'filamenthub-plugin', type: 'navigate', path: '/' | '/profile' | '/wiki' }
 ```
 
-into the iframe (targetOrigin = our site). The SPA subscribes via
-`subscribeToPluginNavigation()` in `utils/pluginBridge.ts` and switches routes
-without reloading. The same origin/source-checked direction carries
-`auth-restore`, sync/recovery results and parsed slice data. It is therefore a
-deliberately bounded two-way bridge, not the old one-way MVP.
+through `subscribeToPluginNavigation()` in `utils/pluginBridge.ts`. The same
+session-bound bridge carries sync/recovery results and parsed slice data.
 
 **Session persistence** — the site reports only a short-lived plugin capability
-to Python. The local shell also receives a presentation-only account label:
+and a presentation-only account label to Python:
 
 ```js
 // React → Python: persist on login / token refresh, clear on logout
 { source, type: 'auth-token', accessToken: pluginCapability, refreshToken: '' }
 { source, type: 'auth-logout' }
-// React → local shell: toolbar label ("<username> · Presets: N (M synced)", null = guest)
+// React → Python: toolbar/account status ("<username> · Presets: N (M synced)", null = guest)
 { source, type: 'auth-state', label }
-// local shell → iframe after an external OAuth round-trip
-{ source, type: 'embed-ready' }            // SPA announces it listens
-{ source, type: 'auth-restore', accessToken, refreshToken }   // shell replies
 ```
 
 Python stores only the short-lived plugin capability in `.auth.json` under
 OrcaSlicer's private plugin storage when `orca.host.plugin.storage()` is
 available, with the install directory retained as a compatibility fallback.
-Account access/refresh credentials are never stored there. The label comes
+Account access/refresh credentials are never sent to or stored by Python. During
+external OAuth the direct SPA receives a fresh account session from its one-shot
+HTTPS poll and then mints the same short-lived plugin capability as password
+login. The label comes
 ready-made (i18n happens in the SPA) from the same `/auth/me/presets-stats`
 endpoint the fork's panel used.
 
@@ -101,10 +100,10 @@ endpoint the fork's panel used.
 The Bambu adapter is a separate, narrower trust boundary from preset sync:
 
 1. the authenticated embed requests a ten-minute, single-use pairing code;
-2. the shell first reuses the LAN address from the exact bound Orca printer
+2. the local dialog first reuses the LAN address from the exact bound Orca printer
    preset, or from the currently selected preset as a local-only fallback; the
    user can still expand the manual address field, and enters the access code
-   in the plugin-owned form (the iframe never receives either value);
+   in the host-owned form (the embedded page never receives either value);
 3. Python verifies that the address resolves only to a private/link-local host
    and confirms MQTT-over-TLS access to the printer on port 8883;
 4. after the printer answers, the pairing code is exchanged for a revocable
@@ -130,15 +129,15 @@ written into Bambu firmware.
 
 ### Frontend embed route (in this repo)
 
-- `App.tsx` — routes `/embed` and `/embed/catalog` render the ordinary catalog
-  inside `Layout`.
-- `utils/pluginBridge.ts` — selects the bound top-level `window.orca` transport
-  on current Pages hosts and keeps the parent relay for the local shell.
+- `App.tsx` — routes `/embed` and `/embed/catalog` render the catalog directly
+  inside the plugin WebView.
+- `utils/pluginBridge.ts` — validates the per-tab binding and communicates with
+  OrcaSlicer's official injected bridge.
 - `CatalogPage.tsx` — the normal save action becomes **"Import into OrcaSlicer"**
   in embed mode; saving updates the managed profile and triggers auto-sync instead
   of using a second direct-import path.
-- `Layout.tsx` — keeps normal navigation in the direct Pages tab and hides it in
-  the local iframe shell, whose compact toolbar provides navigation instead.
+- `Layout.tsx` — hides the ordinary site header and footer and renders the
+  compact plugin toolbar in a direct Orca host.
 - The legacy-compatible browser bridge (`window.filamenthub` / `window.wx`,
   `Export*Button`, `useOrcaSlicerNotifications`) remains for rolling
   compatibility. It does not revive or authorize the retired C++ fork.
@@ -157,7 +156,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.4"
+# version = "0.1.10"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -176,7 +175,7 @@ OrcaSlicer build exposes the same capabilities:
 - `orca.slicing.SlicingPipelineCapabilityBase` reports and annotates completed
   G-code at `psGCodePostProcess` when the host exposes it;
 - current capability lifecycle hooks start plugin resources from `on_load` and
-  stop queued work, the local Bambu observer and loopback shell from
+  stop queued work and the local Bambu observer from
   `on_cancelled`/`on_unload`; older hosts keep the registration-time fallback;
 - `orca.host.ui`, `orca.host.preset_bundle()`, optional
   `orca.host.app_language()` and optional `orca.host.plugin.storage()` provide
@@ -187,11 +186,9 @@ Managed filament/machine/process files are therefore written atomically below
 the plugin-owned user preset folder and become selectable after OrcaSlicer
 reload/restart. The plugin never edits an unmanaged profile.
 
-Direct commands require the random binding for the current Pages tab. The local
-shell accepts messages only from `https://filamenthub.ru` and only from its
-catalog iframe; it rejects remote credential submissions. Its response policy
-allows iframe documents only from the configured FilamentHub origin, and its
-sandbox forbids popups and top-level navigation. HTTP responses are bounded to
+Bridge commands require the random binding for the current Pages tab. Python
+rejects remote credential submissions; those require the separate local-dialog
+binding. HTTP responses are bounded to
 5 MiB; preset/state writes use
 same-directory atomic replacement; generated filenames are Windows-safe and
 include the FilamentHub preset id to avoid collisions.
@@ -261,8 +258,9 @@ Then, with the exact OrcaSlicer build or pull-request artifact being tested:
    `<isolated-data-dir>/orca_plugins/filamenthub/filamenthub_plugin.py`.
 2. Launch the official PR artifact with that isolated data directory.
 3. Open the **Plugins** dialog → **FilamentHub Catalog** → **Run**.
-4. The tab opens directly on our catalog without a local socket. **Sign in** using the
-   normal login), browse/search, and click **Import into OrcaSlicer** on a preset.
+4. The tab opens the normal plugin toolbar and embedded catalog without a local
+   socket. **Sign in** using the normal login, browse/search, and click
+   **Import into OrcaSlicer** on a preset.
 5. The preset is saved to the managed FilamentHub profile and synchronized. On the
    current host API, restart OrcaSlicer before selecting a newly created preset.
 6. In **Profile → Printers**, explicitly add one printer's configuration set to
@@ -287,14 +285,14 @@ for every uploaded update.
 ## Alpha limitations
 
 If the FilamentHub service is unreachable, OrcaSlicer and its local presets remain
-available. A denied socket affects only the explicit local or external-login
-action that requested it; the HTTPS catalog stays open.
+available. A denied socket affects only an explicit local-printer action; the
+HTTPS catalog and external sign-in do not require a Python socket.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
 | 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Filament, machine, and process imports need an **app restart**. Not a publish blocker; rough UX. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
-| 2 | **The Pages bridge is injected by the host before cross-origin navigation and has no public origin allow-list.** | A page that retained command authority after leaving FilamentHub would be unsafe. | Bind every direct command to a random per-tab value in the URL fragment; reject missing/stale bindings and keep LAN credentials in the local shell. |
-| 3 | **The Plugin API cannot declare socket permissions**, and the audit prompt for `socket.__new__` has no target that can be persisted. | A loopback page or local-printer connection can ask again after OrcaSlicer restarts; denying the prompt blocks that operation. | Keep network work behind an explicit user path where possible, handle denial without losing data, and ask upstream to audit address-bearing operations or expose a network permission declaration. |
+| 2 | **The Pages bridge is injected into the host-provided plugin page and has no public caller allow-list.** | An unbound message reaching Python would have command authority. | Bind every command to a random per-tab value generated by Python; reject missing/stale bindings and require a different binding for the host-owned credential dialog. |
+| 3 | **The Plugin API cannot declare socket permissions**, and the audit prompt for `socket.__new__` has no target that can be persisted. | A real local-printer connection can ask again after OrcaSlicer restarts; denying the prompt blocks that local operation. | Start LAN work only from an explicit user path, handle denial without losing data, and ask upstream to audit address-bearing operations or expose a network permission declaration. |
 | 4 | **The Python `Preset` binding omits read-only `filament_id` and `setting_id`.** | A loaded managed material cannot be mapped to Bambu's exact material command from the public object alone. | Walk only the host-selected backing-file inheritance chain and block when it cannot be resolved. Ask upstream to expose both fields as read-only properties. |
 
 These limitations are disclosed in the alpha listing. Gap #1
@@ -305,7 +303,7 @@ These limitations are disclosed in the alpha listing. Gap #1
 ## Files
 
 - `filamenthub_plugin.py` — the dependency-free plugin runtime.
-- `filamenthub_locales/` — bundled native-shell translations with English fallback.
+- `filamenthub_locales/` — bundled bootstrap and local-dialog translations with English fallback.
 - `build_package.py` — deterministic package/metadata/checksum builder.
 - `validate_locales.py` / `TRANSLATING.md` — catalog validation and community workflow.
 - `tests/test_filamenthub_plugin.py` — package, origin, filesystem and payload tests.

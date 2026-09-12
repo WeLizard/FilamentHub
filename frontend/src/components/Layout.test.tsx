@@ -12,7 +12,7 @@ const { scanQr, authState, pluginBridgeState } = vi.hoisted(() => ({
     user: null as null | { id: number; username: string; role: string },
     login: vi.fn(), register: vi.fn(), logout: vi.fn(),
   },
-  pluginBridgeState: { embed: false, direct: false },
+  pluginBridgeState: { embed: false, direct: false, showDiagnostics: false },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -25,7 +25,7 @@ vi.mock('../contexts/AuthContext', () => ({
 
 vi.mock('../api/client', () => ({
   authAPI: {
-    getPresetsStats: vi.fn(),
+    getPresetsStats: vi.fn().mockResolvedValue({ total_presets: 0, synced_presets: 0 }),
     getAuthMethods: vi.fn().mockResolvedValue({ oauth_providers: [], registration_captcha: 'disabled' }),
   },
   qrAPI: { scan: scanQr },
@@ -36,6 +36,13 @@ vi.mock('../utils/pluginBridge', () => ({
   isPluginEmbed: () => pluginBridgeState.embed,
   reportAuthStateToPlugin: vi.fn(),
   startPluginOAuth: vi.fn(),
+  requestPluginProfileSync: vi.fn().mockResolvedValue({}),
+  requestPluginRecovery: vi.fn(),
+  requestPluginDiagnostics: vi.fn(),
+  subscribeToPluginRuntime: (listener: (state: { showDiagnostics: boolean }) => void) => {
+    listener({ showDiagnostics: pluginBridgeState.showDiagnostics });
+    return vi.fn();
+  },
 }));
 
 vi.mock('./Captcha', () => ({ Recaptcha: () => null, getRecaptchaToken: vi.fn() }));
@@ -77,6 +84,7 @@ describe('Layout', () => {
     authState.login.mockReset();
     pluginBridgeState.embed = false;
     pluginBridgeState.direct = false;
+    pluginBridgeState.showDiagnostics = false;
   });
 
   const renderReturnLogin = () => {
@@ -152,7 +160,7 @@ describe('Layout', () => {
     expect(container.querySelector('footer')).toHaveClass('app-shell-safe-bottom');
   });
 
-  it('keeps site navigation visible in the direct Orca Pages host', () => {
+  it('shows the compact plugin toolbar instead of normal site chrome in Orca Pages', () => {
     pluginBridgeState.embed = true;
     pluginBridgeState.direct = true;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -165,8 +173,48 @@ describe('Layout', () => {
       </MemoryRouter>,
     );
 
-    expect(container.querySelector('header')).toBeInTheDocument();
-    expect(container.querySelector('footer')).toBeInTheDocument();
+    expect(screen.getByTestId('orca-plugin-toolbar')).toBeInTheDocument();
+    expect(container.querySelector('footer')).not.toBeInTheDocument();
+    expect(screen.queryByText('layout.beta.badge')).not.toBeInTheDocument();
+  });
+
+  it('keeps the account and logout controls together on the left of the Orca toolbar', () => {
+    authState.user = { id: 7, username: 'return-user', role: 'user' };
+    pluginBridgeState.embed = true;
+    pluginBridgeState.direct = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Layout><div>embedded catalog</div></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const accountGroup = screen.getByTestId('orca-plugin-account-group');
+    expect(accountGroup).toHaveClass('mr-auto');
+    expect(accountGroup).toContainElement(screen.getByText('return-user'));
+    expect(accountGroup).toContainElement(screen.getByRole('button', { name: /layout.nav_logout/ }));
+    expect(accountGroup.nextElementSibling).toBe(screen.getByRole('button', { name: /layout.nav_catalog/ }));
+    expect(screen.queryByRole('button', { name: 'layout.plugin_log' })).not.toBeInTheDocument();
+  });
+
+  it('shows the Orca diagnostic log only when the plugin host enables it', () => {
+    pluginBridgeState.embed = true;
+    pluginBridgeState.direct = true;
+    pluginBridgeState.showDiagnostics = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Layout><div>embedded catalog</div></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'layout.plugin_log' })).toBeInTheDocument();
   });
 
   it('keeps all primary mobile actions in the header without decorative crowding', () => {

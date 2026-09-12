@@ -4,64 +4,54 @@ from .filamenthub_plugin_test_support import (
     json,
     _load_module,
     LOCALE_VALIDATOR_PATH,
-    PLUGIN_PATH,
     PLUGIN_ROOT,
     pytest,
     SimpleNamespace,
 )
 
 
-def test_shell_sandboxes_the_catalog_without_popup_or_top_navigation(plugin_module):
-    iframe = plugin_module.PAGE.split('<iframe id="fh"', 1)[1].split(">", 1)[0]
 
-    assert 'sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"' in iframe
-    assert "allow-popups" not in iframe
-    assert "allow-top-navigation" not in iframe
-    assert "SITE_ORIGIN = '%s'" % plugin_module.SITE_ORIGIN in plugin_module.PAGE
+def test_direct_page_bootstrap_keeps_a_localized_service_failure_state(plugin_module):
+    rendered = plugin_module.render_direct_page("b" * 32)
 
-def test_shell_server_recovers_when_the_host_denies_thread_start(plugin_module, monkeypatch):
-    class DeniedThread:
-        def __init__(self, **_kwargs):
-            pass
+    assert plugin_module.EMBED_URL in rendered
+    assert "fh_bridge=" in rendered
+    assert "fetch(target" in rendered
+    assert "location.replace(target)" in rendered
+    assert plugin_module.ui_text("unavailableTitle") in rendered
+    assert plugin_module.ui_text("unavailableMessage") in rendered
+    assert "127.0.0.1" not in rendered
 
-        def start(self):
-            raise PermissionError("denied by fixture")
 
-    monkeypatch.setattr(plugin_module.threading, "Thread", DeniedThread)
-    server = plugin_module.ShellServer()
+def test_local_dialog_contains_only_host_owned_forms(plugin_module):
+    action = {
+        "type": "configure-bambu",
+        "physicalPrinterId": 7,
+        "materialSystemId": 8,
+        "pairingCode": "one-time-code",
+    }
+    rendered = plugin_module.render_local_dialog(action, "d" * 32)
 
-    with pytest.raises(PermissionError, match="denied by fixture"):
-        server.url_for("<!doctype html><title>fixture</title>")
-    assert server._server is None
-    assert server._server_stop is None
-    assert server._server_thread is None
+    assert "localDialogSession" in rendered
+    assert "prepare-bambu-local" in rendered
+    assert "configure-bambu-local" in rendered
+    assert "<iframe" not in rendered
+    assert plugin_module.SITE_URL not in rendered
+    assert "127.0.0.1" not in rendered
 
-def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
-    page = plugin_module.PAGE
-    assert 'id="service-status"' in page
-    assert "FilamentHub is temporarily unavailable" in page
-    assert "Your local OrcaSlicer presets are safe" in page
-    assert "FilamentHub временно недоступен" in page
-    assert "FilamentHub 暂时不可用" in page
-    assert "frame.style.visibility = 'hidden'" in page
-    assert "markCatalogReady();" in page
-    assert "fh_retry=" in page
-    assert 'title="FilamentHub catalog"' in page
-    assert "prefers-reduced-motion: reduce" in page
-    assert "#service-retry:focus-visible" in page
 
 @pytest.mark.parametrize(
-    ("host_language", "expected", "site_language", "catalog_label"),
+    ("host_language", "expected", "site_language"),
     [
-        ("ru_RU", "ru", "ru", "Каталог"),
-        ("zh_CN", "zh_CN", "zh", "目录"),
-        ("zh-TW", "zh_TW", "zh", "目錄"),
-        ("en_US", "en", "en", "Catalog"),
-        ("de_DE", "de", "en", "Katalog"),
+        ("ru_RU", "ru", "ru"),
+        ("zh_CN", "zh_CN", "zh"),
+        ("zh-TW", "zh_TW", "zh"),
+        ("en_US", "en", "en"),
+        ("de_DE", "de", "en"),
     ],
 )
-def test_shell_uses_orca_ui_language(
-    plugin_module, monkeypatch, host_language, expected, site_language, catalog_label
+def test_direct_page_uses_orca_ui_language(
+    plugin_module, monkeypatch, host_language, expected, site_language
 ):
     monkeypatch.setattr(
         plugin_module.orca.host,
@@ -70,52 +60,27 @@ def test_shell_uses_orca_ui_language(
         raising=False,
     )
 
-    rendered = plugin_module.render_page()
+    rendered = plugin_module.render_direct_page("b" * 32)
 
-    assert f"var hostLanguage = '{expected}';" in rendered
     assert f"?lng={site_language}" in rendered
-    assert json.dumps(catalog_label, ensure_ascii=False) in rendered
-    assert "__HOST_UI_LANGUAGE__" not in rendered
-    assert "__EMBED_URL__" not in rendered
+    assert "fh_bridge=" in rendered
+    assert json.dumps(
+        plugin_module.resolved_ui_catalog(expected)["unavailableTitle"],
+        ensure_ascii=False,
+    ) in rendered
 
-def test_shell_language_falls_back_on_older_or_uninitialized_hosts(plugin_module, monkeypatch):
+
+def test_direct_page_language_falls_back_on_older_hosts(plugin_module, monkeypatch):
     monkeypatch.delattr(plugin_module.orca.host, "app_language", raising=False)
-    rendered = plugin_module.render_page()
-    assert "var hostLanguage = '';" in rendered
+    rendered = plugin_module.render_direct_page("b" * 32)
     assert "?lng=" not in rendered
 
     def unavailable():
         raise RuntimeError("OrcaSlicer application is not initialized")
 
     monkeypatch.setattr(plugin_module.orca.host, "app_language", unavailable, raising=False)
-    rendered = plugin_module.render_page()
-    assert "var hostLanguage = '';" in rendered
+    rendered = plugin_module.render_direct_page("b" * 32)
     assert "?lng=" not in rendered
-
-def test_shell_keeps_default_button_copy_without_embedded_locales(plugin_module, monkeypatch):
-    monkeypatch.setattr(plugin_module, "UI_COPY", {})
-
-    rendered = plugin_module.render_page()
-
-    assert '>Catalog</button>' in rendered
-    assert '>Profile</button>' in rendered
-    assert '>Wiki</button>' in rendered
-    assert "element && typeof text === 'string' && text.length > 0" in rendered
-
-def test_log_button_is_hidden_by_default_and_requires_explicit_dev_opt_in(
-    plugin_module, monkeypatch
-):
-    assert '<button id="diag" hidden' in plugin_module.render_page()
-
-    monkeypatch.setenv("FILAMENTHUB_SHOW_LOG", "1")
-    enabled_module = _load_module(
-        PLUGIN_PATH,
-        "filamenthub_plugin_diagnostics_enabled_test",
-    )
-
-    rendered = enabled_module.render_page()
-    assert '<button id="diag"' in rendered
-    assert '<button id="diag" hidden' not in rendered
 
 def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypatch):
     messages = []
@@ -168,10 +133,12 @@ def test_catalog_sync_collects_every_profile_contour_in_dependency_order(
         lambda kind: (scans.append(kind) or ([kind], True)),
     )
     catalog = plugin_module.FilamentHubCatalog()
+    catalog._direct_bridge_session = "test-session"
     monkeypatch.setattr(catalog, "_known_filament_preset_names", lambda: {"Known"})
 
     catalog.on_message({
         "source": "filamenthub-plugin",
+        "bridgeSession": "test-session",
         "type": "sync",
         "scope": "all",
         "operationId": "sync-1",
@@ -365,16 +332,15 @@ def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
             lambda current=locale: current,
             raising=False,
         )
-        rendered = plugin_module.render_page()
+        rendered = plugin_module.render_direct_page("b" * 32)
         site_language = (
             "ru" if locale == "ru"
             else "zh" if locale in {"zh_CN", "zh_TW"}
             else "en"
         )
-        assert f"var hostLanguage = '{locale}';" in rendered
         assert f"?lng={site_language}" in rendered
         assert json.dumps(
-            plugin_module.resolved_ui_catalog(locale)["catalog"],
+            plugin_module.resolved_ui_catalog(locale)["unavailableTitle"],
             ensure_ascii=False,
         ) in rendered
 

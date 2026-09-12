@@ -361,6 +361,65 @@ class OAuthCallbackRequest(BaseModel):
     state: str
 
 
+class PluginOAuthFlowCreateRequest(BaseModel):
+    """Provider requested by a desktop plugin."""
+
+    provider: Literal["google", "yandex"]
+
+
+class PluginOAuthFlowCreateResponse(BaseModel):
+    """Separate browser and polling credentials for one OAuth handoff."""
+
+    flow_id: str
+    poll_secret: str
+    browser_url: str
+    expires_in: int
+    interval: int
+
+
+class PluginOAuthFlowCompleteRequest(BaseModel):
+    """Bind the completed browser OAuth exchange to its original state."""
+
+    state: str = Field(..., min_length=32, max_length=256)
+
+
+class PluginOAuthFlowFailureRequest(PluginOAuthFlowCompleteRequest):
+    """Terminal provider/browser failure reported to the polling plugin."""
+
+    error: Literal["provider_denied", "oauth_failed"]
+
+
+class PluginOAuthFlowAuthorizeResponse(OAuthUrlResponse):
+    """Provider URL issued for a validated plugin browser flow."""
+
+    expires_in: int
+
+
+class PluginOAuthFlowStatusResponse(BaseModel):
+    """Browser completion acknowledgement."""
+
+    status: Literal["authorized", "failed"]
+    expires_in: int
+
+
+class PluginOAuthFlowPollRequest(BaseModel):
+    """Secret held only in memory by the embedded plugin page."""
+
+    poll_secret: str = Field(..., min_length=32, max_length=128)
+
+
+class PluginOAuthFlowPollResponse(BaseModel):
+    """Bounded poll result; tokens exist only in a successful one-shot reply."""
+
+    status: Literal["pending", "complete"]
+    expires_in: int
+    interval: int
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_type: str | None = None
+    legal_onboarding_required: bool | None = None
+
+
 class AccountDeleteRequest(BaseModel):
     """Schema for account deletion request with options."""
 

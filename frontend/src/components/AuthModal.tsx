@@ -1,6 +1,6 @@
 /** Модальное окно авторизации */
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { Mail, Lock, LogIn, UserPlus, User, X, Check, Eye, EyeOff, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../api/client';
@@ -40,10 +40,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthent
   const [isLoading, setIsLoading] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   // Встроенный WebView блокирует страницы согласия Google/Yandex, поэтому в
-  // плагине OAuth уходит в системный браузер; ждём возврата сессии по loopback.
+  // плагине OAuth уходит в системный браузер; сайт ждёт одноразовый server handoff.
   const [oauthExternalPending, setOauthExternalPending] = useState(false);
+  const oauthAbortRef = useRef<AbortController | null>(null);
 
-  const { login, register, user } = useAuth();
+  const { login, loginWithToken, register, user } = useAuth();
   const isOauthBusy = oauthLoading !== null;
 
   // Проверка сложности пароля
@@ -90,6 +91,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthent
 
   useEffect(() => {
     if (!isOpen) {
+      oauthAbortRef.current?.abort();
+      oauthAbortRef.current = null;
       setError(null);
       setIsLoading(false);
       setOauthLoading(null);
@@ -120,7 +123,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthent
     };
   }, [authMode, isOpen, t]);
 
-  // Внешний OAuth завершился успехом (auth-restore → вход) — закрываем модалку.
+  // Внешний OAuth завершился и server handoff вернул сессию — закрываем модалку.
   useEffect(() => {
     if (oauthExternalPending && user) {
       (onAuthenticated ?? onClose)();
@@ -251,10 +254,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthent
   const handleOAuthLogin = async (provider: 'google' | 'yandex') => {
     setError(null);
     if (isPluginEmbed()) {
-      // В плагине провайдер откажется грузиться внутри WebView. Открываем флоу в
-      // системном браузере; сессия вернётся через мост (auth-restore).
-      startPluginOAuth(provider);
+      oauthAbortRef.current?.abort();
+      const controller = new AbortController();
+      oauthAbortRef.current = controller;
       setOauthExternalPending(true);
+      setOauthLoading(provider);
+      try {
+        const tokens = await startPluginOAuth(provider, controller.signal);
+        await loginWithToken(tokens.accessToken, tokens.refreshToken);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && err?.code !== 'ERR_CANCELED') {
+          const detail = err?.response?.data?.detail;
+          setError(translateApiError(t, detail, t('authModal.error_login_failed')));
+        }
+        setOauthExternalPending(false);
+      } finally {
+        if (oauthAbortRef.current === controller) {
+          oauthAbortRef.current = null;
+          setOauthLoading(null);
+        }
+      }
       return;
     }
     setOauthLoading(provider);

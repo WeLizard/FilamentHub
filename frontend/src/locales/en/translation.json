@@ -445,7 +445,9 @@
   "pluginOAuth": {
     "continueInBrowser": "We've opened your web browser to finish signing in. Come back to OrcaSlicer once you're done.",
     "startRedirecting": "Redirecting you to sign in…",
-    "startError": "This sign-in link is invalid or has expired. Return to OrcaSlicer and start again."
+    "startError": "This sign-in link is invalid or has expired. Return to OrcaSlicer and start again.",
+    "completeTitle": "Signed in to FilamentHub",
+    "completeHint": "You can close this tab and return to OrcaSlicer."
   },
   "notFound": {
     "title": "Page Not Found",
@@ -489,7 +491,10 @@
     "footer_geoip_attribution": "IP geolocation by DB-IP",
     "footer_about": "About",
     "footer_copyright": "© {{year}} FilamentHub",
-    "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)"
+    "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)",
+    "plugin_sync": "Sync",
+    "plugin_recover": "Recover",
+    "plugin_log": "Log"
   },
   "legalDocument": {
     "backHome": "Back to home",
@@ -7326,6 +7331,11 @@
     "ERR_OAUTH_INVALID_PROVIDER": "Unknown provider: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "This email is already linked via {{provider}}",
     "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} has not verified this address, so it cannot open the existing account. Sign in with your password, or verify the address with {{provider}}",
+    "ERR_PLUGIN_OAUTH_FLOW_INVALID": "This OrcaSlicer sign-in request is invalid. Start sign-in again from the plugin.",
+    "ERR_PLUGIN_OAUTH_FLOW_EXPIRED": "This OrcaSlicer sign-in request has expired. Start sign-in again from the plugin.",
+    "ERR_PLUGIN_OAUTH_FLOW_CONFLICT": "This OrcaSlicer sign-in request has already been completed. Start a new one if the plugin did not sign in.",
+    "ERR_PLUGIN_OAUTH_FLOW_FAILED": "The OrcaSlicer sign-in request could not be completed.",
+    "ERR_PLUGIN_OAUTH_FLOW_UNAVAILABLE": "OrcaSlicer sign-in is temporarily unavailable. Please try again shortly.",
     "ERR_COULD_NOT_VALIDATE": "Could not validate credentials",
     "ERR_USER_INACTIVE": "User is inactive",
     "ERR_NOT_BRAND_USER": "You are not a brand representative",

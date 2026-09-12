@@ -590,6 +590,68 @@ export const authAPI = {
     return response.data;
   },
 
+  createPluginOAuthFlow: async (provider: 'google' | 'yandex', signal?: AbortSignal) => {
+    const response = await api.post<{
+      flow_id: string;
+      poll_secret: string;
+      browser_url: string;
+      expires_in: number;
+      interval: number;
+    }>('/auth/plugin-oauth/flows', { provider }, { signal });
+    return response.data;
+  },
+
+  pollPluginOAuthFlow: async (flowId: string, pollSecret: string, signal?: AbortSignal) => {
+    const response = await api.post<{
+      status: 'pending' | 'complete';
+      expires_in: number;
+      interval: number;
+      access_token?: string | null;
+      refresh_token?: string | null;
+      token_type?: string | null;
+      legal_onboarding_required?: boolean | null;
+    }>(
+      `/auth/plugin-oauth/flows/${encodeURIComponent(flowId)}/poll`,
+      { poll_secret: pollSecret },
+      { signal },
+    );
+    return response.data;
+  },
+
+  authorizePluginOAuthFlow: async (
+    flowId: string,
+    provider: 'google' | 'yandex',
+  ) => {
+    const response = await api.post<{ url: string; state: string; expires_in: number }>(
+      `/auth/plugin-oauth/flows/${encodeURIComponent(flowId)}/authorize/${provider}`,
+      {},
+    );
+    return response.data;
+  },
+
+  completePluginOAuthFlow: async (
+    flowId: string,
+    state: string,
+  ) => {
+    const response = await api.post<{ status: 'authorized'; expires_in: number }>(
+      `/auth/plugin-oauth/flows/${encodeURIComponent(flowId)}/complete`,
+      { state },
+    );
+    return response.data;
+  },
+
+  failPluginOAuthFlow: async (
+    flowId: string,
+    state: string,
+    error: 'provider_denied' | 'oauth_failed',
+  ) => {
+    const response = await api.post<{ status: 'failed'; expires_in: number }>(
+      `/auth/plugin-oauth/flows/${encodeURIComponent(flowId)}/fail`,
+      { state, error },
+    );
+    return response.data;
+  },
+
   me: async () => {
     const response = await api.get<User>('/auth/me');
     return response.data;

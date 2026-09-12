@@ -25,7 +25,7 @@ SECURE_PROBE = {
 
 HEALTHY_EMBED_CSP = (
     "default-src 'self'; "
-    "frame-ancestors 'self' file: http://127.0.0.1:* http://localhost:*;"
+    "frame-ancestors 'self';"
 )
 
 
@@ -88,8 +88,7 @@ class WatchdogEmbedTest(unittest.TestCase):
         response = self.response(
             **{
                 "Content-Security-Policy": (
-                    "default-src 'self'; frame-ancestors 'self' file: "
-                    "http://127.0.0.1:* http://localhost:* https://example.com;"
+                    "default-src 'self'; frame-ancestors 'self' https://example.com;"
                 )
             }
         )

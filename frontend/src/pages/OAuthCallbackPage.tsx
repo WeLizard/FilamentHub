@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
 import { consumeAuthReturnTo } from '../utils/authReturn';
-import { consumePluginOAuthHandoff } from '../utils/pluginBridge';
+import {
+  clearPluginOAuthHandoff,
+  readPluginOAuthHandoff,
+} from '../utils/pluginBridge';
 
 export function OAuthCallbackPage() {
   const { t } = useTranslation();
@@ -21,6 +24,7 @@ export function OAuthCallbackPage() {
     accessToken: string;
     refreshToken: string | null;
   } | null>(null);
+  const [pluginCompleted, setPluginCompleted] = useState(false);
   const calledRef = useRef(false);
   const completedRef = useRef(false);
 
@@ -34,6 +38,14 @@ export function OAuthCallbackPage() {
     const errorParam = searchParams.get('error');
 
     if (errorParam) {
+      const handoff = readPluginOAuthHandoff();
+      if (handoff && state) {
+        void authAPI.failPluginOAuthFlow(
+          handoff.flowId,
+          state,
+          'provider_denied',
+        ).finally(clearPluginOAuthHandoff);
+      }
       setError(t('oauthCallback.provider_denied', { provider: provider ?? '' }));
       return;
     }
@@ -52,6 +64,14 @@ export function OAuthCallbackPage() {
           refreshToken: tokenData.refresh_token ?? null,
         });
       } catch (err: any) {
+        const handoff = readPluginOAuthHandoff();
+        if (handoff) {
+          void authAPI.failPluginOAuthFlow(
+            handoff.flowId,
+            state,
+            'oauth_failed',
+          ).finally(clearPluginOAuthHandoff);
+        }
         const detail = err?.response?.data?.detail;
         const fallback = t('oauthCallback.error_fallback', { provider: provider ?? '' });
         setError(translateApiError(t, detail, fallback));
@@ -68,18 +88,23 @@ export function OAuthCallbackPage() {
       return;
     }
 
-    // The plugin receives the normal account session so its embedded app can
-    // display the mandatory onboarding itself. Until both choices are accepted,
-    // backend dependencies block personal APIs and no plugin capability token
-    // is minted. cb was validated as loopback when the flow started.
-    const handoff = consumePluginOAuthHandoff();
+    // The server binds the authenticated account to the waiting plugin without
+    // exposing either account token to this browser URL or to Redis. The plugin
+    // receives a fresh account session from its one-shot polling request.
+    const handoff = readPluginOAuthHandoff();
     if (handoff) {
       completedRef.current = true;
-      const deliver = new URL(handoff.cb);
-      deliver.searchParams.set('access', pendingTokens.accessToken);
-      deliver.searchParams.set('refresh', pendingTokens.refreshToken ?? '');
-      deliver.searchParams.set('nonce', handoff.nonce);
-      window.location.replace(deliver.toString());
+      const state = searchParams.get('state') || '';
+      void authAPI.completePluginOAuthFlow(
+        handoff.flowId,
+        state,
+      ).then(() => {
+        clearPluginOAuthHandoff();
+        setPluginCompleted(true);
+      }).catch((err: any) => {
+        const detail = err?.response?.data?.detail;
+        setError(translateApiError(t, detail, t('pluginOAuth.startError')));
+      });
       return;
     }
 
@@ -90,7 +115,7 @@ export function OAuthCallbackPage() {
     }
     completedRef.current = true;
     navigate(consumeAuthReturnTo() ?? '/', { replace: true });
-  }, [navigate, pendingTokens, user]);
+  }, [navigate, pendingTokens, searchParams, t, user]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -107,6 +132,14 @@ export function OAuthCallbackPage() {
           >
             {t('oauthCallback.back_home')}
           </button>
+        </div>
+      ) : pluginCompleted ? (
+        <div className="flex flex-col items-center gap-4 text-center max-w-sm px-4">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+          </div>
+          <p className="text-white font-semibold">{t('pluginOAuth.completeTitle')}</p>
+          <p className="text-gray-400 text-sm">{t('pluginOAuth.completeHint')}</p>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">

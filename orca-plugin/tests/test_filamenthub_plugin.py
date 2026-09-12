@@ -1,5 +1,7 @@
 """Setup, discovery and binding contracts."""
 
+import inspect
+
 from .filamenthub_plugin_test_support import (
     BUILD_PATH,
     json,
@@ -307,10 +309,13 @@ def test_setup_restored_local_connections_are_account_and_binding_scoped(setup_f
     ]}) == []
 
 def test_setup_local_form_is_not_impersonated_by_catalog_messages(plugin_module):
-    assert "['printer-setup-local', 'prepare-bambu-local', 'configure-bambu-local'].indexOf(data.type) !== -1) return;" in plugin_module.PAGE
-    assert "showPrinterSetupOverlay(data)" in plugin_module.PAGE
-    assert "st.resultType === 'printer-setup-result'" in plugin_module.PAGE
-    assert "key.value = '';" in plugin_module.PAGE
+    assert "localDialogSession:session" in plugin_module.LOCAL_DIALOG_PAGE
+    assert "type:'prepare-bambu-local'" in plugin_module.LOCAL_DIALOG_PAGE
+    assert "type:'configure-bambu-local'" in plugin_module.LOCAL_DIALOG_PAGE
+    assert "type:'printer-setup-local'" in plugin_module.LOCAL_DIALOG_PAGE
+    assert 'msg.get("localDialogSession")' in inspect.getsource(
+        plugin_module.FilamentHubCatalog.on_message
+    )
 
 def test_setup_corrupt_local_record_fails_closed(setup_flow):
     plugin, catalog, context, results, _uploads = setup_flow

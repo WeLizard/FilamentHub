@@ -42,14 +42,7 @@ BACKUP_MAX_AGE = timedelta(hours=36)
 CERT_WARN_DAYS = 14
 TIMEOUT = 20
 EMBED_BODY_LIMIT = 128 * 1024
-EMBED_FRAME_ANCESTORS = frozenset(
-    {
-        "'self'",
-        "file:",
-        "http://127.0.0.1:*",
-        "http://localhost:*",
-    }
-)
+EMBED_FRAME_ANCESTORS = frozenset({"'self'"})
 
 # The machine being watched, as ssh would address it, and the key to reach it
 # with. Left unset, the two checks that need to look inside are skipped.

@@ -1,11 +1,9 @@
 /**
  * Мост между каталогом и Python-плагином OrcaSlicer.
  *
- * Плагин (PR #14530) грузит наш SPA по /embed/catalog в <iframe> внутри окна
- * OrcaSlicer. Действия из каталога (импорт пресета) уходят наверх через
- * window.parent.postMessage; локальный shell ретранслирует их в Python. В
- * актуальном Pages API каталог сначала открывается напрямую и использует
- * window.orca, не создавая loopback socket при открытии вкладки.
+ * Актуальный Pages API грузит наш SPA напрямую по /embed/catalog. Действия из
+ * каталога уходят в официальный window.orca bridge. Совместимость со старым
+ * iframe-host сохраняется через window.parent.postMessage.
  *
  * Это ОТДЕЛЬНЫЙ путь от форкового моста (window.filamenthub / window.wx) —
  * тот WebView-мост не трогаем, он продолжает работать как раньше.
@@ -28,6 +26,28 @@ let activePluginToken: string | null = null;
 let activePluginCapabilities = new Set<string>();
 let directPluginBridgeInstalled = false;
 let activeDirectBridgeSession: string | null = null;
+let activePluginRuntime = { showDiagnostics: false };
+const pluginRuntimeListeners = new Set<(runtime: PluginRuntimeState) => void>();
+
+export interface PluginRuntimeState {
+  showDiagnostics: boolean;
+}
+
+function updatePluginRuntime(incoming: Record<string, unknown>): void {
+  activePluginRuntime = {
+    showDiagnostics: incoming.showDiagnostics === true,
+  };
+  pluginRuntimeListeners.forEach((listener) => listener(activePluginRuntime));
+}
+
+/** Follow host-owned runtime flags; build mode is not a plugin setting. */
+export function subscribeToPluginRuntime(
+  listener: (runtime: PluginRuntimeState) => void,
+): () => void {
+  pluginRuntimeListeners.add(listener);
+  listener(activePluginRuntime);
+  return () => pluginRuntimeListeners.delete(listener);
+}
 
 function directBridgeSession(): string | null {
   if (typeof window === 'undefined') return null;
@@ -46,6 +66,20 @@ export function isDirectPluginHost(): boolean {
     && directBridgeSession() !== null;
 }
 
+/** Retain the per-tab binding when SPA navigation changes the embedded route. */
+export function preserveDirectPluginBridgeBinding(): void {
+  if (!isDirectPluginHost()) return;
+  const session = directBridgeSession();
+  if (!session) return;
+  const expectedHash = `#fh_bridge=${encodeURIComponent(session)}`;
+  if (window.location.hash === expectedHash) return;
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${window.location.pathname}${window.location.search}${expectedHash}`,
+  );
+}
+
 function ensureDirectPluginBridge(): boolean {
   if (!isDirectPluginHost()) return false;
   if (directPluginBridgeInstalled) return true;
@@ -62,6 +96,9 @@ function ensureDirectPluginBridge(): boolean {
       ) {
         window.location.replace(message.url);
         return;
+      }
+      if (message.source === PLUGIN_HOST_MESSAGE_SOURCE && message.type === 'transport') {
+        updatePluginRuntime(message);
       }
       if (message.source === PLUGIN_HOST_MESSAGE_SOURCE) {
         data = { ...message, source: PLUGIN_MESSAGE_SOURCE };
@@ -89,6 +126,16 @@ function ensureDirectPluginBridge(): boolean {
 export function isPluginEmbed(): boolean {
   if (typeof window === 'undefined') {
     return false;
+  }
+  if (isDirectPluginHost()) {
+    ensureDirectPluginBridge();
+    embedSessionFlag = true;
+    try {
+      sessionStorage.setItem(EMBED_FLAG, '1');
+    } catch {
+      // The host WebView may partition storage; the URL binding remains enough.
+    }
+    return true;
   }
   if (stripLocalePrefix(window.location.pathname).startsWith('/embed')) {
     ensureDirectPluginBridge();
@@ -142,41 +189,51 @@ function isLoopbackOrigin(origin: string): boolean {
   }
 }
 
-/**
- * Проверка, что URL доставки OAuth-сессии указывает строго на loopback плагина
- * (http://127.0.0.1|localhost). Единственный адресат, которому позволено принять
- * минтованные токены — чтобы поддельная ссылка plugin-start не увела сессию на
- * чужой хост. Применяется и при сохранении, и при чтении хендофа.
- */
-export function isLoopbackDeliveryUrl(url: string): boolean {
-  return isLoopbackOrigin(url);
-}
-
-// Хендоф внешнего OAuth: страница plugin-start кладёт сюда loopback-cb + nonce,
-// страница callback их считывает и редиректит браузер на loopback с токенами.
 export const PLUGIN_OAUTH_HANDOFF_KEY = 'fh_plugin_oauth_handoff';
 
-export function consumePluginOAuthHandoff(): { cb: string; nonce: string } | null {
+export interface PluginOAuthBrowserHandoff {
+  flowId: string;
+}
+
+function validPluginOAuthCredential(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{24,128}$/.test(value);
+}
+
+/** Keep the browser-only half of a server-backed plugin OAuth flow across the provider redirect. */
+export function rememberPluginOAuthHandoff(flowId: string): boolean {
+  if (!validPluginOAuthCredential(flowId)) {
+    return false;
+  }
+  try {
+    sessionStorage.setItem(PLUGIN_OAUTH_HANDOFF_KEY, JSON.stringify({ flowId }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readPluginOAuthHandoff(): PluginOAuthBrowserHandoff | null {
   try {
     const raw = sessionStorage.getItem(PLUGIN_OAUTH_HANDOFF_KEY);
     if (!raw) {
       return null;
     }
-    sessionStorage.removeItem(PLUGIN_OAUTH_HANDOFF_KEY);
-    const parsed = JSON.parse(raw) as { cb?: unknown; nonce?: unknown };
-    if (
-      typeof parsed.cb === 'string' &&
-      typeof parsed.nonce === 'string' &&
-      parsed.cb &&
-      parsed.nonce &&
-      isLoopbackDeliveryUrl(parsed.cb)
-    ) {
-      return { cb: parsed.cb, nonce: parsed.nonce };
+    const parsed = JSON.parse(raw) as { flowId?: unknown };
+    if (validPluginOAuthCredential(parsed.flowId)) {
+      return { flowId: parsed.flowId };
     }
   } catch {
-    // Хранилище недоступно или мусор — хендофа нет.
+    // Storage is unavailable or corrupt; treat the browser as a normal OAuth flow.
   }
   return null;
+}
+
+export function clearPluginOAuthHandoff(): void {
+  try {
+    sessionStorage.removeItem(PLUGIN_OAUTH_HANDOFF_KEY);
+  } catch {
+    // The flow will expire server-side even when browser storage is unavailable.
+  }
 }
 
 function isTrustedPluginParentEvent(event: MessageEvent): boolean {
@@ -258,8 +315,8 @@ export function subscribeToPluginNavigation(onNavigate: (path: string) => void):
 }
 
 /**
- * Подписка на сводку синка от шелла: Python пишет результат в loopback, шелл его
- * опрашивает и шлёт вниз sync-result — SPA показывает тост вместо хост-диалога.
+ * Подписка на сводку синка от Python через официальный host bridge. Installed
+ * iframe-shell builds relay the same message shape for rolling compatibility.
  */
 export interface PluginSyncResult {
   text: string;
@@ -418,6 +475,28 @@ export function sendRecoverImport(keys: string[]): void {
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'recover-import', names: keys });
 }
 
+/** Request the plugin-owned Recovery Center inventory. */
+export function requestPluginRecovery(): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'recover' });
+}
+
+/** Request the plugin diagnostic log through the bound host bridge. */
+export function requestPluginDiagnostics(): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'read-diagnostics' });
+}
+
+export function subscribeToPluginDiagnostics(onDiagnostics: (text: string) => void): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'diagnostics') return;
+    const diagnostics = (data as { text?: unknown }).text;
+    if (typeof diagnostics === 'string') onDiagnostics(diagnostics);
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
 /**
  * Статус сессии для тулбара шелла: имя пользователя + счётчик пресетов
  * (аналог лейблов форковой панели). null — гость, шелл вернёт бренд-надпись.
@@ -431,7 +510,7 @@ export function reportAuthStateToPlugin(label: string | null): void {
 
 /**
  * Передать Python-плагину только короткоживущую capability-сессию. Основные
- * access/refresh credentials браузера никогда не пересекают iframe boundary.
+ * access/refresh credentials браузера никогда не пересекают plugin bridge.
  */
 export function reportPluginSessionToPlugin(pluginToken: string): void {
   if (!isPluginEmbed()) {
@@ -467,7 +546,7 @@ export function notifyProfileChanged(): void {
 }
 
 /**
- * Run the same complete preset sync as the Sync control in the plugin shell.
+ * Run the same complete preset sync as the Sync control in the plugin toolbar.
  * Machine, process and filament profiles are reconciled together by Python;
  * the page waits for the real result before refreshing its server data.
  */
@@ -713,7 +792,7 @@ export function requestInstalledPrinterBundles(
 /**
  * Open the plugin-owned Bambu LAN form. The site sends FilamentHub IDs, the
  * one-time pairing code and an optional opaque local discovery reference. IP,
- * serial and access code stay in the local shell.
+ * serial and access code stay in the host-owned local dialog.
  */
 export interface LocalPrinterSetupState {
   open: boolean;
@@ -1030,7 +1109,7 @@ export interface PrinterSetupResult {
   inventoryLinked?: boolean;
 }
 
-/** The native shell owns manual LAN credentials; this request never contains them. */
+/** The host-owned local dialog owns manual LAN credentials; this request never contains them. */
 export function requestPrinterSetup(
   operation: 'list' | 'probe' | 'activate' | 'manual',
   payload: {
@@ -1373,11 +1452,114 @@ export function subscribeToPluginSliceParse(
 /**
  * Запустить вход через Google/Yandex во внешнем системном браузере. Внутри
  * встроенного WebView провайдеры отдают 403 (disallowed_useragent) / «refused to
- * connect», поэтому Python открывает браузер, а сессия возвращается в плагин по
- * loopback. Здесь мы лишь просим шелл начать флоу.
+ * connect», поэтому SPA создаёт серверный одноразовый handoff и просит host
+ * открыть его безопасный путь в системном браузере. Этот же SPA опрашивает
+ * сервер по отдельному секрету, который никогда не передаётся host.
  */
-export function startPluginOAuth(provider: 'google' | 'yandex'): void {
-  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'open-oauth', provider });
+export async function startPluginOAuth(
+  provider: 'google' | 'yandex',
+  signal?: AbortSignal,
+): Promise<PluginAuthRestore> {
+  if (!isPluginEmbed()) throw new Error('plugin OAuth requires an embedded host');
+  const { authAPI } = await import('../api/client');
+  const flow = await authAPI.createPluginOAuthFlow(provider, signal);
+  if (
+    !validPluginOAuthCredential(flow.flow_id)
+    || !validPluginOAuthCredential(flow.poll_secret)
+  ) {
+    throw new Error('invalid plugin OAuth flow');
+  }
+  const browserUrl = new URL(flow.browser_url, window.location.origin);
+  const expectedPath = `/oauth/plugin-start/${provider}`;
+  const queryKeys = Array.from(browserUrl.searchParams.keys());
+  if (
+    browserUrl.origin !== window.location.origin
+    || browserUrl.pathname !== expectedPath
+    || browserUrl.hash
+    || queryKeys.length !== 1
+    || queryKeys[0] !== 'flow'
+    || browserUrl.searchParams.get('flow') !== flow.flow_id
+  ) {
+    throw new Error('invalid plugin OAuth browser URL');
+  }
+  const requestId = pluginRequestId('oauth');
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+
+  let unsubscribeLegacy: () => void = () => {};
+  let removeOpenListener: () => void = () => {};
+  const legacyResult = new Promise<PluginAuthRestore>((resolve) => {
+    unsubscribeLegacy = subscribeToPluginAuthRestore(resolve);
+  });
+  const openFailure = new Promise<PluginAuthRestore>((_resolve, reject) => {
+    const handler = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (
+        data?.source !== PLUGIN_MESSAGE_SOURCE
+        || data.type !== 'oauth-browser-opened'
+        || data.requestId !== requestId
+      ) return;
+      if (data.opened !== true) reject(new Error('system browser could not be opened'));
+    };
+    window.addEventListener('message', handler);
+    removeOpenListener = () => window.removeEventListener('message', handler);
+  });
+
+  const pollResult = (async (): Promise<PluginAuthRestore> => {
+    const deadline = Date.now() + Math.max(1, Math.min(flow.expires_in, 600)) * 1000;
+    let delayMs = Math.max(1, Math.min(flow.interval, 10)) * 1000;
+    while (Date.now() < deadline) {
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const result = await authAPI.pollPluginOAuthFlow(
+        flow.flow_id,
+        flow.poll_secret,
+        controller.signal,
+      );
+      if (result.status === 'complete') {
+        if (!result.access_token) throw new Error('plugin OAuth returned no access token');
+        return {
+          accessToken: result.access_token,
+          refreshToken: result.refresh_token ?? '',
+        };
+      }
+      const remainingMs = Math.max(0, result.expires_in * 1000);
+      if (remainingMs === 0) break;
+      await new Promise<void>((resolve, reject) => {
+        let timeoutId = 0;
+        const onAbort = () => {
+          window.clearTimeout(timeoutId);
+          reject(new DOMException('Aborted', 'AbortError'));
+        };
+        const done = () => {
+          controller.signal.removeEventListener('abort', onAbort);
+          resolve();
+        };
+        timeoutId = window.setTimeout(done, Math.min(delayMs, remainingMs));
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+      });
+      delayMs = Math.min(delayMs * 1.25, 5000);
+    }
+    throw new Error('plugin OAuth flow expired');
+  })();
+
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'open-oauth',
+    provider,
+    path: `${expectedPath}?flow=${encodeURIComponent(flow.flow_id)}`,
+    requestId,
+  });
+  try {
+    return await Promise.race([pollResult, legacyResult, openFailure]);
+  } finally {
+    controller.abort();
+    signal?.removeEventListener('abort', abort);
+    unsubscribeLegacy();
+    removeOpenListener();
+  }
 }
 
 /**
@@ -1407,9 +1589,8 @@ export interface PluginAuthRestore {
 }
 
 /**
- * Подписка на доставку account-сессии от шелла: после внешнего OAuth шелл,
- * опросив loopback, шлёт вниз auth-restore с access/refresh токенами. SPA входит
- * ими как при обычном логине. Возвращает функцию отписки.
+ * Подписка на доставку account-сессии от старого host bridge. Серверный OAuth
+ * handoff актуального прямого SPA завершается внутри startPluginOAuth.
  */
 export function subscribeToPluginAuthRestore(
   onRestore: (tokens: PluginAuthRestore) => void,
