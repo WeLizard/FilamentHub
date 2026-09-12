@@ -39,7 +39,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { list: listPrinters },
   savedPresetsAPI: { save: savePreset },
-  spoolsAPI: { listForFilament: listSpools },
+  spoolsAPI: { feed: listSpools },
 }));
 
 vi.mock('../hooks/useConfigurationPresetRecommendation', () => ({
@@ -82,6 +82,27 @@ const makeSpool = (overrides: Partial<UserSpool> = {}): UserSpool => ({
   extra: null,
   ...overrides,
 });
+
+const feedPage = (items: UserSpool[], next_cursor: string | null = null) => {
+  const all = items;
+  const state_counts = {
+    active: all.filter((item) => item.state === 'active').length,
+    shelf: all.filter((item) => item.state === 'shelf').length,
+    archived: all.filter((item) => item.state === 'archived').length,
+    empty: all.filter((item) => item.state === 'empty').length,
+  };
+  return {
+    items: all.filter((item) => item.state === 'active' || item.state === 'shelf').slice(0, 3),
+    next_cursor,
+    summary: {
+      total: all.length,
+      state_counts,
+      available_remaining_weight_g: all
+        .filter((item) => item.state === 'active' || item.state === 'shelf')
+        .reduce((sum, item) => sum + item.remaining_weight_g, 0),
+    },
+  };
+};
 
 function renderModal(
   result: QrScanResponse,
@@ -128,7 +149,7 @@ describe('QrScanResultModal', () => {
     listPrinters.mockReset();
     listPrinters.mockResolvedValue([]);
     listSpools.mockReset();
-    listSpools.mockResolvedValue([]);
+    listSpools.mockResolvedValue(feedPage([]));
     savePreset.mockReset();
   });
 
@@ -324,7 +345,10 @@ describe('QrScanResultModal', () => {
     renderModal(baseResult, { onAddSpool });
 
     expect(await screen.findByText('qrScanResult.inventoryNone')).toBeInTheDocument();
-    expect(listSpools).toHaveBeenCalledWith(42);
+    expect(listSpools).toHaveBeenCalledWith(
+      { cursor: undefined, filament_id: 42, limit: 3, state_group: 'available' },
+      expect.anything(),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addToShelf' }));
     expect(onAddSpool).toHaveBeenCalledWith('shelf');
     fireEvent.click(
@@ -335,10 +359,9 @@ describe('QrScanResultModal', () => {
 
   it('shows one exact available spool and ignores a different variant', async () => {
     const onAddSpool = vi.fn();
-    listSpools.mockResolvedValueOnce([
+    listSpools.mockResolvedValueOnce(feedPage([
       makeSpool(),
-      makeSpool({ id: 12, filament_id: 99 }),
-    ]);
+    ]));
     renderModal(baseResult, { onAddSpool });
 
     expect(await screen.findByText('qrScanResult.inventoryOne')).toBeInTheDocument();
@@ -379,7 +402,7 @@ describe('QrScanResultModal', () => {
         ],
       } as PhysicalPrinter,
     ]);
-    listSpools.mockResolvedValueOnce([
+    listSpools.mockResolvedValueOnce(feedPage([
       makeSpool({
         id: 21,
         state: 'active',
@@ -393,7 +416,7 @@ describe('QrScanResultModal', () => {
       makeSpool({ id: 24, remaining_weight_g: 300 }),
       makeSpool({ id: 25, state: 'archived' }),
       makeSpool({ id: 26, state: 'empty', remaining_weight_g: 0 }),
-    ]);
+    ], 'next'));
     renderModal(baseResult, { onAddSpool, onOpenSpools });
 
     expect(await screen.findByText('qrScanResult.inventoryMany')).toBeInTheDocument();
@@ -408,7 +431,7 @@ describe('QrScanResultModal', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('qrScanResult.inventoryArchived')).toBeInTheDocument();
     expect(screen.getByText('qrScanResult.inventoryEmpty')).toBeInTheDocument();
-    expect(screen.getByText('qrScanResult.inventoryMore')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'qrScanResult.inventoryLoadMore' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.openSpools' }));
     expect(onOpenSpools).toHaveBeenCalledTimes(1);
     fireEvent.click(
@@ -418,10 +441,10 @@ describe('QrScanResultModal', () => {
   });
 
   it('shows historical counts when no usable spool remains', async () => {
-    listSpools.mockResolvedValueOnce([
+    listSpools.mockResolvedValueOnce(feedPage([
       makeSpool({ id: 31, state: 'archived' }),
       makeSpool({ id: 32, state: 'empty', remaining_weight_g: 0 }),
-    ]);
+    ]));
     renderModal(baseResult);
 
     expect(await screen.findByText('qrScanResult.inventoryNoAvailable')).toBeInTheDocument();
@@ -433,7 +456,7 @@ describe('QrScanResultModal', () => {
 
   it('falls back to spool state when canonical location lookup fails', async () => {
     listPrinters.mockRejectedValueOnce(new Error('printers unavailable'));
-    listSpools.mockResolvedValueOnce([makeSpool({ id: 41, state: 'active' })]);
+    listSpools.mockResolvedValueOnce(feedPage([makeSpool({ id: 41, state: 'active' })]));
     renderModal(baseResult);
 
     expect(await screen.findByText('qrScanResult.inventoryOne')).toBeInTheDocument();
@@ -450,5 +473,41 @@ describe('QrScanResultModal', () => {
     expect(screen.getByText('QR Brand · Exact PLA')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addToShelf' }));
     expect(onAddSpool).toHaveBeenCalledWith('shelf');
+  });
+
+  it('loads another page without merging equal product identities', async () => {
+    const first = makeSpool({ id: 51, source: 'qr' });
+    const second = makeSpool({ id: 52, source: 'qr' });
+    listSpools
+      .mockResolvedValueOnce({ ...feedPage([first, second], 'next-page'), items: [first] })
+      .mockResolvedValueOnce({ ...feedPage([second]), items: [second] });
+    renderModal(baseResult);
+
+    const loadMore = await screen.findByRole('button', {
+      name: 'qrScanResult.inventoryLoadMore',
+    });
+    expect(screen.getByTestId('qr-inventory-spool-51')).toBeInTheDocument();
+    fireEvent.click(loadMore);
+
+    expect(await screen.findByTestId('qr-inventory-spool-52')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/qr-inventory-spool-/)).toHaveLength(2);
+    expect(listSpools).toHaveBeenLastCalledWith(
+      { cursor: 'next-page', filament_id: 42, limit: 3, state_group: 'available' },
+      expect.anything(),
+    );
+  });
+
+  it('keeps loaded spools visible when the next page fails', async () => {
+    listSpools
+      .mockResolvedValueOnce(feedPage([makeSpool({ id: 61 })], 'next-page'))
+      .mockRejectedValueOnce(new Error('next page unavailable'));
+    renderModal(baseResult);
+
+    fireEvent.click(await screen.findByRole('button', {
+      name: 'qrScanResult.inventoryLoadMore',
+    }));
+    expect(await screen.findByText('qrScanResult.inventoryLoadMoreError')).toBeInTheDocument();
+    expect(screen.getByTestId('qr-inventory-spool-61')).toBeInTheDocument();
+    expect(screen.queryByText('qrScanResult.inventoryLoadError')).not.toBeInTheDocument();
   });
 });

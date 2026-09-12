@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -14,6 +16,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_FILAMENT_NOT_FOUND,
+    ERR_SPOOL_CURSOR_INVALID,
     ERR_SPOOL_EMPTY_ON_CREATE,
     ERR_SPOOL_LOCATION_CONFLICT,
     ERR_SPOOL_USED_EXCEEDS_INITIAL,
@@ -30,8 +33,11 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import (
     SpoolCreateRequest,
+    SpoolFeedResponse,
+    SpoolFeedSummary,
     SpoolFilamentInfo,
     SpoolResponse,
+    SpoolStateCounts,
     SpoolUpdateRequest,
 )
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
@@ -450,6 +456,147 @@ async def list_spools(
     return [
         _build_response(s, filaments.get(s.filament_id) if s.filament_id else None) for s in spools
     ]
+
+
+def _encode_spool_cursor(spool: UserSpool) -> str:
+    created_at = spool.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    payload = json.dumps(
+        [created_at.astimezone(timezone.utc).isoformat(), spool.id], separators=(",", ":")
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_spool_cursor(cursor: str) -> tuple[datetime, int]:
+    try:
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        payload = json.loads(raw.decode("utf-8"))
+        if (
+            not isinstance(payload, list)
+            or len(payload) != 2
+            or not isinstance(payload[0], str)
+            or not isinstance(payload[1], int)
+            or isinstance(payload[1], bool)
+            or not 1 <= payload[1] <= 2_147_483_647
+        ):
+            raise ValueError("invalid cursor payload")
+        created_at = datetime.fromisoformat(payload[0])
+        if created_at.tzinfo is None:
+            raise ValueError("cursor timestamp must include timezone")
+        return created_at.astimezone(timezone.utc), payload[1]
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        OverflowError,
+    ):
+        raise_error(422, ERR_SPOOL_CURSOR_INVALID)
+
+
+async def get_spool(db: AsyncSession, user_id: int, spool_id: int) -> SpoolResponse:
+    spool = await db.scalar(
+        select(UserSpool).where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
+    )
+    if spool is None:
+        raise_error(404, ERR_ACCESS_DENIED)
+    filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
+    return _build_response(spool, filament)
+
+
+async def list_spool_feed(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    limit: int,
+    cursor: str | None = None,
+    state: UserSpoolState | None = None,
+    state_group: str | None = None,
+    filament_id: int | None = None,
+) -> SpoolFeedResponse:
+    base_filters = [UserSpool.user_id == user_id]
+    if filament_id is not None:
+        base_filters.append(UserSpool.filament_id == filament_id)
+
+    counts_result = await db.execute(
+        select(UserSpool.state, func.count(UserSpool.id))
+        .where(*base_filters)
+        .group_by(UserSpool.state)
+    )
+    counts = {row_state.value: count for row_state, count in counts_result.all()}
+    total = sum(counts.values())
+    available_remaining: float | None = None
+    if filament_id is not None:
+        available_remaining = float(
+            await db.scalar(
+                select(
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    UserSpool.state.in_(
+                                        [
+                                            UserSpoolState.active,
+                                            UserSpoolState.shelf,
+                                        ]
+                                    ),
+                                    case(
+                                        (
+                                            UserSpool.initial_weight_g > UserSpool.used_weight_g,
+                                            UserSpool.initial_weight_g - UserSpool.used_weight_g,
+                                        ),
+                                        else_=0,
+                                    ),
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    )
+                ).where(*base_filters)
+            )
+            or 0
+        )
+
+    query = select(UserSpool).where(*base_filters)
+    if state is not None:
+        query = query.where(UserSpool.state == state)
+    elif state_group == "available":
+        query = query.where(UserSpool.state.in_([UserSpoolState.active, UserSpoolState.shelf]))
+    elif state_group == "archived":
+        query = query.where(UserSpool.state.in_([UserSpoolState.archived, UserSpoolState.empty]))
+    if cursor is not None:
+        cursor_created_at, cursor_id = _decode_spool_cursor(cursor)
+        query = query.where(
+            or_(
+                UserSpool.created_at < cursor_created_at,
+                and_(UserSpool.created_at == cursor_created_at, UserSpool.id < cursor_id),
+            )
+        )
+    result = await db.execute(
+        query.order_by(UserSpool.created_at.desc(), UserSpool.id.desc()).limit(limit + 1)
+    )
+    rows = list(result.scalars().all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    fil_ids = {row.filament_id for row in rows if row.filament_id}
+    filaments: dict[int, Filament] = {}
+    if fil_ids:
+        fil_result = await db.execute(
+            select(Filament).options(joinedload(Filament.brand)).where(Filament.id.in_(fil_ids))
+        )
+        filaments = {item.id: item for item in fil_result.unique().scalars().all()}
+    return SpoolFeedResponse(
+        items=[_build_response(row, filaments.get(row.filament_id)) for row in rows],
+        next_cursor=_encode_spool_cursor(rows[-1]) if has_more and rows else None,
+        summary=SpoolFeedSummary(
+            total=total,
+            state_counts=SpoolStateCounts(**counts),
+            available_remaining_weight_g=available_remaining,
+        ),
+    )
 
 
 async def create_spool(

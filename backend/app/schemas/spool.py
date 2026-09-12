@@ -93,6 +93,25 @@ class SpoolResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SpoolStateCounts(BaseModel):
+    active: int = 0
+    shelf: int = 0
+    archived: int = 0
+    empty: int = 0
+
+
+class SpoolFeedSummary(BaseModel):
+    total: int
+    state_counts: SpoolStateCounts
+    available_remaining_weight_g: float | None = None
+
+
+class SpoolFeedResponse(BaseModel):
+    items: list[SpoolResponse]
+    next_cursor: str | None = None
+    summary: SpoolFeedSummary
+
+
 class SpoolCreateRequest(BaseModel):
     """Create a new spool."""
 

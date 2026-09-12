@@ -3821,6 +3821,28 @@ export interface UserSpool {
   extra: Record<string, string> | null;
 }
 
+export type SpoolStateGroup = 'available' | 'archived';
+
+export interface SpoolFeedParams {
+  limit?: number;
+  cursor?: string;
+  state?: SpoolState;
+  state_group?: SpoolStateGroup;
+  filament_id?: number;
+}
+
+export interface SpoolFeedSummary {
+  total: number;
+  state_counts: Record<SpoolState, number>;
+  available_remaining_weight_g: number | null;
+}
+
+export interface SpoolFeedResponse {
+  items: UserSpool[];
+  next_cursor: string | null;
+  summary: SpoolFeedSummary;
+}
+
 export interface UserSpoolQrIdentity {
   spool_id: number;
   filament_id: number;
@@ -4032,6 +4054,16 @@ export const spoolsAPI = {
 
   listForFilament: async (filament_id: number): Promise<UserSpool[]> => {
     const response = await api.get<UserSpool[]>('/spools', { params: { filament_id } });
+    return response.data;
+  },
+
+  feed: async (params: SpoolFeedParams, signal?: AbortSignal): Promise<SpoolFeedResponse> => {
+    const response = await api.get<SpoolFeedResponse>('/spools/feed', { params, signal });
+    return response.data;
+  },
+
+  get: async (id: number, signal?: AbortSignal): Promise<UserSpool> => {
+    const response = await api.get<UserSpool>(`/spools/${id}`, { signal });
     return response.data;
   },
 

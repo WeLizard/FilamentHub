@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   User,
@@ -66,6 +66,7 @@ import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
+import { mergeSpoolFeedPages, spoolQueryKeys } from '../utils/spoolQueries';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -864,7 +865,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   const { data: spoolsData = [], refetch: refetchSpools } = useQuery({
-    queryKey: ['user-spools', user?.id],
+    queryKey: spoolQueryKeys.legacy(user?.id),
     queryFn: ({ signal }) => spoolsAPI.list(signal),
     enabled: !!user?.id && needsSpoolData,
     staleTime: 60_000,
@@ -3352,6 +3353,23 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   );
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
+  const feedParams = useMemo(() => (
+    spoolTab === 'archived'
+      ? { limit: 24, state_group: 'archived' as const }
+      : { limit: 24, state: spoolTab }
+  ), [spoolTab]);
+  const feedQuery = useInfiniteQuery({
+    queryKey: spoolQueryKeys.feed(user?.id, feedParams),
+    queryFn: ({ pageParam, signal }) => spoolsAPI.feed(
+      { ...feedParams, cursor: pageParam },
+      signal,
+    ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  });
+
   // the machines themselves live on the Printers tab.
 
 
@@ -3393,24 +3411,16 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     }
   };
 
-  const spoolTabCounts = useMemo(
-    () => ({
-      shelf: spools.filter((spool) => spool.state === 'shelf').length,
-      active: spools.filter((spool) => spool.state === 'active').length,
-      archived: spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty').length,
-    }),
-    [spools],
+  const filteredSpools = useMemo(
+    () => mergeSpoolFeedPages(feedQuery.data?.pages),
+    [feedQuery.data?.pages],
   );
-
-  const filteredSpools = useMemo(() => {
-    if (spoolTab === 'shelf') {
-      return spools.filter((spool) => spool.state === 'shelf');
-    }
-    if (spoolTab === 'active') {
-      return spools.filter((spool) => spool.state === 'active');
-    }
-    return spools.filter((spool) => spool.state === 'archived' || spool.state === 'empty');
-  }, [spools, spoolTab]);
+  const feedSummary = feedQuery.data?.pages[0]?.summary;
+  const spoolTabCounts = {
+    shelf: feedSummary?.state_counts.shelf ?? 0,
+    active: feedSummary?.state_counts.active ?? 0,
+    archived: (feedSummary?.state_counts.archived ?? 0) + (feedSummary?.state_counts.empty ?? 0),
+  };
 
   const spoolTabs: Array<{ key: 'shelf' | 'active' | 'archived'; label: string; count: number }> = [
     { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
@@ -3577,7 +3587,19 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           ))}
         </div>
 
-        {spoolTab === 'active' ? (
+        {feedQuery.isPending ? (
+          <p className="flex items-center gap-2 text-sm text-gray-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t('profilePage.spoolsLoading')}
+          </p>
+        ) : feedQuery.isError && !feedQuery.isFetchNextPageError ? (
+          <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+            <p>{t('profilePage.spoolsLoadError')}</p>
+            <button type="button" onClick={() => feedQuery.refetch()} className="mt-2 inline-flex rounded-lg border border-red-300/30 px-3 py-2">
+              {t('profilePage.spoolsRetry')}
+            </button>
+          </div>
+        ) : spoolTab === 'active' ? (
           <div className="space-y-4 md:space-y-5">
             <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5">
               <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
@@ -3586,7 +3608,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             <div className="space-y-3">
               <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
               {filteredSpools.length === 0 ? (
-                spools.length === 0 && showNewcomerGuide ? (
+                (feedSummary?.total ?? 0) === 0 && showNewcomerGuide ? (
                   <GuidedEmptyState
                     icon={<Package className="h-5 w-5" />}
                     eyebrow={t('profilePage.newcomer.spools.eyebrow')}
@@ -3629,7 +3651,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
               )}
             </div>
           </div>
-        ) : spools.length === 0 ? (
+        ) : (feedSummary?.total ?? 0) === 0 ? (
           showNewcomerGuide ? (
             <GuidedEmptyState
               icon={<Package className="h-5 w-5" />}
@@ -3677,6 +3699,24 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 onResolveImport={onResolveImport}
               />
             ))}
+          </div>
+        )}
+        {feedQuery.hasNextPage && !(feedQuery.isError && !feedQuery.isFetchNextPageError) && (
+          <div>
+            <button
+              type="button"
+              onClick={() => feedQuery.fetchNextPage()}
+              disabled={feedQuery.isFetchingNextPage}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10 disabled:opacity-60"
+            >
+              {feedQuery.isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
+              {feedQuery.isFetchingNextPage
+                ? t('profilePage.spoolsLoadingMore')
+                : t('profilePage.spoolsLoadMore')}
+            </button>
+            {feedQuery.isFetchNextPageError && (
+              <p className="mt-2 text-xs text-amber-200">{t('profilePage.spoolsLoadMoreError')}</p>
+            )}
           </div>
         )}
       </div>

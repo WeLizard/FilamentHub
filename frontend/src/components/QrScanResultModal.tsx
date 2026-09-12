@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Boxes,
   CheckCircle2,
@@ -24,6 +24,7 @@ import {
 import { useConfigurationPresetRecommendation } from '../hooks/useConfigurationPresetRecommendation';
 import { getSpoolCurrentLocation } from '../utils/spoolLocation';
 import { translateApiError } from '../utils/translateApiError';
+import { mergeSpoolFeedPages, spoolQueryKeys } from '../utils/spoolQueries';
 import { ModalOverlay } from './ModalOverlay';
 import {
   PresetRecommendationEvidence,
@@ -110,9 +111,20 @@ export function QrScanResultModal({
     },
   });
 
-  const inventoryQuery = useQuery({
-    queryKey: ['spools', 'filament', userId, filament.id],
-    queryFn: () => spoolsAPI.listForFilament(filament.id),
+  const inventoryQuery = useInfiniteQuery({
+    queryKey: spoolQueryKeys.feed(userId, {
+      limit: 3,
+      state_group: 'available',
+      filament_id: filament.id,
+    }),
+    queryFn: ({ pageParam, signal }) => spoolsAPI.feed({
+      limit: 3,
+      state_group: 'available',
+      filament_id: filament.id,
+      cursor: pageParam,
+    }, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: isAuthenticated,
     staleTime: 30_000,
   });
@@ -122,22 +134,12 @@ export function QrScanResultModal({
     enabled: isAuthenticated,
     staleTime: 30_000,
   });
-  const matchingSpools = (inventoryQuery.data ?? []).filter(
-    (spool) => spool.filament_id === filament.id,
-  );
-  const availableSpools = matchingSpools.filter(
-    (spool) => spool.state === 'active' || spool.state === 'shelf',
-  );
-  const archivedCount = matchingSpools.filter(
-    (spool) => spool.state === 'archived',
-  ).length;
-  const emptyCount = matchingSpools.filter((spool) => spool.state === 'empty').length;
-  const visibleSpools = availableSpools.slice(0, 3);
-  const hiddenAvailableCount = availableSpools.length - visibleSpools.length;
-  const totalRemaining = availableSpools.reduce(
-    (total, spool) => total + Math.max(0, spool.remaining_weight_g),
-    0,
-  );
+  const matchingSpools = mergeSpoolFeedPages(inventoryQuery.data?.pages);
+  const summary = inventoryQuery.data?.pages[0]?.summary;
+  const availableCount = (summary?.state_counts.active ?? 0) + (summary?.state_counts.shelf ?? 0);
+  const archivedCount = summary?.state_counts.archived ?? 0;
+  const emptyCount = summary?.state_counts.empty ?? 0;
+  const totalRemaining = summary?.available_remaining_weight_g ?? 0;
 
   const assignedLocation = (spoolId: number) => {
     for (const printer of printerLocationsQuery.data ?? []) {
@@ -239,33 +241,33 @@ export function QrScanResultModal({
                   <Loader2 className="h-4 w-4 animate-spin" />
                   {t('qrScanResult.inventoryLoading')}
                 </p>
-              ) : inventoryQuery.isError ? (
+              ) : inventoryQuery.isError && !inventoryQuery.isFetchNextPageError ? (
                 <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
                   {t('qrScanResult.inventoryLoadError')}
                 </p>
               ) : (
                 <>
                   <p className="mt-1 text-sm text-slate-300">
-                    {matchingSpools.length === 0
+                    {(summary?.total ?? 0) === 0
                       ? t('qrScanResult.inventoryNone')
-                      : availableSpools.length === 0
+                      : availableCount === 0
                         ? t('qrScanResult.inventoryNoAvailable')
-                        : availableSpools.length === 1
+                        : availableCount === 1
                           ? t('qrScanResult.inventoryOne')
                           : t('qrScanResult.inventoryMany', {
-                              count: availableSpools.length,
+                              count: availableCount,
                             })}
                   </p>
-                  {availableSpools.length > 0 && (
+                  {availableCount > 0 && (
                     <p className="mt-1 text-xs text-blue-200">
                       {t('qrScanResult.inventoryRemainingTotal', {
                         weight: Math.round(totalRemaining),
                       })}
                     </p>
                   )}
-                  {visibleSpools.length > 0 && (
+                  {matchingSpools.length > 0 && (
                     <div className="mt-2.5 space-y-1.5">
-                      {visibleSpools.map((spool) => (
+                      {matchingSpools.map((spool) => (
                         <div
                           key={spool.id}
                           data-testid={`qr-inventory-spool-${spool.id}`}
@@ -299,12 +301,23 @@ export function QrScanResultModal({
                       )}
                     </div>
                   )}
-                  {hiddenAvailableCount > 0 && (
-                    <p className="mt-2 text-xs text-slate-400">
-                      {t('qrScanResult.inventoryMore', { count: hiddenAvailableCount })}
-                    </p>
+                  {inventoryQuery.hasNextPage && (
+                    <button
+                      type="button"
+                      onClick={() => inventoryQuery.fetchNextPage()}
+                      disabled={inventoryQuery.isFetchingNextPage}
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-blue-200 transition hover:bg-white/10 disabled:opacity-60"
+                    >
+                      {inventoryQuery.isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {inventoryQuery.isFetchingNextPage
+                        ? t('qrScanResult.inventoryLoadingMore')
+                        : t('qrScanResult.inventoryLoadMore')}
+                    </button>
                   )}
-                  {matchingSpools.length > 0 && onOpenSpools && (
+                  {inventoryQuery.isFetchNextPageError && (
+                    <p className="mt-2 text-xs text-amber-200">{t('qrScanResult.inventoryLoadMoreError')}</p>
+                  )}
+                  {(summary?.total ?? 0) > 0 && onOpenSpools && (
                     <button
                       type="button"
                       onClick={onOpenSpools}

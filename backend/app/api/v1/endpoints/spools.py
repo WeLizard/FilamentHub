@@ -11,14 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
 from app.core.errors import (
+    ERR_SPOOL_FEED_FILTER_INVALID,
     ERR_SPOOL_IMPORT_FILE_TOO_LARGE,
     ERR_SPOOL_IMPORT_INVALID_CSV,
     raise_error,
 )
 from app.db.session import get_db
 from app.models.user import User
+from app.models.user_spool import UserSpoolState
 from app.schemas.spool import (
     SpoolCreateRequest,
+    SpoolFeedResponse,
     SpoolImportColumnMapping,
     SpoolImportPreviewResponse,
     SpoolImportResponse,
@@ -33,6 +36,8 @@ from app.services.spool_import_service import import_spool_file, preview_spool_i
 from app.services.spool_service import (
     create_spool,
     delete_spool,
+    get_spool,
+    list_spool_feed,
     list_spools,
     update_spool,
     use_spool,
@@ -71,6 +76,38 @@ async def get_spools(
 ) -> list[SpoolResponse]:
     """List the current user's spools, optionally for one exact catalog variant."""
     return await list_spools(db, current_user.id, filament_id=filament_id)
+
+
+@router.get("/feed", response_model=SpoolFeedResponse)
+async def get_spool_feed(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 24,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+    state: Annotated[UserSpoolState | None, Query()] = None,
+    state_group: Annotated[str | None, Query(pattern="^(available|archived)$")] = None,
+    filament_id: Annotated[int | None, Query(ge=1)] = None,
+) -> SpoolFeedResponse:
+    if state is not None and state_group is not None:
+        raise_error(422, ERR_SPOOL_FEED_FILTER_INVALID)
+    return await list_spool_feed(
+        db,
+        current_user.id,
+        limit=limit,
+        cursor=cursor,
+        state=state,
+        state_group=state_group,
+        filament_id=filament_id,
+    )
+
+
+@router.get("/{spool_id}", response_model=SpoolResponse)
+async def get_owned_spool(
+    spool_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SpoolResponse:
+    return await get_spool(db, current_user.id, spool_id)
 
 
 @router.post("", response_model=SpoolResponse, status_code=status.HTTP_201_CREATED)
