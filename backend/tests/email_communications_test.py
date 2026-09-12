@@ -105,11 +105,25 @@ def test_lost_smtp_response_is_reported_as_uncertain(
 ) -> None:
     monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
     monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(settings, "SMTP_PORT", 587)
 
-    def lose_response(message: object) -> None:
-        raise email_service.EmailAcceptanceUncertainError("relay response was lost")
+    class LostResponseSMTP:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
 
-    monkeypatch.setattr(email_service, "_deliver", lose_response)
+        def starttls(self, *, context) -> None:
+            pass
+
+        def login(self, user: str, password: str) -> None:
+            pass
+
+        def send_message(self, message: object) -> None:
+            raise TimeoutError("relay response was lost")
+
+        def quit(self) -> None:
+            pass
+
+    monkeypatch.setattr(email_service.smtplib, "SMTP", LostResponseSMTP)
     result = email_service.send_email_tracked(
         to="recipient@example.com",
         subject="Unknown acceptance",
@@ -147,11 +161,27 @@ def test_explicit_smtp_rejection_is_reported_as_failed(
 ) -> None:
     monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
     monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(settings, "SMTP_PORT", 587)
 
-    def reject_message(message: object) -> None:
-        raise smtplib.SMTPRecipientsRefused({"recipient@example.com": (550, b"rejected")})
+    class RejectingSMTP:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
 
-    monkeypatch.setattr(email_service, "_deliver", reject_message)
+        def starttls(self, *, context) -> None:
+            pass
+
+        def login(self, user: str, password: str) -> None:
+            pass
+
+        def send_message(self, message: object) -> None:
+            raise smtplib.SMTPRecipientsRefused(
+                {"recipient@example.com": (550, b"rejected")}
+            )
+
+        def quit(self) -> None:
+            pass
+
+    monkeypatch.setattr(email_service.smtplib, "SMTP", RejectingSMTP)
     result = email_service.send_email_tracked(
         to="recipient@example.com",
         subject="Rejected",
