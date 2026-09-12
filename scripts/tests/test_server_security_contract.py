@@ -87,6 +87,10 @@ class ServerSecurityContractTest(unittest.TestCase):
         compose = json.loads(result.stdout)
         services = compose["services"]
 
+        self.assertEqual(
+            services["frontend"]["depends_on"]["backend"]["condition"],
+            "service_healthy",
+        )
         self.assertEqual(set(services["frontend"]["networks"]), {"filamenthub_network"})
         self.assertEqual(set(services["postgres"]["networks"]), {"filamenthub_data"})
         self.assertEqual(set(services["redis"]["networks"]), {"filamenthub_data"})
