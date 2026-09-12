@@ -4939,7 +4939,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
           else next.add(line.line_id);
           return next;
         })}
-        className="flex w-full min-w-0 items-start justify-between gap-3 text-left"
+        className="flex min-h-11 w-full min-w-0 items-start justify-between gap-3 text-left"
       >
         <div className="flex min-w-0 items-start gap-2">
           {/* The slot keeps its width while the check is being recalculated, otherwise the
@@ -5045,7 +5045,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       <div className="mt-3 space-y-3 rounded-xl border border-white/15 bg-black/25 p-3">
         <div className="flex flex-wrap items-end gap-3">
         <select
-          className={`${inputClass} min-w-0 py-1.5 text-xs sm:max-w-[24rem]`}
+          className={`${inputClass} min-h-11 min-w-0 py-1.5 text-xs sm:max-w-[24rem]`}
           value={line.selectionValue}
           onChange={(event) => {
             const selectionValue = event.target.value;
@@ -5069,7 +5069,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             ))}
           </optgroup>
         </select>
-        <div className={`grid w-[21rem] grid-cols-2 gap-2 ${compactFieldsClass}`}>
+        <div className={`grid w-full min-w-0 grid-cols-1 gap-2 [&_input]:min-h-11 sm:w-[21rem] sm:grid-cols-2 ${compactFieldsClass}`}>
           <FieldBlock label={tc('spoolPrice')}>
             <InputWithSuffix
               value={line.spool_price}
@@ -6230,18 +6230,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           ) : null}
 
                           <details className="group/time border-t border-white/[0.07]">
-                            <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-2 marker:hidden">
-                              {/* Fixed width so the control keeps its place whether the run is
-                                  "2 ч 5 мин" or "14 ч 42 мин". */}
-                              <span className="w-[13rem] shrink-0 text-xs text-slate-400">
+                            <summary className="flex min-h-11 cursor-pointer list-none flex-col items-start gap-1.5 px-4 py-2 marker:hidden sm:flex-row sm:items-center sm:gap-3">
+                              {/* On desktop the width keeps the control in place whether the run
+                                  is "2 ч 5 мин" or "14 ч 42 мин". */}
+                              <span className="w-full min-w-0 break-words text-xs text-slate-400 sm:w-[13rem] sm:shrink-0">
                                 {tc('plateTime')}: <strong className="font-medium text-slate-200">{formatHoursShort(config.printTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</strong>
                               </span>
-                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200">
-                                {tc('adjustPlateTime')}
-                                <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/time:rotate-180" />
+                              <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-cyan-200">
+                                <span className="min-w-0 break-words">{tc('adjustPlateTime')}</span>
+                                <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open/time:rotate-180" />
                               </span>
                             </summary>
-                            <div className={`grid w-[19rem] grid-cols-3 gap-2 border-t border-white/[0.06] px-4 py-3 ${compactFieldsClass}`}>
+                            <div className={`grid w-full min-w-0 grid-cols-1 gap-2 border-t border-white/[0.06] px-4 py-3 [&_input]:min-h-11 sm:w-[19rem] sm:grid-cols-3 ${compactFieldsClass}`}>
                               <FieldBlock label={t('profilePage.calc.hours')}>
                                 <NumberInput
                                   value={timeParts.hours}
