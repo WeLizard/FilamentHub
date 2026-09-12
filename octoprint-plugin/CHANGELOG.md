@@ -2,6 +2,12 @@
 
 Newest first. The top entry is used for GitHub release notes.
 
+## 0.1.5
+- Finds Bridge updates inside OctoPrint and installs the exact Bridge source
+  archive while ignoring OrcaSlicer releases published from the same project.
+- Exposes the project, licence and privacy policy in OctoPrint and prepares the
+  metadata required for listing the Bridge in the official Plugin Repository.
+
 ## 0.1.4
 - Reports whether a selected slot came from a manual declaration or a G-code
   tool-routing command, without presenting either as a physical observation.

@@ -92,6 +92,17 @@ def _canonical_metadata(version: str) -> bytes:
     }
     if not all(isinstance(value, str) and value for value in fields.values()):
         raise ValueError("Bridge project metadata is incomplete")
+    urls = project.get("urls")
+    required_urls = {"Homepage", "Repository", "Privacy"}
+    if (
+        not isinstance(urls, dict)
+        or set(urls) != required_urls
+        or not all(isinstance(value, str) and value for value in urls.values())
+    ):
+        raise ValueError("Bridge project URLs are incomplete")
+    project_urls = "".join(
+        f"Project-URL: {label}, {urls[label]}\n" for label in sorted(urls)
+    )
     readme = README.read_bytes()
     return (
         "Metadata-Version: 2.4\n"
@@ -101,6 +112,7 @@ def _canonical_metadata(version: str) -> bytes:
         f"Author: {fields['author']}\n"
         f"License-Expression: {fields['license']}\n"
         f"Requires-Python: {fields['requires-python']}\n"
+        f"{project_urls}"
         "Description-Content-Type: text/markdown\n"
         "\n"
     ).encode("utf-8") + _normalized_text(readme).rstrip(b"\n") + b"\n"

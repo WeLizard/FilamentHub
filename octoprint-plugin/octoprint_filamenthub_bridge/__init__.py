@@ -21,7 +21,25 @@ from octoprint.events import Events
 
 from .tracker import ExtrusionTracker
 
-PLUGIN_VERSION = "0.1.4"
+PLUGIN_VERSION = "0.1.5"
+PLUGIN_IDENTIFIER = "filamenthub_bridge"
+PLUGIN_AUTHOR = "FilamentHub"
+PLUGIN_HOMEPAGE = "https://filamenthub.ru"
+PLUGIN_SOURCE_URL = "https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin"
+PLUGIN_PRIVACY_POLICY_URL = "https://filamenthub.ru/privacy-policy"
+PLUGIN_LICENSE = "AGPL-3.0-or-later"
+BRIDGE_RELEASES_API_URL = (
+    "https://api.github.com/repos/WeLizard/FilamentHub/releases"
+)
+BRIDGE_RELEASE_TAG_PREFIX = "octoprint-v"
+BRIDGE_RELEASE_ARCHIVE_TEMPLATE = (
+    "https://github.com/WeLizard/FilamentHub/releases/download/"
+    "octoprint-v{target_version}/"
+    "octoprint_filamenthubbridge-{target_version}.tar.gz"
+)
+BRIDGE_RELEASE_PAGE_SIZE = 100
+BRIDGE_RELEASE_MAX_PAGES = 10
+BRIDGE_RELEASE_RESPONSE_MAX_BYTES = 5 * 1024 * 1024
 # A selected manual/tool-routed slot is not proof of physical presence.
 CAPABILITIES = ["read", "write", "spool_identity", "consumption"]
 HEARTBEAT_INTERVAL_SECONDS = 120
@@ -38,6 +56,143 @@ OUTBOX_WARNING_COUNT = 100
 OUTBOX_WARNING_BYTES = 1_000_000
 OUTBOX_WARNING_AGE_SECONDS = 7 * 24 * 60 * 60
 RETRYABLE_DELIVERY_STATUS_CODES = {408, 425, 429}
+
+
+def _bridge_release_version(value: object) -> tuple[int, int, int] | None:
+    if not isinstance(value, str) or not value.startswith(BRIDGE_RELEASE_TAG_PREFIX):
+        return None
+    raw_version = value[len(BRIDGE_RELEASE_TAG_PREFIX) :]
+    parts = raw_version.split(".")
+    if len(parts) != 3 or any(not part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def _bridge_release_archive_name(version: tuple[int, int, int]) -> str:
+    rendered = ".".join(str(part) for part in version)
+    return f"octoprint_filamenthubbridge-{rendered}.tar.gz"
+
+
+def _bridge_release_has_archive(release: dict, version: tuple[int, int, int]) -> bool:
+    tag = f"{BRIDGE_RELEASE_TAG_PREFIX}{'.'.join(str(part) for part in version)}"
+    archive_name = _bridge_release_archive_name(version)
+    expected_url = (
+        "https://github.com/WeLizard/FilamentHub/releases/download/"
+        f"{tag}/{archive_name}"
+    )
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return False
+    return any(
+        isinstance(asset, dict)
+        and asset.get("name") == archive_name
+        and asset.get("browser_download_url") == expected_url
+        for asset in assets
+    )
+
+
+class BridgeReleaseChecker:
+    """Select only installable OctoPrint Bridge releases from the shared repo."""
+
+    def __init__(self, opener=None) -> None:
+        self._opener = opener
+
+    def _release_pages(self):
+        opener = self._opener or urlopen
+        for page in range(1, BRIDGE_RELEASE_MAX_PAGES + 1):
+            request = Request(
+                (
+                    f"{BRIDGE_RELEASES_API_URL}?"
+                    + urlencode(
+                        {
+                            "per_page": BRIDGE_RELEASE_PAGE_SIZE,
+                            "page": page,
+                        }
+                    )
+                ),
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": f"OctoPrint-FilamentHubBridge/{PLUGIN_VERSION}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            with opener(request, timeout=15) as response:
+                payload = response.read(BRIDGE_RELEASE_RESPONSE_MAX_BYTES + 1)
+            if len(payload) > BRIDGE_RELEASE_RESPONSE_MAX_BYTES:
+                raise RuntimeError("Bridge release response is too large.")
+            releases = json.loads(payload)
+            if not isinstance(releases, list):
+                raise RuntimeError("GitHub returned an invalid Bridge release list.")
+            yield releases
+            if len(releases) < BRIDGE_RELEASE_PAGE_SIZE:
+                return
+        raise RuntimeError("Bridge release history exceeds the supported page limit.")
+
+    def get_latest(
+        self,
+        target,
+        check,
+        full_data=False,
+        online=True,
+        *args,
+        **kwargs,
+    ):
+        del full_data, args, kwargs
+        current = check.get("current")
+        current_version = _bridge_release_version(
+            f"{BRIDGE_RELEASE_TAG_PREFIX}{current}"
+        )
+        if current_version is None:
+            raise ValueError(f"Invalid current version for {target}: {current!r}")
+
+        information = {
+            "local": {"name": str(current), "value": str(current)},
+            "remote": {"name": "?", "value": "?", "release_notes": None},
+            "needs_online": True,
+        }
+        if not online:
+            return information, True
+
+        latest = None
+        latest_version = None
+        for releases in self._release_pages():
+            for release in releases:
+                if (
+                    not isinstance(release, dict)
+                    or release.get("draft") is not False
+                    or release.get("prerelease") is not False
+                ):
+                    continue
+                version = _bridge_release_version(release.get("tag_name"))
+                if version is None or not _bridge_release_has_archive(release, version):
+                    continue
+                if latest_version is None or version > latest_version:
+                    latest = release
+                    latest_version = version
+
+        if latest is None or latest_version is None:
+            information["remote"] = {
+                "name": "-",
+                "value": None,
+                "release_notes": None,
+            }
+            return information, True
+
+        rendered_version = ".".join(str(part) for part in latest_version)
+        release_name = latest.get("name")
+        information["remote"] = {
+            "name": (
+                release_name
+                if isinstance(release_name, str) and release_name.strip()
+                else f"FilamentHub Bridge {rendered_version}"
+            ),
+            "value": rendered_version,
+            "release_notes": latest.get("html_url"),
+        }
+        return information, current_version >= latest_version
+
+
+BRIDGE_RELEASE_CHECKER = BridgeReleaseChecker()
 
 
 class BridgeRequestError(RuntimeError):
@@ -236,6 +391,18 @@ class FilamentHubBridgePlugin(
                 "data_bind": "visible: paired",
             },
         ]
+
+    def get_update_information(self):
+        return {
+            PLUGIN_IDENTIFIER: {
+                "displayName": "FilamentHub Bridge",
+                "displayVersion": PLUGIN_VERSION,
+                "type": "python_checker",
+                "python_checker": BRIDGE_RELEASE_CHECKER,
+                "current": PLUGIN_VERSION,
+                "pip": BRIDGE_RELEASE_ARCHIVE_TEMPLATE,
+            }
+        }
 
     def is_template_autoescaped(self):
         return True
@@ -1638,8 +1805,15 @@ class FilamentHubBridgePlugin(
 __plugin_name__ = "FilamentHub Bridge"
 __plugin_version__ = PLUGIN_VERSION
 __plugin_description__ = "Native outbound material bridge for FilamentHub"
+__plugin_author__ = PLUGIN_AUTHOR
+__plugin_url__ = PLUGIN_HOMEPAGE
+__plugin_license__ = PLUGIN_LICENSE
+__plugin_privacypolicy__ = PLUGIN_PRIVACY_POLICY_URL
 __plugin_pythoncompat__ = ">=3.9,<4"
 __plugin_implementation__ = FilamentHubBridgePlugin()
 __plugin_hooks__ = {
     "octoprint.comm.protocol.gcode.sent": __plugin_implementation__.on_gcode_sent,
+    "octoprint.plugin.softwareupdate.check_config": (
+        __plugin_implementation__.get_update_information
+    ),
 }

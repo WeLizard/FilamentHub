@@ -47,6 +47,13 @@ def test_bridge_wheel_is_reproducible_and_self_consistent(tmp_path: Path) -> Non
             builder.FIXED_ZIP_TIMESTAMP
         }
     assert f"Version: {version}\n".encode() in metadata
+    assert b"Project-URL: Homepage, https://filamenthub.ru\n" in metadata
+    assert b"Project-URL: Privacy, https://filamenthub.ru/privacy-policy\n" in metadata
+    assert (
+        b"Project-URL: Repository, "
+        b"https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin\n"
+        in metadata
+    )
     assert b"Tag: py3-none-any\n" in wheel_metadata
     assert {row[0] for row in record} == names
     assert {
