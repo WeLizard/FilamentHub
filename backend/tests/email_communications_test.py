@@ -1,6 +1,7 @@
 """Regression tests for the verified administrative email inbox."""
 
 import base64
+import smtplib
 from datetime import datetime, timedelta
 
 import pytest
@@ -139,6 +140,66 @@ def test_pre_handoff_smtp_failure_is_reported_as_failed(
 
     assert result.sent is False
     assert result.acceptance_uncertain is False
+
+
+def test_explicit_smtp_rejection_is_reported_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+
+    def reject_message(message: object) -> None:
+        raise smtplib.SMTPRecipientsRefused({"recipient@example.com": (550, b"rejected")})
+
+    monkeypatch.setattr(email_service, "_deliver", reject_message)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com",
+        subject="Rejected",
+        html="<p>Hello</p>",
+    )
+
+    assert result.sent is False
+    assert result.acceptance_uncertain is False
+
+
+def test_cleanup_failure_after_acceptance_does_not_change_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(settings, "SMTP_PORT", 587)
+    closed = False
+
+    class AcceptedSMTP:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def starttls(self, *, context) -> None:
+            pass
+
+        def login(self, user: str, password: str) -> None:
+            pass
+
+        def send_message(self, message: object) -> None:
+            pass
+
+        def quit(self) -> None:
+            raise smtplib.SMTPServerDisconnected("QUIT response lost")
+
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(email_service.smtplib, "SMTP", AcceptedSMTP)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com",
+        subject="Accepted",
+        html="<p>Hello</p>",
+    )
+
+    assert result.sent is True
+    assert result.acceptance_uncertain is False
+    assert closed is True
 
 
 @pytest.mark.asyncio

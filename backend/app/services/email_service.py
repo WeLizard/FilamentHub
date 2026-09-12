@@ -162,22 +162,48 @@ def _deliver(message: EmailMessage) -> None:
     context = ssl.create_default_context()
     timeout = settings.SMTP_TIMEOUT_SECONDS
     if settings.SMTP_PORT == 465:
-        with smtplib.SMTP_SSL(
+        smtp = smtplib.SMTP_SSL(
             settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout, context=context
-        ) as smtp:
+        )
+        try:
             smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             _send_message(smtp, message)
+        finally:
+            _close_smtp(smtp)
         return
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout) as smtp:
+    smtp = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout)
+    try:
         smtp.starttls(context=context)
         smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         _send_message(smtp, message)
+    finally:
+        _close_smtp(smtp)
+
+
+def _close_smtp(smtp: smtplib.SMTP) -> None:
+    """Cleanup cannot revoke relay acceptance already returned by DATA."""
+    try:
+        smtp.quit()
+    except Exception:
+        logger.warning("SMTP connection cleanup failed", exc_info=True)
+        try:
+            smtp.close()
+        except Exception:
+            logger.warning("SMTP connection close failed", exc_info=True)
 
 
 def _send_message(smtp: smtplib.SMTP, message: EmailMessage) -> None:
     """Isolate the only SMTP stage where a lost response makes acceptance unknown."""
     try:
         smtp.send_message(message)
+    except (
+        smtplib.SMTPRecipientsRefused,
+        smtplib.SMTPSenderRefused,
+        smtplib.SMTPDataError,
+        smtplib.SMTPHeloError,
+        smtplib.SMTPNotSupportedError,
+    ):
+        raise
     except Exception as exc:
         raise EmailAcceptanceUncertainError(str(exc)) from exc
 
