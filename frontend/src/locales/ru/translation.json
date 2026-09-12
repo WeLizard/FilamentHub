@@ -7360,6 +7360,7 @@
     "ERR_PRINTER_NOT_FOUND": "Принтер не найден",
     "ERR_REQUEST_NOT_FOUND": "Заявка не найдена",
     "ERR_NOTIFICATION_NOT_FOUND": "Уведомление не найдено",
+    "ERR_NOTIFICATION_HAS_PENDING_DECISIONS": "Сначала обработайте ожидающие решения по пресетам, затем уведомление можно отметить или удалить",
     "ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND": "Наблюдение схемы Orca не найдено",
     "ERR_FEEDBACK_NOT_FOUND": "Обращение не найдено",
     "ERR_FEEDBACK_THREAD_CLOSED": "Это обращение уже завершено и закрыто для новых ответов",

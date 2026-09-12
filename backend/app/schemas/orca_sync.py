@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -351,7 +351,9 @@ class FilamentPresetSyncResponse(BaseModel):
 class DeletedPresetData(BaseModel):
     """Данные об удалённом пресете."""
 
-    preset_id: int = Field(..., description="ID пресета в FilamentHub")
+    preset_id: int = Field(
+        ..., strict=True, gt=0, le=2_147_483_647, description="ID пресета в FilamentHub"
+    )
     preset_name: str = Field(..., min_length=1, max_length=500, description="Название пресета")
     bundle_preset_name: str | None = Field(
         default=None, max_length=500, description="Название пресета в OrcaSlicer bundle (если было)"
@@ -363,12 +365,21 @@ class DeletedPresetsRequest(BaseModel):
 
     deleted_presets: list[DeletedPresetData] = Field(..., max_length=500, description="Список удалённых пресетов")
 
+    @field_validator("deleted_presets")
+    @classmethod
+    def normalize_deleted_presets(
+        cls, value: list[DeletedPresetData]
+    ) -> list[DeletedPresetData]:
+        return list({item.preset_id: item for item in value}.values())
+
 
 class DeletedPresetAction(BaseModel):
     """Действие пользователя для удалённого пресета."""
 
     action: Literal["restore", "delete", "skip"] = Field(..., description="Действие: восстановить, удалить, пропустить")
-    preset_ids: list[int] | None = Field(
+    preset_ids: list[
+        Annotated[int, Field(strict=True, gt=0, le=2_147_483_647)]
+    ] | None = Field(
         default=None,
         max_length=500,
         description="ID пресетов для обработки (если не указано, применяется ко всем)",

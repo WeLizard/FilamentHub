@@ -37,7 +37,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('./DeletedPresetsModal', () => ({
-  DeletedPresetsModal: () => null,
+  DeletedPresetsModal: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="deleted-presets-modal" /> : null,
 }));
 
 function notification(id: number, title: string): Notification {
@@ -73,9 +74,13 @@ describe('Notifications cursor feed', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.markAsRead.mockResolvedValue({});
-    mocks.markAllAsRead.mockResolvedValue({ marked_count: 0 });
+    mocks.markAllAsRead.mockResolvedValue({ marked_count: 0, skipped_pending_count: 0 });
     mocks.delete.mockResolvedValue({ message: 'notification_deleted' });
-    mocks.deleteAll.mockResolvedValue({ deleted_count: 0, message: 'notifications_deleted' });
+    mocks.deleteAll.mockResolvedValue({
+      deleted_count: 0,
+      skipped_pending_count: 0,
+      message: 'notifications_deleted',
+    });
   });
 
   it.each([false, true])('loads and keeps older notifications in the %s panel', async (floating) => {
@@ -160,5 +165,26 @@ describe('Notifications cursor feed', () => {
       'h-11',
       'w-11',
     );
+  });
+
+  it('opens a pending deleted-preset decision without marking it read', async () => {
+    mocks.listFeed.mockResolvedValue({
+      items: [{
+        ...notification(12, 'Deleted locally'),
+        type: 'preset_locally_deleted',
+        read: false,
+      }],
+      next_cursor: null,
+      unread_count: 1,
+    });
+    renderNotifications(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'notifications.title' }));
+    const pendingRow = await screen.findByText('Deleted locally');
+    expect(screen.queryByRole('button', { name: 'notifications.deleteOne' })).not.toBeInTheDocument();
+    fireEvent.click(pendingRow);
+
+    expect(await screen.findByTestId('deleted-presets-modal')).toBeInTheDocument();
+    expect(mocks.markAsRead).not.toHaveBeenCalled();
   });
 });

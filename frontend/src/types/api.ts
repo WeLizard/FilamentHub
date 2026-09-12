@@ -1308,6 +1308,7 @@ export interface DeletedPresetDecisionItem {
   bundle_preset_name: string | null;
   is_created: boolean;
   is_saved: boolean;
+  reported_at: string;
 }
 
 export interface DeletedPresetDecisionFeedResponse {

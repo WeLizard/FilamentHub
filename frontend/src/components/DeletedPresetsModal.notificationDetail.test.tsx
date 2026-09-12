@@ -35,6 +35,7 @@ const item = (id: number) => ({
   bundle_preset_name: null,
   is_created: false,
   is_saved: true,
+  reported_at: '2026-09-12T12:00:00Z',
 });
 
 function renderModal(onClose = vi.fn()) {

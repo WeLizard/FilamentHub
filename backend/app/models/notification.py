@@ -4,7 +4,17 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -24,6 +34,10 @@ class DeletedPresetDecisionItem(Base):
         UniqueConstraint(
             "notification_id", "preset_id", name="uq_deleted_preset_notification_preset"
         ),
+        CheckConstraint(
+            "preset_id > 0 AND preset_id <= 2147483647",
+            name="ck_deleted_preset_valid_preset_id",
+        ),
         Index("ix_deleted_preset_notification_id", "notification_id", "id"),
     )
 
@@ -36,6 +50,9 @@ class DeletedPresetDecisionItem(Base):
     bundle_preset_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

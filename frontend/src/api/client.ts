@@ -3169,7 +3169,7 @@ export const notificationsAPI = {
   },
 
   // Отметить все уведомления как прочитанные
-  markAllAsRead: async (): Promise<{ marked_count: number }> => {
+  markAllAsRead: async (): Promise<{ marked_count: number; skipped_pending_count: number }> => {
     const response = await api.post('/notifications/mark-all-read');
     return response.data;
   },
@@ -3180,7 +3180,11 @@ export const notificationsAPI = {
     return response.data;
   },
 
-  deleteAll: async (readOnly?: boolean): Promise<{ deleted_count: number; message: string }> => {
+  deleteAll: async (readOnly?: boolean): Promise<{
+    deleted_count: number;
+    skipped_pending_count: number;
+    message: string;
+  }> => {
     const response = await api.delete('/notifications/all', {
       params: readOnly ? { read_only: true } : undefined,
     });

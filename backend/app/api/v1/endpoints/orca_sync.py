@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -88,9 +88,6 @@ from app.services.orca_transport import merge_orca_roundtrip_settings
 from app.services.orcaslicer_preset_contract import (
     extract_structured_filament_values,
     is_allowed_orca_preset_name,
-)
-from app.services.orcaslicer_service import (
-    get_user_deleted_preset_rule,
 )
 from app.services.preset_moderation import moderate_preset, validate_text_field
 from app.services.print_profile_configuration_service import (
@@ -3871,6 +3868,29 @@ async def get_sync_prefs(
     }
 
 
+async def _deleted_preset_summary(
+    db: AsyncSession, notification_id: int
+) -> dict[str, int]:
+    """Return bounded compatibility metadata for unresolved decision rows."""
+    remaining_count, created_count, saved_count = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count().filter(DeletedPresetDecisionItem.is_created.is_(True)),
+                func.count().filter(DeletedPresetDecisionItem.is_saved.is_(True)),
+            ).where(
+                DeletedPresetDecisionItem.notification_id == notification_id,
+                DeletedPresetDecisionItem.resolved_at.is_(None),
+            )
+        )
+    ).one()
+    return {
+        "remaining_count": int(remaining_count or 0),
+        "created_count": int(created_count or 0),
+        "saved_count": int(saved_count or 0),
+    }
+
+
 @router.post(
     "/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK
 )
@@ -3885,7 +3905,12 @@ async def report_deleted_presets(
 
     incoming = {preset.preset_id: preset for preset in request.deleted_presets}
     # Actions and reports lock the same user row first, including saved-rule handling.
-    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    locked_user = await db.scalar(
+        select(User)
+        .where(User.id == current_user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     created_ids = set(
         (
             await db.scalars(
@@ -3907,7 +3932,8 @@ async def report_deleted_presets(
         ).all()
     ) - created_ids
 
-    user_rule = await get_user_deleted_preset_rule(current_user.id, db)
+    user_rule = locked_user.deleted_preset_rule if locked_user else None
+    user_rule = user_rule or "always_ask"
     if user_rule == "always_restore":
         return DeletedPresetsResponse(
             message="All presets will be restored automatically",
@@ -3934,7 +3960,7 @@ async def report_deleted_presets(
         )
 
     # Every writer takes the same per-user row lock before notification/item locks.
-    # This serializes creation of the one unread queue and prevents lost JSON or rows.
+    # This serializes creation and mutation of the user's one unread decision queue.
     notification = await db.scalar(
         select(Notification)
         .where(
@@ -3952,7 +3978,7 @@ async def report_deleted_presets(
             title="deleted_presets_detected",
             message="deleted_presets_detected_message",
             link=None,
-            extra_data={"deleted_presets": [], "created_count": 0, "saved_count": 0},
+            extra_data={"remaining_count": 0, "created_count": 0, "saved_count": 0},
             read=False,
         )
         db.add(notification)
@@ -3969,11 +3995,7 @@ async def report_deleted_presets(
             )
         ).all()
     }
-    legacy = {
-        value.get("preset_id"): value
-        for value in (notification.extra_data or {}).get("deleted_presets", [])
-        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
-    }
+    reported_at = datetime.now(timezone.utc)
     for preset_id, preset in incoming.items():
         snapshot = {
             "preset_id": preset_id,
@@ -3982,24 +4004,23 @@ async def report_deleted_presets(
             "is_created": preset_id in created_ids,
             "is_saved": preset_id in saved_ids,
         }
-        legacy[preset_id] = snapshot
         row = existing_rows.get(preset_id)
         if row is None:
-            db.add(DeletedPresetDecisionItem(notification_id=notification.id, **snapshot))
+            db.add(
+                DeletedPresetDecisionItem(
+                    notification_id=notification.id,
+                    reported_at=reported_at,
+                    **snapshot,
+                )
+            )
         else:
             row.preset_name = preset.preset_name
             row.bundle_preset_name = preset.bundle_preset_name
             row.is_created = preset_id in created_ids
             row.is_saved = preset_id in saved_ids
-            if row.resolved_at is not None:
-                legacy.pop(preset_id, None)
 
-    legacy_values = list(legacy.values())
-    notification.extra_data = {
-        "deleted_presets": legacy_values,
-        "created_count": sum(bool(value["is_created"]) for value in legacy_values),
-        "saved_count": sum(bool(value["is_saved"]) for value in legacy_values),
-    }
+    await db.flush()
+    notification.extra_data = await _deleted_preset_summary(db, notification.id)
     notification.title = "deleted_presets_detected"
     notification.message = "deleted_presets_detected_message"
     await db.commit()
@@ -4028,7 +4049,12 @@ async def handle_deleted_preset_action(
     if not action.apply_to_all and not action.preset_ids:
         raise_error(400, ERR_PRESET_IDS_REQUIRED)
 
-    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    locked_user = await db.scalar(
+        select(User)
+        .where(User.id == current_user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     notification = await db.scalar(
         select(Notification)
         .where(
@@ -4050,49 +4076,14 @@ async def handle_deleted_preset_action(
             DeletedPresetDecisionItem.preset_id.in_(action.preset_ids or [])
         )
     rows = list((await db.scalars(rows_query.order_by(DeletedPresetDecisionItem.id))).all())
-    has_normalized_rows = bool(
-        await db.scalar(
-            select(DeletedPresetDecisionItem.id)
-            .where(
-                DeletedPresetDecisionItem.notification_id == notification_id,
-                DeletedPresetDecisionItem.resolved_at.is_(None),
-            )
-            .limit(1)
-        )
-    )
-
-    legacy_all = [
-        value
-        for value in (notification.extra_data or {}).get("deleted_presets", [])
-        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
-    ]
-    if has_normalized_rows:
-        selected = [
-            {
-                "preset_id": row.preset_id,
-                "preset_name": row.preset_name,
-                "bundle_preset_name": row.bundle_preset_name,
-                "is_created": row.is_created,
-                "is_saved": row.is_saved,
-            }
-            for row in rows
-        ]
-    else:
-        requested = set(action.preset_ids or [])
-        selected = (
-            legacy_all
-            if action.apply_to_all
-            else [value for value in legacy_all if value["preset_id"] in requested]
-        )
-
-    selected_ids = {value["preset_id"] for value in selected}
+    selected_ids = {row.preset_id for row in rows}
     if not action.apply_to_all and selected_ids != set(action.preset_ids or []):
         raise_error(400, ERR_PRESET_IDS_REQUIRED)
 
     saved_to_remove = {
-        value["preset_id"]
-        for value in selected
-        if action.action == "delete" and value.get("is_saved") and not value.get("is_created")
+        row.preset_id
+        for row in rows
+        if action.action == "delete" and row.is_saved and not row.is_created
     }
     if saved_to_remove:
         await db.execute(
@@ -4105,29 +4096,17 @@ async def handle_deleted_preset_action(
     for row in rows:
         row.resolved_at = resolved_at
 
-    remaining_legacy = [value for value in legacy_all if value["preset_id"] not in selected_ids]
-    notification.extra_data = {
-        "deleted_presets": remaining_legacy,
-        "created_count": sum(bool(value.get("is_created")) for value in remaining_legacy),
-        "saved_count": sum(bool(value.get("is_saved")) for value in remaining_legacy),
-    }
-    if action.save_rule:
-        current_user.deleted_preset_rule = {
+    if action.save_rule and locked_user is not None:
+        locked_user.deleted_preset_rule = {
             "restore": "always_restore",
             "delete": "always_delete",
             "skip": "always_ask",
         }[action.action]
 
     await db.flush()
-    remaining_rows = await db.scalar(
-        select(DeletedPresetDecisionItem.id)
-        .where(
-            DeletedPresetDecisionItem.notification_id == notification_id,
-            DeletedPresetDecisionItem.resolved_at.is_(None),
-        )
-        .limit(1)
-    )
-    if remaining_rows is None and not remaining_legacy:
+    summary = await _deleted_preset_summary(db, notification_id)
+    notification.extra_data = summary
+    if summary["remaining_count"] == 0:
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
     await db.commit()
@@ -4135,8 +4114,8 @@ async def handle_deleted_preset_action(
     return DeletedPresetActionResponse(
         message="Action processed",
         action=action.action,
-        processed_count=len(saved_to_remove) if action.action == "delete" else len(selected),
-        total_count=len(selected),
+        processed_count=len(saved_to_remove) if action.action == "delete" else len(rows),
+        total_count=len(rows),
     )
 
 
@@ -4148,7 +4127,12 @@ async def auto_process_deleted_presets(
     """Resolve saved-preset decisions in old queues without loading a UI page."""
     from datetime import timedelta
 
-    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    await db.scalar(
+        select(User)
+        .where(User.id == current_user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     notifications = list(
         (
@@ -4158,13 +4142,13 @@ async def auto_process_deleted_presets(
                     Notification.user_id == current_user.id,
                     Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
                     Notification.read.is_(False),
-                    Notification.created_at < cutoff,
                 )
                 .with_for_update()
             )
         ).all()
     )
     processed_count = 0
+    notifications_processed = 0
     for notification in notifications:
         rows = list(
             (
@@ -4172,20 +4156,14 @@ async def auto_process_deleted_presets(
                     select(DeletedPresetDecisionItem).where(
                         DeletedPresetDecisionItem.notification_id == notification.id,
                         DeletedPresetDecisionItem.resolved_at.is_(None),
+                        DeletedPresetDecisionItem.reported_at < cutoff,
                     )
                 )
             ).all()
         )
-        legacy = [
-            value
-            for value in (notification.extra_data or {}).get("deleted_presets", [])
-            if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
-        ]
-        saved_ids = {row.preset_id for row in rows if row.is_saved and not row.is_created} or {
-            value["preset_id"]
-            for value in legacy
-            if value.get("is_saved") and not value.get("is_created")
-        }
+        if not rows:
+            continue
+        saved_ids = {row.preset_id for row in rows if row.is_saved and not row.is_created}
         if saved_ids:
             result = await db.execute(
                 delete(UserSavedPreset).where(
@@ -4197,15 +4175,19 @@ async def auto_process_deleted_presets(
         resolved_at = datetime.now(timezone.utc)
         for row in rows:
             row.resolved_at = resolved_at
-        notification.extra_data = {"deleted_presets": [], "created_count": 0, "saved_count": 0}
-        notification.read = True
-        notification.read_at = datetime.now(timezone.utc)
+        await db.flush()
+        summary = await _deleted_preset_summary(db, notification.id)
+        notification.extra_data = summary
+        if summary["remaining_count"] == 0:
+            notification.read = True
+            notification.read_at = datetime.now(timezone.utc)
+        notifications_processed += 1
 
     await db.commit()
     return {
         "message": "Auto-processed deleted presets",
         "processed_count": processed_count,
-        "notifications_processed": len(notifications),
+        "notifications_processed": notifications_processed,
     }
 
 

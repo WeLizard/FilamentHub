@@ -62,6 +62,7 @@ class DeletedPresetDecisionItemResponse(BaseModel):
     bundle_preset_name: str | None = None
     is_created: bool
     is_saved: bool
+    reported_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

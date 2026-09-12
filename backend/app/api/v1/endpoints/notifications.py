@@ -7,7 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.errors import ERR_NOTIFICATION_NOT_FOUND, raise_error
+from app.core.errors import (
+    ERR_NOTIFICATION_HAS_PENDING_DECISIONS,
+    ERR_NOTIFICATION_NOT_FOUND,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.notification import DeletedPresetDecisionItem, Notification, NotificationType
 from app.models.user import User
@@ -20,6 +24,51 @@ from app.schemas.notification import (
 )
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+async def _has_pending_deleted_preset_decisions(
+    db: AsyncSession, notification: Notification
+) -> bool:
+    if notification.type != NotificationType.PRESET_LOCALLY_DELETED:
+        return False
+    return bool(
+        await db.scalar(
+            select(DeletedPresetDecisionItem.id)
+            .where(
+                DeletedPresetDecisionItem.notification_id == notification.id,
+                DeletedPresetDecisionItem.resolved_at.is_(None),
+            )
+            .limit(1)
+        )
+    )
+
+
+async def _pending_decision_notification_ids(
+    db: AsyncSession, notification_ids: list[int]
+) -> set[int]:
+    if not notification_ids:
+        return set()
+    return set(
+        (
+            await db.scalars(
+                select(DeletedPresetDecisionItem.notification_id)
+                .where(
+                    DeletedPresetDecisionItem.notification_id.in_(notification_ids),
+                    DeletedPresetDecisionItem.resolved_at.is_(None),
+                )
+                .distinct()
+            )
+        ).all()
+    )
+
+
+async def _lock_notification_owner(db: AsyncSession, user_id: int) -> None:
+    await db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
 
 
 def _notification_feed_item(notification: Notification) -> NotificationResponse:
@@ -175,60 +224,28 @@ async def list_deleted_preset_decisions(
     row_count = await db.scalar(
         select(func.count()).select_from(DeletedPresetDecisionItem).where(*base)
     )
-    if row_count:
-        page_query = select(DeletedPresetDecisionItem).where(*base)
-        if cursor is not None:
-            page_query = page_query.where(DeletedPresetDecisionItem.id > cursor)
-        rows = list(
-            (
-                await db.scalars(page_query.order_by(DeletedPresetDecisionItem.id).limit(limit + 1))
-            ).all()
+    page_query = select(DeletedPresetDecisionItem).where(*base)
+    if cursor is not None:
+        page_query = page_query.where(DeletedPresetDecisionItem.id > cursor)
+    rows = list(
+        (await db.scalars(page_query.order_by(DeletedPresetDecisionItem.id).limit(limit + 1))).all()
+    )
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    created_count, saved_count = (
+        await db.execute(
+            select(
+                func.count().filter(DeletedPresetDecisionItem.is_created.is_(True)),
+                func.count().filter(DeletedPresetDecisionItem.is_saved.is_(True)),
+            ).where(*base)
         )
-        has_more = len(rows) > limit
-        page = rows[:limit]
-        created_count, saved_count = (
-            await db.execute(
-                select(
-                    func.count().filter(DeletedPresetDecisionItem.is_created.is_(True)),
-                    func.count().filter(DeletedPresetDecisionItem.is_saved.is_(True)),
-                ).where(*base)
-            )
-        ).one()
-        return DeletedPresetDecisionFeedResponse(
-            items=[DeletedPresetDecisionItemResponse.model_validate(row) for row in page],
-            next_cursor=page[-1].id if has_more and page else None,
-            remaining_count=int(row_count),
-            created_count=int(created_count or 0),
-            saved_count=int(saved_count or 0),
-        )
-
-    # Rolling-deploy compatibility for notifications not yet backfilled.
-    legacy = [
-        value
-        for value in (notification.extra_data or {}).get("deleted_presets", [])
-        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
-    ]
-    start = cursor or 0
-    page_values = legacy[start : start + limit + 1]
-    has_more = len(page_values) > limit
-    page_values = page_values[:limit]
-    items = [
-        DeletedPresetDecisionItemResponse(
-            id=start + index + 1,
-            preset_id=int(value["preset_id"]),
-            preset_name=str(value.get("preset_name") or "Unknown preset"),
-            bundle_preset_name=value.get("bundle_preset_name"),
-            is_created=bool(value.get("is_created", False)),
-            is_saved=bool(value.get("is_saved", False)),
-        )
-        for index, value in enumerate(page_values)
-    ]
+    ).one()
     return DeletedPresetDecisionFeedResponse(
-        items=items,
-        next_cursor=start + len(page_values) if has_more else None,
-        remaining_count=len(legacy),
-        created_count=sum(bool(value.get("is_created")) for value in legacy),
-        saved_count=sum(bool(value.get("is_saved")) for value in legacy),
+        items=[DeletedPresetDecisionItemResponse.model_validate(row) for row in page],
+        next_cursor=page[-1].id if has_more and page else None,
+        remaining_count=int(row_count or 0),
+        created_count=int(created_count or 0),
+        saved_count=int(saved_count or 0),
     )
 
 
@@ -257,6 +274,7 @@ async def mark_as_read(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> NotificationResponse:
     """Отметить уведомление как прочитанное."""
+    await _lock_notification_owner(db, current_user.id)
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -267,6 +285,8 @@ async def mark_as_read(
 
     if not notification:
         raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
+    if await _has_pending_deleted_preset_decisions(db, notification):
+        raise_error(409, ERR_NOTIFICATION_HAS_PENDING_DECISIONS)
 
     if not notification.read:
         from datetime import datetime, timezone
@@ -287,6 +307,7 @@ async def mark_all_as_read(
     """Отметить все уведомления пользователя как прочитанные."""
     from datetime import datetime, timezone
 
+    await _lock_notification_owner(db, current_user.id)
     result = await db.execute(
         select(Notification).where(
             Notification.user_id == current_user.id,
@@ -294,16 +315,21 @@ async def mark_all_as_read(
         )
     )
     notifications = result.scalars().all()
+    pending_ids = await _pending_decision_notification_ids(
+        db, [notification.id for notification in notifications]
+    )
 
     count = 0
     for notification in notifications:
+        if notification.id in pending_ids:
+            continue
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
         count += 1
 
     await db.commit()
 
-    return {"marked_count": count}
+    return {"marked_count": count, "skipped_pending_count": len(pending_ids)}
 
 
 @router.delete("/all")
@@ -311,8 +337,9 @@ async def delete_all_notifications(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     read_only: bool = Query(False, description="Удалить только прочитанные уведомления"),
-) -> dict[str, int]:
+) -> dict[str, int | str]:
     """Удалить все уведомления пользователя (или только прочитанные)."""
+    await _lock_notification_owner(db, current_user.id)
     query = select(Notification).where(Notification.user_id == current_user.id)
 
     if read_only:
@@ -320,9 +347,14 @@ async def delete_all_notifications(
 
     result = await db.execute(query)
     notifications = result.scalars().all()
+    pending_ids = await _pending_decision_notification_ids(
+        db, [notification.id for notification in notifications]
+    )
 
     count = 0
     for notification in notifications:
+        if notification.id in pending_ids:
+            continue
         await db.delete(notification)
         count += 1
 
@@ -330,6 +362,7 @@ async def delete_all_notifications(
 
     return {
         "deleted_count": count,
+        "skipped_pending_count": len(pending_ids),
         "message": "notifications_deleted" if count > 0 else "no_notifications_to_delete",
     }
 
@@ -341,6 +374,7 @@ async def delete_notification(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
     """Удалить уведомление."""
+    await _lock_notification_owner(db, current_user.id)
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -351,6 +385,8 @@ async def delete_notification(
 
     if not notification:
         raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
+    if await _has_pending_deleted_preset_decisions(db, notification):
+        raise_error(409, ERR_NOTIFICATION_HAS_PENDING_DECISIONS)
 
     await db.delete(notification)
     await db.commit()

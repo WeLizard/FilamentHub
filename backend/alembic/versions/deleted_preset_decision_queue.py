@@ -24,8 +24,18 @@ def upgrade() -> None:
         sa.Column("bundle_preset_name", sa.String(length=500), nullable=True),
         sa.Column("is_created", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("is_saved", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "reported_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["notification_id"], ["notifications.id"], ondelete="CASCADE"),
+        sa.CheckConstraint(
+            "preset_id > 0 AND preset_id <= 2147483647",
+            name="ck_deleted_preset_valid_preset_id",
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "notification_id", "preset_id", name="uq_deleted_preset_notification_preset"
@@ -39,7 +49,8 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO deleted_preset_decision_items
-            (notification_id, preset_id, preset_name, bundle_preset_name, is_created, is_saved)
+            (notification_id, preset_id, preset_name, bundle_preset_name,
+             is_created, is_saved, reported_at)
         SELECT n.id,
                (item->>'preset_id')::integer,
                left(coalesce(nullif(item->>'preset_name', ''), 'Unknown preset'), 500),
@@ -47,7 +58,8 @@ def upgrade() -> None:
                CASE WHEN lower(item->>'is_created') IN ('true', 'false')
                     THEN (item->>'is_created')::boolean ELSE false END,
                CASE WHEN lower(item->>'is_saved') IN ('true', 'false')
-                    THEN (item->>'is_saved')::boolean ELSE false END
+                    THEN (item->>'is_saved')::boolean ELSE false END,
+               n.created_at
         FROM notifications AS n
         CROSS JOIN LATERAL json_array_elements(
             CASE
@@ -57,10 +69,55 @@ def upgrade() -> None:
             END
         ) AS item
         WHERE n.type = 'preset_locally_deleted'
-          AND n.read IS FALSE
           AND (item->>'preset_id') ~ '^[1-9][0-9]*$'
           AND (item->>'preset_id')::numeric <= 2147483647
         ON CONFLICT (notification_id, preset_id) DO NOTHING
+        """
+    )
+    op.execute(
+        """
+        UPDATE notifications AS n
+        SET extra_data = (
+            (coalesce(n.extra_data, '{}'::json)::jsonb - 'deleted_presets')
+            || jsonb_build_object(
+                'remaining_count', (
+                    SELECT count(*)
+                    FROM deleted_preset_decision_items AS d
+                    WHERE d.notification_id = n.id AND d.resolved_at IS NULL
+                ),
+                'created_count', (
+                    SELECT count(*)
+                    FROM deleted_preset_decision_items AS d
+                    WHERE d.notification_id = n.id
+                      AND d.resolved_at IS NULL
+                      AND d.is_created IS TRUE
+                ),
+                'saved_count', (
+                    SELECT count(*)
+                    FROM deleted_preset_decision_items AS d
+                    WHERE d.notification_id = n.id
+                      AND d.resolved_at IS NULL
+                      AND d.is_saved IS TRUE
+                )
+            )
+        )::json,
+            read = CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM deleted_preset_decision_items AS d
+                    WHERE d.notification_id = n.id AND d.resolved_at IS NULL
+                ) THEN false
+                ELSE n.read
+            END,
+            read_at = CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM deleted_preset_decision_items AS d
+                    WHERE d.notification_id = n.id AND d.resolved_at IS NULL
+                ) THEN NULL
+                ELSE n.read_at
+            END
+        WHERE n.type = 'preset_locally_deleted'
         """
     )
 

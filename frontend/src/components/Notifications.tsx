@@ -192,9 +192,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   // Мутация для удаления всех уведомлений
   const deleteAllNotificationsMutation = useMutation({
     mutationFn: () => notificationsAPI.deleteAll(),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
-      setIsOpen(false);
+      if (result.skipped_pending_count === 0) {
+        setIsOpen(false);
+      }
     },
   });
 
@@ -262,16 +264,16 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    // Отмечаем как прочитанное при клике
-    if (!notification.read) {
-      markAsReadMutation.mutate(notification.id);
-    }
-    
     // Для уведомлений о локально удалённых пресетах открываем специальную модалку
     if (notification.type === 'preset_locally_deleted') {
       setSelectedNotification(notification);
       setIsOpen(false);
       return;
+    }
+
+    // Отмечаем обычное уведомление как прочитанное при клике
+    if (!notification.read) {
+      markAsReadMutation.mutate(notification.id);
     }
     
     // Для всех остальных уведомлений открываем модалку для просмотра
@@ -491,7 +493,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                               </div>
                             </div>
                           </div>
-                          <button
+                          {notification.type !== 'preset_locally_deleted' && <button
                             onClick={(e) => {
                               e.stopPropagation();
                               deleteNotificationMutation.mutate(notification.id);
@@ -502,7 +504,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             aria-label={t('notifications.deleteOne')}
                           >
                             <X className="w-4 h-4" />
-                          </button>
+                          </button>}
                         </div>
                       </div>
                     );
@@ -781,7 +783,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             </div>
                           </div>
                         </div>
-                        <button
+                        {notification.type !== 'preset_locally_deleted' && <button
                           onClick={(e) => {
                             e.stopPropagation();
                             deleteNotificationMutation.mutate(notification.id);
@@ -792,7 +794,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                           aria-label={t('notifications.deleteOne')}
                         >
                           <X className="w-4 h-4" />
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   );

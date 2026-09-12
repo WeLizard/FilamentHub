@@ -7193,6 +7193,7 @@
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",
     "ERR_NOTIFICATION_NOT_FOUND": "Notification not found",
+    "ERR_NOTIFICATION_HAS_PENDING_DECISIONS": "Resolve the pending preset decisions before marking or deleting this notification",
     "ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND": "Orca schema observation not found",
     "ERR_FEEDBACK_NOT_FOUND": "Feedback not found",
     "ERR_FEEDBACK_THREAD_CLOSED": "This feedback is completed and closed to new replies",
