@@ -1,5 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider, useInfiniteQuery } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
+
+import { shouldShowInitialHistoryError } from '../utils/calculatorHistoryQueries';
 
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => undefined },
@@ -19,6 +22,40 @@ const entry = (id: number) => ({
 }) as never;
 
 describe('Calculator history feed', () => {
+  it('keeps loaded pages and classifies a next-page failure separately', async () => {
+    const queryPage = vi.fn(async ({ pageParam }: { pageParam: string | null }) => {
+      if (pageParam === 'page-2') throw new Error('second page unavailable');
+      return { items: [entry(1)], total: 2, next_cursor: 'page-2' };
+    });
+    const Harness = () => {
+      const query = useInfiniteQuery({
+        queryKey: ['history-query-state-test'],
+        queryFn: ({ pageParam }) => queryPage({ pageParam }),
+        initialPageParam: null as string | null,
+        getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+        retry: false,
+      });
+      const count = query.data?.pages.flatMap((page) => page.items).length ?? 0;
+      return (
+        <>
+          <span>count:{count}</span>
+          {shouldShowInitialHistoryError(query.error, query.data?.pages) ? <span>initial-error</span> : null}
+          {query.isFetchNextPageError ? <span>next-page-error</span> : null}
+          <button type="button" onClick={() => void query.fetchNextPage()}>next</button>
+        </>
+      );
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
+
+    expect(await screen.findByText('count:1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+    expect(await screen.findByText('next-page-error')).toBeInTheDocument();
+    expect(screen.getByText('count:1')).toBeInTheDocument();
+    expect(screen.queryByText('initial-error')).not.toBeInTheDocument();
+    await waitFor(() => expect(queryPage).toHaveBeenCalledTimes(2));
+  });
+
   it('exposes a retry action when the first compact page fails', async () => {
     const { HistoryView } = await import('../pages/CalculatorPage');
     const onRetryLoad = vi.fn();

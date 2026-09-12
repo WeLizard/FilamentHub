@@ -92,7 +92,7 @@ import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/qu
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import { formatBytes } from '../utils/formatBytes';
-import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
+import { calculatorHistoryKeys, shouldShowInitialHistoryError } from '../utils/calculatorHistoryQueries';
 import {
   enqueueEconomicsSave,
   economicsReadinessResultNoteKey,
@@ -2552,7 +2552,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   }, [parseGcodeMutation.error, t]);
 
   const historyLoadError = useMemo(() => {
-    if (!historyQuery.error) {
+    if (!shouldShowInitialHistoryError(historyQuery.error, historyQuery.data?.pages)) {
       return null;
     }
 
@@ -2566,7 +2566,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
       tc('historyLoadError'),
     );
-  }, [historyQuery.error, t]);
+  }, [historyQuery.data?.pages, historyQuery.error, t]);
 
   const currentJobCount = parsedJobs.length > 0 ? parsedJobs.length : parsedGcode ? 1 : 0;
 

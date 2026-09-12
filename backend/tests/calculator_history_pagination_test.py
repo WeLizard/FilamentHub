@@ -189,10 +189,11 @@ async def test_compact_history_feed_has_a_strict_representative_page_ceiling(
     await _grant_calculator_access(db_session, auth_user.id)
     timestamp = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)
     large_blob = "x" * 50_000
+    four_byte_character = "\U0001f9f5"
     rows = []
     for index in range(100):
         row = _history(auth_user.id, index, created_at=timestamp)
-        row.title = f"estimate-{index}-" + ("t" * 220)
+        row.title = four_byte_character * 255
         row.request_data = {
             "pricing_method": "combined",
             "quantity": 2,
@@ -206,14 +207,14 @@ async def test_compact_history_feed_has_a_strict_representative_page_ceiling(
             "full_breakdown": large_blob,
         }
         row.parsed_gcode = {
-            "file_name": f"plate-{index}.gcode",
+            "file_name": four_byte_character * 1000,
             "thumbnail_data_url": large_blob,
             "materials": [large_blob],
         }
         row.filament_snapshot = {
             "id": index + 1,
-            "name": "n" * 1000,
-            "brand_name": "b" * 1000,
+            "name": four_byte_character * 1000,
+            "brand_name": four_byte_character * 1000,
             "material_type": "m" * 500,
             "color_name": "c" * 1000,
         }
@@ -231,4 +232,7 @@ async def test_compact_history_feed_has_a_strict_representative_page_ceiling(
     assert "parsed_gcode" not in body["items"][0]
     assert "parsed_jobs" not in body["items"][0]
     assert body["items"][0]["source"] == "gcode"
-    assert len(body["items"][0]["filament_snapshot"]["name"]) == 200
+    assert body["items"][0]["title"] == four_byte_character * 96
+    assert body["items"][0]["gcode_file"] == four_byte_character * 48
+    assert body["items"][0]["filament_snapshot"]["name"] == four_byte_character * 40
+    assert body["items"][0]["filament_snapshot"]["brand_name"] == four_byte_character * 32

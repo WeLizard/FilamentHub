@@ -118,6 +118,11 @@ from app.services.subscription_service import (
 from app.services.usage_metrics_service import record_calculator_estimate
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
+
+HISTORY_SUMMARY_TITLE_BYTES = 384
+HISTORY_SUMMARY_GCODE_FILE_BYTES = 192
+HISTORY_SUMMARY_FILAMENT_NAME_BYTES = 160
+HISTORY_SUMMARY_FILAMENT_BRAND_BYTES = 128
 logger = logging.getLogger(__name__)
 
 _pdf_gate = Gate("pdf", settings.PDF_RENDER_CONCURRENCY, settings.PDF_RENDER_WAIT_SECONDS)
@@ -452,20 +457,32 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
     )
 
 
+def _truncate_utf8(value: str | None, max_bytes: int) -> str | None:
+    if value is None:
+        return None
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
 def _history_summary_from_mapping(row) -> CalculatorHistoryEntrySummary:
     snapshot = None
     if row.filament_name:
         snapshot = {
-            "name": row.filament_name,
-            "brand_name": row.filament_brand_name,
+            "name": _truncate_utf8(row.filament_name, HISTORY_SUMMARY_FILAMENT_NAME_BYTES),
+            "brand_name": _truncate_utf8(
+                row.filament_brand_name,
+                HISTORY_SUMMARY_FILAMENT_BRAND_BYTES,
+            ),
         }
     return CalculatorHistoryEntrySummary(
         id=row.id,
-        title=row.title,
+        title=_truncate_utf8(row.title, HISTORY_SUMMARY_TITLE_BYTES) or row.title,
         total_cost=float(row.total_cost or 0),
         quantity=int(row.quantity or 1),
         source="gcode" if row.has_gcode else "manual",
-        gcode_file=row.gcode_file,
+        gcode_file=_truncate_utf8(row.gcode_file, HISTORY_SUMMARY_GCODE_FILE_BYTES),
         filament_snapshot=snapshot,
         created_at=row.created_at,
     )
