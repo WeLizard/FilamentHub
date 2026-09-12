@@ -98,8 +98,5 @@
   "bambuManual": "手動輸入位址",
   "bambuSetupTimeout": "尚未收到回應。印表機設定已保留。您可以關閉此視窗檢查連線，或重試。",
   "bambuConnecting": "正在連線至印表機…",
-  "localPermissionTitle": "需要本機連線權限",
-  "localPermissionMessage": "OrcaSlicer 已封鎖用於開啟 FilamentHub 的本機通訊端。請重試並在 OrcaSlicer 權限提示中允許此操作。",
-  "localPermissionRetry": "重試",
   "localPermissionRetryFailed": "本機連線仍被封鎖。印表機與帳戶資料均未變更。"
 }

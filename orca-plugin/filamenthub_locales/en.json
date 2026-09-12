@@ -98,8 +98,5 @@
   "bambuManual": "Enter an address manually",
   "bambuSetupTimeout": "No response yet. Your printer settings are kept. You can close this window and check the connection, or try again.",
   "bambuConnecting": "Connecting to the printer…",
-  "localPermissionTitle": "Local connection permission is required",
-  "localPermissionMessage": "OrcaSlicer blocked the local socket used to open FilamentHub. Retry and approve OrcaSlicer's permission request to continue.",
-  "localPermissionRetry": "Retry",
   "localPermissionRetryFailed": "The local connection is still blocked. No printer or account data was changed."
 }

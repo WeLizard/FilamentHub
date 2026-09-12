@@ -1,9 +1,11 @@
 /**
- * Мост между встроенным (iframe) каталогом и Python-плагином OrcaSlicer.
+ * Мост между каталогом и Python-плагином OrcaSlicer.
  *
  * Плагин (PR #14530) грузит наш SPA по /embed/catalog в <iframe> внутри окна
  * OrcaSlicer. Действия из каталога (импорт пресета) уходят наверх через
- * window.parent.postMessage; шелл плагина ретранслирует их в Python.
+ * window.parent.postMessage; локальный shell ретранслирует их в Python. В
+ * актуальном Pages API каталог сначала открывается напрямую и использует
+ * window.orca, не создавая loopback socket при открытии вкладки.
  *
  * Это ОТДЕЛЬНЫЙ путь от форкового моста (window.filamenthub / window.wx) —
  * тот WebView-мост не трогаем, он продолжает работать как раньше.
@@ -13,6 +15,7 @@ import { stripLocalePrefix } from './siteLocale';
 import type { PrinterSetupConnection } from '../api/client';
 
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
+const PLUGIN_HOST_MESSAGE_SOURCE = 'filamenthub-host';
 
 const EMBED_FLAG = 'fh_plugin_embed';
 
@@ -23,6 +26,60 @@ const EMBED_FLAG = 'fh_plugin_embed';
 let embedSessionFlag = false;
 let activePluginToken: string | null = null;
 let activePluginCapabilities = new Set<string>();
+let directPluginBridgeInstalled = false;
+let activeDirectBridgeSession: string | null = null;
+
+function directBridgeSession(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (activeDirectBridgeSession) return activeDirectBridgeSession;
+  const value = new URLSearchParams(window.location.hash.slice(1)).get('fh_bridge');
+  if (value && /^[A-Za-z0-9_-]{20,200}$/.test(value)) {
+    activeDirectBridgeSession = value;
+  }
+  return activeDirectBridgeSession;
+}
+
+export function isDirectPluginHost(): boolean {
+  return typeof window !== 'undefined'
+    && window.parent === window
+    && typeof window.orca?.postMessage === 'function'
+    && directBridgeSession() !== null;
+}
+
+function ensureDirectPluginBridge(): boolean {
+  if (!isDirectPluginHost()) return false;
+  if (directPluginBridgeInstalled) return true;
+  directPluginBridgeInstalled = true;
+  window.orca?.onMessage?.((incoming) => {
+    let data = incoming;
+    if (data && typeof data === 'object') {
+      const message = data as Record<string, unknown>;
+      if (
+        message.source === PLUGIN_HOST_MESSAGE_SOURCE
+        && message.type === 'switch-to-local-shell'
+        && typeof message.url === 'string'
+        && isLoopbackOrigin(message.url)
+      ) {
+        window.location.replace(message.url);
+        return;
+      }
+      if (message.source === PLUGIN_HOST_MESSAGE_SOURCE) {
+        data = { ...message, source: PLUGIN_MESSAGE_SOURCE };
+      }
+    }
+    window.dispatchEvent(new MessageEvent('message', {
+      data,
+      origin: window.location.origin,
+      source: window,
+    }));
+  });
+  window.orca?.postMessage({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'host-ready',
+    bridgeSession: directBridgeSession(),
+  });
+  return true;
+}
 
 /**
  * Запущен ли каталог во встроенном (плагинном) режиме. Определяем по маршруту
@@ -34,6 +91,7 @@ export function isPluginEmbed(): boolean {
     return false;
   }
   if (stripLocalePrefix(window.location.pathname).startsWith('/embed')) {
+    ensureDirectPluginBridge();
     embedSessionFlag = true;
     try {
       sessionStorage.setItem(EMBED_FLAG, '1');
@@ -59,7 +117,17 @@ interface PluginMessage {
 }
 
 function postToPlugin(message: PluginMessage): void {
-  if (typeof window === 'undefined' || window.parent === window) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (ensureDirectPluginBridge()) {
+    window.orca?.postMessage({
+      ...message,
+      bridgeSession: directBridgeSession(),
+    });
+    return;
+  }
+  if (window.parent === window) {
     return;
   }
   window.parent.postMessage(message, '*');
@@ -115,10 +183,8 @@ function isTrustedPluginParentEvent(event: MessageEvent): boolean {
   if (event.source !== window.parent) {
     return false;
   }
-  // Trusted parents mirror the /embed frame-ancestors CSP: an opaque `null`
-  // origin (file:// WebView shell), our own origin, or the plugin's
-  // loopback-served shell (http://127.0.0.1:*), which exists because WebView2
-  // SetPage documents get an opaque origin the CSP could never allowlist.
+  // Direct Pages messages are normalized into same-window MessageEvents. The
+  // older shell path still uses an opaque or loopback parent origin.
   return (
     event.origin === 'null' ||
     event.origin === window.location.origin ||

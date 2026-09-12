@@ -6,12 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Layout } from './Layout';
 
-const { scanQr, authState } = vi.hoisted(() => ({
+const { scanQr, authState, pluginBridgeState } = vi.hoisted(() => ({
   scanQr: vi.fn(),
   authState: {
     user: null as null | { id: number; username: string; role: string },
     login: vi.fn(), register: vi.fn(), logout: vi.fn(),
   },
+  pluginBridgeState: { embed: false, direct: false },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -31,7 +32,8 @@ vi.mock('../api/client', () => ({
 }));
 
 vi.mock('../utils/pluginBridge', () => ({
-  isPluginEmbed: () => false,
+  isDirectPluginHost: () => pluginBridgeState.direct,
+  isPluginEmbed: () => pluginBridgeState.embed,
   reportAuthStateToPlugin: vi.fn(),
   startPluginOAuth: vi.fn(),
 }));
@@ -73,6 +75,8 @@ describe('Layout', () => {
   beforeEach(() => {
     authState.user = null;
     authState.login.mockReset();
+    pluginBridgeState.embed = false;
+    pluginBridgeState.direct = false;
   });
 
   const renderReturnLogin = () => {
@@ -146,6 +150,23 @@ describe('Layout', () => {
     expect(container.querySelector('header > div')).toHaveClass('app-shell-gutter');
     expect(container.querySelector('main')).toHaveClass('app-shell-gutter', 'min-w-0', 'w-full');
     expect(container.querySelector('footer')).toHaveClass('app-shell-safe-bottom');
+  });
+
+  it('keeps site navigation visible in the direct Orca Pages host', () => {
+    pluginBridgeState.embed = true;
+    pluginBridgeState.direct = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { container } = render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Layout><div>embedded catalog</div></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('header')).toBeInTheDocument();
+    expect(container.querySelector('footer')).toBeInTheDocument();
   });
 
   it('keeps all primary mobile actions in the header without decorative crowding', () => {

@@ -23,6 +23,57 @@ import {
 } from './pluginBridge';
 
 describe('pluginBridge inbound messages', () => {
+  it('uses the bound official Pages bridge in the top-level embed', () => {
+    const bridgeSession = 'test-bridge-session-1234567890';
+    const originalOrca = window.orca;
+    const postMessage = vi.fn();
+    let deliver: ((message: unknown) => void) | undefined;
+    Object.defineProperty(window, 'orca', {
+      configurable: true,
+      value: {
+        postMessage,
+        onMessage: (handler: (message: unknown) => void) => { deliver = handler; },
+      },
+    });
+    window.history.pushState({}, '', `/embed/catalog#fh_bridge=${bridgeSession}`);
+    const onCapabilities = vi.fn();
+    const unsubscribe = subscribeToPluginCapabilities(onCapabilities);
+
+    try {
+      requestPluginCapabilities();
+
+      expect(postMessage).toHaveBeenNthCalledWith(1, {
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'host-ready',
+        bridgeSession,
+      });
+      expect(postMessage).toHaveBeenNthCalledWith(2, {
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'plugin-capabilities-request',
+        bridgeSession,
+      });
+
+      window.history.pushState({}, '', '/profile');
+      requestPluginCapabilities();
+      expect(postMessage).toHaveBeenNthCalledWith(3, {
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'plugin-capabilities-request',
+        bridgeSession,
+      });
+
+      deliver?.({
+        source: 'filamenthub-host',
+        type: 'plugin-capabilities',
+        capabilities: ['profile-sync'],
+      });
+      expect(onCapabilities).toHaveBeenCalledWith(new Set(['profile-sync']));
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'orca', { configurable: true, value: originalOrca });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('accepts only trusted local setup lifecycle fields', () => {
     const originalParent = window.parent;
     const parent = { postMessage: vi.fn() };

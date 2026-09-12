@@ -346,9 +346,8 @@ function AppContent() {
             </Layout>
           }
         />
-        {/* Встроенный каталог для плагина OrcaSlicer: обычный Layout (фон, модалки,
-            вход) — хедер/футер он скрывает сам через isPluginEmbed(), навигация
-            идёт с кнопок шелла плагина (postMessage → subscribeToPluginNavigation) */}
+        {/* Каталог для плагина OrcaSlicer: прямой Pages host использует обычную
+            навигацию, а совместимый iframe shell скрывает chrome через Layout. */}
         <Route path="/embed" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/embed/catalog" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/about" element={<Layout><Suspense fallback={<PageLoader />}><AboutPage /></Suspense></Layout>} />

@@ -16,18 +16,20 @@
 # ///
 """FilamentHub plugin for OrcaSlicer's Python plugin system.
 
-iframe passthrough: the plugin window is a thin shell that embeds our real React
-catalog (https://filamenthub.ru/embed/catalog) in an <iframe>. The React app runs
-chrome-less in embed mode and, when the user clicks "Import into OrcaSlicer" on a
-preset, posts a message up to this shell via window.parent.postMessage. The shell
-relays it through the injected window.orca bridge to Python on_message below, which
-downloads the authenticated OrcaSlicer export and writes it into the user preset
-folder, then shows a native "restart required" dialog. A separate explicit
+Current Pages hosts navigate directly to the real React catalog at
+https://filamenthub.ru/embed/catalog and use the official injected window.orca
+bridge without opening a Python socket. Every direct command carries a random
+per-tab binding. Explicit LAN credential and external OAuth actions activate the
+plugin-owned loopback shell only when requested, keeping local addresses and
+credentials outside the remote document. Older hosts use the same direct page in
+a managed plugin window. Python downloads the authenticated OrcaSlicer export,
+writes it into the user preset folder, then shows a native "restart required"
+dialog. A separate explicit
 Recovery Center can restore selected managed machine and process profile copies;
 they are never pulled automatically and never overwrite unmanaged or differently
 scoped Orca profiles.
 
-The shell also renders an Orca-themed toolbar (host --orca-* CSS variables, same
+The local shell renders an Orca-themed toolbar (host --orca-* CSS variables, same
 role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
 the catalog by posting {type:'navigate', path} down into the iframe — the SPA
 listens and switches routes without reloading. The catalog reports the signed-in
@@ -43,8 +45,8 @@ endpoint (guarded by a one-time nonce); the shell polls /s/<secret>, then hands
 the session down to the iframe (auth-restore), which signs in exactly like the
 normal flow. Account tokens are held in memory only — never written to disk.
 
-  iframe (React) --window.parent.postMessage({source:'filamenthub-plugin',...})-->
-      shell window --orca.postMessage(...)--> Python on_message
+  React catalog --window.orca.postMessage({source:'filamenthub-plugin',...})-->
+      Python on_message
           --GET /presets/{id}/export/orcaslicer.json (Bearer token from the page)-->
               write {data_dir}/user/<active>/_local/filamenthub/filament/<name>.json
                   --> host restart dialog
@@ -430,6 +432,22 @@ def show_host_message(*args, **kwargs):
 # Configuration
 # --------------------------------------------------------------------------- #
 PLUGIN_VERSION = "0.1.10"
+PLUGIN_CAPABILITIES = (
+    "printer-bundle-install",
+    "printer-bundle-result-v1",
+    "printer-bundle-toggle-v1",
+    "printer-recovery-v1",
+    "bambu-lan-bridge",
+    "profile-sync",
+    "profile-sync-scopes-v1",
+    "bambu-material-write",
+    "happy-hare-moonraker",
+    "material-assignment-v1",
+    "material-observation-refresh-v1",
+    "printer-setup-v1",
+    "printer-discovery-v1",
+    "open-external",
+)
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 _SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
@@ -6946,11 +6964,7 @@ function sendPluginCapabilities() {
     frame.contentWindow.postMessage(
       { source: 'filamenthub-plugin', type: 'plugin-capabilities',
         pluginVersion: '__PLUGIN_VERSION__',
-        capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
-                       'printer-bundle-toggle-v1', 'printer-recovery-v1',
-                       'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
-                       'bambu-material-write', 'happy-hare-moonraker', 'material-assignment-v1',
-                       'material-observation-refresh-v1', 'printer-setup-v1', 'printer-discovery-v1', 'open-external'] },
+        capabilities: __PLUGIN_CAPABILITIES__ },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -7688,6 +7702,18 @@ try {
   orca.onMessage(function (data) {
     if (!data || data.source !== 'filamenthub-host') return;
     hostPush = true;
+    if (data.type === 'resume-local-action') {
+      var action = data.action || {};
+      if (action.type === 'configure-bambu') {
+        prepareBambuOverlay(action);
+      } else if (action.type === 'printer-setup-manual') {
+        showPrinterSetupOverlay(action);
+      } else if (action.type === 'open-oauth') {
+        try { orca.postMessage(action); } catch (e) { /* bridge not ready */ }
+        startOAuthPolling();
+      }
+      return;
+    }
     if (handleLocalPrinterSetup(data)) return;
     if (data.type === 'transport') return;
     if (data.type === 'sync-result') {
@@ -7780,6 +7806,7 @@ document.getElementById('logout').addEventListener('click', function () {
 </html>
 """.replace("__SITE_ORIGIN__", SITE_ORIGIN).replace(
     "__PLUGIN_VERSION__", PLUGIN_VERSION).replace(
+    "__PLUGIN_CAPABILITIES__", json.dumps(PLUGIN_CAPABILITIES)).replace(
     "__UI_COPY__", json.dumps(UI_COPY, ensure_ascii=False).replace("</", "<\\/")).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
@@ -7796,35 +7823,20 @@ def render_page():
         "__EMBED_URL__", localized_embed_url(language))
 
 
-def render_local_permission_page():
-    """Keep the plugin usable when Orca denies the loopback socket."""
-    copy = {
-        key: ui_text(key)
-        for key in (
-            "localPermissionTitle",
-            "localPermissionMessage",
-            "localPermissionRetry",
-            "localPermissionRetryFailed",
-        )
-    }
-    return """<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>
-html,body{height:100%%;margin:0}body{display:grid;place-items:center;background:#171724;
-color:#e8e8ef;font:14px system-ui,sans-serif}.card{width:min(520px,calc(100%% - 32px));
-box-sizing:border-box;padding:24px;border:1px solid #3c3c4c;border-radius:16px;background:#20202e}
-h1{margin:0 0 10px;font-size:19px}p{margin:0 0 18px;color:#b8b8c5;line-height:1.5}
-button{padding:8px 15px;border:1px solid #8b7cf8;border-radius:8px;background:#8b7cf8;
-color:white;font:inherit;cursor:pointer}button:disabled{opacity:.6;cursor:default}</style></head>
-<body><main class=\"card\"><h1 id=\"title\"></h1><p id=\"message\"></p><button id=\"retry\"></button></main>
-<script>var copy=%s,title=document.getElementById('title'),message=document.getElementById('message'),
-retry=document.getElementById('retry');title.textContent=copy.localPermissionTitle;
-message.textContent=copy.localPermissionMessage;retry.textContent=copy.localPermissionRetry;
-retry.addEventListener('click',function(){retry.disabled=true;message.textContent=copy.localPermissionMessage;
-try{orca.postMessage({source:'filamenthub-plugin',type:'retry-local-shell'});}catch(e){retry.disabled=false;
-message.textContent=copy.localPermissionRetryFailed;}});
-window.__orcaDispatch=function(payload){var data=payload&&payload.data;if(!data)return;
-if(data.type==='local-shell-ready'&&typeof data.url==='string'){location.replace(data.url);return;}
-if(data.type==='local-shell-denied'){retry.disabled=false;message.textContent=copy.localPermissionRetryFailed;}};
-</script></body></html>""" % json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
+def direct_embed_url(bridge_session, language=None):
+    """Bind the injected Pages bridge to this one trusted tab navigation."""
+    url = localized_embed_url(language)
+    fragment = urllib.parse.urlencode({"fh_bridge": bridge_session})
+    return urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:4], fragment))
+
+
+def render_direct_page(bridge_session):
+    """Navigate the host-owned page to HTTPS without creating a Python socket."""
+    return (
+        "<!DOCTYPE html><html><body><script>location.replace("
+        + json.dumps(direct_embed_url(bridge_session, refresh_ui_language()))
+        + ");</script></body></html>"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -9559,22 +9571,28 @@ class FilamentHubCatalog(
         if self.win is not None and self.win.is_open():
             return False
         self._session_sync_started = False
-        # Hop from the host's opaque-origin SetPage document onto the loopback
-        # server, so the shell gains a real origin the site CSP can allow.
-        shell_url = SHELL_SERVER.url_for(render_page())
-        html = (
-            "<!DOCTYPE html><html><body><script>location.replace("
-            + json.dumps(shell_url)
-            + ");</script></body></html>"
-        )
+        self._local_shell_active = False
+        self._pending_local_action = None
+        self._direct_bridge_session = secrets.token_urlsafe(32)
         self.win = orca.host.ui.create_window(
-            title="FilamentHub",
-            html=html,
+            title="FilamentHub", html=render_direct_page(self._direct_bridge_session),
             width=1080,
             height=760,
             on_message=self.on_message,
             on_close=self.on_close,
         )
+        return True
+
+    def _activate_local_shell(self, action):
+        """Enter the credential-safe local shell after an explicit UI action."""
+        try:
+            shell_url = SHELL_SERVER.url_for(render_page())
+        except OSError:
+            self._deliver_notice(ui_text("localPermissionRetryFailed"), "warning")
+            return False
+        self._pending_local_action = dict(action)
+        self._local_shell_active = True
+        self._deliver("switch-to-local-shell", url=shell_url)
         return True
 
     def _host_profiles(self, scope):
@@ -11018,14 +11036,41 @@ class FilamentHubCatalog(
         if msg.get("source") != "filamenthub-plugin":
             return
         msg_type = msg.get("type")
+        local_shell_active = getattr(self, "_local_shell_active", False)
+        if not local_shell_active and not secrets.compare_digest(
+            str(msg.get("bridgeSession") or ""),
+            str(getattr(self, "_direct_bridge_session", "")),
+        ):
+            return
+        if msg_type in {"configure-bambu", "printer-setup-manual", "open-oauth"} and not local_shell_active:
+            self._activate_local_shell(msg)
+            return
+        if msg_type in {
+            "printer-setup-local",
+            "prepare-bambu-local",
+            "configure-bambu-local",
+        } and not local_shell_active:
+            # LAN credentials are accepted only from the plugin-owned local page,
+            # never from the remotely served catalog document.
+            return
         if msg_type == "host-ready":
             self._deliver("transport", push=True)
+            pending_local_action = getattr(self, "_pending_local_action", None)
+            if pending_local_action is not None:
+                self._pending_local_action = None
+                self._deliver("resume-local-action", action=pending_local_action)
             if not getattr(self, "_session_sync_started", False):
                 self._session_sync_started = self._auto_sync(
                     announce=True,
                     scope="all",
                     trigger="session-start",
                 )
+        elif msg_type == "plugin-capabilities-request":
+            self._deliver(
+                "plugin-capabilities",
+                pluginVersion=PLUGIN_VERSION,
+                capabilities=list(PLUGIN_CAPABILITIES),
+            )
         elif msg_type in {"printer-setup", "printer-setup-local"}:
             request_id = msg.get("requestId")
             if not isinstance(request_id, str) or not 0 < len(request_id) <= 100:
@@ -12565,6 +12610,7 @@ if _PAGE_CAPABILITY_BASE is not None:
             self._catalog = FilamentHubCatalog()
             self._catalog.win = _PageWindowProxy(self)
             self._catalog._session_sync_started = False
+            self._catalog._direct_bridge_session = ""
 
         def get_name(self):
             return "FilamentHub"
@@ -12573,32 +12619,17 @@ if _PAGE_CAPABILITY_BASE is not None:
             return ensure_icon()
 
         def get_ui(self):
-            try:
-                shell_url = SHELL_SERVER.url_for(render_page())
-            except OSError:
-                return render_local_permission_page()
-            return (
-                "<!DOCTYPE html><html><body><script>location.replace("
-                + json.dumps(shell_url)
-                + ");</script></body></html>"
-            )
+            self._catalog._local_shell_active = False
+            self._catalog._pending_local_action = None
+            self._catalog._direct_bridge_session = secrets.token_urlsafe(32)
+            return render_direct_page(self._catalog._direct_bridge_session)
 
         def on_message(self, message):
-            try:
-                payload = json.loads(message)
-            except (TypeError, ValueError):
-                payload = None
-            if isinstance(payload, dict) and payload.get("type") == "retry-local-shell":
+            if isinstance(message, str):
                 try:
-                    shell_url = SHELL_SERVER.url_for(render_page())
-                except OSError:
-                    self.post_message({"type": "local-shell-denied"})
-                else:
-                    self.post_message({
-                        "type": "local-shell-ready",
-                        "url": shell_url,
-                    })
-                return
+                    message = json.loads(message)
+                except ValueError:
+                    return
             self._catalog.on_message(message)
 
         def on_unload(self):

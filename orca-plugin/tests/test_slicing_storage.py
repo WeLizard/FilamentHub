@@ -282,41 +282,140 @@ def test_pages_host_delivers_plugin_messages_through_post_message():
     }]
 
 
-def test_pages_host_keeps_a_retry_screen_when_orca_denies_loopback(monkeypatch):
+def test_pages_host_opens_https_without_creating_a_loopback_socket(monkeypatch):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
     monkeypatch.setattr(
         module.SHELL_SERVER,
         "url_for",
-        lambda _html: (_ for _ in ()).throw(PermissionError("blocked by audit")),
+        lambda _html: (_ for _ in ()).throw(AssertionError("loopback started")),
     )
 
     html = page.get_ui()
 
-    assert "retry-local-shell" in html
-    assert "local-shell-ready" in html
-    assert "blocked by audit" not in html
+    assert module.EMBED_URL in html
+    assert "fh_bridge=" in html
+    assert page._catalog._direct_bridge_session not in html.split("fh_bridge=", 1)[0]
+    assert "127.0.0.1" not in html
 
 
-def test_pages_host_retries_loopback_only_after_the_page_action(monkeypatch):
+def test_pages_host_enters_the_local_shell_only_after_an_explicit_action(monkeypatch):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
+    page.get_ui()
     calls = []
     monkeypatch.setattr(
         module.SHELL_SERVER,
         "url_for",
         lambda _html: calls.append(True) or "http://127.0.0.1:4567/private",
     )
-
-    page.on_message(json.dumps({
+    monkeypatch.setattr(page._catalog, "_auto_sync", lambda **_kwargs: False)
+    action = {
         "source": "filamenthub-plugin",
-        "type": "retry-local-shell",
-    }))
+        "type": "configure-bambu",
+        "bridgeSession": page._catalog._direct_bridge_session,
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
+    }
+
+    page.on_message(json.dumps(action))
 
     assert calls == [True]
     assert page.posted_messages == [{
-        "type": "local-shell-ready",
+        "source": "filamenthub-host",
+        "type": "switch-to-local-shell",
         "url": "http://127.0.0.1:4567/private",
+    }]
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "host-ready",
+    }))
+
+    assert page.posted_messages[-2] == {
+        "source": "filamenthub-host",
+        "type": "transport",
+        "push": True,
+    }
+    assert page.posted_messages[-1] == {
+        "source": "filamenthub-host",
+        "type": "resume-local-action",
+        "action": action,
+    }
+
+
+def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    submitted = []
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args)),
+    )
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "read-diagnostics",
+        "bridgeSession": "wrong-session-token-1234567890",
+    }))
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "configure-bambu-local",
+        "bridgeSession": page._catalog._direct_bridge_session,
+        "host": "192.0.2.10",
+        "accessCode": "local-secret",
+    }))
+
+    assert submitted == []
+    assert page.posted_messages == []
+
+
+def test_pages_host_keeps_the_remote_page_when_local_socket_is_denied(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    monkeypatch.setattr(
+        module.SHELL_SERVER,
+        "url_for",
+        lambda _html: (_ for _ in ()).throw(PermissionError("blocked by audit")),
+    )
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "printer-setup-manual",
+        "bridgeSession": page._catalog._direct_bridge_session,
+        "requestId": "setup-request",
+    }))
+
+    assert page._catalog._local_shell_active is False
+    assert page.posted_messages == [{
+        "source": "filamenthub-host",
+        "type": "plugin-notice",
+        "text": module.ui_text("localPermissionRetryFailed"),
+        "status": "warning",
+    }]
+
+
+def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    monkeypatch.setattr(page._catalog, "_auto_sync", lambda **_kwargs: False)
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "plugin-capabilities-request",
+        "bridgeSession": page._catalog._direct_bridge_session,
+    }))
+
+    assert page.posted_messages == [{
+        "source": "filamenthub-host",
+        "type": "plugin-capabilities",
+        "pluginVersion": module.PLUGIN_VERSION,
+        "capabilities": list(module.PLUGIN_CAPABILITIES),
     }]
 
 def test_notice_uses_typed_loopback_fallback_without_a_push_transport(

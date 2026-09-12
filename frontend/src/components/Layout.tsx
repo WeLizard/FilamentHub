@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authAPI, qrAPI } from '../api/client';
 import { ownQrShortCode } from '../utils/qrScanner';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
+import { isDirectPluginHost, isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 import type { QrScanResponse } from '../api/client';
@@ -125,7 +125,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Скрываем хедер/футер и в форковой WebView, и во встроенном режиме плагина
   // (iframe), чтобы навигация внутри iframe не показывала хром сайта.
   const pluginEmbed = isPluginEmbed();
-  const hideChrome = isInOrcaSlicer || pluginEmbed;
+  const directPluginHost = pluginEmbed && isDirectPluginHost();
+  const hideChrome = !directPluginHost && (isInOrcaSlicer || pluginEmbed);
 
   // Статус сессии для тулбара шелла плагина: имя + счётчик пресетов
   // (тот же /auth/me/presets-stats, что использовала форковая панель)

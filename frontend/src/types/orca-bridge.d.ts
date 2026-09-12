@@ -20,6 +20,10 @@ declare global {
     wx?: {
       postMessage?: (message: string) => void;
     };
+    orca?: {
+      postMessage: (message: unknown) => void;
+      onMessage?: (handler: (message: unknown) => void) => void;
+    };
   }
 }
 
