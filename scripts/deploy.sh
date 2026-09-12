@@ -35,6 +35,7 @@ LATEST_BACKUP=""
 PREVIOUS_REVISION=""
 TARGET_REVISION=""
 BUILD_CACHE_RETENTION_OVERRIDE=""
+PRUNE_ALL_BUILD_CACHE=false
 
 info() { printf "%b\n" "${BLUE}$*${NC}"; }
 success() { printf "%b\n" "${GREEN}$*${NC}"; }
@@ -48,7 +49,7 @@ Usage:
   bash scripts/deploy.sh --rollback [--yes]
   bash scripts/deploy.sh --status
   bash scripts/deploy.sh --backup-only
-  bash scripts/deploy.sh --prune-build-cache [--build-cache-retention <duration>] [--yes]
+  bash scripts/deploy.sh --prune-build-cache [--build-cache-retention <duration> | --all-build-cache] [--yes]
 
 Options:
   --revision <ref>  Commit to deploy. It must be a fast-forward commit already
@@ -66,6 +67,8 @@ Options:
   --build-cache-retention <duration>
                     Override build-cache retention for this cleanup. The value
                     must be a positive Docker duration such as 168h or 336h.
+  --all-build-cache Remove all Docker build cache. Application images are not
+                    pruned; the next image build will start without cache.
   --help            Show this help.
 EOF
 }
@@ -260,18 +263,32 @@ prune_build_cache() {
     local answer
 
     require_command docker
-    [[ "$retention" =~ ^[1-9][0-9]*[hms]$ ]] \
-        || fail "BUILD_CACHE_RETENTION must look like 336h, 30m or 60s."
+    if [[ "$PRUNE_ALL_BUILD_CACHE" != true ]]; then
+        [[ "$retention" =~ ^[1-9][0-9]*[hms]$ ]] \
+            || fail "BUILD_CACHE_RETENTION must look like 336h, 30m or 60s."
+    fi
 
     if [[ "$ASSUME_YES" != true ]]; then
-        printf 'Type PRUNE to remove Docker build cache older than %s: ' "$retention"
+        if [[ "$PRUNE_ALL_BUILD_CACHE" == true ]]; then
+            printf 'Type PRUNE ALL to remove all Docker build cache: '
+        else
+            printf 'Type PRUNE to remove Docker build cache older than %s: ' "$retention"
+        fi
         read -r answer
-        [[ "$answer" == "PRUNE" ]] || fail "Build-cache cleanup cancelled."
+        if [[ "$PRUNE_ALL_BUILD_CACHE" == true ]]; then
+            [[ "$answer" == "PRUNE ALL" ]] || fail "Build-cache cleanup cancelled."
+        else
+            [[ "$answer" == "PRUNE" ]] || fail "Build-cache cleanup cancelled."
+        fi
     fi
 
     info "Docker disk usage before cleanup:"
     docker system df
-    docker builder prune -f --filter "until=$retention"
+    if [[ "$PRUNE_ALL_BUILD_CACHE" == true ]]; then
+        docker builder prune -f
+    else
+        docker builder prune -f --filter "until=$retention"
+    fi
     info "Docker disk usage after cleanup:"
     docker system df
     df -h "$PROJECT_DIR"
@@ -614,6 +631,10 @@ while (( $# > 0 )); do
             BUILD_CACHE_RETENTION_OVERRIDE="$2"
             shift 2
             ;;
+        --all-build-cache)
+            PRUNE_ALL_BUILD_CACHE=true
+            shift
+            ;;
         --help|-h)
             usage
             exit 0
@@ -626,6 +647,12 @@ done
 
 if [[ -n "$BUILD_CACHE_RETENTION_OVERRIDE" && "$ACTION" != "prune" ]]; then
     fail "--build-cache-retention can only be used with --prune-build-cache"
+fi
+if [[ "$PRUNE_ALL_BUILD_CACHE" == true && "$ACTION" != "prune" ]]; then
+    fail "--all-build-cache can only be used with --prune-build-cache"
+fi
+if [[ "$PRUNE_ALL_BUILD_CACHE" == true && -n "$BUILD_CACHE_RETENTION_OVERRIDE" ]]; then
+    fail "--all-build-cache cannot be combined with --build-cache-retention"
 fi
 
 cd "$PROJECT_DIR"
