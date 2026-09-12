@@ -352,16 +352,16 @@ class DeletedPresetData(BaseModel):
     """Данные об удалённом пресете."""
 
     preset_id: int = Field(..., description="ID пресета в FilamentHub")
-    preset_name: str = Field(..., description="Название пресета")
+    preset_name: str = Field(..., min_length=1, max_length=500, description="Название пресета")
     bundle_preset_name: str | None = Field(
-        default=None, description="Название пресета в OrcaSlicer bundle (если было)"
+        default=None, max_length=500, description="Название пресета в OrcaSlicer bundle (если было)"
     )
 
 
 class DeletedPresetsRequest(BaseModel):
     """Запрос на сообщение об удалённых пресетах."""
 
-    deleted_presets: list[DeletedPresetData] = Field(..., description="Список удалённых пресетов")
+    deleted_presets: list[DeletedPresetData] = Field(..., max_length=500, description="Список удалённых пресетов")
 
 
 class DeletedPresetAction(BaseModel):
@@ -369,7 +369,9 @@ class DeletedPresetAction(BaseModel):
 
     action: Literal["restore", "delete", "skip"] = Field(..., description="Действие: восстановить, удалить, пропустить")
     preset_ids: list[int] | None = Field(
-        default=None, description="ID пресетов для обработки (если не указано, применяется ко всем)"
+        default=None,
+        max_length=500,
+        description="ID пресетов для обработки (если не указано, применяется ко всем)",
     )
     apply_to_all: bool = Field(
         default=False, description="Применить действие ко всем пресетам в уведомлении"
@@ -377,6 +379,13 @@ class DeletedPresetAction(BaseModel):
     save_rule: bool = Field(
         default=False, description="Сохранить это действие как правило для будущих удалений"
     )
+
+    @field_validator("preset_ids")
+    @classmethod
+    def normalize_preset_ids(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        return list(dict.fromkeys(value))
 
 
 class DeletedPresetsResponse(BaseModel):

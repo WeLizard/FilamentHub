@@ -53,3 +53,22 @@ class NotificationFeedResponse(BaseModel):
     items: list[NotificationResponse]
     next_cursor: int | None = None
     unread_count: int = Field(..., description="Количество непрочитанных уведомлений")
+
+
+class DeletedPresetDecisionItemResponse(BaseModel):
+    id: int
+    preset_id: int
+    preset_name: str
+    bundle_preset_name: str | None = None
+    is_created: bool
+    is_saved: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeletedPresetDecisionFeedResponse(BaseModel):
+    items: list[DeletedPresetDecisionItemResponse]
+    next_cursor: int | None = None
+    remaining_count: int
+    created_count: int
+    saved_count: int

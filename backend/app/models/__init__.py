@@ -54,7 +54,7 @@ from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
 from app.models.material_property import MaterialProperty
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
-from app.models.notification import Notification, NotificationType
+from app.models.notification import DeletedPresetDecisionItem, Notification, NotificationType
 from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
 from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
@@ -204,6 +204,7 @@ __all__ = [
     "PrinterBridgeCredential",
     "PrinterBridgeReceipt",
     "Notification",
+    "DeletedPresetDecisionItem",
     "NotificationCampaign",
     "NotificationCampaignRecipient",
     "NotificationType",

@@ -979,7 +979,16 @@
     "error_unknown": "未知错误",
     "error_deleting_notification": "删除通知时出错：",
     "error_auto_handling_presets": "自动处理预设时出错：",
-    "extra_data_not_found": "无法加载已删除的预设数据。"
+    "extra_data_not_found": "无法加载已删除的预设数据。",
+    "loading": "正在加载已删除的预设…",
+    "load_error": "无法加载已删除的预设。您的决定仍处于待处理状态。",
+    "retry": "重试",
+    "empty": "此通知中的所有已删除预设均已处理。",
+    "select_loaded": "选择已加载项",
+    "load_more": "显示更多",
+    "loading_more": "正在加载…",
+    "load_more_error": "无法加载下一批预设。",
+    "apply_all_remaining": "应用到所有 {{count}} 个剩余预设，包括尚未加载的预设"
   },
   "toast": {
     "close_button_aria_label": "关闭"

@@ -1301,6 +1301,23 @@ export interface NotificationFeedResponse {
   unread_count: number;
 }
 
+export interface DeletedPresetDecisionItem {
+  id: number;
+  preset_id: number;
+  preset_name: string;
+  bundle_preset_name: string | null;
+  is_created: boolean;
+  is_saved: boolean;
+}
+
+export interface DeletedPresetDecisionFeedResponse {
+  items: DeletedPresetDecisionItem[];
+  next_cursor: number | null;
+  remaining_count: number;
+  created_count: number;
+  saved_count: number;
+}
+
 export type PresetLibraryScope = 'unscoped' | 'targeted' | 'compatible';
 
 export interface UserSavedPreset {

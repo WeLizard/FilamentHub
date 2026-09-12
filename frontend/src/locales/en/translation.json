@@ -979,7 +979,16 @@
     "error_unknown": "Unknown error",
     "error_deleting_notification": "Error deleting notification:",
     "error_auto_handling_presets": "Error automatically handling presets:",
-    "extra_data_not_found": "Could not load deleted presets data."
+    "extra_data_not_found": "Could not load deleted presets data.",
+    "loading": "Loading deleted presets...",
+    "load_error": "Could not load the deleted presets. Your decisions are still pending.",
+    "retry": "Try again",
+    "empty": "All deleted presets in this notification have been handled.",
+    "select_loaded": "Select loaded",
+    "load_more": "Show more",
+    "loading_more": "Loading...",
+    "load_more_error": "Could not load the next presets.",
+    "apply_all_remaining": "Apply to all {{count}} remaining presets, including those not loaded"
   },
   "toast": {
     "close_button_aria_label": "Close"

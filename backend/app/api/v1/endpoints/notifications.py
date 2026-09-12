@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_active_user
 from app.core.errors import ERR_NOTIFICATION_NOT_FOUND, raise_error
 from app.db.session import get_db
-from app.models.notification import Notification
+from app.models.notification import DeletedPresetDecisionItem, Notification, NotificationType
 from app.models.user import User
 from app.schemas.notification import (
+    DeletedPresetDecisionFeedResponse,
+    DeletedPresetDecisionItemResponse,
     NotificationFeedResponse,
     NotificationListResponse,
     NotificationResponse,
@@ -131,6 +133,94 @@ async def get_unread_count(
     count = result.scalar() or 0
 
     return {"unread_count": count}
+
+
+@router.get(
+    "/{notification_id}/deleted-presets",
+    response_model=DeletedPresetDecisionFeedResponse,
+)
+async def list_deleted_preset_decisions(
+    notification_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(50, ge=1, le=100),
+    cursor: int | None = Query(None, ge=1, le=2_147_483_647),
+) -> DeletedPresetDecisionFeedResponse:
+    """Return one stable page of pending Orca-local deletion decisions."""
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id,
+            Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
+        )
+    )
+    if notification is None:
+        raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
+
+    base = (
+        DeletedPresetDecisionItem.notification_id == notification_id,
+        DeletedPresetDecisionItem.resolved_at.is_(None),
+    )
+    row_count = await db.scalar(
+        select(func.count()).select_from(DeletedPresetDecisionItem).where(*base)
+    )
+    if row_count:
+        page_query = select(DeletedPresetDecisionItem).where(*base)
+        if cursor is not None:
+            page_query = page_query.where(DeletedPresetDecisionItem.id > cursor)
+        rows = list(
+            (
+                await db.scalars(page_query.order_by(DeletedPresetDecisionItem.id).limit(limit + 1))
+            ).all()
+        )
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        created_count, saved_count = (
+            await db.execute(
+                select(
+                    func.count().filter(DeletedPresetDecisionItem.is_created.is_(True)),
+                    func.count().filter(DeletedPresetDecisionItem.is_saved.is_(True)),
+                ).where(*base)
+            )
+        ).one()
+        return DeletedPresetDecisionFeedResponse(
+            items=[DeletedPresetDecisionItemResponse.model_validate(row) for row in page],
+            next_cursor=page[-1].id if has_more and page else None,
+            remaining_count=int(row_count),
+            created_count=int(created_count or 0),
+            saved_count=int(saved_count or 0),
+        )
+
+    # Rolling-deploy compatibility for notifications not yet backfilled.
+    legacy = [
+        value
+        for value in (notification.extra_data or {}).get("deleted_presets", [])
+        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
+    ]
+    start = cursor or 0
+    page_values = legacy[start : start + limit + 1]
+    has_more = len(page_values) > limit
+    page_values = page_values[:limit]
+    items = [
+        DeletedPresetDecisionItemResponse(
+            id=start + index + 1,
+            preset_id=int(value["preset_id"]),
+            preset_name=str(value.get("preset_name") or "Unknown preset"),
+            bundle_preset_name=value.get("bundle_preset_name"),
+            is_created=bool(value.get("is_created", False)),
+            is_saved=bool(value.get("is_saved", False)),
+        )
+        for index, value in enumerate(page_values)
+    ]
+    return DeletedPresetDecisionFeedResponse(
+        items=items,
+        next_cursor=start + len(page_values) if has_more else None,
+        remaining_count=len(legacy),
+        created_count=sum(
+            bool(value.get("is_created")) for value in legacy
+        ),
+        saved_count=sum(bool(value.get("is_saved")) for value in legacy),
+    )
 
 
 @router.get("/{notification_id}", response_model=NotificationResponse)

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -14,6 +14,29 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.notification_campaign import NotificationCampaign
     from app.models.user import User
+
+
+class DeletedPresetDecisionItem(Base):
+    """One durable pending decision reported by OrcaSlicer."""
+
+    __tablename__ = "deleted_preset_decision_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "notification_id", "preset_id", name="uq_deleted_preset_notification_preset"
+        ),
+        Index("ix_deleted_preset_notification_id", "notification_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    notification_id: Mapped[int] = mapped_column(
+        ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False
+    )
+    preset_id: Mapped[int] = mapped_column(nullable=False)
+    preset_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    bundle_preset_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationType(str, Enum):
@@ -80,6 +103,9 @@ class Notification(Base):
     user: Mapped["User"] = relationship("User", back_populates="notifications")
     campaign: Mapped["NotificationCampaign | None"] = relationship(
         "NotificationCampaign", foreign_keys=[campaign_id]
+    )
+    deleted_preset_items: Mapped[list[DeletedPresetDecisionItem]] = relationship(
+        cascade="all, delete-orphan", passive_deletes=True
     )
 
     def __repr__(self) -> str:

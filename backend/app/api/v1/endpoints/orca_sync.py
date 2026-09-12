@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -32,7 +32,6 @@ from app.core.errors import (
     ERR_IMPORT_PRINTER_DISABLED,
     ERR_INTERNAL_ERROR,
     ERR_INVALID_FILENAME,
-    ERR_NO_NOTIFICATION_DATA,
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED,
     ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED,
@@ -48,7 +47,7 @@ from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.notification import Notification, NotificationType
+from app.models.notification import DeletedPresetDecisionItem, Notification, NotificationType
 from app.models.orca_profile_sync import OrcaProfileBinding, OrcaProfileSyncScope
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 from app.models.print_profile import PrintProfile
@@ -57,6 +56,7 @@ from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
+from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 from app.schemas.orca_sync import (
     BatchExportItem,
@@ -81,7 +81,6 @@ from app.schemas.orca_sync import (
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
 from app.services.catalog_url_service import choose_filament_slug
-from app.services.notification_service import create_notification
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.orca_schema_observer import observe_orca_schema_fields
 from app.services.orca_settings_security import sanitize_orca_settings_for_storage
@@ -92,10 +91,6 @@ from app.services.orcaslicer_preset_contract import (
 )
 from app.services.orcaslicer_service import (
     get_user_deleted_preset_rule,
-    is_preset_created_by_user,
-    is_preset_saved_by_user,
-    remove_saved_preset,
-    save_user_deleted_preset_rule,
 )
 from app.services.preset_moderation import moderate_preset, validate_text_field
 from app.services.print_profile_configuration_service import (
@@ -3876,146 +3871,145 @@ async def get_sync_prefs(
     }
 
 
-@router.post("/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK
+)
 async def report_deleted_presets(
     request: DeletedPresetsRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DeletedPresetsResponse:
-    """Сообщить бэкенду об удалённых пресетах в OrcaSlicer."""
+    """Append Orca-local deletions to the user's durable decision queue."""
     if not request.deleted_presets:
         return DeletedPresetsResponse(message="No deleted presets to report")
 
-    # Разделяем пресеты на созданные и сохранённые
-    created_preset_ids = []
-    saved_preset_ids = []
+    incoming = {preset.preset_id: preset for preset in request.deleted_presets}
+    # Actions and reports lock the same user row first, including saved-rule handling.
+    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    created_ids = set(
+        (
+            await db.scalars(
+                select(Preset.id).where(
+                    Preset.id.in_(incoming),
+                    Preset.user_id == current_user.id,
+                )
+            )
+        ).all()
+    )
+    saved_ids = set(
+        (
+            await db.scalars(
+                select(UserSavedPreset.preset_id).where(
+                    UserSavedPreset.user_id == current_user.id,
+                    UserSavedPreset.preset_id.in_(incoming),
+                )
+            )
+        ).all()
+    ) - created_ids
 
-    for preset_data in request.deleted_presets:
-        preset_id = preset_data.preset_id
-
-        # Проверяем, создан ли пресет пользователем
-        if await is_preset_created_by_user(current_user.id, preset_id, db):
-            created_preset_ids.append(preset_id)
-        elif await is_preset_saved_by_user(current_user.id, preset_id, db):
-            # Пресет сохранён пользователем (из каталога)
-            saved_preset_ids.append(preset_id)
-
-    # Создаём уведомление
-    preset_count = len(request.deleted_presets)
-    title = "deleted_presets_detected"
-    message = "deleted_presets_detected_message"
-
-    # Сохраняем список пресетов в extra_data с указанием типа
-    extra_data = {
-        "deleted_presets": [
-            {
-                "preset_id": preset.preset_id,
-                "preset_name": preset.preset_name,
-                "bundle_preset_name": preset.bundle_preset_name,
-                "is_created": preset.preset_id in created_preset_ids,  # Создан пользователем
-                "is_saved": preset.preset_id in saved_preset_ids,  # Сохранён пользователем
-            }
-            for preset in request.deleted_presets
-        ],
-        "created_count": len(created_preset_ids),
-        "saved_count": len(saved_preset_ids),
-    }
-
-    # Проверяем правила пользователя
     user_rule = await get_user_deleted_preset_rule(current_user.id, db)
-
-    # Если правило "always_restore" или "always_delete", применяем автоматически
     if user_rule == "always_restore":
-        # Восстанавливаем все пресеты (удаляем маппинг, OrcaSlicer переимпортирует)
-        # Уведомление не создаём, просто удаляем маппинг
         return DeletedPresetsResponse(
             message="All presets will be restored automatically",
             rule=user_rule,
-            preset_count=preset_count,
-            created_count=len(created_preset_ids),
-            saved_count=len(saved_preset_ids),
+            preset_count=len(incoming),
+            created_count=len(created_ids),
+            saved_count=len(saved_ids),
         )
-
-    elif user_rule == "always_delete":
-        # Удаляем сохранённые пресеты из "Профили филамента"
-        # Созданные пресеты не трогаем
-        for preset_id in saved_preset_ids:
-            await remove_saved_preset(current_user.id, preset_id, db)
-
+    if user_rule == "always_delete":
+        if saved_ids:
+            await db.execute(
+                delete(UserSavedPreset).where(
+                    UserSavedPreset.user_id == current_user.id,
+                    UserSavedPreset.preset_id.in_(saved_ids),
+                )
+            )
         await db.commit()
-
-        # Уведомление не создаём
         return DeletedPresetsResponse(
             message="Saved presets removed automatically",
             rule=user_rule,
-            preset_count=preset_count,
-            created_count=len(created_preset_ids),
-            saved_count=len(saved_preset_ids),
+            preset_count=len(incoming),
+            created_count=len(created_ids),
+            saved_count=len(saved_ids),
         )
 
-    # Если правило "always_ask" или другое, проверяем, есть ли уже необработанное уведомление
-    # Если есть - обновляем его, если нет - создаём новое
-    existing_notification_result = await db.execute(
-        select(Notification).where(
+    # Every writer takes the same per-user row lock before notification/item locks.
+    # This serializes creation of the one unread queue and prevents lost JSON or rows.
+    notification = await db.scalar(
+        select(Notification)
+        .where(
             Notification.user_id == current_user.id,
             Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
             Notification.read.is_(False),
-        ).order_by(Notification.created_at.desc())
-    )
-    existing_notification = existing_notification_result.scalar_one_or_none()
-
-    if existing_notification:
-        # Обновляем существующее уведомление
-        # Объединяем списки пресетов, избегая дубликатов
-        existing_preset_ids = {p["preset_id"] for p in existing_notification.extra_data.get("deleted_presets", [])}
-
-        # Добавляем только новые пресеты (которых еще нет в существующем уведомлении)
-        new_presets = [
-            {
-                "preset_id": preset.preset_id,
-                "preset_name": preset.preset_name,
-                "bundle_preset_name": preset.bundle_preset_name,
-                "is_created": preset.preset_id in created_preset_ids,
-                "is_saved": preset.preset_id in saved_preset_ids,
-            }
-            for preset in request.deleted_presets
-            if preset.preset_id not in existing_preset_ids
-        ]
-
-        if new_presets:
-            # Обновляем extra_data, добавляя новые пресеты
-            all_presets = existing_notification.extra_data.get("deleted_presets", []) + new_presets
-            existing_notification.extra_data = {
-                "deleted_presets": all_presets,
-                "created_count": sum(1 for p in all_presets if p.get("is_created", False)),
-                "saved_count": sum(1 for p in all_presets if p.get("is_saved", False)),
-            }
-            existing_notification.title = "deleted_presets_detected"
-            existing_notification.message = "deleted_presets_detected_message"
-            await db.commit()
-            await db.refresh(existing_notification)
-            notification = existing_notification
-        else:
-            # Все пресеты уже есть в уведомлении - ничего не делаем
-            notification = existing_notification
-    else:
-        # Создаём новое уведомление
-        notification = await create_notification(
-            user_id=current_user.id,
-            notification_type=NotificationType.PRESET_LOCALLY_DELETED,
-            title=title,
-            message=message,
-            db=db,
-            link=None,  # Не переходим по ссылке, открываем модалку
-            extra_data=extra_data,
         )
+        .order_by(Notification.id.desc())
+        .with_for_update()
+    )
+    if notification is None:
+        notification = Notification(
+            user_id=current_user.id,
+            type=NotificationType.PRESET_LOCALLY_DELETED,
+            title="deleted_presets_detected",
+            message="deleted_presets_detected_message",
+            link=None,
+            extra_data={"deleted_presets": [], "created_count": 0, "saved_count": 0},
+            read=False,
+        )
+        db.add(notification)
+        await db.flush()
+
+    existing_rows = {
+        row.preset_id: row
+        for row in (
+            await db.scalars(
+                select(DeletedPresetDecisionItem).where(
+                    DeletedPresetDecisionItem.notification_id == notification.id,
+                    DeletedPresetDecisionItem.preset_id.in_(incoming),
+                )
+            )
+        ).all()
+    }
+    legacy = {
+        value.get("preset_id"): value
+        for value in (notification.extra_data or {}).get("deleted_presets", [])
+        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
+    }
+    for preset_id, preset in incoming.items():
+        snapshot = {
+            "preset_id": preset_id,
+            "preset_name": preset.preset_name,
+            "bundle_preset_name": preset.bundle_preset_name,
+            "is_created": preset_id in created_ids,
+            "is_saved": preset_id in saved_ids,
+        }
+        legacy[preset_id] = snapshot
+        row = existing_rows.get(preset_id)
+        if row is None:
+            db.add(DeletedPresetDecisionItem(notification_id=notification.id, **snapshot))
+        else:
+            row.preset_name = preset.preset_name
+            row.bundle_preset_name = preset.bundle_preset_name
+            row.is_created = preset_id in created_ids
+            row.is_saved = preset_id in saved_ids
+            if row.resolved_at is not None:
+                legacy.pop(preset_id, None)
+
+    legacy_values = list(legacy.values())
+    notification.extra_data = {
+        "deleted_presets": legacy_values,
+        "created_count": sum(bool(value["is_created"]) for value in legacy_values),
+        "saved_count": sum(bool(value["is_saved"]) for value in legacy_values),
+    }
+    notification.title = "deleted_presets_detected"
+    notification.message = "deleted_presets_detected_message"
+    await db.commit()
 
     return DeletedPresetsResponse(
         message="Notification created",
         notification_id=notification.id,
-        preset_count=preset_count,
-        created_count=len(created_preset_ids),
-        saved_count=len(saved_preset_ids),
+        preset_count=len(incoming),
+        created_count=len(created_ids),
+        saved_count=len(saved_ids),
     )
 
 
@@ -4030,99 +4024,119 @@ async def handle_deleted_preset_action(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DeletedPresetActionResponse:
-    """Обработать действие пользователя для удалённого пресета."""
-    # Получаем уведомление
-    result = await db.execute(
-        select(Notification).where(
+    """Atomically resolve selected or all pending decisions in one owned queue."""
+    if not action.apply_to_all and not action.preset_ids:
+        raise_error(400, ERR_PRESET_IDS_REQUIRED)
+
+    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    notification = await db.scalar(
+        select(Notification)
+        .where(
             Notification.id == notification_id,
             Notification.user_id == current_user.id,
             Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
         )
+        .with_for_update()
     )
-    notification = result.scalar_one_or_none()
-
-    if not notification:
+    if notification is None:
         raise_error(404, ERR_NOTIFICATION_NOT_FOUND)
 
-    # Получаем список удалённых пресетов из extra_data
-    if not notification.extra_data:
-        raise_error(400, ERR_NO_NOTIFICATION_DATA)
-    deleted_presets = notification.extra_data.get("deleted_presets", [])
+    rows_query = select(DeletedPresetDecisionItem).where(
+        DeletedPresetDecisionItem.notification_id == notification_id,
+        DeletedPresetDecisionItem.resolved_at.is_(None),
+    )
+    if not action.apply_to_all:
+        rows_query = rows_query.where(
+            DeletedPresetDecisionItem.preset_id.in_(action.preset_ids or [])
+        )
+    rows = list((await db.scalars(rows_query.order_by(DeletedPresetDecisionItem.id))).all())
+    has_normalized_rows = bool(
+        await db.scalar(
+            select(DeletedPresetDecisionItem.id)
+            .where(
+                DeletedPresetDecisionItem.notification_id == notification_id,
+                DeletedPresetDecisionItem.resolved_at.is_(None),
+            )
+            .limit(1)
+        )
+    )
 
-    # Фильтруем пресеты по выбранным preset_ids (если apply_to_all=False)
-    if action.preset_ids:
-        deleted_presets = [p for p in deleted_presets if p["preset_id"] in action.preset_ids]
-    elif not action.apply_to_all:
-        # Если не указаны preset_ids и не apply_to_all, возвращаем ошибку
+    legacy_all = [
+        value
+        for value in (notification.extra_data or {}).get("deleted_presets", [])
+        if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
+    ]
+    if has_normalized_rows:
+        selected = [
+            {
+                "preset_id": row.preset_id,
+                "preset_name": row.preset_name,
+                "bundle_preset_name": row.bundle_preset_name,
+                "is_created": row.is_created,
+                "is_saved": row.is_saved,
+            }
+            for row in rows
+        ]
+    else:
+        requested = set(action.preset_ids or [])
+        selected = (
+            legacy_all
+            if action.apply_to_all
+            else [value for value in legacy_all if value["preset_id"] in requested]
+        )
+
+    selected_ids = {value["preset_id"] for value in selected}
+    if not action.apply_to_all and selected_ids != set(action.preset_ids or []):
         raise_error(400, ERR_PRESET_IDS_REQUIRED)
 
-    processed_count = 0
+    saved_to_remove = {
+        value["preset_id"]
+        for value in selected
+        if action.action == "delete" and value.get("is_saved") and not value.get("is_created")
+    }
+    if saved_to_remove:
+        await db.execute(
+            delete(UserSavedPreset).where(
+                UserSavedPreset.user_id == current_user.id,
+                UserSavedPreset.preset_id.in_(saved_to_remove),
+            )
+        )
+    resolved_at = datetime.now(timezone.utc)
+    for row in rows:
+        row.resolved_at = resolved_at
 
-    if action.action == "restore":
-        # Восстанавливаем пресеты (удаляем маппинг, OrcaSlicer переимпортирует при следующей синхронизации)
-        # Маппинг удаляется на стороне OrcaSlicer (C++), бэкенд просто подтверждает действие
-        processed_count = len(deleted_presets)
-
-    elif action.action == "delete":
-        # Удаляем пресеты из "Профили филамента"
-        for preset_data in deleted_presets:
-            preset_id = preset_data["preset_id"]
-            is_created = preset_data.get("is_created", False)
-            is_saved = preset_data.get("is_saved", False)
-
-            if is_created:
-                # Пресет создан пользователем - НЕ удаляем из FilamentHub
-                # Просто пропускаем
-                continue
-            elif is_saved:
-                # Пресет сохранён пользователем - удаляем из "Профили филамента" (убираем из избранного)
-                await remove_saved_preset(current_user.id, preset_id, db)
-                processed_count += 1
-
-    elif action.action == "skip":
-        # Пропускаем (не удаляем маппинг, но НЕ меняем sync_enabled автоматически!)
-        # КРИТИЧНО: sync_enabled меняется ТОЛЬКО пользователем в UI, никогда автоматически!
-        # Пользователь сам решит, включать или выключать синхронизацию для этого пресета
-        processed_count = len(deleted_presets)
-
-        await db.commit()
-
-    # Сохраняем правило пользователя, если задано
+    remaining_legacy = [value for value in legacy_all if value["preset_id"] not in selected_ids]
+    notification.extra_data = {
+        "deleted_presets": remaining_legacy,
+        "created_count": sum(bool(value.get("is_created")) for value in remaining_legacy),
+        "saved_count": sum(bool(value.get("is_saved")) for value in remaining_legacy),
+    }
     if action.save_rule:
-        rule_mapping = {
+        current_user.deleted_preset_rule = {
             "restore": "always_restore",
             "delete": "always_delete",
-            "skip": "always_ask",  # Для skip используем always_ask
-        }
-        rule = rule_mapping.get(action.action, "always_ask")
-        await save_user_deleted_preset_rule(current_user.id, rule, db)
+            "skip": "always_ask",
+        }[action.action]
 
-    # Удаляем обработанные пресеты из extra_data
-    if notification.extra_data:
-        processed_preset_ids = {p["preset_id"] for p in deleted_presets}
-        remaining_presets = [
-            p for p in notification.extra_data.get("deleted_presets", [])
-            if p["preset_id"] not in processed_preset_ids
-        ]
-        notification.extra_data["deleted_presets"] = remaining_presets
-
-        # Обновляем счетчики
-        notification.extra_data["created_count"] = sum(1 for p in remaining_presets if p.get("is_created", False))
-        notification.extra_data["saved_count"] = sum(1 for p in remaining_presets if p.get("is_saved", False))
-
-        # Если все пресеты обработаны, отмечаем уведомление как прочитанное
-        if len(remaining_presets) == 0:
-            from datetime import datetime, timezone
-            notification.read = True
-            notification.read_at = datetime.now(timezone.utc)
-
+    await db.flush()
+    remaining_rows = await db.scalar(
+        select(DeletedPresetDecisionItem.id)
+        .where(
+            DeletedPresetDecisionItem.notification_id == notification_id,
+            DeletedPresetDecisionItem.resolved_at.is_(None),
+        )
+        .limit(1)
+    )
+    if remaining_rows is None and not remaining_legacy:
+        notification.read = True
+        notification.read_at = datetime.now(timezone.utc)
     await db.commit()
 
     return DeletedPresetActionResponse(
         message="Action processed",
         action=action.action,
-        processed_count=processed_count,
-        total_count=len(deleted_presets),
+        processed_count=len(saved_to_remove) if action.action == "delete" else len(selected),
+        total_count=len(selected),
     )
 
 
@@ -4131,58 +4145,67 @@ async def auto_process_deleted_presets(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """
-    Автоматически обработать удалённые уведомления (вызывается при синхронизации).
+    """Resolve saved-preset decisions in old queues without loading a UI page."""
+    from datetime import timedelta
 
-    Для сохранённых пресетов: удалить из "Профили филамента" через 7 дней или при следующей синхронизации.
-    Для созданных пресетов: ничего не делать.
-    """
-    from datetime import datetime, timedelta, timezone
-
-    # Находим все необработанные уведомления о удалённых пресетах старше 7 дней
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-
-    result = await db.execute(
-        select(Notification).where(
-            Notification.user_id == current_user.id,
-            Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
-            Notification.read.is_(False),
-            Notification.created_at < seven_days_ago,
-        )
+    await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    notifications = list(
+        (
+            await db.scalars(
+                select(Notification)
+                .where(
+                    Notification.user_id == current_user.id,
+                    Notification.type == NotificationType.PRESET_LOCALLY_DELETED,
+                    Notification.read.is_(False),
+                    Notification.created_at < cutoff,
+                )
+                .with_for_update()
+            )
+        ).all()
     )
-    old_notifications = result.scalars().all()
-
     processed_count = 0
-
-    for notification in old_notifications:
-        if not notification.extra_data:
-            continue
-
-        deleted_presets = notification.extra_data.get("deleted_presets", [])
-
-        for preset_data in deleted_presets:
-            preset_id = preset_data["preset_id"]
-            is_created = preset_data.get("is_created", False)
-            is_saved = preset_data.get("is_saved", False)
-
-            if is_created:
-                # Пресет создан пользователем - НЕ удаляем из FilamentHub
-                continue
-            elif is_saved:
-                # Пресет сохранён пользователем - удаляем из "Профили филамента"
-                await remove_saved_preset(current_user.id, preset_id, db)
-                processed_count += 1
-
-        # Отмечаем уведомление как прочитанное
+    for notification in notifications:
+        rows = list(
+            (
+                await db.scalars(
+                    select(DeletedPresetDecisionItem).where(
+                        DeletedPresetDecisionItem.notification_id == notification.id,
+                        DeletedPresetDecisionItem.resolved_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        legacy = [
+            value
+            for value in (notification.extra_data or {}).get("deleted_presets", [])
+            if isinstance(value, dict) and isinstance(value.get("preset_id"), int)
+        ]
+        saved_ids = {row.preset_id for row in rows if row.is_saved and not row.is_created} or {
+            value["preset_id"]
+            for value in legacy
+            if value.get("is_saved") and not value.get("is_created")
+        }
+        if saved_ids:
+            result = await db.execute(
+                delete(UserSavedPreset).where(
+                    UserSavedPreset.user_id == current_user.id,
+                    UserSavedPreset.preset_id.in_(saved_ids),
+                )
+            )
+            processed_count += result.rowcount or 0
+        resolved_at = datetime.now(timezone.utc)
+        for row in rows:
+            row.resolved_at = resolved_at
+        notification.extra_data = {"deleted_presets": [], "created_count": 0, "saved_count": 0}
         notification.read = True
         notification.read_at = datetime.now(timezone.utc)
 
     await db.commit()
-
     return {
         "message": "Auto-processed deleted presets",
         "processed_count": processed_count,
-        "notifications_processed": len(old_notifications),
+        "notifications_processed": len(notifications),
     }
 
 
