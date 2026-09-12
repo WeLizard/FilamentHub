@@ -154,8 +154,8 @@ describe('WikiGuideImageViewer', () => {
 
     const overlayContent = screen.getByRole('dialog').parentElement;
     expect(overlayContent).not.toBeNull();
-    fireEvent.mouseDown(overlayContent!);
-    fireEvent.click(overlayContent!);
+    fireEvent.pointerDown(overlayContent!, { pointerId: 1 });
+    fireEvent.pointerUp(overlayContent!, { pointerId: 1 });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

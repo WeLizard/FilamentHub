@@ -77,7 +77,9 @@ describe('ModalOverlay focus lifecycle', () => {
     const root = pageRoot();
     function PortaledControl() {
       return createPortal(
-        <div data-testid="owned-portal"><button type="button">Portal action</button></div>,
+        <div data-modal-portal="" data-testid="owned-portal">
+          <button type="button">Portal action</button>
+        </div>,
         document.body,
       );
     }
@@ -99,6 +101,42 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(portaled).toHaveFocus();
   });
 
+  it('restores the prior isolation state of an explicitly owned portal root', () => {
+    const root = pageRoot();
+    let portalRoot: HTMLDivElement | null = null;
+    function ExistingPortal() {
+      return createPortal(
+        <div
+          ref={(element) => {
+            if (element) {
+              element.setAttribute('inert', 'existing');
+              portalRoot = element;
+            }
+          }}
+          data-modal-portal=""
+          aria-hidden="false"
+        >
+          <button type="button">Portal action</button>
+        </div>,
+        document.body,
+      );
+    }
+    const { unmount } = render(
+      <ModalOverlay onClose={vi.fn()}>
+        <button type="button">Inside action</button>
+        <ExistingPortal />
+      </ModalOverlay>,
+      { container: root },
+    );
+    expect(portalRoot).not.toBeNull();
+    expect(portalRoot!).not.toHaveAttribute('aria-hidden');
+    expect(portalRoot!).not.toHaveAttribute('inert');
+    const detachedPortalRoot = portalRoot!;
+    unmount();
+    expect(detachedPortalRoot).toHaveAttribute('aria-hidden', 'false');
+    expect(detachedPortalRoot).toHaveAttribute('inert', 'existing');
+  });
+
   it('keeps focus on its scope when no controls are focusable', () => {
     const root = pageRoot();
     render(
@@ -109,6 +147,29 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(scope).toHaveFocus();
     fireEvent.keyDown(scope, { key: 'Tab' });
     expect(scope).toHaveFocus();
+  });
+
+  it('skips inaccessible controls and treats a radio group as one Tab stop', () => {
+    const root = pageRoot();
+    render(
+      <ModalOverlay onClose={vi.fn()}>
+        <button type="button">First</button>
+        <div style={{ display: 'none' }}><button type="button">Hidden ancestor</button></div>
+        <button type="button" tabIndex={-2}>Negative tab index</button>
+        <details><button type="button">Closed details</button></details>
+        <input type="radio" name="choice" aria-label="Unchecked radio" />
+        <input type="radio" name="choice" aria-label="Checked radio" defaultChecked />
+      </ModalOverlay>,
+      { container: root },
+    );
+    const first = screen.getByRole('button', { name: 'First' });
+    const checked = screen.getByRole('radio', { name: 'Checked radio' });
+    checked.focus();
+    fireEvent.keyDown(checked, { key: 'Tab' });
+    expect(first).toHaveFocus();
+    first.focus();
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+    expect(checked).toHaveFocus();
   });
 
   it('contains programmatic focus and restores the opener on unmount', () => {
@@ -198,8 +259,8 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(overlays[1]).not.toHaveAttribute('inert');
     expect(screen.getByRole('button', { name: 'Inner action' })).toHaveFocus();
 
-    fireEvent.mouseDown(overlays[0]);
-    fireEvent.click(overlays[0]);
+    fireEvent.pointerDown(overlays[0], { pointerId: 1 });
+    fireEvent.pointerUp(overlays[0], { pointerId: 1 });
     expect(outerClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Inner action' })).toBeInTheDocument();
 
@@ -282,7 +343,32 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(root).toHaveAttribute('inert', 'existing');
   });
 
-  it('closes only after a genuine top-backdrop press and release', () => {
+  it('isolates unrelated body roots and restores their existing accessibility state', () => {
+    const root = pageRoot();
+    const widget = document.createElement('aside');
+    widget.setAttribute('aria-hidden', 'false');
+    widget.setAttribute('inert', 'existing');
+    document.body.appendChild(widget);
+    const { unmount } = render(
+      <ModalOverlay onClose={vi.fn()}><button type="button">Action</button></ModalOverlay>,
+      { container: root },
+    );
+    expect(widget).toHaveAttribute('aria-hidden', 'true');
+    expect(widget).toHaveAttribute('inert');
+    const toast = document.createElement('div');
+    document.body.appendChild(toast);
+    return Promise.resolve().then(() => {
+      expect(toast).toHaveAttribute('aria-hidden', 'true');
+      expect(toast).toHaveAttribute('inert');
+      unmount();
+      expect(widget).toHaveAttribute('aria-hidden', 'false');
+      expect(widget).toHaveAttribute('inert', 'existing');
+      expect(toast).not.toHaveAttribute('aria-hidden');
+      expect(toast).not.toHaveAttribute('inert');
+    });
+  });
+
+  it('closes only after a same-pointer press and release on the top backdrop', () => {
     const root = pageRoot();
     const onClose = vi.fn();
     render(
@@ -293,11 +379,21 @@ describe('ModalOverlay focus lifecycle', () => {
     );
     const content = screen.getByRole('button', { name: 'Content' });
     const backdrop = content.parentElement as HTMLElement;
-    fireEvent.mouseDown(content);
-    fireEvent.click(backdrop);
+    fireEvent.pointerDown(content, { pointerId: 1 });
+    fireEvent.pointerUp(backdrop, { pointerId: 1 });
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.mouseDown(backdrop);
-    fireEvent.click(backdrop);
+    fireEvent.pointerDown(backdrop, { pointerId: 2 });
+    fireEvent.pointerUp(content, { pointerId: 2 });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(backdrop, { pointerId: 3 });
+    fireEvent.pointerCancel(backdrop, { pointerId: 3 });
+    fireEvent.pointerUp(backdrop, { pointerId: 3 });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(backdrop, { pointerId: 4, pointerType: 'touch' });
+    fireEvent.pointerUp(backdrop, { pointerId: 5, pointerType: 'touch' });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(backdrop, { pointerId: 6, pointerType: 'touch' });
+    fireEvent.pointerUp(backdrop, { pointerId: 6, pointerType: 'touch' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

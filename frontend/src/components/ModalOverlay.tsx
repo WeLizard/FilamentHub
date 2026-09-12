@@ -28,7 +28,7 @@ interface OverlayRecord {
   overlay: HTMLDivElement | null;
   scope: HTMLDivElement | null;
   bodyChildrenBeforeMount: Set<Element>;
-  externalPortalRoots: Set<HTMLElement>;
+  externalPortalRoots: Map<HTMLElement, ElementIsolationSnapshot>;
   restoreTarget: HTMLElement | null;
   rootRestoreTarget: HTMLElement | null;
   lastFocused: HTMLElement | null;
@@ -38,7 +38,7 @@ interface OverlayRecord {
   suspended: boolean;
 }
 
-interface RootIsolationSnapshot {
+interface ElementIsolationSnapshot {
   element: HTMLElement;
   ariaHidden: string | null;
   inert: boolean;
@@ -48,9 +48,9 @@ interface RootIsolationSnapshot {
 let nextOverlayOrder = 0;
 const overlayStack: OverlayRecord[] = [];
 let originalBodyOverflow: string | null = null;
-let rootIsolation: RootIsolationSnapshot | null = null;
+const backgroundIsolation = new Map<HTMLElement, ElementIsolationSnapshot>();
 let redirectingFocus = false;
-let bodyPortalObserver: MutationObserver | null = null;
+let bodyIsolationObserver: MutationObserver | null = null;
 
 function activeOverlay(): OverlayRecord | undefined {
   for (let index = overlayStack.length - 1; index >= 0; index -= 1) {
@@ -65,22 +65,42 @@ function setInert(element: HTMLElement, inert: boolean): void {
   else element.removeAttribute('inert');
 }
 
+function snapshotIsolation(element: HTMLElement): ElementIsolationSnapshot {
+  return {
+    element,
+    ariaHidden: element.getAttribute('aria-hidden'),
+    inert: element.inert,
+    inertAttribute: element.getAttribute('inert'),
+  };
+}
+
+function restoreIsolation(snapshot: ElementIsolationSnapshot): void {
+  const { element, ariaHidden, inert, inertAttribute } = snapshot;
+  if (ariaHidden === null) element.removeAttribute('aria-hidden');
+  else element.setAttribute('aria-hidden', ariaHidden);
+  element.inert = inert;
+  if (inertAttribute === null) element.removeAttribute('inert');
+  else element.setAttribute('inert', inertAttribute);
+}
+
+function isolateBackgroundElement(element: HTMLElement): void {
+  if (
+    element.hasAttribute('data-modal-overlay')
+    || backgroundIsolation.has(element)
+  ) return;
+  backgroundIsolation.set(element, snapshotIsolation(element));
+  element.setAttribute('aria-hidden', 'true');
+  setInert(element, true);
+}
+
 function isolateApplication(): void {
   if (originalBodyOverflow === null) {
     originalBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
   }
-  if (rootIsolation !== null) return;
-  const root = document.getElementById('root');
-  if (!root) return;
-  rootIsolation = {
-    element: root,
-    ariaHidden: root.getAttribute('aria-hidden'),
-    inert: root.inert,
-    inertAttribute: root.getAttribute('inert'),
-  };
-  root.setAttribute('aria-hidden', 'true');
-  setInert(root, true);
+  for (const child of Array.from(document.body.children)) {
+    if (child instanceof HTMLElement) isolateBackgroundElement(child);
+  }
 }
 
 function restoreApplication(): void {
@@ -88,14 +108,8 @@ function restoreApplication(): void {
     document.body.style.overflow = originalBodyOverflow;
     originalBodyOverflow = null;
   }
-  if (rootIsolation === null) return;
-  const { element, ariaHidden, inert, inertAttribute } = rootIsolation;
-  if (ariaHidden === null) element.removeAttribute('aria-hidden');
-  else element.setAttribute('aria-hidden', ariaHidden);
-  element.inert = inert;
-  if (inertAttribute === null) element.removeAttribute('inert');
-  else element.setAttribute('inert', inertAttribute);
-  rootIsolation = null;
+  for (const snapshot of backgroundIsolation.values()) restoreIsolation(snapshot);
+  backgroundIsolation.clear();
 }
 
 function applyLayerIsolation(): void {
@@ -106,7 +120,7 @@ function applyLayerIsolation(): void {
     if (inactive) record.overlay.setAttribute('aria-hidden', 'true');
     else record.overlay.removeAttribute('aria-hidden');
     setInert(record.overlay, inactive);
-    for (const portalRoot of record.externalPortalRoots) {
+    for (const portalRoot of record.externalPortalRoots.keys()) {
       if (inactive) portalRoot.setAttribute('aria-hidden', 'true');
       else portalRoot.removeAttribute('aria-hidden');
       setInert(portalRoot, inactive);
@@ -116,28 +130,50 @@ function applyLayerIsolation(): void {
 
 function isFocusable(element: HTMLElement | null | undefined): element is HTMLElement {
   if (!element || !element.isConnected) return false;
-  if (element.closest('[inert], [aria-hidden="true"]')) return false;
+  if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
   if (!element.matches(FOCUSABLE_SELECTOR) && !element.hasAttribute('tabindex')) return false;
+  const tabIndex = element.getAttribute('tabindex');
+  if (tabIndex !== null && Number(tabIndex) < 0) return false;
   if (element.matches(':disabled') || element.hidden || element.getAttribute('aria-hidden') === 'true') {
     return false;
   }
-  const style = window.getComputedStyle(element);
-  return style.display !== 'none' && style.visibility !== 'hidden';
+  const closedDetails = element.closest('details:not([open])');
+  if (closedDetails) {
+    const summary = closedDetails.querySelector(':scope > summary');
+    if (!summary?.contains(element)) return false;
+  }
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    const style = window.getComputedStyle(current);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+  }
+  return true;
 }
 
 function focusableElements(record: OverlayRecord): HTMLElement[] {
-  const containers = [record.scope, ...record.externalPortalRoots].filter(
+  const containers = [record.scope, ...record.externalPortalRoots.keys()].filter(
     (element): element is HTMLElement => element !== null && element.isConnected,
   );
-  return containers
+  const candidates = containers
     .flatMap((container) => Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)))
     .filter(isFocusable);
+  return candidates.filter((element) => {
+    if (!(element instanceof HTMLInputElement) || element.type !== 'radio' || !element.name) {
+      return true;
+    }
+    const group = candidates.filter((candidate): candidate is HTMLInputElement => (
+      candidate instanceof HTMLInputElement
+      && candidate.type === 'radio'
+      && candidate.name === element.name
+      && candidate.form === element.form
+    ));
+    return (group.find((radio) => radio.checked) ?? group[0]) === element;
+  });
 }
 
 function recordContains(record: OverlayRecord, element: HTMLElement): boolean {
   return Boolean(
     record.scope?.contains(element)
-    || [...record.externalPortalRoots].some((root) => root.contains(element)),
+    || [...record.externalPortalRoots.keys()].some((root) => root.contains(element)),
   );
 }
 
@@ -242,16 +278,36 @@ function bodyChildFor(element: HTMLElement): HTMLElement | null {
   return candidate.parentElement === document.body ? candidate : null;
 }
 
+function releaseExternalPortal(record: OverlayRecord, element: HTMLElement): void {
+  const snapshot = record.externalPortalRoots.get(element);
+  if (!snapshot) return;
+  restoreIsolation(snapshot);
+  record.externalPortalRoots.delete(element);
+}
+
 function assignExternalPortal(record: OverlayRecord, element: HTMLElement): void {
-  if (element.id === 'root' || element.hasAttribute('data-modal-overlay')) return;
-  for (const candidate of overlayStack) candidate.externalPortalRoots.delete(element);
-  record.externalPortalRoots.add(element);
+  if (!element.hasAttribute('data-modal-portal')) return;
+  const backgroundSnapshot = backgroundIsolation.get(element);
+  if (backgroundSnapshot) {
+    restoreIsolation(backgroundSnapshot);
+    backgroundIsolation.delete(element);
+  }
+  for (const candidate of overlayStack) {
+    if (candidate !== record) releaseExternalPortal(candidate, element);
+  }
+  if (!record.externalPortalRoots.has(element)) {
+    record.externalPortalRoots.set(element, snapshotIsolation(element));
+  }
   applyLayerIsolation();
 }
 
 function discoverMountedPortals(record: OverlayRecord): void {
   for (const child of Array.from(document.body.children)) {
-    if (!record.bodyChildrenBeforeMount.has(child) && child instanceof HTMLElement) {
+    if (
+      !record.bodyChildrenBeforeMount.has(child)
+      && child instanceof HTMLElement
+      && child.hasAttribute('data-modal-portal')
+    ) {
       assignExternalPortal(activeOverlay() ?? record, child);
     }
   }
@@ -262,26 +318,27 @@ function startModalEnvironment(): void {
   isolateApplication();
   document.addEventListener('keydown', handleDocumentKeyDown);
   document.addEventListener('focusin', handleDocumentFocusIn);
-  bodyPortalObserver = new MutationObserver((mutations) => {
+  bodyIsolationObserver = new MutationObserver((mutations) => {
     const record = activeOverlay();
     if (!record) return;
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof HTMLElement && node.parentElement === document.body) {
-          assignExternalPortal(record, node);
+          if (node.hasAttribute('data-modal-portal')) assignExternalPortal(record, node);
+          else isolateBackgroundElement(node);
         }
       }
     }
   });
-  bodyPortalObserver.observe(document.body, { childList: true });
+  bodyIsolationObserver.observe(document.body, { childList: true });
 }
 
 function stopModalEnvironment(): void {
   if (overlayStack.length !== 0) return;
   document.removeEventListener('keydown', handleDocumentKeyDown);
   document.removeEventListener('focusin', handleDocumentFocusIn);
-  bodyPortalObserver?.disconnect();
-  bodyPortalObserver = null;
+  bodyIsolationObserver?.disconnect();
+  bodyIsolationObserver = null;
   restoreApplication();
 }
 
@@ -324,7 +381,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
       overlay: null,
       scope: null,
       bodyChildrenBeforeMount: new Set(document.body.children),
-      externalPortalRoots: new Set(),
+      externalPortalRoots: new Map(),
       restoreTarget: openerRef.current,
       rootRestoreTarget: openerRef.current,
       lastFocused: null,
@@ -354,11 +411,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
       const wasActive = activeOverlay() === record;
       const index = overlayStack.indexOf(record);
       if (index >= 0) overlayStack.splice(index, 1);
-      for (const root of record.externalPortalRoots) {
-        root.removeAttribute('aria-hidden');
-        setInert(root, false);
-      }
-      record.externalPortalRoots.clear();
+      for (const root of [...record.externalPortalRoots.keys()]) releaseExternalPortal(record, root);
       applyLayerIsolation();
       stopModalEnvironment();
       if (wasActive) restoreFocusAfterRemoval(record);
@@ -381,22 +434,27 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
     if (!suspended && activeOverlay() === record) focusOverlay(record, true);
   }, [record, suspended]);
 
-  const pressStartedOnOverlay = useRef(false);
-  const handleOverlayMouseDown = useCallback((event: React.MouseEvent) => {
+  const backdropPointerRef = useRef<number | null>(null);
+  const handleOverlayPointerDown = useCallback((event: React.PointerEvent) => {
     const isActive = activeOverlay() === record;
-    pressStartedOnOverlay.current = isActive && event.target === event.currentTarget;
+    backdropPointerRef.current = isActive && event.target === event.currentTarget
+      ? event.pointerId
+      : null;
   }, [record]);
-  const handleOverlayClick = useCallback((event: React.MouseEvent) => {
+  const handleOverlayPointerUp = useCallback((event: React.PointerEvent) => {
     if (
       closeOnOverlayClick
       && activeOverlay() === record
       && event.target === event.currentTarget
-      && pressStartedOnOverlay.current
+      && backdropPointerRef.current === event.pointerId
     ) {
       onClose();
     }
-    pressStartedOnOverlay.current = false;
+    backdropPointerRef.current = null;
   }, [closeOnOverlayClick, onClose, record]);
+  const handleOverlayPointerCancel = useCallback(() => {
+    backdropPointerRef.current = null;
+  }, []);
 
   return createPortal(
     <div
@@ -419,8 +477,9 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
           }
           record.lastFocused = target;
         }}
-        onMouseDown={handleOverlayMouseDown}
-        onClick={handleOverlayClick}
+        onPointerDown={handleOverlayPointerDown}
+        onPointerUp={handleOverlayPointerUp}
+        onPointerCancel={handleOverlayPointerCancel}
       >
         {children}
       </div>

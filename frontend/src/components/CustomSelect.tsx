@@ -109,6 +109,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
+            data-modal-portal=""
             className="absolute z-[9999] bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl overflow-hidden"
             style={{
               top: `${position.top}px`,

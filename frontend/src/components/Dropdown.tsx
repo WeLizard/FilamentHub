@@ -290,6 +290,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         {isOpen && position && createPortal(
           <div
             ref={dropdownRef}
+            data-modal-portal=""
             className="fixed z-[9999] overflow-hidden rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
             style={{
               top: `${position.top}px`,

@@ -64,6 +64,7 @@ export const FloatingHSLColorPicker: React.FC<FloatingHSLColorPickerProps> = ({
 
   return createPortal(
     <div
+      data-modal-portal=""
       className="fixed z-[10000]"
       style={{
         left: position.left,
