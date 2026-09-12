@@ -23,6 +23,11 @@ from app.core.config import settings
 from app.models.preset import Preset
 from app.models.preset_version import PresetVersion, PresetVersionSource
 from app.services.orca_field_labels import resolve_field
+from app.services.orca_transport import (
+    ORCA_SCALAR_FIELDS,
+    ORCA_VECTOR_FIELDS,
+    project_orca_setting,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,12 @@ _SNAPSHOT_FIELDS = (
     "retraction_length",
     "retraction_speed",
 )
+
+_MISSING_DIFF_VALUE = object()
+_NO_TRANSPORT_TOKEN = object()
+_FILAMENT_TRANSPORT_FIELDS = ORCA_VECTOR_FIELDS["filament"] | ORCA_SCALAR_FIELDS[
+    "filament"
+]
 
 
 def _canonical_hash(structured: dict, orcaslicer_settings: dict | None) -> str:
@@ -350,35 +361,33 @@ def compute_diff(
     unmapped: list[dict] = []
 
     for key in keys:
-        old_val = old.get(key)
-        new_val = new.get(key)
+        old_val = old[key] if key in old else _MISSING_DIFF_VALUE
+        new_val = new[key] if key in new else _MISSING_DIFF_VALUE
         meta = resolve_field(key)
-        if meta is not None:
-            # Orca accepts both encodings for one effective value. Collapse
-            # only reviewed fields in this human-readable view; snapshots stay exact.
-            old_semantic = (
-                old_val[0]
-                if isinstance(old_val, list) and len(old_val) == 1
-                else old_val
-            )
-            new_semantic = (
-                new_val[0]
-                if isinstance(new_val, list) and len(new_val) == 1
-                else new_val
-            )
-            if old_semantic == new_semantic:
-                continue
-            old_display = old_semantic
-            new_display = new_semantic
-        else:
-            if old_val == new_val:
-                continue
-            old_display = old_val
-            new_display = new_val
+        old_token = _diff_transport_token(key, old_val)
+        new_token = _diff_transport_token(key, new_val)
+        if old_val == new_val or (
+            old_token is not _NO_TRANSPORT_TOKEN
+            and new_token is not _NO_TRANSPORT_TOKEN
+            and old_token == new_token
+        ):
+            continue
+
+        clean_mapped_display = meta is not None and key in _FILAMENT_TRANSPORT_FIELDS
+        old_display = (
+            old_token
+            if clean_mapped_display and old_token is not _NO_TRANSPORT_TOKEN
+            else old_val
+        )
+        new_display = (
+            new_token
+            if clean_mapped_display and new_token is not _NO_TRANSPORT_TOKEN
+            else new_val
+        )
         entry = {
             "key": key,
-            "old": None if old_display is None else str(old_display),
-            "new": None if new_display is None else str(new_display),
+            "old": _render_diff_value(old_display),
+            "new": _render_diff_value(new_display),
         }
         if meta is not None:
             changes.append({**entry, "label": meta["label"], "unit": meta["unit"]})
@@ -391,3 +400,32 @@ def compute_diff(
         "changes": changes,
         "unmapped_changes": unmapped,
     }
+
+
+def _diff_transport_token(key: str, value: object) -> object:
+    """Return Orca's exact token for one explicit effective value."""
+    if key not in _FILAMENT_TRANSPORT_FIELDS or value is _MISSING_DIFF_VALUE:
+        return _NO_TRANSPORT_TOKEN
+    if value is None or (
+        isinstance(value, list) and len(value) == 1 and value[0] is None
+    ):
+        return _NO_TRANSPORT_TOKEN
+
+    accepted, projected = project_orca_setting(key, value, "filament")
+    if not accepted:
+        return _NO_TRANSPORT_TOKEN
+    if isinstance(projected, list) and len(projected) == 1:
+        return projected[0]
+    if isinstance(projected, str):
+        return projected
+    return _NO_TRANSPORT_TOKEN
+
+
+def _render_diff_value(value: object) -> str | None:
+    if value is _MISSING_DIFF_VALUE:
+        return None
+    if value is _NO_TRANSPORT_TOKEN:
+        return None
+    if value is None:
+        return "null"
+    return str(value)

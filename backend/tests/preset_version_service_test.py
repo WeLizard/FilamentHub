@@ -215,8 +215,10 @@ async def test_diff_normalizes_known_singleton_vectors_without_hiding_shape_drif
     preset.orcaslicer_settings = {
         "chamber_temperature": ["35"],
         "filament_density": ["1.24"],
+        "enable_pressure_advance": ["1"],
         "filament_end_gcode": ["; filament end gcode\n"],
         "pressure_advance": ["0", "0.02"],
+        "chamber_minimal_temperature": ["0"],
         "future_orca_setting": ["same"],
     }
     v1 = await svc.record_version(
@@ -225,10 +227,12 @@ async def test_diff_normalizes_known_singleton_vectors_without_hiding_shape_drif
     await db_session.commit()
 
     preset.orcaslicer_settings = {
-        "chamber_temperature": "40",
-        "filament_density": "1.24",
+        "chamber_temperature": 40,
+        "filament_density": 1.24,
+        "enable_pressure_advance": True,
         "filament_end_gcode": "; filament end gcode\n",
         "pressure_advance": "0",
+        "chamber_minimal_temperature": "0",
         "future_orca_setting": "same",
     }
     v2 = await svc.record_version(
@@ -239,15 +243,54 @@ async def test_diff_normalizes_known_singleton_vectors_without_hiding_shape_drif
     diff = svc.compute_diff(v1, v2)
     mapped = {change["key"]: change for change in diff["changes"]}
     assert "filament_density" not in mapped
+    assert "enable_pressure_advance" not in mapped
     assert "filament_end_gcode" not in mapped
     assert mapped["chamber_temperature"]["old"] == "35"
     assert mapped["chamber_temperature"]["new"] == "40"
     assert mapped["pressure_advance"]["old"] == "['0', '0.02']"
     assert mapped["pressure_advance"]["new"] == "0"
+    assert mapped["chamber_minimal_temperature"]["old"] == "['0']"
+    assert mapped["chamber_minimal_temperature"]["new"] == "0"
 
     unmapped = {change["key"]: change for change in diff["unmapped_changes"]}
     assert unmapped["future_orca_setting"]["old"] == "['same']"
     assert unmapped["future_orca_setting"]["new"] == "same"
+
+
+@pytest.mark.asyncio
+async def test_diff_preserves_missing_null_and_nil_shape_drift(
+    db_session: AsyncSession,
+):
+    user, preset = await _seed(db_session)
+    preset.orcaslicer_settings = {
+        "filament_density": None,
+        "fan_min_speed": "nil",
+        "cool_plate_temp": None,
+    }
+    v1 = await svc.record_version(
+        db_session, preset, PresetVersionSource.WEB_EDIT, user.id
+    )
+    await db_session.commit()
+
+    preset.orcaslicer_settings = {
+        "chamber_temperature": [None],
+        "cool_plate_temp": [None],
+    }
+    v2 = await svc.record_version(
+        db_session, preset, PresetVersionSource.WEB_EDIT, user.id
+    )
+    await db_session.commit()
+
+    diff = svc.compute_diff(v1, v2)
+    mapped = {change["key"]: change for change in diff["changes"]}
+    assert mapped["chamber_temperature"]["old"] is None
+    assert mapped["chamber_temperature"]["new"] == "[None]"
+    assert mapped["filament_density"]["old"] == "null"
+    assert mapped["filament_density"]["new"] is None
+    assert mapped["fan_min_speed"]["old"] == "nil"
+    assert mapped["fan_min_speed"]["new"] is None
+    assert mapped["cool_plate_temp"]["old"] == "null"
+    assert mapped["cool_plate_temp"]["new"] == "[None]"
 
 
 @pytest.mark.asyncio
