@@ -9,6 +9,7 @@ EmailSenderProfile = Literal["support", "partnerships", "pr"]
 EmailDeliveryStatus = Literal[
     "received",
     "sending",
+    "uncertain",
     "sent",
     "delivered",
     "delayed",

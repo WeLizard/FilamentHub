@@ -61,11 +61,13 @@ def test_tracked_email_is_handed_to_the_relay_as_mime(
             {"filename": "note.txt", "content": "SGVsbG8=", "content_type": "text/plain"}
         ],
         idempotency_key="email.create.http-header-0001",
+        internet_message_id="<durable-admin-message@filamenthub.test>",
     )
 
     message = delivered["message"]
     assert result.sent is True
-    assert result.provider_message_id == message["Message-ID"].strip("<>")
+    assert result.provider_message_id is None
+    assert message["Message-ID"] == "<durable-admin-message@filamenthub.test>"
     assert message["Subject"] == "Threaded reply"
     assert message["Reply-To"] == "thread-token@reply.filamenthub.ru"
     assert message["In-Reply-To"] == "<inbound-1@example.com>"
@@ -94,6 +96,29 @@ def test_outgoing_mail_stops_when_smtp_is_not_configured(
 
     assert result.sent is False
     assert "SMTP" in (result.error or "")
+    assert result.acceptance_uncertain is False
+
+
+def test_lost_smtp_response_is_reported_as_uncertain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+
+    def lose_response(message: object) -> None:
+        raise TimeoutError("relay response was lost")
+
+    monkeypatch.setattr(email_service, "_deliver", lose_response)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com",
+        subject="Unknown acceptance",
+        html="<p>Hello</p>",
+        internet_message_id="<lost-response@filamenthub.test>",
+    )
+
+    assert result.sent is False
+    assert result.acceptance_uncertain is True
+    assert result.provider_message_id is None
 
 
 @pytest.mark.asyncio
@@ -135,7 +160,7 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
 
     def fake_send(**kwargs):
         captured.update(kwargs)
-        return EmailSendResult(sent=True, provider_message_id="sent-reply-1")
+        return EmailSendResult(sent=True)
 
     monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
 
@@ -157,9 +182,13 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
     assert captured["reply_to"] == f"thread-{thread.reply_token}@reply.filamenthub.test"
 
     outbound = await db_session.scalar(
-        select(EmailMessage).where(EmailMessage.provider_message_id == "sent-reply-1")
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == "email.reply.test-reply-key-0001"
+        )
     )
     assert outbound is not None and outbound.sent_by_id == admin_user.id
+    assert outbound.provider_message_id is None
+    assert outbound.internet_message_id == captured["internet_message_id"]
     await db_session.refresh(thread)
     assert thread.unread_count == 1
 
@@ -229,7 +258,7 @@ async def test_admin_can_start_email_thread(
 
     def fake_send(**kwargs):
         captured.update(kwargs)
-        return EmailSendResult(sent=True, provider_message_id="sent-new-thread-1")
+        return EmailSendResult(sent=True)
 
     monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
 
@@ -259,9 +288,13 @@ async def test_admin_can_start_email_thread(
     assert thread.sender_profile == "support"
     assert thread.reply_token
     message = await db_session.scalar(
-        select(EmailMessage).where(EmailMessage.provider_message_id == "sent-new-thread-1")
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == "email.create.test-create-key-0001"
+        )
     )
     assert message is not None and message.sent_by_id == admin_user.id
+    assert message.provider_message_id is None
+    assert message.internet_message_id == captured["internet_message_id"]
 
 
 @pytest.mark.asyncio
@@ -496,6 +529,177 @@ async def test_failed_admin_send_is_reserved_and_not_retried_with_the_same_key(
     )
     assert message is not None
     assert message.delivery_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_lost_admin_smtp_response_is_uncertain_and_not_retried(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    captured_message_id: str | None = None
+
+    def lose_response(**kwargs):
+        nonlocal calls, captured_message_id
+        calls += 1
+        captured_message_id = kwargs["internet_message_id"]
+        return EmailSendResult(
+            sent=False,
+            error="relay response was lost",
+            acceptance_uncertain=True,
+        )
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", lose_response)
+    payload = {
+        "to": "partner@example.com",
+        "subject": "Unknown acceptance",
+        "body": "The relay response may be lost.",
+        "sender_profile": "support",
+        "idempotency_key": "email.create.lost-response-0001",
+    }
+
+    first = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+    replay = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+
+    assert first.status_code == 409
+    assert replay.status_code == 409
+    assert first.json()["detail"]["code"] == "ERR_EMAIL_DELIVERY_UNCERTAIN"
+    assert replay.json()["detail"]["code"] == "ERR_EMAIL_DELIVERY_UNCERTAIN"
+    assert calls == 1
+    message = await db_session.scalar(
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == payload["idempotency_key"]
+        )
+    )
+    assert message is not None
+    assert message.delivery_status == "uncertain"
+    assert message.internet_message_id == captured_message_id
+    assert message.provider_message_id is None
+
+
+@pytest.mark.asyncio
+async def test_stale_send_becomes_uncertain_and_replay_never_calls_smtp(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = "email.create.uncertain-reservation-0001"
+    payload = {
+        "to": "partner@example.com",
+        "subject": "Unknown relay acceptance",
+        "body": "The SMTP response was lost.",
+        "sender_profile": "support",
+        "idempotency_key": key,
+    }
+    thread = EmailThread(
+        participant_email=payload["to"],
+        subject=payload["subject"],
+        sender_profile="support",
+        language="en",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="outbound",
+        sender_email=email_service.get_email_sender("support"),
+        recipient_emails=[payload["to"]],
+        subject=payload["subject"],
+        text_body=payload["body"],
+        client_idempotency_key=key,
+        internet_message_id="<uncertain-reservation@filamenthub.test>",
+        attachment_metadata=[],
+        delivery_status="sending",
+        created_at=datetime.now() - timedelta(days=1),
+    )
+    db_session.add(message)
+    db_session.add(EmailSendReservation(idempotency_key=key))
+    await db_session.commit()
+
+    calls = 0
+
+    def fake_send(**kwargs):
+        nonlocal calls
+        calls += 1
+        return EmailSendResult(sent=True)
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    replay = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+
+    assert replay.status_code == 409
+    assert replay.json()["detail"]["code"] == "ERR_EMAIL_DELIVERY_UNCERTAIN"
+    assert calls == 0
+    await db_session.refresh(message)
+    assert message.delivery_status == "uncertain"
+
+    deleted = await admin_client.delete(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+    replay_after_delete = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+    assert deleted.status_code == 200
+    assert replay_after_delete.status_code == 409
+    assert replay_after_delete.json()["detail"]["code"] == "ERR_EMAIL_IDEMPOTENCY_CONFLICT"
+    assert calls == 0
+    assert await db_session.get(EmailSendReservation, key) is not None
+
+
+@pytest.mark.asyncio
+async def test_uncertain_message_blocks_a_new_reply_without_smtp(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread = EmailThread(
+        participant_email="uncertain-thread@example.com",
+        subject="Unresolved delivery",
+        sender_profile="support",
+        language="en",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="outbound",
+            sender_email=email_service.get_email_sender("support"),
+            recipient_emails=[thread.participant_email],
+            subject=thread.subject,
+            text_body="Acceptance is unknown.",
+            client_idempotency_key="email.reply.uncertain-existing-0001",
+            internet_message_id="<uncertain-thread@filamenthub.test>",
+            attachment_metadata=[],
+            delivery_status="uncertain",
+        )
+    )
+    await db_session.commit()
+    send_called = False
+
+    def fake_send(**kwargs):
+        nonlocal send_called
+        send_called = True
+        return EmailSendResult(sent=True)
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    response = await admin_client.post(
+        f"/api/v1/admin/communications/email-threads/{thread.id}/reply",
+        json={
+            "body": "A second attempt must be blocked.",
+            "idempotency_key": "email.reply.uncertain-new-0001",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "ERR_EMAIL_DELIVERY_UNCERTAIN"
+    assert send_called is False
 
 
 @pytest.mark.asyncio

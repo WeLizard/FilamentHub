@@ -28,6 +28,7 @@ from app.core.errors import (
     ERR_EMAIL_ATTACHMENT_NOT_FOUND,
     ERR_EMAIL_DELIVERY_FAILED,
     ERR_EMAIL_DELIVERY_IN_PROGRESS,
+    ERR_EMAIL_DELIVERY_UNCERTAIN,
     ERR_EMAIL_IDEMPOTENCY_CONFLICT,
     ERR_EMAIL_THREAD_NOT_FOUND,
     raise_error,
@@ -50,6 +51,7 @@ from app.schemas.email_communication import (
 )
 from app.services.email_attachment_service import prepare_email_attachments
 from app.services.email_service import (
+    create_internet_message_id,
     get_email_sender,
     outbound_send_is_stale,
     sanitize_admin_email_html,
@@ -257,22 +259,46 @@ async def _email_key_was_reserved(db: AsyncSession, idempotency_key: str) -> boo
 
 
 async def _reject_nonterminal_replay(db: AsyncSession, message: EmailMessage) -> None:
+    if message.delivery_status == "uncertain":
+        raise_error(409, ERR_EMAIL_DELIVERY_UNCERTAIN)
     if message.delivery_status != "sending":
         return
     if outbound_send_is_stale(message.created_at):
-        message.delivery_status = "failed"
+        message.delivery_status = "uncertain"
         await db.commit()
-        raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+        raise_error(409, ERR_EMAIL_DELIVERY_UNCERTAIN)
     raise_error(409, ERR_EMAIL_DELIVERY_IN_PROGRESS)
 
 
-async def _reject_active_thread_sends(db: AsyncSession, thread: EmailThread) -> None:
+async def _reject_unresolved_thread_sends(db: AsyncSession, thread: EmailThread) -> None:
+    active = False
+    uncertain = False
+    for message in thread.messages:
+        if message.delivery_status == "uncertain":
+            uncertain = True
+            continue
+        if message.delivery_status != "sending":
+            continue
+        if outbound_send_is_stale(message.created_at):
+            message.delivery_status = "uncertain"
+            uncertain = True
+        else:
+            active = True
+    if uncertain:
+        await db.commit()
+        raise_error(409, ERR_EMAIL_DELIVERY_UNCERTAIN)
+    if active:
+        raise_error(409, ERR_EMAIL_DELIVERY_IN_PROGRESS)
+
+
+async def _reject_active_thread_deletion(db: AsyncSession, thread: EmailThread) -> None:
+    """Block deletion only while an SMTP call can still be running."""
     active = False
     for message in thread.messages:
         if message.delivery_status != "sending":
             continue
         if outbound_send_is_stale(message.created_at):
-            message.delivery_status = "failed"
+            message.delivery_status = "uncertain"
         else:
             active = True
     if active:
@@ -631,6 +657,7 @@ async def create_email_thread(
         text_body=data.body,
         html_body=sanitized_html,
         client_idempotency_key=data.idempotency_key,
+        internet_message_id=create_internet_message_id(),
         attachment_metadata=attachment_metadata,
         delivery_status="sending",
         sent_by_id=admin.id,
@@ -679,12 +706,15 @@ async def create_email_thread(
         headers=None,
         attachments=[attachment.provider_payload() for attachment in attachments],
         idempotency_key=data.idempotency_key,
+        internet_message_id=message.internet_message_id,
         language=data.language,
     )
     if not result.sent:
-        message.delivery_status = "failed"
+        message.delivery_status = "uncertain" if result.acceptance_uncertain else "failed"
         await db.commit()
         logger.error("Failed to start admin email thread: %s", result.error)
+        if result.acceptance_uncertain:
+            raise_error(409, ERR_EMAIL_DELIVERY_UNCERTAIN)
         raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
 
     message.provider_message_id = result.provider_message_id
@@ -772,7 +802,7 @@ async def delete_email_thread(
     """Permanently delete an administrative email thread and all of its messages."""
     del admin
     thread = await _load_thread(db, thread_id, for_update=True)
-    await _reject_active_thread_sends(db, thread)
+    await _reject_active_thread_deletion(db, thread)
     stored_mail_event_ids = [
         message.provider_event_id
         for message in thread.messages
@@ -907,6 +937,7 @@ async def reply_to_email_thread(
     if await _email_key_was_reserved(db, data.idempotency_key):
         raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
 
+    await _reject_unresolved_thread_sends(db, thread)
     message = EmailMessage(
         thread_id=thread.id,
         direction="outbound",
@@ -916,6 +947,7 @@ async def reply_to_email_thread(
         text_body=data.body,
         html_body=sanitized_html,
         client_idempotency_key=data.idempotency_key,
+        internet_message_id=create_internet_message_id(),
         in_reply_to=latest_inbound.internet_message_id if latest_inbound else None,
         attachment_metadata=attachment_metadata,
         delivery_status="sending",
@@ -965,12 +997,15 @@ async def reply_to_email_thread(
         headers=headers,
         attachments=[attachment.provider_payload() for attachment in attachments],
         idempotency_key=data.idempotency_key,
+        internet_message_id=message.internet_message_id,
         language=thread.language,
     )
     if not result.sent:
-        message.delivery_status = "failed"
+        message.delivery_status = "uncertain" if result.acceptance_uncertain else "failed"
         await db.commit()
         logger.error("Failed to send admin email reply for thread %s: %s", thread.id, result.error)
+        if result.acceptance_uncertain:
+            raise_error(409, ERR_EMAIL_DELIVERY_UNCERTAIN)
         raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
 
     message.provider_message_id = result.provider_message_id

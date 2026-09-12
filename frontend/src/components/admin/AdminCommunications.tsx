@@ -76,6 +76,7 @@ const emailDraftFingerprint = (
 const deliveryStatusIcon = (status: EmailDeliveryStatus) => {
   if (status === 'delivered') return CheckCheck;
   if (status === 'delayed' || status === 'sending') return Clock3;
+  if (status === 'uncertain') return TriangleAlert;
   if (status === 'bounced' || status === 'complained' || status === 'failed') return TriangleAlert;
   return Check;
 };
@@ -867,7 +868,7 @@ function AdminEmailInbox() {
                         <span className="flex items-center gap-2 text-gray-500">
                           {!inbound && message.delivery_status && DeliveryIcon && (
                             <span className={`inline-flex items-center gap-1 ${
-                              message.delivery_status === 'bounced' || message.delivery_status === 'complained' || message.delivery_status === 'failed'
+                              message.delivery_status === 'bounced' || message.delivery_status === 'complained' || message.delivery_status === 'failed' || message.delivery_status === 'uncertain'
                                 ? 'text-rose-300'
                                 : message.delivery_status === 'delayed'
                                   ? 'text-amber-300'

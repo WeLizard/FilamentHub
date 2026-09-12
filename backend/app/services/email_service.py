@@ -84,6 +84,7 @@ class EmailSendResult:
     sent: bool
     provider_message_id: str | None = None
     error: str | None = None
+    acceptance_uncertain: bool = False
 
     def __bool__(self) -> bool:
         return self.sent
@@ -105,6 +106,11 @@ def _sender_domain() -> str:
     return settings.EMAIL_FROM.rpartition("@")[2] or "filamenthub.ru"
 
 
+def create_internet_message_id() -> str:
+    """Create the RFC Message-ID that must be durable before SMTP starts."""
+    return make_msgid(domain=_sender_domain())
+
+
 def _build_message(
     *,
     from_address: str,
@@ -115,13 +121,14 @@ def _build_message(
     reply_to: str | None = None,
     headers: dict[str, str] | None = None,
     attachments: list[dict[str, str]] | None = None,
+    internet_message_id: str | None = None,
 ) -> EmailMessage:
     """Assemble the MIME message the relay will hand over verbatim."""
     message = EmailMessage()
     message["From"] = from_address
     message["To"] = to
     message["Subject"] = subject
-    message["Message-ID"] = make_msgid(domain=_sender_domain())
+    message["Message-ID"] = internet_message_id or create_internet_message_id()
     if reply_to:
         message["Reply-To"] = reply_to
     for name, value in (headers or {}).items():
@@ -208,6 +215,7 @@ def send_email_tracked(
     headers: dict[str, str] | None = None,
     attachments: list[dict[str, str]] | None = None,
     idempotency_key: str | None = None,
+    internet_message_id: str | None = None,
 ) -> EmailSendResult:
     """Send email and return a trackable result.
 
@@ -234,12 +242,19 @@ def send_email_tracked(
             reply_to=reply_to,
             headers=headers,
             attachments=attachments,
+            internet_message_id=internet_message_id,
         )
         _deliver(message)
-        return EmailSendResult(sent=True, provider_message_id=message["Message-ID"].strip("<>"))
+        # SMTP acceptance provides no provider-issued identifier and does not
+        # prove delivery to the recipient. The RFC Message-ID is caller-owned.
+        return EmailSendResult(sent=True)
     except Exception as exc:
         logger.error("Failed to send tracked email to %s", to, exc_info=True)
-        return EmailSendResult(sent=False, error=str(exc)[:500])
+        return EmailSendResult(
+            sent=False,
+            error=str(exc)[:500],
+            acceptance_uncertain=True,
+        )
 
 
 def get_email_sender(profile: str) -> str:
@@ -275,6 +290,7 @@ def send_admin_reply_email(
     headers: dict[str, str] | None = None,
     attachments: list[dict[str, str]] | None = None,
     idempotency_key: str | None = None,
+    internet_message_id: str | None = None,
     language: str | None = None,
 ) -> EmailSendResult:
     """Send sanitized authored content using the shared branded email template."""
@@ -297,6 +313,7 @@ def send_admin_reply_email(
         headers=headers,
         attachments=attachments,
         idempotency_key=idempotency_key,
+        internet_message_id=internet_message_id,
     )
 
 

@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import en from '../../locales/en/translation.json';
+import ru from '../../locales/ru/translation.json';
+import zh from '../../locales/zh/translation.json';
 import { splitQuotedText } from './AdminCommunications';
+
+describe('admin email delivery truthfulness', () => {
+  it('labels relay acceptance and uncertain non-retryable outcomes in every locale', () => {
+    expect(en.adminCommunications.delivery.sent).toBe('Accepted by mail server');
+    expect(ru.adminCommunications.delivery.sent).toBe('Принято почтовым сервером');
+    expect(zh.adminCommunications.delivery.sent).toBe('邮件服务器已接受');
+
+    for (const locale of [en, ru, zh]) {
+      expect(locale.adminCommunications.delivery.uncertain).toBeTruthy();
+      expect(locale.apiErrors.ERR_EMAIL_DELIVERY_UNCERTAIN).toBeTruthy();
+    }
+  });
+});
 
 describe('splitQuotedText', () => {
   it('keeps an unquoted letter as one block', () => {
