@@ -320,6 +320,7 @@ function EmailComposeModal({
   onSent: (thread: EmailThreadDetail) => void;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [to, setTo] = useState('');
   const [participantName, setParticipantName] = useState('');
   const [subject, setSubject] = useState('');
@@ -357,6 +358,8 @@ function EmailComposeModal({
       onSent(thread);
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       toast.error(translateApiError(t, error.response?.data?.detail, t('adminCommunications.compose.error')));
     },
   });
@@ -570,7 +573,9 @@ function AdminEmailInbox() {
       queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
       toast.success(t('adminCommunications.replySent'));
     },
-    onError: (error: AxiosError<{ detail: unknown }>) => {
+    onError: (error: AxiosError<{ detail: unknown }>, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-email-thread', variables.threadId] });
+      queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
       toast.error(translateApiError(t, error.response?.data?.detail, t('adminCommunications.replyError')));
     },
   });

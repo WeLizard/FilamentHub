@@ -90,6 +90,10 @@ class EmailSendResult:
         return self.sent
 
 
+class EmailAcceptanceUncertainError(Exception):
+    """The SMTP handoff started, but relay acceptance could not be determined."""
+
+
 def _get_from(profile: str = "transactional") -> str:
     addresses = {
         "transactional": settings.EMAIL_FROM,
@@ -162,12 +166,20 @@ def _deliver(message: EmailMessage) -> None:
             settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout, context=context
         ) as smtp:
             smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
+            _send_message(smtp, message)
         return
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout) as smtp:
         smtp.starttls(context=context)
         smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        _send_message(smtp, message)
+
+
+def _send_message(smtp: smtplib.SMTP, message: EmailMessage) -> None:
+    """Isolate the only SMTP stage where a lost response makes acceptance unknown."""
+    try:
         smtp.send_message(message)
+    except Exception as exc:
+        raise EmailAcceptanceUncertainError(str(exc)) from exc
 
 
 def send_email(*, to: str, subject: str, html: str) -> bool:
@@ -248,13 +260,16 @@ def send_email_tracked(
         # SMTP acceptance provides no provider-issued identifier and does not
         # prove delivery to the recipient. The RFC Message-ID is caller-owned.
         return EmailSendResult(sent=True)
-    except Exception as exc:
+    except EmailAcceptanceUncertainError as exc:
         logger.error("Failed to send tracked email to %s", to, exc_info=True)
         return EmailSendResult(
             sent=False,
             error=str(exc)[:500],
             acceptance_uncertain=True,
         )
+    except Exception as exc:
+        logger.error("Failed before tracked email handoff to %s", to, exc_info=True)
+        return EmailSendResult(sent=False, error=str(exc)[:500])
 
 
 def get_email_sender(profile: str) -> str:

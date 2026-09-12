@@ -6225,7 +6225,7 @@
     },
     "sendReply": "Send reply",
     "sending": "Sending…",
-    "replySent": "Reply sent",
+    "replySent": "Reply accepted by mail server",
     "replyError": "Could not send the reply",
     "delete": {
       "action": "Delete",
@@ -6252,7 +6252,7 @@
       "message": "Message",
       "messagePlaceholder": "Write your email…",
       "send": "Send email",
-      "sent": "Email sent",
+      "sent": "Email accepted by mail server",
       "error": "Could not send email"
     },
     "delivery": {

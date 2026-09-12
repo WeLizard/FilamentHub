@@ -6219,7 +6219,7 @@
     },
     "sendReply": "发送回复",
     "sending": "正在发送…",
-    "replySent": "回复已发送",
+    "replySent": "回复已被邮件服务器接受",
     "replyError": "无法发送回复",
     "delete": {
       "action": "删除",
@@ -6246,7 +6246,7 @@
       "message": "正文",
       "messagePlaceholder": "撰写邮件…",
       "send": "发送邮件",
-      "sent": "邮件已发送",
+      "sent": "邮件已被邮件服务器接受",
       "error": "无法发送邮件"
     },
     "delivery": {

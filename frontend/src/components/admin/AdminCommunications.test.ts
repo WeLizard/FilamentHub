@@ -9,6 +9,9 @@ describe('admin email delivery truthfulness', () => {
     expect(en.adminCommunications.delivery.sent).toBe('Accepted by mail server');
     expect(ru.adminCommunications.delivery.sent).toBe('Принято почтовым сервером');
     expect(zh.adminCommunications.delivery.sent).toBe('邮件服务器已接受');
+    expect(en.adminCommunications.compose.sent).toBe('Email accepted by mail server');
+    expect(ru.adminCommunications.replySent).toBe('Ответ принят почтовым сервером');
+    expect(zh.adminCommunications.compose.sent).toBe('邮件已被邮件服务器接受');
 
     for (const locale of [en, ru, zh]) {
       expect(locale.adminCommunications.delivery.uncertain).toBeTruthy();

@@ -106,7 +106,7 @@ def test_lost_smtp_response_is_reported_as_uncertain(
     monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
 
     def lose_response(message: object) -> None:
-        raise TimeoutError("relay response was lost")
+        raise email_service.EmailAcceptanceUncertainError("relay response was lost")
 
     monkeypatch.setattr(email_service, "_deliver", lose_response)
     result = email_service.send_email_tracked(
@@ -119,6 +119,26 @@ def test_lost_smtp_response_is_reported_as_uncertain(
     assert result.sent is False
     assert result.acceptance_uncertain is True
     assert result.provider_message_id is None
+
+
+def test_pre_handoff_smtp_failure_is_reported_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+
+    def fail_before_handoff(message: object) -> None:
+        raise ConnectionError("relay is unreachable")
+
+    monkeypatch.setattr(email_service, "_deliver", fail_before_handoff)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com",
+        subject="Known failure",
+        html="<p>Hello</p>",
+    )
+
+    assert result.sent is False
+    assert result.acceptance_uncertain is False
 
 
 @pytest.mark.asyncio
@@ -177,6 +197,7 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
     assert response.json()["delivery_status"] == "sent"
     assert captured["sender_profile"] == "pr"
     assert captured["headers"]["In-Reply-To"] == "<incoming-thread@example.com>"
+    assert captured["headers"]["References"] == "<incoming-thread@example.com>"
     await db_session.refresh(thread)
     assert thread.reply_token
     assert captured["reply_to"] == f"thread-{thread.reply_token}@reply.filamenthub.test"
