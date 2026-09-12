@@ -4,6 +4,10 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.1.10
+- Opening Bambu setup no longer searches the local network automatically. Saved and current-profile addresses remain available, while network discovery starts only when you choose **Search local network**.
+- If OrcaSlicer denies the local socket used by the embedded FilamentHub page, the plugin now explains what was blocked and offers an explicit retry instead of leaving the page unavailable.
+
 ## 0.1.9
 - Saving a supported material assignment can immediately deliver that exact committed slot to Bambu LAN or Happy Hare. The material check now only reads and uploads current printer observations, and offline or uncertain delivery remains explicit.
 - Checking and applying Bambu materials now finds the saved LAN connection using the same local source as its telemetry, without pairing the printer again.

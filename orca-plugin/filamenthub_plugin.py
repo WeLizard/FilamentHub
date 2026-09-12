@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.9"
+# version = "0.1.10"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -429,7 +429,7 @@ def show_host_message(*args, **kwargs):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.9"
+PLUGIN_VERSION = "0.1.10"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 _SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
@@ -7248,7 +7248,8 @@ function showPrinterSetupOverlay(request) {
 }
 function prepareBambuOverlay(binding) {
   binding = Object.assign({}, binding, { requestId: 'bambu-search-' + Date.now() + '-' + Math.random().toString(16).slice(2) });
-  showBambuOverlay(Object.assign({}, binding, { searching: true }));
+  var searchRequested = binding.refresh === true;
+  showBambuOverlay(Object.assign({}, binding, { searching: searchRequested }));
   pendingBambuSetup = binding;
   try {
     orca.postMessage({ source:'filamenthub-plugin', type:'prepare-bambu-local',
@@ -7277,6 +7278,7 @@ function handleLocalPrinterSetup(data) {
   if (pending && pending.requestId === data.requestId && Number(pending.physicalPrinterId) === Number(data.physicalPrinterId) &&
       Number(pending.materialSystemId) === Number(data.materialSystemId) && pending.pairingCode === data.pairingCode) {
     showBambuOverlay(Object.assign({}, pending, { candidates: data.candidates || [], discoveryComplete: data.discoveryComplete,
+      discoveryAttempted: data.discoveryAttempted === true,
       hasSavedConnection: data.hasSavedConnection === true }));
   }
   return true;
@@ -7367,7 +7369,12 @@ function showBambuOverlay(binding) {
   }
   var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
   hint.textContent = candidates.some(function (item) { return item.source === 'network'; })
-    ? uiCopy.bambuFound : binding.discoveryComplete === false ? uiCopy.bambuSearchIncomplete : uiCopy.bambuNotFound;
+    ? uiCopy.bambuFound
+    : binding.discoveryAttempted !== true
+      ? uiCopy.bambuHint
+      : binding.discoveryComplete === false
+        ? uiCopy.bambuSearchIncomplete
+        : uiCopy.bambuNotFound;
   if (candidateSelect) {
     host.value = candidates[0].host;
     var hostDetails = document.createElement('details');
@@ -7426,7 +7433,7 @@ function showBambuOverlay(binding) {
   var cancel = button(uiCopy.cancel, false);
   cancel.addEventListener('click', hideBambuOverlay);
   var save = button(uiCopy.bambuSave, true);
-  var refresh = button(uiCopy.bambuSearchAgain, false);
+  var refresh = button(binding.discoveryAttempted === true ? uiCopy.bambuSearchAgain : uiCopy.bambuSearch, false);
   refresh.addEventListener('click', function () { prepareBambuOverlay(Object.assign({}, binding, { refresh:true })); });
   save.type = 'submit';
   if (binding.hasSavedConnection) row.appendChild(remove);
@@ -7787,6 +7794,37 @@ def render_page():
     language = refresh_ui_language()
     return PAGE.replace("__HOST_UI_LANGUAGE__", language).replace(
         "__EMBED_URL__", localized_embed_url(language))
+
+
+def render_local_permission_page():
+    """Keep the plugin usable when Orca denies the loopback socket."""
+    copy = {
+        key: ui_text(key)
+        for key in (
+            "localPermissionTitle",
+            "localPermissionMessage",
+            "localPermissionRetry",
+            "localPermissionRetryFailed",
+        )
+    }
+    return """<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>
+html,body{height:100%%;margin:0}body{display:grid;place-items:center;background:#171724;
+color:#e8e8ef;font:14px system-ui,sans-serif}.card{width:min(520px,calc(100%% - 32px));
+box-sizing:border-box;padding:24px;border:1px solid #3c3c4c;border-radius:16px;background:#20202e}
+h1{margin:0 0 10px;font-size:19px}p{margin:0 0 18px;color:#b8b8c5;line-height:1.5}
+button{padding:8px 15px;border:1px solid #8b7cf8;border-radius:8px;background:#8b7cf8;
+color:white;font:inherit;cursor:pointer}button:disabled{opacity:.6;cursor:default}</style></head>
+<body><main class=\"card\"><h1 id=\"title\"></h1><p id=\"message\"></p><button id=\"retry\"></button></main>
+<script>var copy=%s,title=document.getElementById('title'),message=document.getElementById('message'),
+retry=document.getElementById('retry');title.textContent=copy.localPermissionTitle;
+message.textContent=copy.localPermissionMessage;retry.textContent=copy.localPermissionRetry;
+retry.addEventListener('click',function(){retry.disabled=true;message.textContent=copy.localPermissionMessage;
+try{orca.postMessage({source:'filamenthub-plugin',type:'retry-local-shell'});}catch(e){retry.disabled=false;
+message.textContent=copy.localPermissionRetryFailed;}});
+window.__orcaDispatch=function(payload){var data=payload&&payload.data;if(!data)return;
+if(data.type==='local-shell-ready'&&typeof data.url==='string'){location.replace(data.url);return;}
+if(data.type==='local-shell-denied'){retry.disabled=false;message.textContent=copy.localPermissionRetryFailed;}};
+</script></body></html>""" % json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
 
 
 # --------------------------------------------------------------------------- #
@@ -9785,15 +9823,26 @@ class FilamentHubCatalog(
         else:
             self._deliver_happy_hare_result(request_id, result)
 
-    def _setup_discovery(self, context, observations=(), refresh=False):
+    def _setup_discovery(
+        self,
+        context,
+        observations=(),
+        refresh=False,
+        scan_network=True,
+    ):
         cached = getattr(self, "_printer_discovery", {})
         now = time.monotonic()
         same_account = cached.get("account_scope") == context["account_scope"]
         if same_account and now < cached.get("expires", 0) and (
-            not refresh or now - cached.get("scanned", 0) < 5
+            not scan_network
+            or not refresh
+            or now - cached.get("scanned", 0) < 5
         ):
             return cached
-        network, complete = discover_lan_printers()
+        if scan_network:
+            network, complete = discover_lan_printers()
+        else:
+            network, complete = [], False
         known_bambu = [item for item in load_bambu_config()["printers"]
                        if item.get("device_identity") and item["device_identity"] ==
                        _bambu_device_identity(context["discovery_key"], item.get("serial"))]
@@ -9832,8 +9881,14 @@ class FilamentHubCatalog(
                           "printer_model": model[:200], "source": "profile",
                           "physical_printer_id": (bound.get(ref) or {}).get("physical_printer_id"),
                           "account_scope": context["account_scope"]}
-        cached = {"account_scope": context["account_scope"], "scanned": now,
-                  "expires": now + 300, "items": list(items.values())[:_DISCOVERY_LIMIT], "complete": complete}
+        cached = {
+            "account_scope": context["account_scope"],
+            "scanned": now if scan_network else 0,
+            "expires": now + 300,
+            "items": list(items.values())[:_DISCOVERY_LIMIT],
+            "complete": complete,
+            "attempted": scan_network,
+        }
         self._printer_discovery = cached
         return cached
 
@@ -9847,8 +9902,15 @@ class FilamentHubCatalog(
                 # when an old account token cannot resolve the exact binding.
                 context = {}
         candidates = []
+        discovery_attempted = False
         if context:
-            discovery = self._setup_discovery(context, observations, refresh=binding.get("refresh") is True)
+            discovery = self._setup_discovery(
+                context,
+                observations,
+                refresh=binding.get("refresh") is True,
+                scan_network=binding.get("refresh") is True,
+            )
+            discovery_attempted = discovery.get("attempted") is True
             candidates = [dict(item) for item in discovery["items"] if item["provider"] == "bambu"
                           and item.get("physical_printer_id") in {None, binding["physicalPrinterId"]}]
             selected_ref = binding.get("connectionRef")
@@ -9868,6 +9930,7 @@ class FilamentHubCatalog(
             candidates=[{key: item.get(key, "") for key in ("host", "label", "serial", "source", "connection_ref")}
                         for item in candidates[:_DISCOVERY_LIMIT]],
             discoveryComplete=bool(context) and discovery["complete"],
+            discoveryAttempted=discovery_attempted,
             hasSavedConnection=bool(context) and any(
                 item.get("physical_printer_id") == binding["physicalPrinterId"]
                 and item.get("device_identity") == _bambu_device_identity(context["discovery_key"], item.get("serial"))
@@ -12510,7 +12573,10 @@ if _PAGE_CAPABILITY_BASE is not None:
             return ensure_icon()
 
         def get_ui(self):
-            shell_url = SHELL_SERVER.url_for(render_page())
+            try:
+                shell_url = SHELL_SERVER.url_for(render_page())
+            except OSError:
+                return render_local_permission_page()
             return (
                 "<!DOCTYPE html><html><body><script>location.replace("
                 + json.dumps(shell_url)
@@ -12518,6 +12584,21 @@ if _PAGE_CAPABILITY_BASE is not None:
             )
 
         def on_message(self, message):
+            try:
+                payload = json.loads(message)
+            except (TypeError, ValueError):
+                payload = None
+            if isinstance(payload, dict) and payload.get("type") == "retry-local-shell":
+                try:
+                    shell_url = SHELL_SERVER.url_for(render_page())
+                except OSError:
+                    self.post_message({"type": "local-shell-denied"})
+                else:
+                    self.post_message({
+                        "type": "local-shell-ready",
+                        "url": shell_url,
+                    })
+                return
             self._catalog.on_message(message)
 
         def on_unload(self):

@@ -88,6 +88,7 @@
   "dropdownCurrent": "The filament dropdown is up to date.",
   "dropdownRestart": "Restart OrcaSlicer to apply the changes in the filament dropdown.",
   "syncComplete": "Sync complete: {summary}. {note}",
+  "bambuSearch": "Search local network",
   "bambuSearchAgain": "Search again",
   "bambuSearching": "Looking for printers on this network…",
   "bambuChoosePrinter": "Printer",
@@ -96,5 +97,9 @@
   "bambuSearchIncomplete": "The network search could not finish. You can try again or use a saved or manually entered address.",
   "bambuManual": "Enter an address manually",
   "bambuSetupTimeout": "No response yet. Your printer settings are kept. You can close this window and check the connection, or try again.",
-  "bambuConnecting": "Connecting to the printer…"
+  "bambuConnecting": "Connecting to the printer…",
+  "localPermissionTitle": "Local connection permission is required",
+  "localPermissionMessage": "OrcaSlicer blocked the local socket used to open FilamentHub. Retry and approve OrcaSlicer's permission request to continue.",
+  "localPermissionRetry": "Retry",
+  "localPermissionRetryFailed": "The local connection is still blocked. No printer or account data was changed."
 }

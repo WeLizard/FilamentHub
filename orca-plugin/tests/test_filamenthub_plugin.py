@@ -143,6 +143,56 @@ def test_native_bambu_setup_keeps_the_selected_device_and_refresh_request(setup_
     catalog._do_prepare_bambu(dict(binding, refresh=True), [], "token")
     assert len(calls) == 2
 
+
+def test_native_bambu_setup_does_not_scan_until_the_user_requests_it(
+    setup_flow, monkeypatch
+):
+    plugin, catalog, _context, _results, _uploads = setup_flow
+    calls = []
+    monkeypatch.setattr(
+        plugin,
+        "discover_lan_printers",
+        lambda: calls.append(True) or ([], True),
+    )
+    native = []
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_native_setup",
+        lambda kind, **data: native.append((kind, data)),
+    )
+    binding = {
+        "physicalPrinterId": 7,
+        "materialSystemId": 8,
+        "pairingCode": "test-pair",
+        "requestId": "initial-open",
+    }
+    observations = [{
+        "is_current": True,
+        "host_type": "bambu",
+        "print_host": "192.168.1.99",
+        "preset_name": "Workshop P2S",
+    }]
+
+    catalog._do_prepare_bambu(binding, observations, "token")
+
+    kind, prompt = native[-1]
+    assert kind == "bambu-setup-candidates"
+    assert len(prompt["candidates"]) == 1
+    assert prompt["candidates"][0] | {"connection_ref": ""} == {
+        "host": "192.168.1.99",
+        "label": "Workshop P2S",
+        "serial": "",
+        "source": "profile",
+        "connection_ref": "",
+    }
+    assert prompt["discoveryAttempted"] is False
+    assert calls == []
+
+    catalog._do_prepare_bambu(dict(binding, refresh=True), observations, "token")
+
+    assert native[-1][1]["discoveryAttempted"] is True
+    assert calls == [True]
+
 def test_local_setup_requires_device_identity_before_saved_automatic_access(setup_flow, monkeypatch):
     plugin, catalog, context, results, uploads = setup_flow
     monkeypatch.setattr(plugin, "_observe_moonraker_identity", lambda _connection: None)

@@ -88,6 +88,7 @@
   "dropdownCurrent": "耗材下拉列表已更新。",
   "dropdownRestart": "请重启 OrcaSlicer，以应用耗材下拉列表中的更改。",
   "syncComplete": "同步完成：{summary}。{note}",
+  "bambuSearch": "搜索本地网络",
   "bambuSearchAgain": "重新搜索",
   "bambuSearching": "正在此网络中查找打印机…",
   "bambuChoosePrinter": "打印机",
@@ -96,5 +97,9 @@
   "bambuSearchIncomplete": "未能完成网络搜索。您可以重试、使用已保存的地址或手动输入地址。",
   "bambuManual": "手动输入地址",
   "bambuSetupTimeout": "暂未收到响应。打印机设置已保留。您可以关闭此窗口检查连接，或重试。",
-  "bambuConnecting": "正在连接打印机…"
+  "bambuConnecting": "正在连接打印机…",
+  "localPermissionTitle": "需要本地连接权限",
+  "localPermissionMessage": "OrcaSlicer 已阻止用于打开 FilamentHub 的本地套接字。请重试并在 OrcaSlicer 权限提示中允许此操作。",
+  "localPermissionRetry": "重试",
+  "localPermissionRetryFailed": "本地连接仍被阻止。打印机和账户数据均未更改。"
 }

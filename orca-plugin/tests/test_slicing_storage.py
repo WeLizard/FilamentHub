@@ -281,6 +281,44 @@ def test_pages_host_delivers_plugin_messages_through_post_message():
         "contours": [],
     }]
 
+
+def test_pages_host_keeps_a_retry_screen_when_orca_denies_loopback(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    monkeypatch.setattr(
+        module.SHELL_SERVER,
+        "url_for",
+        lambda _html: (_ for _ in ()).throw(PermissionError("blocked by audit")),
+    )
+
+    html = page.get_ui()
+
+    assert "retry-local-shell" in html
+    assert "local-shell-ready" in html
+    assert "blocked by audit" not in html
+
+
+def test_pages_host_retries_loopback_only_after_the_page_action(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    calls = []
+    monkeypatch.setattr(
+        module.SHELL_SERVER,
+        "url_for",
+        lambda _html: calls.append(True) or "http://127.0.0.1:4567/private",
+    )
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "retry-local-shell",
+    }))
+
+    assert calls == [True]
+    assert page.posted_messages == [{
+        "type": "local-shell-ready",
+        "url": "http://127.0.0.1:4567/private",
+    }]
+
 def test_notice_uses_typed_loopback_fallback_without_a_push_transport(
     plugin_module, monkeypatch
 ):
