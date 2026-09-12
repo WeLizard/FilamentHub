@@ -3069,13 +3069,13 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     </span>
                   ) : null}
                 </div>
-                <div className="relative flex items-start gap-3">
+                <div className="relative flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start">
                   <textarea
                     id={textareaId}
                     value={value}
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={8}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+                    className="w-full min-w-0 resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 pr-10 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none md:flex-1"
                     placeholder={t('printerProfile.gcode.placeholder')}
                   />
                   <button
@@ -3124,13 +3124,13 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     </span>
                   ) : null}
                 </div>
-                <div className="relative flex items-start gap-3">
+                <div className="relative flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start">
                   <textarea
                     id={textareaId}
                     value={value}
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={6}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 pr-10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono text-sm resize-none"
+                    className="w-full min-w-0 resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 pr-10 font-mono text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none md:flex-1"
                     placeholder={t('printerProfile.gcode.placeholder')}
                   />
                   <button

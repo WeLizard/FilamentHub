@@ -4779,7 +4779,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </h4>
                     
                     <div 
-                      className="flex items-start space-x-3"
+                      className="flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start"
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
@@ -4789,7 +4789,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         onChange={(e) => { setFilamentStartGcode(e.target.value); }}
                         placeholder="; Filament gcode"
                         rows={12}
-                        className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
+                        className={`w-full min-w-0 resize-none rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 md:flex-1 `}
                         style={{ fontFamily: 'monospace' }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -4830,7 +4830,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <span>{t('presetModal.changeExtrusionRoleGcode')}</span>
                     </h4>
                     <div
-                      className="flex items-start space-x-3"
+                      className="flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start"
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
@@ -4840,7 +4840,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         onChange={(e) => { setFilamentChangeExtrusionRoleGcode(e.target.value); }}
                         placeholder="; G-code for extrusion role change"
                         rows={8}
-                        className="flex-1 resize-y rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full min-w-0 resize-y rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 md:flex-1"
                       />
                       <EditGCodeModal
                         isOpen={activeTab === 'advanced'}
@@ -4876,7 +4876,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </h4>
                     
                     <div 
-                      className="flex items-start space-x-3"
+                      className="flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start"
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
@@ -4886,7 +4886,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         onChange={(e) => { setFilamentEndGcode(e.target.value); }}
                         placeholder="; filament end gcode"
                         rows={12}
-                        className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
+                        className={`w-full min-w-0 resize-none rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 md:flex-1 `}
                         style={{ fontFamily: 'monospace' }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}

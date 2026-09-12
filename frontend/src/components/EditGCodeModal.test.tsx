@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import adminPrintersSource from './admin/AdminPrinters.tsx?raw';
+import createPresetModalSource from './CreatePresetModal.tsx?raw';
+import createPrinterProfileModalSource from './CreatePrinterProfileModal.tsx?raw';
 import { EditGCodeModal } from './EditGCodeModal';
 
 vi.mock('react-i18next', () => ({
@@ -36,6 +39,8 @@ describe('EditGCodeModal', () => {
       'max-h-[calc(100dvh-2rem)]',
       'min-h-0',
       'overflow-hidden',
+      'md:w-[23.75rem]',
+      'md:shrink-0',
     );
     expect(picker).not.toHaveClass('w-[380px]', 'h-[258px]', 'flex-shrink-0');
 
@@ -59,12 +64,16 @@ describe('EditGCodeModal', () => {
     expect(closeButton).toHaveClass('h-11', 'w-11');
     expect(closeButton.querySelector('svg')).toHaveClass('h-4', 'w-4');
 
-    const search = within(picker).getByPlaceholderText('editGCode.searchPlaceholder');
+    const search = within(picker).getByRole('textbox', {
+      name: 'editGCode.searchPlaceholder',
+    });
     expect(search).toHaveClass('h-11');
 
     const category = within(picker).getByRole('button', { name: 'Filament G-code' });
     expect(category).toHaveClass('min-h-11');
+    expect(category).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(category);
+    expect(category).toHaveAttribute('aria-expanded', 'true');
 
     const placeholder = within(picker).getByRole('button', {
       name: /\{filament_extruder_id\}/,
@@ -88,5 +97,30 @@ describe('EditGCodeModal', () => {
     );
 
     expect(screen.queryByRole('region', { name: 'Placeholders' })).not.toBeInTheDocument();
+  });
+
+  it('stacks every consumer row before restoring the desktop side-by-side layout', () => {
+    const contracts = [
+      {
+        source: createPresetModalSource,
+        rows: 3,
+        textareaMarker: 'w-full min-w-0 resize',
+      },
+      {
+        source: createPrinterProfileModalSource,
+        rows: 2,
+        textareaMarker: 'w-full min-w-0 resize',
+      },
+      {
+        source: adminPrintersSource,
+        rows: 1,
+        textareaMarker: 'w-full min-w-0 resize',
+      },
+    ];
+
+    for (const { source, rows, textareaMarker } of contracts) {
+      expect(source.split('flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start')).toHaveLength(rows + 1);
+      expect(source.split(textareaMarker).length).toBeGreaterThanOrEqual(rows + 1);
+    }
   });
 });

@@ -1947,7 +1947,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                   ) : null}
                 </div>
                 <div
-                  className="flex items-start gap-3"
+                  className="flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start"
                   onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
@@ -1956,7 +1956,7 @@ function PrinterModal({ printer, onClose, onSave, isLoading }: PrinterModalProps
                     value={value}
                     onChange={(e) => handleMetadataStringChange(key, e.target.value)}
                     rows={12}
-                    className="flex-1 px-3 py-2 bg-black/30 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm leading-5 resize-none"
+                    className="w-full min-w-0 resize-none rounded-xl border border-white/20 bg-black/30 px-3 py-2 font-mono text-sm leading-5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 md:flex-1"
                     placeholder={t('adminPrinters.gcode.placeholder')}
                   />
                   <EditGCodeModal

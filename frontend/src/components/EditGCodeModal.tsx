@@ -225,7 +225,7 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
     <div
       role="region"
       aria-label={title}
-      className="relative flex h-[16.125rem] max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-[23.75rem] shrink flex-col overflow-hidden rounded-lg border border-white/20 bg-gray-900 shadow-xl"
+      className="relative flex h-[16.125rem] max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-[23.75rem] shrink flex-col overflow-hidden rounded-lg border border-white/20 bg-gray-900 shadow-xl md:w-[23.75rem] md:shrink-0"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -246,6 +246,7 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={t('editGCode.searchPlaceholder')}
             placeholder={t('editGCode.searchPlaceholder')}
             className="h-11 w-full rounded-lg border border-white/20 bg-white/10 pl-8 pr-3 text-sm text-white placeholder-gray-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
@@ -263,6 +264,7 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
             <div key={category} className="mb-2">
               <button
                 type="button"
+                aria-expanded={expandedCategories.has(category)}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleCategory(category);
