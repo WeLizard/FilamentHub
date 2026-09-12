@@ -1,9 +1,9 @@
 import { StrictMode, useRef, useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createPortal } from 'react-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ModalOverlay } from './ModalOverlay';
+import { ModalOverlay, useModalPortalRef } from './ModalOverlay';
 
 function pageRoot(): HTMLDivElement {
   const root = document.createElement('div');
@@ -76,8 +76,9 @@ describe('ModalOverlay focus lifecycle', () => {
   it('keeps controls from React-owned body portals in the active focus cycle', () => {
     const root = pageRoot();
     function PortaledControl() {
+      const portalRef = useModalPortalRef<HTMLDivElement>();
       return createPortal(
-        <div data-modal-portal="" data-testid="owned-portal">
+        <div ref={portalRef} data-modal-portal="" data-testid="owned-portal">
           <button type="button">Portal action</button>
         </div>,
         document.body,
@@ -105,6 +106,7 @@ describe('ModalOverlay focus lifecycle', () => {
     const root = pageRoot();
     let portalRoot: HTMLDivElement | null = null;
     function ExistingPortal() {
+      const registeredRef = useModalPortalRef<HTMLDivElement>();
       return createPortal(
         <div
           ref={(element) => {
@@ -112,6 +114,7 @@ describe('ModalOverlay focus lifecycle', () => {
               element.setAttribute('inert', 'existing');
               portalRoot = element;
             }
+            registeredRef(element);
           }}
           data-modal-portal=""
           aria-hidden="false"
@@ -137,6 +140,31 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(detachedPortalRoot).toHaveAttribute('inert', 'existing');
   });
 
+  it('isolates a marked portal that is not registered by the modal subtree', async () => {
+    const root = pageRoot();
+    render(
+      <ModalOverlay onClose={vi.fn()}><button type="button">Modal action</button></ModalOverlay>,
+      { container: root },
+    );
+    const otherRoot = document.createElement('div');
+    document.body.appendChild(otherRoot);
+    function UnownedPortal() {
+      const portalRef = useModalPortalRef<HTMLDivElement>();
+      return createPortal(
+        <div ref={portalRef} data-modal-portal="" data-testid="unowned-portal">
+          <button type="button">Unowned action</button>
+        </div>,
+        document.body,
+      );
+    }
+    render(<UnownedPortal />, { container: otherRoot });
+    const unowned = screen.getByTestId('unowned-portal');
+    await waitFor(() => {
+      expect(unowned).toHaveAttribute('aria-hidden', 'true');
+      expect(unowned).toHaveAttribute('inert');
+    });
+  });
+
   it('keeps focus on its scope when no controls are focusable', () => {
     const root = pageRoot();
     render(
@@ -154,6 +182,8 @@ describe('ModalOverlay focus lifecycle', () => {
     render(
       <ModalOverlay onClose={vi.fn()}>
         <button type="button">First</button>
+        <button type="button" tabIndex={2}>Positive two</button>
+        <button type="button" tabIndex={1}>Positive one</button>
         <div style={{ display: 'none' }}><button type="button">Hidden ancestor</button></div>
         <button type="button" tabIndex={-2}>Negative tab index</button>
         <details><button type="button">Closed details</button></details>
@@ -163,13 +193,15 @@ describe('ModalOverlay focus lifecycle', () => {
       { container: root },
     );
     const first = screen.getByRole('button', { name: 'First' });
+    const positiveOne = screen.getByRole('button', { name: 'Positive one' });
     const checked = screen.getByRole('radio', { name: 'Checked radio' });
     checked.focus();
     fireEvent.keyDown(checked, { key: 'Tab' });
-    expect(first).toHaveFocus();
-    first.focus();
-    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+    expect(positiveOne).toHaveFocus();
+    positiveOne.focus();
+    fireEvent.keyDown(positiveOne, { key: 'Tab', shiftKey: true });
     expect(checked).toHaveFocus();
+    expect(first).not.toHaveFocus();
   });
 
   it('contains programmatic focus and restores the opener on unmount', () => {
@@ -292,12 +324,9 @@ describe('ModalOverlay focus lifecycle', () => {
     expect(outerClose).not.toHaveBeenCalled();
   });
 
-  it('keeps the page isolated and resumes the last modal focus after suspension', () => {
+  it('keeps the page isolated and classifies persistent body roots when resuming', () => {
     const root = pageRoot();
-    const external = document.createElement('button');
-    external.textContent = 'External dialog';
-    document.body.appendChild(external);
-    const { rerender } = render(
+    const { rerender, unmount } = render(
       <ModalOverlay onClose={vi.fn()}>
         <button type="button">Modal action</button>
       </ModalOverlay>,
@@ -313,6 +342,10 @@ describe('ModalOverlay focus lifecycle', () => {
         <button type="button">Modal action</button>
       </ModalOverlay>,
     );
+    const external = document.createElement('button');
+    external.textContent = 'External dialog';
+    document.body.appendChild(external);
+    expect(external).not.toHaveAttribute('inert');
     external.focus();
     expect(external).toHaveFocus();
     rerender(
@@ -321,6 +354,11 @@ describe('ModalOverlay focus lifecycle', () => {
       </ModalOverlay>,
     );
     expect(action).toHaveFocus();
+    expect(external).toHaveAttribute('inert');
+    expect(external).toHaveAttribute('aria-hidden', 'true');
+    unmount();
+    expect(external).not.toHaveAttribute('inert');
+    expect(external).not.toHaveAttribute('aria-hidden');
   });
 
   it('restores existing root attributes and body overflow after nested StrictMode cleanup', () => {

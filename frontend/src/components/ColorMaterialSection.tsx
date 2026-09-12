@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { FilamentPreview } from './FilamentPreview';
 import { HSLColorPicker } from './HSLColorPicker';
+import { useModalPortalRef } from './ModalOverlay';
 import type { FilamentVisualSettings } from '../types/api';
 import { formatRalCode, normalizeRalCode } from '../utils/ralCode';
 
@@ -63,6 +64,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
   const isEditMode = mode === 'edit';
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const modalPortalRef = useModalPortalRef<HTMLDivElement>();
   const [pickerPosition, setPickerPosition] = useState<{ bottom: number; left: number } | null>(null);
 
   // Высота соответствует высоте input полей (py-3 = 12px padding сверху/снизу, плюс высота текста)
@@ -153,6 +155,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                 {/* HSL Color Picker - рендерим через portal вне модального окна */}
                 {isColorPickerOpen && pickerPosition && createPortal(
                   <div
+                    ref={modalPortalRef}
                     data-modal-portal=""
                     className="fixed z-[10000]"
                     style={{

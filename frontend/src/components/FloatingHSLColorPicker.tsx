@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HSLColorPicker } from './HSLColorPicker';
+import { useModalPortalRef } from './ModalOverlay';
 
 interface FloatingHSLColorPickerProps {
   anchorElement: HTMLElement | null;
@@ -28,6 +29,7 @@ export const FloatingHSLColorPicker: React.FC<FloatingHSLColorPickerProps> = ({
   onToggle,
 }) => {
   const [position, setPosition] = useState<PickerPosition | null>(null);
+  const modalPortalRef = useModalPortalRef<HTMLDivElement>();
 
   useLayoutEffect(() => {
     if (!isOpen || !anchorElement) {
@@ -64,6 +66,7 @@ export const FloatingHSLColorPicker: React.FC<FloatingHSLColorPickerProps> = ({
 
   return createPortal(
     <div
+      ref={modalPortalRef}
       data-modal-portal=""
       className="fixed z-[10000]"
       style={{

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
+import { useModalPortalRef } from './ModalOverlay';
 
 interface Option {
   value: string | number;
@@ -33,6 +34,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modalPortalRef = useModalPortalRef(dropdownRef);
 
   // Вычисляем позицию выпадающего списка и обновляем при скролле/ресайзе
   useEffect(() => {
@@ -108,7 +110,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         position &&
         createPortal(
           <div
-            ref={dropdownRef}
+            ref={modalPortalRef}
             data-modal-portal=""
             className="absolute z-[9999] bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 shadow-xl overflow-hidden"
             style={{

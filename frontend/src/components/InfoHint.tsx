@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Info } from 'lucide-react';
+import { useModalPortalRef } from './ModalOverlay';
 
 interface InfoHintProps {
   /** Пояснение параметра (уже локализованный текст). */
@@ -19,6 +20,7 @@ export const InfoHint: React.FC<InfoHintProps> = ({ text, className }) => {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const modalPortalRef = useModalPortalRef(popRef);
 
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
@@ -63,7 +65,7 @@ export const InfoHint: React.FC<InfoHintProps> = ({ text, className }) => {
       </button>
       {open && pos && createPortal(
         <div
-          ref={popRef}
+          ref={modalPortalRef}
           data-modal-portal=""
           role="tooltip"
           style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-50%)' }}

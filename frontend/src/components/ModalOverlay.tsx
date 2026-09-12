@@ -1,9 +1,11 @@
 /** Shared modal overlay — portal, focus lifecycle, backdrop, scroll lock, Escape. */
 
 import {
+  createContext,
   type ReactNode,
   type RefObject,
   useCallback,
+  useContext,
   useLayoutEffect,
   useRef,
 } from 'react';
@@ -27,7 +29,6 @@ interface OverlayRecord {
   order: number;
   overlay: HTMLDivElement | null;
   scope: HTMLDivElement | null;
-  bodyChildrenBeforeMount: Set<Element>;
   externalPortalRoots: Map<HTMLElement, ElementIsolationSnapshot>;
   restoreTarget: HTMLElement | null;
   rootRestoreTarget: HTMLElement | null;
@@ -47,6 +48,7 @@ interface ElementIsolationSnapshot {
 
 let nextOverlayOrder = 0;
 const overlayStack: OverlayRecord[] = [];
+const ModalOwnerContext = createContext<OverlayRecord | null>(null);
 let originalBodyOverflow: string | null = null;
 const backgroundIsolation = new Map<HTMLElement, ElementIsolationSnapshot>();
 let redirectingFocus = false;
@@ -86,6 +88,7 @@ function restoreIsolation(snapshot: ElementIsolationSnapshot): void {
 function isolateBackgroundElement(element: HTMLElement): void {
   if (
     element.hasAttribute('data-modal-overlay')
+    || overlayStack.some((record) => record.externalPortalRoots.has(element))
     || backgroundIsolation.has(element)
   ) return;
   backgroundIsolation.set(element, snapshotIsolation(element));
@@ -132,8 +135,7 @@ function isFocusable(element: HTMLElement | null | undefined): element is HTMLEl
   if (!element || !element.isConnected) return false;
   if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
   if (!element.matches(FOCUSABLE_SELECTOR) && !element.hasAttribute('tabindex')) return false;
-  const tabIndex = element.getAttribute('tabindex');
-  if (tabIndex !== null && Number(tabIndex) < 0) return false;
+  if (element.tabIndex < 0) return false;
   if (element.matches(':disabled') || element.hidden || element.getAttribute('aria-hidden') === 'true') {
     return false;
   }
@@ -156,7 +158,7 @@ function focusableElements(record: OverlayRecord): HTMLElement[] {
   const candidates = containers
     .flatMap((container) => Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)))
     .filter(isFocusable);
-  return candidates.filter((element) => {
+  const nativeStops = candidates.filter((element) => {
     if (!(element instanceof HTMLInputElement) || element.type !== 'radio' || !element.name) {
       return true;
     }
@@ -168,6 +170,18 @@ function focusableElements(record: OverlayRecord): HTMLElement[] {
     ));
     return (group.find((radio) => radio.checked) ?? group[0]) === element;
   });
+  return nativeStops
+    .map((element, domOrder) => ({ element, domOrder }))
+    .sort((left, right) => {
+      const leftPositive = left.element.tabIndex > 0;
+      const rightPositive = right.element.tabIndex > 0;
+      if (leftPositive !== rightPositive) return leftPositive ? -1 : 1;
+      if (leftPositive && left.element.tabIndex !== right.element.tabIndex) {
+        return left.element.tabIndex - right.element.tabIndex;
+      }
+      return left.domOrder - right.domOrder;
+    })
+    .map(({ element }) => element);
 }
 
 function recordContains(record: OverlayRecord, element: HTMLElement): boolean {
@@ -301,16 +315,21 @@ function assignExternalPortal(record: OverlayRecord, element: HTMLElement): void
   applyLayerIsolation();
 }
 
-function discoverMountedPortals(record: OverlayRecord): void {
-  for (const child of Array.from(document.body.children)) {
-    if (
-      !record.bodyChildrenBeforeMount.has(child)
-      && child instanceof HTMLElement
-      && child.hasAttribute('data-modal-portal')
-    ) {
-      assignExternalPortal(activeOverlay() ?? record, child);
+export function useModalPortalRef<T extends HTMLElement>(
+  forwardedRef?: RefObject<T | null>,
+): (element: T | null) => void {
+  const owner = useContext(ModalOwnerContext);
+  const registrationRef = useRef<{ owner: OverlayRecord; element: T } | null>(null);
+  return useCallback((element: T | null) => {
+    const previous = registrationRef.current;
+    if (previous) releaseExternalPortal(previous.owner, previous.element);
+    registrationRef.current = null;
+    if (forwardedRef) forwardedRef.current = element;
+    if (owner && element) {
+      assignExternalPortal(owner, element);
+      registrationRef.current = { owner, element };
     }
-  }
+  }, [forwardedRef, owner]);
 }
 
 function startModalEnvironment(): void {
@@ -319,13 +338,11 @@ function startModalEnvironment(): void {
   document.addEventListener('keydown', handleDocumentKeyDown);
   document.addEventListener('focusin', handleDocumentFocusIn);
   bodyIsolationObserver = new MutationObserver((mutations) => {
-    const record = activeOverlay();
-    if (!record) return;
+    if (!activeOverlay()) return;
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node instanceof HTMLElement && node.parentElement === document.body) {
-          if (node.hasAttribute('data-modal-portal')) assignExternalPortal(record, node);
-          else isolateBackgroundElement(node);
+          isolateBackgroundElement(node);
         }
       }
     }
@@ -380,7 +397,6 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
       order: ++nextOverlayOrder,
       overlay: null,
       scope: null,
-      bodyChildrenBeforeMount: new Set(document.body.children),
       externalPortalRoots: new Map(),
       restoreTarget: openerRef.current,
       rootRestoreTarget: openerRef.current,
@@ -404,7 +420,6 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
     overlayStack.push(record);
     overlayStack.sort((left, right) => left.order - right.order);
     startModalEnvironment();
-    discoverMountedPortals(record);
     applyLayerIsolation();
     if (!record.suspended && activeOverlay() === record) focusOverlay(record);
     return () => {
@@ -430,6 +445,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
       record.lastFocused = document.activeElement as HTMLElement;
     }
     record.suspended = suspended;
+    if (!suspended) isolateApplication();
     applyLayerIsolation();
     if (!suspended && activeOverlay() === record) focusOverlay(record, true);
   }, [record, suspended]);
@@ -481,7 +497,9 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
         onPointerUp={handleOverlayPointerUp}
         onPointerCancel={handleOverlayPointerCancel}
       >
-        {children}
+        <ModalOwnerContext.Provider value={record}>
+          {children}
+        </ModalOwnerContext.Provider>
       </div>
     </div>,
     document.body,

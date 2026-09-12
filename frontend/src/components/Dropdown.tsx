@@ -3,6 +3,7 @@
 import { useState, useRef, ReactNode, useEffect, useMemo, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
+import { useModalPortalRef } from './ModalOverlay';
 import { Check, ChevronDown, X } from 'lucide-react';
 
 interface DropdownOption {
@@ -65,6 +66,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modalPortalRef = useModalPortalRef(dropdownRef);
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState(filterValue || '');
   useEffect(() => {
@@ -289,7 +291,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
 
         {isOpen && position && createPortal(
           <div
-            ref={dropdownRef}
+            ref={modalPortalRef}
             data-modal-portal=""
             className="fixed z-[9999] overflow-hidden rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
             style={{

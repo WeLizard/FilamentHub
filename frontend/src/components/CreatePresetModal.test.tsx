@@ -49,6 +49,9 @@ vi.mock('../api/client', () => ({
 
 vi.mock('./ModalOverlay', () => ({
   ModalOverlay: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useModalPortalRef: (ref?: { current: HTMLElement | null }) => (element: HTMLElement | null) => {
+    if (ref) ref.current = element;
+  },
 }));
 
 vi.mock('./MaterialTypeSelect', () => ({

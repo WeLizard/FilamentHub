@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import '../i18n';
 import { Dropdown } from './Dropdown';
+import { ModalOverlay } from './ModalOverlay';
 
 describe('Dropdown', () => {
   it('requires an explicit valid option for non-clearable selections', async () => {
@@ -38,5 +39,22 @@ describe('Dropdown', () => {
     const scrollViewport = option.closest('.scrollbar-contained');
     expect(scrollViewport).toHaveClass('overflow-y-auto');
     expect(scrollViewport?.parentElement).toHaveClass('overflow-hidden', 'rounded-xl');
+  });
+
+  it('registers its body portal with the containing modal', async () => {
+    render(
+      <ModalOverlay onClose={vi.fn()}>
+        <Dropdown
+          value=""
+          options={[{ value: 'one', label: 'One' }]}
+          onChange={vi.fn()}
+          placeholder="Choose"
+        />
+      </ModalOverlay>,
+    );
+    const option = await screen.findByRole('button', { name: 'One' });
+    const portal = option.closest('[data-modal-portal]');
+    expect(portal).not.toHaveAttribute('inert');
+    expect(portal).not.toHaveAttribute('aria-hidden');
   });
 });
