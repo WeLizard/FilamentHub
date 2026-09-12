@@ -1,5 +1,7 @@
 """Stable, owner-scoped pagination for Calculator Pro history."""
 
+import base64
+import json
 from datetime import datetime, timezone
 
 from httpx import AsyncClient
@@ -8,6 +10,11 @@ from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.subscription import Subscription
 from app.models.user import User
 from tests.conftest import accepted_legal
+
+
+def _cursor(timestamp: str, entry_id: int) -> str:
+    payload = json.dumps([timestamp, entry_id], separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
 def _history(user_id: int, sequence: int, *, created_at: datetime) -> CalculatorHistoryEntry:
@@ -137,6 +144,20 @@ async def test_history_cursor_validation_and_legacy_pages(
     )
     assert malformed.status_code == 422
     assert malformed.json()["detail"]["code"] == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
+    for invalid_cursor in (
+        _cursor("9999-12-31T23:59:59.999999-23:59", 1),
+        _cursor("0001-01-01T00:00:00+23:59", 1),
+        _cursor("2026-09-12T12:00:00+00:00", 2_147_483_648),
+    ):
+        invalid_boundary = await auth_client.get(
+            "/api/v1/calculator/history",
+            params={"cursor": invalid_cursor},
+        )
+        assert invalid_boundary.status_code == 422
+        assert (
+            invalid_boundary.json()["detail"]["code"]
+            == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
+        )
     assert (
         await auth_client.get("/api/v1/calculator/history", params={"size": 0})
     ).status_code == 422

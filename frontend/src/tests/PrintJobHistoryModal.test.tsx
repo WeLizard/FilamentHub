@@ -1,7 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fetchNextHistoryPage = vi.fn();
+const apiMocks = vi.hoisted(() => ({
+  listCalculations: vi.fn(),
+  listJobs: vi.fn(),
+  listSlices: vi.fn(),
+  listSpools: vi.fn(),
+}));
 
 const job = {
   id: 41,
@@ -59,50 +65,48 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) =>
-    queryKey[0] === 'print-jobs'
-      ? { data: { items: [job], total: 1 }, isLoading: false, isError: false, isFetching: false }
-      : { data: undefined, isLoading: false, isError: false, isFetching: false },
-  useInfiniteQuery: () => ({
-    data: {
-      pages: [
-        { items: [], total: 51, next_cursor: 'next-page' },
-        { items: [{ id: 51, title: 'Estimate beyond first page', parsed_jobs: [] }], total: 51, next_cursor: null },
-      ],
-    },
-    hasNextPage: true,
-    fetchNextPage: fetchNextHistoryPage,
-    isFetchingNextPage: false,
-    isFetchNextPageError: false,
-  }),
-  useMutation: () => ({ mutate: vi.fn(), isPending: false }),
-}));
-
 vi.mock('../api/client', () => ({
-  calculatorAPI: { listHistory: vi.fn() },
-  orcaSlicesAPI: { list: vi.fn() },
-  printJobsAPI: { create: vi.fn(), list: vi.fn(), transition: vi.fn() },
-  spoolsAPI: { list: vi.fn() },
+  calculatorAPI: { listHistory: apiMocks.listCalculations },
+  orcaSlicesAPI: { list: apiMocks.listSlices },
+  printJobsAPI: {
+    create: vi.fn(),
+    list: apiMocks.listJobs,
+    transition: vi.fn(),
+  },
+  spoolsAPI: { list: apiMocks.listSpools },
 }));
 
 vi.mock('../components/Toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+const printer = { id: 7, name: 'Workshop printer', material_systems: [] } as never;
+
+async function renderModal() {
+  const { PrintJobHistoryModal } = await import('../components/PrintJobHistoryModal');
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <PrintJobHistoryModal printer={printer} onClose={vi.fn()} />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  apiMocks.listJobs.mockResolvedValue({ items: [job], total: 1 });
+  apiMocks.listSlices.mockResolvedValue([]);
+  apiMocks.listSpools.mockResolvedValue([]);
+  apiMocks.listCalculations.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+});
+
 describe('PrintJobHistoryModal usage segments', () => {
   it('keeps physical spools separate and states the evidence for each debit', async () => {
-    const { PrintJobHistoryModal } = await import('../components/PrintJobHistoryModal');
+    await renderModal();
 
-    render(
-      <PrintJobHistoryModal
-        printer={{ id: 7, name: 'Workshop printer', material_systems: [] } as never}
-        onClose={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'printJobs.expand' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'printJobs.expand' }));
 
     expect(screen.getByText('printJobs.usageSegments.sequence:count=1')).toBeInTheDocument();
     expect(screen.getByText('printJobs.usageSegments.spool:id=101')).toBeInTheDocument();
@@ -111,19 +115,66 @@ describe('PrintJobHistoryModal usage segments', () => {
     expect(screen.getByText('printJobs.usageSegments.evidence.current_assignment')).toBeInTheDocument();
   });
 
-  it('keeps calculations beyond the first page selectable and can request another page', async () => {
-    const { PrintJobHistoryModal } = await import('../components/PrintJobHistoryModal');
-
-    render(
-      <PrintJobHistoryModal
-        printer={{ id: 7, name: 'Workshop printer', material_systems: [] } as never}
-        onClose={vi.fn()}
-      />,
-    );
+  it('appends a real second query page, reaches the terminal cursor, and selects its item', async () => {
+    apiMocks.listCalculations.mockImplementation(async ({ cursor }: { cursor?: string | null }) => (
+      cursor === 'next-page'
+        ? {
+            items: [{ id: 51, title: 'Estimate beyond first page', parsed_jobs: [] }],
+            total: 51,
+            next_cursor: null,
+          }
+        : {
+            items: [{ id: 50, title: 'Estimate on first page', parsed_jobs: [] }],
+            total: 51,
+            next_cursor: 'next-page',
+          }
+    ));
+    await renderModal();
 
     fireEvent.click(screen.getByRole('button', { name: 'printJobs.new' }));
-    expect(screen.getByRole('option', { name: 'Estimate beyond first page' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Estimate on first page' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Estimate beyond first page' })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'profilePage.calculator.historyLoadMore' }));
-    expect(fetchNextHistoryPage).toHaveBeenCalledTimes(1);
+    const secondPageOption = await screen.findByRole('option', { name: 'Estimate beyond first page' });
+    expect(screen.queryByRole('button', { name: 'profilePage.calculator.historyLoadMore' })).not.toBeInTheDocument();
+
+    const calculationSelect = screen.getByRole('combobox', { name: 'printJobs.fields.calculation' });
+    fireEvent.change(calculationSelect, { target: { value: '51' } });
+    expect(calculationSelect).toHaveValue('51');
+    expect(screen.getByRole('textbox', { name: 'printJobs.fields.name' })).toHaveValue('Estimate beyond first page');
+    expect(secondPageOption).toBeInTheDocument();
+    expect(apiMocks.listCalculations).toHaveBeenNthCalledWith(
+      2,
+      { size: 50, cursor: 'next-page' },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('shows initial loading and a retryable error instead of an empty selector', async () => {
+    let rejectInitial!: (reason: Error) => void;
+    const initialRequest = new Promise((_resolve, reject) => {
+      rejectInitial = reject;
+    });
+    apiMocks.listCalculations
+      .mockReturnValueOnce(initialRequest)
+      .mockResolvedValueOnce({
+        items: [{ id: 1, title: 'Recovered estimate', parsed_jobs: [] }],
+        total: 1,
+        next_cursor: null,
+      });
+    await renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'printJobs.new' }));
+    expect(screen.getByRole('status')).toHaveTextContent('profilePage.calculator.historyLoading');
+    expect(screen.queryByRole('combobox', { name: 'printJobs.fields.calculation' })).not.toBeInTheDocument();
+
+    await act(async () => rejectInitial(new Error('history unavailable')));
+    expect(await screen.findByRole('alert')).toHaveTextContent('profilePage.calculator.historyLoadError');
+    expect(screen.queryByRole('combobox', { name: 'printJobs.fields.calculation' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /common\.retry/ }));
+    await waitFor(() => expect(apiMocks.listCalculations).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('option', { name: 'Recovered estimate' })).toBeInTheDocument();
   });
 });

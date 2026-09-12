@@ -322,39 +322,60 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                     className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-400/40"
                   />
                 </label>
-                <label>
-                  <span className="mb-1.5 block text-xs font-medium text-slate-300">
+                <div>
+                  <label htmlFor="print-job-calculation" className="mb-1.5 block text-xs font-medium text-slate-300">
                     {t('printJobs.fields.calculation')}
-                  </span>
-                  <select
-                    value={calculationId}
-                    onChange={(event) => handleCalculation(event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/40"
-                  >
-                    <option value="">{t('printJobs.fields.withoutCalculation')}</option>
-                    {calculations.map((entry) => (
-                      <option key={entry.id} value={entry.id}>{entry.title}</option>
-                    ))}
-                  </select>
-                  {calculationsQuery.hasNextPage ? (
-                    <button
-                      type="button"
-                      onClick={() => void calculationsQuery.fetchNextPage()}
-                      disabled={calculationsQuery.isFetchingNextPage}
-                      className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {calculationsQuery.isFetchingNextPage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                      {calculationsQuery.isFetchingNextPage
-                        ? t('profilePage.calculator.historyLoadingMore')
-                        : t('profilePage.calculator.historyLoadMore')}
-                    </button>
-                  ) : null}
-                  {calculationsQuery.isFetchNextPageError ? (
-                    <span className="mt-2 block text-xs text-red-300">
-                      {t('profilePage.calculator.historyLoadMoreError')}
+                  </label>
+                  {calculationsQuery.isPending ? (
+                    <span className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-400" role="status">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t('profilePage.calculator.historyLoading')}
                     </span>
-                  ) : null}
-                </label>
+                  ) : calculationsQuery.isError && calculations.length === 0 ? (
+                    <span className="block rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200" role="alert">
+                      {t('profilePage.calculator.historyLoadError')}
+                      <button
+                        type="button"
+                        onClick={() => void calculationsQuery.refetch()}
+                        className="mt-2 block rounded-lg border border-red-300/20 px-3 py-1.5 text-xs font-medium transition hover:bg-red-300/10"
+                      >
+                        {t('common.retry')}
+                      </button>
+                    </span>
+                  ) : (
+                    <>
+                      <select
+                        id="print-job-calculation"
+                        value={calculationId}
+                        onChange={(event) => handleCalculation(event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/40"
+                      >
+                        <option value="">{t('printJobs.fields.withoutCalculation')}</option>
+                        {calculations.map((entry) => (
+                          <option key={entry.id} value={entry.id}>{entry.title}</option>
+                        ))}
+                      </select>
+                      {calculationsQuery.hasNextPage ? (
+                        <button
+                          type="button"
+                          onClick={() => void calculationsQuery.fetchNextPage()}
+                          disabled={calculationsQuery.isFetchingNextPage}
+                          className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {calculationsQuery.isFetchingNextPage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          {calculationsQuery.isFetchingNextPage
+                            ? t('profilePage.calculator.historyLoadingMore')
+                            : t('profilePage.calculator.historyLoadMore')}
+                        </button>
+                      ) : null}
+                      {calculationsQuery.isFetchNextPageError ? (
+                        <span className="mt-2 block text-xs text-red-300">
+                          {t('profilePage.calculator.historyLoadMoreError')}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </div>
                 <label>
                   <span className="mb-1.5 block text-xs font-medium text-slate-300">
                     {t('printJobs.fields.slice')}

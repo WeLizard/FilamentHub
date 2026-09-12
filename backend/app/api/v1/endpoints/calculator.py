@@ -462,6 +462,7 @@ def _encode_history_cursor(entry: CalculatorHistoryEntry) -> str:
 
 
 def _decode_history_cursor(cursor: str) -> tuple[datetime, int]:
+    max_database_integer = 2_147_483_647
     try:
         padding = "=" * (-len(cursor) % 4)
         raw = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
@@ -473,13 +474,21 @@ def _decode_history_cursor(cursor: str) -> tuple[datetime, int]:
             or not isinstance(payload[1], int)
             or isinstance(payload[1], bool)
             or payload[1] < 1
+            or payload[1] > max_database_integer
         ):
             raise ValueError("invalid cursor payload")
         created_at = datetime.fromisoformat(payload[0])
         if created_at.tzinfo is None:
             raise ValueError("cursor timestamp must include a timezone")
         return created_at.astimezone(timezone.utc), payload[1]
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        OverflowError,
+    ):
         raise_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ERR_CALCULATOR_HISTORY_CURSOR_INVALID)
 
 
