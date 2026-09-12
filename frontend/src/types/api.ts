@@ -1173,6 +1173,7 @@ export type FeedbackStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 export interface Feedback {
   id: number;
   user_id: number | null;
+  user_username: string | null;
   type: FeedbackType;
   subject: string;
   message: string;

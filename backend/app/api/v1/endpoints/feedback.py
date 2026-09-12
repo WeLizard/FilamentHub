@@ -44,7 +44,9 @@ async def _load_feedback_thread(
     for_update: bool = False,
 ) -> Feedback:
     statement = (
-        select(Feedback).options(selectinload(Feedback.messages)).where(Feedback.id == feedback_id)
+        select(Feedback)
+        .options(selectinload(Feedback.messages), selectinload(Feedback.user))
+        .where(Feedback.id == feedback_id)
     )
     if for_update:
         # Lock the thread before loading messages so replies and read acknowledgements
@@ -59,6 +61,20 @@ async def _load_feedback_thread(
 
 def _can_read_feedback(feedback: Feedback, user: User) -> bool:
     return user.role == UserRole.ADMIN or feedback.user_id == user.id
+
+
+def _feedback_response(feedback: Feedback) -> FeedbackResponse:
+    response = FeedbackResponse.model_validate(feedback)
+    return response.model_copy(
+        update={"user_username": feedback.user.username if feedback.user is not None else None}
+    )
+
+
+def _feedback_detail_response(feedback: Feedback) -> FeedbackDetailResponse:
+    response = FeedbackDetailResponse.model_validate(feedback)
+    return response.model_copy(
+        update={"user_username": feedback.user.username if feedback.user is not None else None}
+    )
 
 
 @router.post("/", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
@@ -111,7 +127,9 @@ async def create_feedback(
     await db.commit()
     await db.refresh(feedback)
 
-    return FeedbackResponse.model_validate(feedback)
+    return FeedbackResponse.model_validate(feedback).model_copy(
+        update={"user_username": current_user.username}
+    )
 
 
 @router.get("/", response_model=FeedbackListResponse)
@@ -129,7 +147,7 @@ async def list_feedback(
     ),
 ) -> FeedbackListResponse:
     """Получить список обратной связи (только для админов)."""
-    query = select(Feedback)
+    query = select(Feedback).options(selectinload(Feedback.user))
 
     if status_filter:
         query = query.where(Feedback.status == status_filter)
@@ -163,7 +181,7 @@ async def list_feedback(
     feedback_list = result.scalars().all()
 
     return FeedbackListResponse(
-        items=[FeedbackResponse.model_validate(feedback) for feedback in feedback_list],
+        items=[_feedback_response(feedback) for feedback in feedback_list],
         total=total,
         page=page,
         size=size,
@@ -181,7 +199,7 @@ async def get_feedback(
     feedback = await _load_feedback_thread(db, feedback_id)
     if not _can_read_feedback(feedback, current_user):
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
-    return FeedbackDetailResponse.model_validate(feedback)
+    return _feedback_detail_response(feedback)
 
 
 @router.post("/{feedback_id}/read", response_model=FeedbackDetailResponse)
@@ -215,7 +233,7 @@ async def mark_feedback_read(
     feedback.admin_unread_count = min(feedback.admin_unread_count, remaining_user_messages)
     await db.commit()
     feedback = await _load_feedback_thread(db, feedback.id)
-    return FeedbackDetailResponse.model_validate(feedback)
+    return _feedback_detail_response(feedback)
 
 
 @router.patch("/{feedback_id}", response_model=FeedbackDetailResponse)
@@ -285,7 +303,7 @@ async def update_feedback(
     await db.commit()
     feedback = await _load_feedback_thread(db, feedback.id)
 
-    return FeedbackDetailResponse.model_validate(feedback)
+    return _feedback_detail_response(feedback)
 
 
 @router.post("/{feedback_id}/messages", response_model=FeedbackDetailResponse)
@@ -309,7 +327,7 @@ async def add_feedback_message(
         )
     )
     if existing_result.scalar_one_or_none():
-        return FeedbackDetailResponse.model_validate(feedback)
+        return _feedback_detail_response(feedback)
 
     if feedback.status in {FeedbackStatus.RESOLVED, FeedbackStatus.CLOSED}:
         raise_error(status.HTTP_409_CONFLICT, ERR_FEEDBACK_THREAD_CLOSED)
@@ -328,7 +346,7 @@ async def add_feedback_message(
     await db.commit()
     feedback = await _load_feedback_thread(db, feedback.id)
 
-    return FeedbackDetailResponse.model_validate(feedback)
+    return _feedback_detail_response(feedback)
 
 
 @router.delete("/{feedback_id}", status_code=status.HTTP_200_OK)
@@ -357,7 +375,11 @@ async def list_my_feedback(
     size: int = Query(50, ge=1, le=100),
 ) -> FeedbackListResponse:
     """Получить список своей обратной связи."""
-    query = select(Feedback).where(Feedback.user_id == current_user.id)
+    query = (
+        select(Feedback)
+        .options(selectinload(Feedback.user))
+        .where(Feedback.user_id == current_user.id)
+    )
 
     # Count total
     count_query = (
@@ -378,7 +400,7 @@ async def list_my_feedback(
     feedback_list = result.scalars().all()
 
     return FeedbackListResponse(
-        items=[FeedbackResponse.model_validate(feedback) for feedback in feedback_list],
+        items=[_feedback_response(feedback) for feedback in feedback_list],
         total=total,
         page=page,
         size=size,

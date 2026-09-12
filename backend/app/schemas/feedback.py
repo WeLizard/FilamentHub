@@ -112,6 +112,7 @@ class FeedbackResponse(BaseModel):
 
     id: int
     user_id: int | None
+    user_username: str | None = None
     type: str
     subject: str
     message: str

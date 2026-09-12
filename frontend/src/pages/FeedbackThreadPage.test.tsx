@@ -9,6 +9,7 @@ let feedbackStatus: FeedbackStatus = 'open';
 const feedback: FeedbackDetail = {
   id: 17,
   user_id: 4,
+  user_username: 'feedbackowner',
   type: 'question',
   subject: 'OctoPrint slots',
   message: 'Are these physical gates?',

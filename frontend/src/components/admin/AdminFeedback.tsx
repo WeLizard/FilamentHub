@@ -372,7 +372,7 @@ export function AdminFeedback() {
                           </span>
                         )}
                         {feedback.user_id ? (
-                          <span className="text-xs text-gray-400">• {t('adminFeedback.user_id', { id: feedback.user_id })}</span>
+                          <span className="text-xs text-gray-400">• {feedback.user_username || t('adminFeedback.user')}</span>
                         ) : (
                           <span className="text-xs text-gray-400">• {t('adminFeedback.anonymous')}</span>
                         )}
@@ -441,7 +441,7 @@ export function AdminFeedback() {
                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
                       <span>{formatMediumDateTime(selectedFeedbackView.created_at)}</span>
                       {selectedFeedbackView.user_id ? (
-                        <span>{t('adminFeedback.user_id', { id: selectedFeedbackView.user_id })}</span>
+                        <span>{selectedFeedbackView.user_username || t('adminFeedback.user')}</span>
                       ) : (
                         <span>{t('adminFeedback.anonymous')} • {selectedFeedbackView.email}</span>
                       )}

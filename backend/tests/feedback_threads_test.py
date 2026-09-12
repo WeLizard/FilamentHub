@@ -34,6 +34,7 @@ async def _create_feedback(client: AsyncClient, user: User) -> int:
         },
     )
     assert response.status_code == 201
+    assert response.json()["user_username"] == user.username
     return response.json()["id"]
 
 
@@ -50,6 +51,7 @@ async def test_feedback_owner_and_admin_can_read_the_thread(
         headers=_headers(auth_user),
     )
     assert owner_response.status_code == 200
+    assert owner_response.json()["user_username"] == auth_user.username
     assert owner_response.json()["messages"] == [
         {
             "id": owner_response.json()["messages"][0]["id"],
@@ -65,6 +67,14 @@ async def test_feedback_owner_and_admin_can_read_the_thread(
         headers=_headers(admin_user),
     )
     assert admin_response.status_code == 200
+    assert admin_response.json()["user_username"] == auth_user.username
+
+    admin_list_response = await client.get(
+        "/api/v1/feedback/",
+        headers=_headers(admin_user),
+    )
+    assert admin_list_response.status_code == 200
+    assert admin_list_response.json()["items"][0]["user_username"] == auth_user.username
 
     other_user = User(
         email="other_feedback_user@example.com",

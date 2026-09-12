@@ -39,6 +39,7 @@ vi.mock('../Toast', () => ({
 const feedback: FeedbackDetail = {
   id: 17,
   user_id: 4,
+  user_username: 'jaxon',
   type: 'bug',
   subject: 'Screenshot upload',
   message: 'The upload button is missing.',
@@ -103,5 +104,14 @@ describe('AdminFeedback emoji picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'adminFeedback.insertEmoji:👍' }));
 
     expect(textarea).toHaveValue('Hello 👍');
+  });
+
+  it('shows the account username instead of an internal numeric id', async () => {
+    renderFeedback();
+
+    expect(await screen.findByText(/jaxon/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText(feedback.subject));
+    expect(await screen.findAllByText(/jaxon/)).toHaveLength(2);
+    expect(screen.queryByText(/User #4|Пользователь #4/)).not.toBeInTheDocument();
   });
 });
