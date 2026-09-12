@@ -208,6 +208,49 @@ async def test_diff_is_human_readable(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_diff_normalizes_known_singleton_vectors_without_hiding_shape_drift(
+    db_session: AsyncSession,
+):
+    user, preset = await _seed(db_session)
+    preset.orcaslicer_settings = {
+        "chamber_temperature": ["35"],
+        "filament_density": ["1.24"],
+        "filament_end_gcode": ["; filament end gcode\n"],
+        "pressure_advance": ["0", "0.02"],
+        "future_orca_setting": ["same"],
+    }
+    v1 = await svc.record_version(
+        db_session, preset, PresetVersionSource.WEB_EDIT, user.id
+    )
+    await db_session.commit()
+
+    preset.orcaslicer_settings = {
+        "chamber_temperature": "40",
+        "filament_density": "1.24",
+        "filament_end_gcode": "; filament end gcode\n",
+        "pressure_advance": "0",
+        "future_orca_setting": "same",
+    }
+    v2 = await svc.record_version(
+        db_session, preset, PresetVersionSource.WEB_EDIT, user.id
+    )
+    await db_session.commit()
+
+    diff = svc.compute_diff(v1, v2)
+    mapped = {change["key"]: change for change in diff["changes"]}
+    assert "filament_density" not in mapped
+    assert "filament_end_gcode" not in mapped
+    assert mapped["chamber_temperature"]["old"] == "35"
+    assert mapped["chamber_temperature"]["new"] == "40"
+    assert mapped["pressure_advance"]["old"] == "['0', '0.02']"
+    assert mapped["pressure_advance"]["new"] == "0"
+
+    unmapped = {change["key"]: change for change in diff["unmapped_changes"]}
+    assert unmapped["future_orca_setting"]["old"] == "['same']"
+    assert unmapped["future_orca_setting"]["new"] == "same"
+
+
+@pytest.mark.asyncio
 async def test_list_labeled_only_filter(db_session: AsyncSession):
     user, preset = await _seed(db_session)
     await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)

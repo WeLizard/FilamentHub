@@ -352,13 +352,33 @@ def compute_diff(
     for key in keys:
         old_val = old.get(key)
         new_val = new.get(key)
-        if old_val == new_val:
-            continue
         meta = resolve_field(key)
+        if meta is not None:
+            # Orca accepts both encodings for one effective value. Collapse
+            # only reviewed fields in this human-readable view; snapshots stay exact.
+            old_semantic = (
+                old_val[0]
+                if isinstance(old_val, list) and len(old_val) == 1
+                else old_val
+            )
+            new_semantic = (
+                new_val[0]
+                if isinstance(new_val, list) and len(new_val) == 1
+                else new_val
+            )
+            if old_semantic == new_semantic:
+                continue
+            old_display = old_semantic
+            new_display = new_semantic
+        else:
+            if old_val == new_val:
+                continue
+            old_display = old_val
+            new_display = new_val
         entry = {
             "key": key,
-            "old": None if old_val is None else str(old_val),
-            "new": None if new_val is None else str(new_val),
+            "old": None if old_display is None else str(old_display),
+            "new": None if new_display is None else str(new_display),
         }
         if meta is not None:
             changes.append({**entry, "label": meta["label"], "unit": meta["unit"]})
