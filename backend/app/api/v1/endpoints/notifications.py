@@ -22,6 +22,17 @@ from app.schemas.notification import (
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
+def _notification_feed_item(notification: Notification) -> NotificationResponse:
+    """Keep feed rows compact while detail endpoints retain compatibility payloads."""
+    response = NotificationResponse.model_validate(notification)
+    if notification.type != NotificationType.PRESET_LOCALLY_DELETED:
+        return response
+
+    extra_data = dict(response.extra_data or {})
+    extra_data.pop("deleted_presets", None)
+    return response.model_copy(update={"extra_data": extra_data})
+
+
 @router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -110,7 +121,7 @@ async def list_notification_feed(
     )
 
     return NotificationFeedResponse(
-        items=[NotificationResponse.model_validate(notification) for notification in notifications],
+        items=[_notification_feed_item(notification) for notification in notifications],
         next_cursor=notifications[-1].id if has_more and notifications else None,
         unread_count=unread_count or 0,
     )
@@ -216,9 +227,7 @@ async def list_deleted_preset_decisions(
         items=items,
         next_cursor=start + len(page_values) if has_more else None,
         remaining_count=len(legacy),
-        created_count=sum(
-            bool(value.get("is_created")) for value in legacy
-        ),
+        created_count=sum(bool(value.get("is_created")) for value in legacy),
         saved_count=sum(bool(value.get("is_saved")) for value in legacy),
     )
 

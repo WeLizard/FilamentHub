@@ -123,3 +123,38 @@ async def test_legacy_notification_pages_remain_available(
     assert (
         await auth_client.get("/api/v1/notifications/feed", params={"limit": 101})
     ).status_code == 422
+
+
+async def test_notification_feed_omits_bulk_deleted_preset_detail(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session,
+) -> None:
+    notification = Notification(
+        user_id=auth_user.id,
+        type=NotificationType.PRESET_LOCALLY_DELETED,
+        title="deleted_presets_detected",
+        message="deleted_presets_detected_message",
+        extra_data={
+            "deleted_presets": [
+                {"preset_id": index, "preset_name": f"Preset {index}"} for index in range(1, 501)
+            ],
+            "created_count": 125,
+            "saved_count": 375,
+        },
+        read=False,
+    )
+    db_session.add(notification)
+    await db_session.commit()
+
+    feed = await auth_client.get("/api/v1/notifications/feed", params={"limit": 1})
+    assert feed.status_code == 200, feed.text
+    assert feed.json()["items"][0]["extra_data"] == {
+        "created_count": 125,
+        "saved_count": 375,
+    }
+
+    # The legacy endpoint remains unchanged during the rolling transition.
+    legacy = await auth_client.get("/api/v1/notifications/", params={"size": 1})
+    assert legacy.status_code == 200, legacy.text
+    assert len(legacy.json()["items"][0]["extra_data"]["deleted_presets"]) == 500
