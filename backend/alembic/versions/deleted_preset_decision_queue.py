@@ -61,11 +61,11 @@ def upgrade() -> None:
                     THEN (item->>'is_saved')::boolean ELSE false END,
                CURRENT_TIMESTAMP
         FROM notifications AS n
-        CROSS JOIN LATERAL json_array_elements(
+        CROSS JOIN LATERAL jsonb_array_elements(
             CASE
-                WHEN json_typeof(n.extra_data->'deleted_presets') = 'array'
+                WHEN jsonb_typeof(n.extra_data->'deleted_presets') = 'array'
                 THEN n.extra_data->'deleted_presets'
-                ELSE '[]'::json
+                ELSE '[]'::jsonb
             END
         ) AS item
         WHERE n.type = 'preset_locally_deleted'
@@ -78,7 +78,7 @@ def upgrade() -> None:
         """
         UPDATE notifications AS n
         SET extra_data = (
-            (coalesce(n.extra_data, '{}'::json)::jsonb - 'deleted_presets')
+            (coalesce(n.extra_data, '{}'::jsonb) - 'deleted_presets')
             || jsonb_build_object(
                 'remaining_count', (
                     SELECT count(*)
@@ -100,7 +100,7 @@ def upgrade() -> None:
                       AND d.is_saved IS TRUE
                 )
             )
-        )::json,
+        ),
             read = CASE
                 WHEN EXISTS (
                     SELECT 1

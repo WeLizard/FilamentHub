@@ -129,7 +129,12 @@ def test_migration_backfill_gives_legacy_items_a_full_new_grace_period():
     assert "n.created_at" not in migration
     assert "<= 2147483647" in migration
     assert "ON CONFLICT (notification_id, preset_id) DO NOTHING" in migration
-    assert "::jsonb - 'deleted_presets'" in migration
+    assert "jsonb_array_elements(" in migration
+    assert "jsonb_typeof(" in migration
+    assert "ELSE '[]'::jsonb" in migration
+    assert "json_array_elements(" not in migration
+    assert "json_typeof(" not in migration
+    assert "coalesce(n.extra_data, '{}'::jsonb)" in migration
     assert "THEN false" in migration
     assert "THEN NULL" in migration
 
