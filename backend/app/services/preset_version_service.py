@@ -366,7 +366,7 @@ def compute_diff(
         meta = resolve_field(key)
         old_token = _diff_transport_token(key, old_val)
         new_token = _diff_transport_token(key, new_val)
-        if old_val == new_val or (
+        if _json_values_equal(old_val, new_val) or (
             old_token is not _NO_TRANSPORT_TOKEN
             and new_token is not _NO_TRANSPORT_TOKEN
             and old_token == new_token
@@ -400,6 +400,22 @@ def compute_diff(
         "changes": changes,
         "unmapped_changes": unmapped,
     }
+
+
+def _json_values_equal(left: object, right: object) -> bool:
+    """Compare JSON values without Python's bool/number coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _json_values_equal(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _json_values_equal(left_item, right_item)
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+    return left == right
 
 
 def _diff_transport_token(key: str, value: object) -> object:

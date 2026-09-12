@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.preset import Preset, PresetModerationStatus
-from app.models.preset_version import PresetVersionSource
+from app.models.preset_version import PresetVersion, PresetVersionSource
 from app.models.user import User
 from app.services import preset_version_service as svc
 
@@ -291,6 +291,60 @@ async def test_diff_preserves_missing_null_and_nil_shape_drift(
     assert mapped["fan_min_speed"]["new"] is None
     assert mapped["cool_plate_temp"]["old"] == "null"
     assert mapped["cool_plate_temp"]["new"] == "[None]"
+
+
+@pytest.mark.parametrize(
+    ("old_value", "new_value"),
+    [
+        (True, 1),
+        (
+            {"nested": [True, {"enabled": False}]},
+            {"nested": [1, {"enabled": 0}]},
+        ),
+        ([True, False], [1, 0]),
+    ],
+)
+def test_diff_distinguishes_json_booleans_from_numbers(old_value, new_value):
+    from_version = PresetVersion(
+        version_number=1,
+        snapshot_orcaslicer_settings={"future_orca_setting": old_value},
+    )
+    to_version = PresetVersion(
+        version_number=2,
+        snapshot_orcaslicer_settings={"future_orca_setting": new_value},
+    )
+
+    diff = svc.compute_diff(from_version, to_version)
+
+    assert [change["key"] for change in diff["unmapped_changes"]] == [
+        "future_orca_setting"
+    ]
+
+
+def test_diff_ignores_recursively_equal_json_values():
+    from_version = PresetVersion(
+        version_number=1,
+        snapshot_orcaslicer_settings={
+            "future_orca_setting": {
+                "enabled": True,
+                "values": [1, None, {"mode": "same"}],
+            }
+        },
+    )
+    to_version = PresetVersion(
+        version_number=2,
+        snapshot_orcaslicer_settings={
+            "future_orca_setting": {
+                "values": [1, None, {"mode": "same"}],
+                "enabled": True,
+            }
+        },
+    )
+
+    diff = svc.compute_diff(from_version, to_version)
+
+    assert diff["changes"] == []
+    assert diff["unmapped_changes"] == []
 
 
 @pytest.mark.asyncio
