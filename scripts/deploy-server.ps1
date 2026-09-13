@@ -574,13 +574,13 @@ function Start-BuildCacheCleanup {
         Write-Host 'Какой build-cache удалить?' -ForegroundColor Cyan
         Write-Host '  1. Старше 7 дней  — освободит больше места'
         Write-Host '  2. Старше 14 дней — рекомендуется после обычного деплоя'
-        Write-Host '  3. Весь build-cache — следующая сборка будет полной'
+        Write-Host '  3. Старше 1 часа — срочная очистка перед деплоем'
         Write-Host '  0. Отмена'
 
         $cleanupMode = switch ((Read-Host 'Выбери срок').Trim()) {
             '1' { '168h' }
             '2' { '336h' }
-            '3' { 'all' }
+            '3' { '1h' }
             '0' {
                 Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
                 return
@@ -592,24 +592,21 @@ function Start-BuildCacheCleanup {
         }
     }
 
-    if ($cleanupMode -eq 'all') {
-        if (-not (Confirm-Action 'Удалить весь build-cache Docker? Следующая сборка будет полной.')) {
-            Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
-            return
-        }
-        $workerArguments = @('--prune-build-cache', '--all-build-cache', '--yes')
-    } else {
-        $retentionDays = [int]([int]$cleanupMode.TrimEnd('h') / 24)
-        if (-not (Confirm-Action "Удалить build-cache Docker старше $retentionDays дней?")) {
-            Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
-            return
-        }
-        $workerArguments = @(
-            '--prune-build-cache',
-            '--build-cache-retention', $cleanupMode,
-            '--yes'
-        )
+    $retentionLabel = switch ($cleanupMode) {
+        '1h' { '1 часа' }
+        '168h' { '7 дней' }
+        '336h' { '14 дней' }
+        default { throw "Неизвестный срок очистки: $cleanupMode" }
     }
+    if (-not (Confirm-Action "Удалить build-cache Docker старше $retentionLabel?")) {
+        Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
+        return
+    }
+    $workerArguments = @(
+        '--prune-build-cache',
+        '--build-cache-retention', $cleanupMode,
+        '--yes'
+    )
     Invoke-RemoteWorker -Arguments $workerArguments -UseDeployedRevision
 }
 

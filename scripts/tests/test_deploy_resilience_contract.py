@@ -42,17 +42,16 @@ class DeployResilienceContractTest(unittest.TestCase):
         self.assertLess(retry_start, bootstrap)
         self.assertLess(bootstrap, retry_handler)
 
-    def test_full_build_cache_cleanup_never_prunes_images_or_volumes(self) -> None:
+    def test_build_cache_cleanup_never_prunes_images_or_volumes(self) -> None:
         worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
         console = (ROOT / "scripts/deploy-server.ps1").read_text(encoding="utf-8")
 
-        self.assertIn("--all-build-cache", worker)
-        self.assertIn("docker builder prune -af", worker)
+        self.assertIn("docker builder prune -f --filter", worker)
         self.assertNotIn("docker system prune", worker)
         self.assertNotIn("docker image prune", worker)
         self.assertNotIn("docker volume prune", worker)
-        self.assertIn("Весь build-cache", console)
-        self.assertIn("'--prune-build-cache', '--all-build-cache', '--yes'", console)
+        self.assertIn("Старше 1 часа", console)
+        self.assertIn("'3' { '1h' }", console)
 
 
 if __name__ == "__main__":
