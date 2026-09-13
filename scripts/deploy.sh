@@ -271,10 +271,27 @@ prune_build_cache() {
 
     info "Docker disk usage before cleanup:"
     docker system df
-    docker builder prune -f --filter "until=$retention"
+    docker builder prune -af --filter "until=$retention"
     info "Docker disk usage after cleanup:"
     docker system df
     df -h "$PROJECT_DIR"
+}
+
+prune_superseded_docker_artifacts() {
+    local retention="${BUILD_CACHE_RETENTION:-336h}"
+
+    info "Removing superseded deployment images and expired build cache..."
+    if ! docker image prune -f; then
+        warn "Could not remove dangling deployment images; production remains healthy."
+    fi
+
+    if [[ ! "$retention" =~ ^[1-9][0-9]*[hms]$ ]]; then
+        warn "BUILD_CACHE_RETENTION is invalid; expired build cache was not removed."
+    elif ! docker builder prune -af --filter "until=$retention"; then
+        warn "Could not remove build cache older than $retention; production remains healthy."
+    fi
+
+    docker system df || warn "Could not report Docker disk usage after cleanup."
 }
 
 create_backup() {
@@ -571,6 +588,8 @@ deploy() {
         warn "Inspect immediately: docker compose ps && docker compose logs --tail=200 backend frontend"
         exit 1
     fi
+
+    prune_superseded_docker_artifacts
 
     printf '\n'
     success "Deployment completed and verified: $TARGET_REVISION"

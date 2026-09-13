@@ -42,16 +42,26 @@ class DeployResilienceContractTest(unittest.TestCase):
         self.assertLess(retry_start, bootstrap)
         self.assertLess(bootstrap, retry_handler)
 
-    def test_build_cache_cleanup_never_prunes_images_or_volumes(self) -> None:
+    def test_deploy_cleanup_keeps_current_and_previous_images(self) -> None:
         worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
         console = (ROOT / "scripts/deploy-server.ps1").read_text(encoding="utf-8")
 
-        self.assertIn("docker builder prune -f --filter", worker)
+        self.assertIn("docker builder prune -af --filter", worker)
+        self.assertIn("docker image prune -f", worker)
         self.assertNotIn("docker system prune", worker)
-        self.assertNotIn("docker image prune", worker)
+        self.assertNotIn("docker image prune -a", worker)
         self.assertNotIn("docker volume prune", worker)
         self.assertIn("Старше 1 часа", console)
         self.assertIn("'3' { '1h' }", console)
+
+        deploy = worker.split("deploy() {", maxsplit=1)[1].split(
+            "while (( $# > 0 ))", maxsplit=1
+        )[0]
+        verification = deploy.index("if ! verify_release; then")
+        cleanup = deploy.index("prune_superseded_docker_artifacts")
+        success = deploy.index("Deployment completed and verified")
+        self.assertLess(verification, cleanup)
+        self.assertLess(cleanup, success)
 
 
 if __name__ == "__main__":
