@@ -98,5 +98,7 @@
   "bambuManual": "Enter an address manually",
   "bambuSetupTimeout": "No response yet. Your printer settings are kept. You can close this window and check the connection, or try again.",
   "bambuConnecting": "Connecting to the printer…",
+  "bambuSerialRequired": "The printer replied without a serial number. Check that LAN Only Mode and Developer Mode are enabled on the printer, then try again.",
+  "bambuSetupUnavailable": "The printer setup worker is unavailable. Close this window and open setup again.",
   "localPermissionRetryFailed": "The local connection is still blocked. No printer or account data was changed."
 }

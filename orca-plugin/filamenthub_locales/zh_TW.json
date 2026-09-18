@@ -98,5 +98,7 @@
   "bambuManual": "手動輸入位址",
   "bambuSetupTimeout": "尚未收到回應。印表機設定已保留。您可以關閉此視窗檢查連線，或重試。",
   "bambuConnecting": "正在連線至印表機…",
+  "bambuSerialRequired": "印表機的回應中沒有序號。請確認印表機已開啟區域網路模式與開發者模式，然後再試一次。",
+  "bambuSetupUnavailable": "印表機設定服務無法使用。請關閉此視窗後重新開啟設定。",
   "localPermissionRetryFailed": "本機連線仍被封鎖。印表機與帳戶資料均未變更。"
 }

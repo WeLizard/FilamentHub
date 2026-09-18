@@ -96,6 +96,50 @@ def test_bambu_snapshot_preserves_useful_partial_report_on_read_timeout(
     assert sock.sent[-1] == b"\xE0\x00"
     assert sock.closed is True
 
+
+def test_bambu_connect_without_serial_reaches_mqtt_without_scanning(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42")
+
+    def fail_discovery(*_args, **_kwargs):
+        raise AssertionError("Connect must not scan the network for a serial")
+
+    monkeypatch.setattr(plugin_module, "discover_lan_printers", fail_discovery)
+    snapshot_configs = []
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda config: snapshot_configs.append(config) or ("SERIAL-42", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {"source_instance_id": "fixture-instance-0001", "printers": []},
+    )
+    monkeypatch.setattr(plugin_module, "save_bambu_config", lambda _payload: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: (
+            500,
+            b"{}",
+        ),
+    )
+    monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_notice",
+        lambda text, status="info": delivered.append((text, status)),
+    )
+
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+
+    assert snapshot_configs[0]["serial"] == ""
+    assert delivered == [("bambuPairingFailed", "error")]
+
 def test_bambu_snapshot_prefers_complete_report_after_partial_report(
     plugin_module, monkeypatch
 ):
@@ -1592,7 +1636,7 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
         lambda text, status="info": delivered.append((text, status)),
     )
 
-    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "SERIAL-2", "pair-code")
 
     assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
     assert removed == []
@@ -1839,7 +1883,7 @@ def test_full_revoke_queue_rejects_pair_before_consuming_code(
     )
 
     catalog._do_configure_bambu(
-        3, 5, "printer.local", "secret", "", "one-time-code"
+        3, 5, "printer.local", "secret", "SERIAL-2", "one-time-code"
     )
 
     assert pair_calls == []
@@ -2093,7 +2137,7 @@ def test_bambu_pair_is_revoked_after_unload_before_local_persist(
     def configure_job():
         try:
             catalog._do_configure_bambu(
-                3, 5, "printer.local", "secret", "", "pair-code"
+                3, 5, "printer.local", "secret", "SERIAL-2", "pair-code"
             )
         finally:
             finished.set()
@@ -2202,7 +2246,7 @@ def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write
     def configure_job():
         try:
             catalog._do_configure_bambu(
-                3, 5, "new.local", "new-secret", "", "pair-code"
+                3, 5, "new.local", "new-secret", "SERIAL-2", "pair-code"
             )
         finally:
             finished.set()
@@ -2293,7 +2337,7 @@ def test_bambu_pair_response_after_unload_cannot_restart_observer(
     def configure_job():
         try:
             catalog._do_configure_bambu(
-                3, 5, "printer.local", "secret", "", "pair-code"
+                3, 5, "printer.local", "secret", "SERIAL-2", "pair-code"
             )
         finally:
             finished.set()
@@ -2435,7 +2479,7 @@ def test_bambu_pair_identity_conflict_revokes_the_new_connection(
         lambda text, status="info": delivered.append((text, status)),
     )
 
-    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "SERIAL-2", "pair-code")
 
     assert revoked == [("/printer-bridge/connection", "fhpb_conflict")]
     assert plugin_module.load_bambu_config()["printers"] == []

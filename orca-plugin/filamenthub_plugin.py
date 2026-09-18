@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.10"
+# version = "0.2.0"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -427,7 +427,7 @@ def show_host_message(*args, **kwargs):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.10"
+PLUGIN_VERSION = "0.2.0"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -3804,7 +3804,10 @@ def _bambu_announcement(packet, sender):
             or "bambulab" in headers.get("st", "").lower()):
         return None
     marker = headers.get("nt", headers.get("st", "")).lower()
-    if marker and marker != "urn:bambulab-com:device:3dprinter:1":
+    if marker and not re.fullmatch(
+        r"urn:bambulab-com:device:3dprinter:\d+",
+        marker,
+    ):
         return None
     host = _bambu_host_hint(headers.get("location", sender))
     # Never follow a Location advertised on behalf of another host.
@@ -6497,11 +6500,12 @@ button:disabled{opacity:.5;cursor:wait}#status{min-height:21px;margin-top:14px;c
 <button id="cancel" type="button"></button><button id="save" class="primary" type="submit"></button>
 </div></form></main><script>
 'use strict';
-var action=__ACTION__,copy=__COPY__,session=__SESSION__,kind=action.type==='configure-bambu'?'bambu':'moonraker';
+var action=__ACTION__,copy=__COPY__,session=__SESSION__,kind=action.type==='configure-bambu'?'bambu':'moonraker',
+activeSearchRequest='',ignoredSearchRequest='',searchTimer=0,activeConnectRequest='',ignoredConnectRequest='',connectTimer=0;
 var form=document.getElementById('form'),host=document.getElementById('host'),secret=document.getElementById('secret'),
-serial=document.getElementById('serial'),candidate=document.getElementById('candidate'),status=document.getElementById('status'),
+serial=document.getElementById('serial'),candidate=document.getElementById('candidate'),statusLine=document.getElementById('status'),
 save=document.getElementById('save'),search=document.getElementById('search'),remove=document.getElementById('remove');
-function send(message){orca.postMessage(Object.assign({source:'filamenthub-plugin',localDialogSession:session},message));}
+function send(message){try{orca.postMessage(Object.assign({source:'filamenthub-plugin',localDialogSession:session},message))}catch(error){}}
 function finish(outcome){send({type:'local-dialog-close',outcome:outcome,provider:kind});}
 function setBusy(value){save.disabled=value;search.disabled=value;remove.disabled=value;}
 document.getElementById('cancel').textContent=copy.cancel||'Cancel';
@@ -6515,29 +6519,41 @@ if(kind==='bambu'){
  host.placeholder=copy.bambuAddressPlaceholder||'';serial.placeholder=copy.bambuSerialHint||'';secret.required=true;
  save.textContent=copy.bambuSave||'Connect';search.textContent=copy.bambuSearch||'Search local network';
  remove.textContent=copy.bambuRemove||'Remove local connection';remove.style.display='none';
- function prepare(refresh){status.textContent=refresh?(copy.bambuSearching||'Searching…'):'';
-  send({type:'prepare-bambu-local',requestId:'bambu-search-'+Date.now(),refresh:refresh===true,
+ function prepare(refresh){var requestId='bambu-search-'+Date.now();
+  if(refresh){activeSearchRequest=requestId;ignoredSearchRequest='';clearTimeout(searchTimer);setBusy(true);
+   statusLine.textContent=copy.bambuSearching||'Searching…';
+   searchTimer=setTimeout(function(){ignoredSearchRequest=activeSearchRequest;activeSearchRequest='';setBusy(false);
+    statusLine.textContent=copy.bambuSearchIncomplete||'The network search could not finish.'},30000)}else{statusLine.textContent=''}
+  send({type:'prepare-bambu-local',requestId:requestId,refresh:refresh===true,
    physicalPrinterId:action.physicalPrinterId,materialSystemId:action.materialSystemId,
    connectionRef:action.connectionRef||'',pairingCode:action.pairingCode||''});}
  search.onclick=function(){prepare(true)};
  remove.onclick=function(){send({type:'remove-bambu-local',physicalPrinterId:action.physicalPrinterId});finish('removed')};
  form.onsubmit=function(event){event.preventDefault();if(!host.value.trim()||!secret.value.trim())return;
-  setBusy(true);status.textContent=copy.bambuConnecting||'Connecting…';
-  send({type:'configure-bambu-local',requestId:'bambu-setup-'+Date.now(),physicalPrinterId:action.physicalPrinterId,
+  var requestId='bambu-setup-'+Date.now();activeConnectRequest=requestId;ignoredConnectRequest='';
+  clearTimeout(connectTimer);setBusy(true);statusLine.textContent=copy.bambuConnecting||'Connecting…';
+  connectTimer=setTimeout(function(){ignoredConnectRequest=activeConnectRequest;activeConnectRequest='';setBusy(false);
+   statusLine.textContent=copy.bambuSetupTimeout||'No response was received. Your settings were not changed.';secret.focus()},120000);
+  send({type:'configure-bambu-local',requestId:requestId,physicalPrinterId:action.physicalPrinterId,
    materialSystemId:action.materialSystemId,host:host.value.trim(),accessCode:secret.value.trim(),
    serial:serial.value.trim(),pairingCode:action.pairingCode||''});secret.value=''};
- function candidates(data){var items=Array.isArray(data.candidates)?data.candidates:[];candidate.textContent='';
+ function candidates(data){if((activeSearchRequest&&data.requestId!==activeSearchRequest)||data.requestId===ignoredSearchRequest)return;
+  if(activeSearchRequest){clearTimeout(searchTimer);activeSearchRequest='';setBusy(false)}
+  var items=Array.isArray(data.candidates)?data.candidates:[];candidate.textContent='';
   if(items.length){document.getElementById('candidate-wrap').style.display='block';
    document.getElementById('candidate-title').textContent=copy.bambuChoosePrinter||'Printer';
    items.forEach(function(item,index){var option=document.createElement('option');option.value=String(index);
     option.textContent=String(item.label||item.host||'')+' · '+String(item.host||'');candidate.appendChild(option)});
    function choose(){var item=items[Number(candidate.value)]||{};host.value=item.host||'';serial.value=item.serial||'';secret.value=''}
-   candidate.onchange=choose;choose();status.textContent=copy.bambuFound||'';
-  }else{status.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):''}
+   candidate.onchange=choose;choose();statusLine.textContent=copy.bambuFound||'';
+  }else{statusLine.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):''}
   remove.style.display=data.hasSavedConnection?'':'none';search.textContent=data.discoveryAttempted?(copy.bambuSearchAgain||copy.bambuSearch):copy.bambuSearch;}
  orca.onMessage(function(data){if(!data||data.source!=='filamenthub-host')return;
   if(data.type==='bambu-setup-candidates')candidates(data);
-  if(data.type==='bambu-setup-result'){if(data.ok){finish('saved')}else{setBusy(false);status.textContent=copy[data.code]||copy.bambuInvalid||'Connection failed';secret.focus()}}});
+  if(data.type==='bambu-setup-result'){
+   if((activeConnectRequest&&data.requestId!==activeConnectRequest)||data.requestId===ignoredConnectRequest)return;
+   clearTimeout(connectTimer);activeConnectRequest='';
+   if(data.ok){finish('saved')}else{setBusy(false);statusLine.textContent=copy[data.code]||copy.bambuInvalid||'Connection failed';secret.focus()}}});
  prepare(false);host.focus();
 }else{
  var labels=action.copy||{};document.getElementById('title').textContent=labels.title||'Moonraker';
@@ -8352,6 +8368,39 @@ class FilamentHubCatalog(
         except Exception:
             pass
 
+    def _on_local_dialog_message(self, msg):
+        """Bind messages from the native setup window to that window instance.
+
+        Older Orca hosts can serialize the page message differently and may not
+        preserve the extra session field reliably.  The callback itself is
+        already registered only on the separately-created local dialog, so it
+        is the stronger binding boundary.  Keep the direct page's bridge
+        session checks unchanged.
+        """
+        fh_log("Local setup host callback entered: %s" % type(msg).__name__)
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except (TypeError, ValueError):
+                fh_log("Local setup host callback rejected non-JSON string")
+                return
+        if not isinstance(msg, dict):
+            fh_log("Local setup host callback rejected non-object payload")
+            return
+        fh_log(
+            "Local setup host callback payload: type=%s source=%s has_bridge=%s has_local=%s"
+            % (
+                str(msg.get("type") or "")[:80],
+                str(msg.get("source") or "")[:80],
+                bool(msg.get("bridgeSession")),
+                bool(msg.get("localDialogSession")),
+            )
+        )
+        bound = dict(msg)
+        bound.pop("bridgeSession", None)
+        bound["localDialogSession"] = self._local_dialog_session
+        self.on_message(bound)
+
     def _open_local_dialog(self, action):
         """Open one host-owned credential dialog without any local listener."""
         if not isinstance(action, dict):
@@ -8395,7 +8444,11 @@ class FilamentHubCatalog(
             html=render_local_dialog(action, self._local_dialog_session),
             width=640,
             height=720 if provider == "bambu" else 460,
-            on_message=self.on_message,
+            on_message=(
+                self._on_local_dialog_message
+                if provider == "bambu"
+                else self.on_message
+            ),
             on_close=self._on_local_dialog_close,
         )
         self._report_local_dialog_state(True)
@@ -8707,8 +8760,11 @@ class FilamentHubCatalog(
         return cached
 
     def _do_prepare_bambu(self, binding, observations, token):
+        refresh = binding.get("refresh") is True
         context = {}
-        if token:
+        # Explicit Search local network is a host-local operation. Do not make
+        # it wait for, or depend on, the remote setup context endpoint.
+        if token and not refresh:
             try:
                 context = printer_setup_context(token)
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
@@ -8716,17 +8772,26 @@ class FilamentHubCatalog(
                 # when an old account token cannot resolve the exact binding.
                 context = {}
         candidates = []
-        discovery_attempted = False
+        discovery_attempted = refresh
+        discovery_complete = True
+        if refresh:
+            try:
+                network, discovery_complete = discover_lan_printers()
+            except (OSError, PluginLifecycleStopped):
+                network, discovery_complete = [], False
+            candidates = [dict(item) for item in network if item.get("provider") == "bambu"]
         if context:
             discovery = self._setup_discovery(
                 context,
                 observations,
-                refresh=binding.get("refresh") is True,
-                scan_network=binding.get("refresh") is True,
+                refresh=False,
+                scan_network=False,
             )
-            discovery_attempted = discovery.get("attempted") is True
-            candidates = [dict(item) for item in discovery["items"] if item["provider"] == "bambu"
-                          and item.get("physical_printer_id") in {None, binding["physicalPrinterId"]}]
+            if not refresh:
+                discovery_attempted = discovery.get("attempted") is True
+                discovery_complete = discovery.get("complete", True)
+                candidates = [dict(item) for item in discovery["items"] if item["provider"] == "bambu"
+                              and item.get("physical_printer_id") in {None, binding["physicalPrinterId"]}]
             selected_ref = binding.get("connectionRef")
             candidates.sort(key=lambda item: (item["connection_ref"] != selected_ref,
                             item.get("physical_printer_id") != binding["physicalPrinterId"], item["source"] != "network"))
@@ -8735,6 +8800,19 @@ class FilamentHubCatalog(
             observations, context, binding["physicalPrinterId"],
         ) if item["host"].lower() not in seen)
         # Only the host-owned local dialog receives addresses/serials. The web gets opaque refs.
+        saved_connections = load_bambu_config()["printers"]
+        has_saved_connection = any(
+            item.get("physical_printer_id") == binding["physicalPrinterId"]
+            for item in saved_connections
+        )
+        if context:
+            has_saved_connection = any(
+                item.get("physical_printer_id") == binding["physicalPrinterId"]
+                and item.get("device_identity") == _bambu_device_identity(
+                    context["discovery_key"], item.get("serial")
+                )
+                for item in saved_connections
+            )
         self._deliver_native_setup(
             "bambu-setup-candidates",
             requestId=binding.get("requestId", ""),
@@ -8743,12 +8821,9 @@ class FilamentHubCatalog(
             pairingCode=binding["pairingCode"],
             candidates=[{key: item.get(key, "") for key in ("host", "label", "serial", "source", "connection_ref")}
                         for item in candidates[:_DISCOVERY_LIMIT]],
-            discoveryComplete=bool(context) and discovery["complete"],
+            discoveryComplete=discovery_complete,
             discoveryAttempted=discovery_attempted,
-            hasSavedConnection=bool(context) and any(
-                item.get("physical_printer_id") == binding["physicalPrinterId"]
-                and item.get("device_identity") == _bambu_device_identity(context["discovery_key"], item.get("serial"))
-                for item in load_bambu_config()["printers"]),
+            hasSavedConnection=has_saved_connection,
         )
 
     def _deliver_native_setup(self, message_type, **payload):
@@ -8786,6 +8861,9 @@ class FilamentHubCatalog(
         previous_local = None
         try:
             _resolved_bambu_address(host)
+            # An empty serial is the normal case: the wildcard report topic
+            # carries it, so the address and the access code are enough.
+            serial = _normalized_bambu_serial(serial)
             pending = {
                 "physical_printer_id": physical_printer_id,
                 "material_system_id": material_system_id,
@@ -8793,12 +8871,19 @@ class FilamentHubCatalog(
                 "access_code": access_code,
                 "serial": serial,
             }
+            fh_log("Bambu setup: reading local MQTT snapshot")
             discovered_serial, report = read_bambu_lan_snapshot(pending)
+            connected_serial = _normalized_bambu_serial(discovered_serial) or serial
+            if not connected_serial:
+                fh_log("Bambu setup: MQTT response did not contain a serial")
+                finish("bambuSerialRequired", "error")
+                return
+            fh_log("Bambu setup: local MQTT snapshot received")
             local = load_bambu_config()
             _assert_bambu_binding_available(
                 local,
                 physical_printer_id,
-                discovered_serial or serial,
+                connected_serial,
             )
             # A missing config produces a fresh source id. Persist it before
             # pairing so configure_bambu_bridge() cannot generate a second id
@@ -8825,6 +8910,7 @@ class FilamentHubCatalog(
                     "capabilities": _bambu_capabilities(report),
                 },
             )
+            fh_log("Bambu setup: pairing request returned HTTP %s" % pair_status)
             if pair_status != 200:
                 finish("bambuPairingFailed", "error")
                 return
@@ -8843,14 +8929,14 @@ class FilamentHubCatalog(
                 return
             device_identity = _bambu_device_identity(
                 paired.get("printer_discovery_key"),
-                discovered_serial or serial,
+                connected_serial,
             )
             configure_bambu_bridge(
                 physical_printer_id,
                 material_system_id,
                 host,
                 access_code,
-                discovered_serial or serial,
+                connected_serial,
                 bridge_token,
                 device_identity,
             )
@@ -8890,7 +8976,8 @@ class FilamentHubCatalog(
             ValueError,
             UnicodeDecodeError,
             PluginLifecycleStopped,
-        ):
+        ) as exc:
+            fh_log("Bambu setup failed: %s" % type(exc).__name__)
             # Pairing consumes the one-time code.  If local persistence fails
             # afterwards, revoke the fresh server credential so the site never
             # remains green while no local reader can possibly use it.
@@ -9830,9 +9917,27 @@ class FilamentHubCatalog(
             } else "setup_failed")
 
     def on_message(self, msg):
+        original_type = type(msg).__name__
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except (TypeError, ValueError):
+                fh_log("Plugin host message rejected: invalid JSON (%s)" % original_type)
+                return
         if not isinstance(msg, dict):
+            fh_log("Plugin host message rejected: non-object (%s)" % original_type)
             return
+        fh_log(
+            "Plugin host message received: type=%s source=%s has_bridge=%s has_local=%s"
+            % (
+                str(msg.get("type") or "")[:80],
+                str(msg.get("source") or "")[:80],
+                bool(msg.get("bridgeSession")),
+                bool(msg.get("localDialogSession")),
+            )
+        )
         if msg.get("source") != "filamenthub-plugin":
+            fh_log("Plugin host message ignored: source mismatch")
             return
         msg_type = msg.get("type")
         direct_session = str(getattr(self, "_direct_bridge_session", ""))
@@ -9845,6 +9950,7 @@ class FilamentHubCatalog(
             str(getattr(self, "_local_dialog_session", "")),
         ) and bool(getattr(self, "_local_dialog_session", ""))
         if not direct_message and not local_message:
+            fh_log("Plugin host message ignored: bridge binding mismatch")
             return
         local_only = {
             "printer-setup-local",
@@ -9861,6 +9967,8 @@ class FilamentHubCatalog(
         if direct_message and msg_type in {"configure-bambu", "printer-setup-manual"}:
             self._open_local_dialog(msg)
             return
+        if local_message and msg_type in {"prepare-bambu-local", "configure-bambu-local"}:
+            fh_log("Bambu setup message received: %s" % msg_type)
         if local_message and msg_type == "local-dialog-close":
             self._close_local_dialog(str(msg.get("outcome") or "cancelled"))
             return
@@ -10036,19 +10144,19 @@ class FilamentHubCatalog(
         elif msg_type == "prepare-bambu-local":
             physical_printer_id = msg.get("physicalPrinterId")
             material_system_id = msg.get("materialSystemId")
-            pairing_code = msg.get("pairingCode") or ""
+            pairing_code = msg.get("pairingCode")
+            if not isinstance(pairing_code, str):
+                pairing_code = ""
             if not (
                 type(physical_printer_id) is int
                 and physical_printer_id > 0
                 and type(material_system_id) is int
                 and material_system_id > 0
-                and isinstance(pairing_code, str)
-                and 8 <= len(pairing_code) <= 32
             ):
                 return
             observations = observe_printer_presets()
             token = (load_saved_auth() or {}).get("accessToken") or ""
-            BACKGROUND_WORKER.submit(
+            submitted = BACKGROUND_WORKER.submit(
                 self._do_prepare_bambu,
                 {
                     "physicalPrinterId": physical_printer_id,
@@ -10061,24 +10169,46 @@ class FilamentHubCatalog(
                 observations,
                 token,
             )
+            if submitted is False:
+                fh_log("Bambu setup search worker unavailable")
+                self._deliver_native_setup(
+                    "bambu-setup-candidates",
+                    requestId=str(msg.get("requestId") or "")[:120],
+                    physicalPrinterId=physical_printer_id,
+                    materialSystemId=material_system_id,
+                    pairingCode=pairing_code,
+                    candidates=[],
+                    discoveryComplete=False,
+                    discoveryAttempted=msg.get("refresh") is True,
+                    hasSavedConnection=False,
+                )
         elif msg_type == "configure-bambu-local":
             physical_printer_id = msg.get("physicalPrinterId")
             material_system_id = msg.get("materialSystemId")
             host = msg.get("host")
             access_code = msg.get("accessCode")
             serial = msg.get("serial") or ""
-            pairing_code = msg.get("pairingCode") or ""
+            pairing_code = msg.get("pairingCode")
+            if not isinstance(pairing_code, str):
+                pairing_code = ""
             if not (
                 isinstance(physical_printer_id, int)
                 and isinstance(material_system_id, int)
                 and isinstance(host, str)
                 and isinstance(access_code, str)
                 and isinstance(serial, str)
-                and isinstance(pairing_code, str)
-                and 8 <= len(pairing_code) <= 32
             ):
                 return
-            BACKGROUND_WORKER.submit(
+            request_id = str(msg.get("requestId") or "")[:120]
+            if not 8 <= len(pairing_code) <= 32:
+                self._deliver_native_setup(
+                    "bambu-setup-result",
+                    requestId=request_id,
+                    ok=False,
+                    code="bambuPairingFailed",
+                )
+                return
+            submitted = BACKGROUND_WORKER.submit(
                 self._do_configure_bambu,
                 physical_printer_id,
                 material_system_id,
@@ -10086,8 +10216,16 @@ class FilamentHubCatalog(
                 access_code,
                 serial,
                 pairing_code,
-                str(msg.get("requestId") or "")[:120],
+                request_id,
             )
+            if submitted is False:
+                fh_log("Bambu setup worker unavailable")
+                self._deliver_native_setup(
+                    "bambu-setup-result",
+                    requestId=request_id,
+                    ok=False,
+                    code="bambuSetupUnavailable",
+                )
         elif msg_type == "remove-bambu-local":
             physical_printer_id = msg.get("physicalPrinterId")
             if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:

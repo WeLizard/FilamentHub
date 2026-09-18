@@ -1,5 +1,7 @@
 """Slicing, host storage and runtime resource contracts."""
 
+import re
+
 from .filamenthub_plugin_test_support import (
     json,
     _module_with_pages,
@@ -426,6 +428,215 @@ def test_local_credential_submission_requires_the_separate_dialog_binding(monkey
     page.on_message(json.dumps(dict(payload, localDialogSession=local_session)))
     assert len(submitted) == 1
     assert submitted[0][0] == page._catalog._do_prepare_bambu
+
+
+def test_local_bambu_config_reports_unavailable_worker(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    windows = []
+
+    class LocalWindow:
+        def __init__(self):
+            self.messages = []
+
+        def is_open(self):
+            return True
+
+        def post(self, payload):
+            self.messages.append(payload)
+
+        def close(self):
+            return None
+
+    def create_window(**_kwargs):
+        window = LocalWindow()
+        windows.append(window)
+        return window
+
+    module.orca.host.ui.create_window = create_window
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: False),
+    )
+
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "configure-bambu",
+        "bridgeSession": page._catalog._direct_bridge_session,
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
+    }))
+    local_session = page._catalog._local_dialog_session
+    page.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "configure-bambu-local",
+        "localDialogSession": local_session,
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "host": "192.168.1.42",
+        "accessCode": "local-secret",
+        "serial": "SERIAL-42",
+        "pairingCode": "single-use-code",
+        "requestId": "connect-1",
+    }))
+
+    assert windows[-1].messages[-1] == {
+        "source": "filamenthub-host",
+        "type": "bambu-setup-result",
+        "requestId": "connect-1",
+        "ok": False,
+        "code": "bambuSetupUnavailable",
+    }
+
+
+def test_local_bambu_search_does_not_require_pairing_code(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    submitted = []
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args) or True),
+    )
+    catalog = page._catalog
+    catalog._local_dialog_session = "local-session"
+    catalog._local_window = SimpleNamespace(is_open=lambda: True, post=lambda _payload: None)
+
+    catalog._on_local_dialog_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "prepare-bambu-local",
+        "requestId": "search-without-pairing-code",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "refresh": True,
+    }))
+
+    assert len(submitted) == 1
+    assert submitted[0][0] == catalog._do_prepare_bambu
+    assert submitted[0][1]["refresh"] is True
+    assert submitted[0][1]["pairingCode"] == ""
+
+
+def test_local_bambu_connect_reports_missing_pairing_code(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    messages = []
+
+    def fail_submit(*_args):
+        raise AssertionError("pairing must be rejected before worker")
+
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=fail_submit),
+    )
+    catalog = page._catalog
+    catalog._local_dialog_session = "local-session"
+    catalog._local_window = SimpleNamespace(
+        is_open=lambda: True,
+        post=lambda payload: messages.append(payload),
+    )
+
+    catalog._on_local_dialog_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "configure-bambu-local",
+        "requestId": "connect-without-pairing-code",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "host": "192.168.1.42",
+        "accessCode": "local-secret",
+        "serial": "SERIAL-42",
+    }))
+
+    assert messages[-1] == {
+        "source": "filamenthub-host",
+        "type": "bambu-setup-result",
+        "requestId": "connect-without-pairing-code",
+        "ok": False,
+        "code": "bambuPairingFailed",
+    }
+
+
+_WINDOW_OWN_PROPERTIES = frozenset({
+    "closed", "customElements", "document", "external", "frames", "history",
+    "length", "location", "locationbar", "menubar", "name", "navigator",
+    "opener", "origin", "parent", "personalbar", "screen", "scrollbars",
+    "self", "status", "statusbar", "toolbar", "top",
+})
+
+
+def test_local_dialog_script_does_not_name_a_window_property():
+    module, _ = _module_with_pages()
+    script = module.LOCAL_DIALOG_PAGE.split("<script>")[1].split("</script>")[0]
+    declared = set()
+    for chunk in re.findall(r"(?:^|[\s;])var\s+(.+?);", script, re.S):
+        for part in chunk.split(","):
+            name = part.split("=")[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", name):
+                declared.add(name)
+
+    assert declared
+    assert not declared & _WINDOW_OWN_PROPERTIES
+
+
+def test_catalog_accepts_string_messages_from_older_host_windows(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    submitted = []
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args) or True),
+    )
+
+    catalog = page._catalog
+    catalog._local_dialog_session = "local-session"
+    catalog._local_window = SimpleNamespace(is_open=lambda: True, post=lambda _payload: None)
+    catalog.on_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "localDialogSession": "local-session",
+        "type": "prepare-bambu-local",
+        "requestId": "search-1",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
+    }))
+
+    assert len(submitted) == 1
+    assert submitted[0][0] == catalog._do_prepare_bambu
+
+
+def test_local_dialog_callback_binds_messages_to_its_window(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    submitted = []
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args) or True),
+    )
+
+    catalog = page._catalog
+    catalog._local_dialog_session = "local-session"
+    catalog._local_window = SimpleNamespace(is_open=lambda: True, post=lambda _payload: None)
+    catalog._on_local_dialog_message(json.dumps({
+        "source": "filamenthub-plugin",
+        "type": "prepare-bambu-local",
+        "requestId": "search-1",
+        "physicalPrinterId": 11,
+        "materialSystemId": 21,
+        "pairingCode": "single-use-code",
+    }))
+
+    assert len(submitted) == 1
+    assert submitted[0][0] == catalog._do_prepare_bambu
 
 
 def test_external_oauth_opens_only_the_bound_filamenthub_flow(monkeypatch):

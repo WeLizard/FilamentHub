@@ -98,5 +98,7 @@
   "bambuManual": "手动输入地址",
   "bambuSetupTimeout": "暂未收到响应。打印机设置已保留。您可以关闭此窗口检查连接，或重试。",
   "bambuConnecting": "正在连接打印机…",
+  "bambuSerialRequired": "打印机的响应中没有序列号。请确认打印机已开启局域网模式和开发者模式，然后重试。",
+  "bambuSetupUnavailable": "打印机设置服务不可用。请关闭此窗口后重新打开设置。",
   "localPermissionRetryFailed": "本地连接仍被阻止。打印机和账户数据均未更改。"
 }

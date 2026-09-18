@@ -4,6 +4,14 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.2.0
+- Connecting a Bambu printer over the local network again needs only its address and LAN access code. The serial number is read from the printer's own reply, so setup never asks for it and never scans the network to obtain it.
+- The Bambu setup window reacts to **Search local network** and **Connect** again. Since 0.1.10 its script stopped at the first message it tried to show in the window, so neither button ever reached the plugin.
+- Search and Connect now end in a clear result instead of staying busy indefinitely, and a setup request that cannot be paired reports the pairing failure instead of being ignored without an answer.
+- Explicit Bambu LAN search no longer depends on a FilamentHub pairing code.
+- Bambu setup accepts both native object payloads and JSON-string messages from host windows, and binds them through the setup window's own callback, so Search and Connect keep working on older compatible OrcaSlicer builds.
+- Bambu LAN discovery accepts compatible printer announcement versions, and the plugin log records only safe message-boundary diagnostics, never credentials.
+
 ## 0.1.10
 - Opening the FilamentHub tab no longer creates a local Python socket. The familiar plugin toolbar and embedded catalog remain intact, including navigation, sign-in, sync and recovery. An unavailable site gets a localized retry screen instead of a raw browser error. Local printer credentials use a separate host-owned dialog, while external sign-in uses a short-lived server handoff; neither path starts a local HTTP server.
 - Opening Bambu setup no longer searches the local network automatically. Saved and current-profile addresses remain available, while network discovery starts only when you choose **Search local network**.
