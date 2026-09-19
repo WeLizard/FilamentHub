@@ -5,6 +5,8 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.2.0
+- Bambu LAN consumption now follows the actual per-layer extrusion curve from the print G-code instead of assuming that every percent of progress uses the same amount of filament. The total remains the slicer's declared weight, and older files fall back to an explicitly labelled progress estimate.
+- A temporary FilamentHub snapshot outage no longer drops a Bambu observation or resets its durable accounting baseline. The observation stays queued and is checked against the current spool assignment when the connection recovers.
 - Slice reports now use the signed-in FilamentHub page's normal authenticated API connection. The slicing worker only saves metadata to a durable local queue and never calls the host UI; the page polls that queue later on its own UI callback. Activation, slicing, export and printer upload therefore cannot be blocked by the report transport or its audited HTTP permission dialog. Failed and signed-out deliveries remain queued for retry.
 - Bambu cancellation keeps the estimated material used before stopping. Rapid transitions to idle remain in order until saved, so the end of a job is not lost between updates.
 - Bambu LAN connections can record estimated filament consumption without a Bambu cloud account. Available print files and identified spool balance changes feed the same print history, with explicit estimate labels. A local journal preserves pending reports and observed spool bindings across restarts; repeated delivery does not debit a spool twice.

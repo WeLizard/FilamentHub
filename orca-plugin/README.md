@@ -21,15 +21,18 @@ not select a supported model list or require a Bambu cloud account. While Orca
 is running, a local MQTT connection retains job and AMS mapping updates.
 Available current-job G-code/3MF files are read through local FTPS. The adapter
 requires an unambiguous matching filename and plate; it never picks the newest
-file on the printer. Archive transfers are bounded to 64 MiB and metadata to
-1 MiB. A large G-code entry is not extracted when the bounded slice metadata
-already provides the per-filament weights; fallback G-code extraction remains
-bounded to 64 MiB. Storage availability and LAN permissions depend on the
-printer firmware.
+file on the printer. Archive transfers are bounded to 64 MiB, streamed G-code
+inspection to 256 MiB and metadata to 1 MiB. A large G-code entry is not
+extracted when the bounded slice metadata already provides the per-filament
+weights. Storage availability and LAN permissions depend on the printer firmware.
 
-Slicer weights scaled by reported print progress are explicitly approximate,
-especially for partial or multi-material jobs. If file evidence is unavailable,
-changes in an identified spool's reported remaining grams or percentage can
+The plugin distributes each slicer-declared filament weight over the job's
+actual net E advance per layer, excluding retractions, and uses the layer number
+reported by the printer as the current point on that curve. A cached slice can
+restore the curve when the printer no longer exposes its print file, provided
+the filament weights and layer count identify exactly one file. Older files
+without a usable curve fall back to an explicitly labelled progress estimate.
+Changes in an identified spool's reported remaining grams or percentage can
 provide a separate estimate. Percentages use the printer's reported original
 spool weight. Unknown readings, RFID reads, changed tags and increased remaining
 weight do not become consumption deltas. Estimates appear separately from

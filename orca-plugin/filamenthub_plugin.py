@@ -7823,11 +7823,19 @@ def _bambu_material_preview(report, assignments, host_profiles):
 
 _MAX_INPUT = 64 * 1024 * 1024
 _MAX_METADATA = 1024 * 1024
-_MAX_GCODE = 64 * 1024 * 1024
+_MAX_GCODE = 256 * 1024 * 1024
 _MAX_RATIO = 1_000
 _WEIGHT_VECTOR_RE = re.compile(
     rb"^\s*;\s*filament\s+(?:used|weight)\s*\[g\]\s*[:=]\s*([^\r\n;]+)",
     re.IGNORECASE | re.MULTILINE,
+)
+_LAYER_CHANGE_RE = re.compile(
+    rb"^\s*;\s*(?:(?:CHANGE_LAYER|LAYER_CHANGE)\b|layer\s+num/total_layer_count\s*:)",
+    re.IGNORECASE,
+)
+_TOOL_COMMAND_RE = re.compile(rb"^\s*T(\d+)\b", re.IGNORECASE)
+_EXTRUSION_RE = re.compile(
+    rb"(?:^|\s)E([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)"
 )
 
 
@@ -7849,6 +7857,192 @@ def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
         if value is not None:
             values[index] = value
     return values or None
+
+
+def _weights_from_gcode_stream(stream) -> dict[int, float] | None:
+    scanned = 0
+    for line in stream:
+        scanned += len(line)
+        match = _WEIGHT_VECTOR_RE.match(line)
+        if match is not None:
+            return _weights_from_gcode(line)
+        if scanned >= _MAX_GCODE:
+            break
+    return None
+
+
+def _weights_from_gcode_path(path: str) -> dict[int, float] | None:
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as stream:
+            stream.seek(max(0, size - _MAX_METADATA))
+            tail = stream.read(_MAX_METADATA)
+            weights = _weights_from_gcode(tail)
+            if weights is not None:
+                return weights
+            stream.seek(0)
+            return _weights_from_gcode_stream(stream)
+    except OSError:
+        return None
+
+
+def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[int, list[float]]:
+    """Distribute declared slicer weights over layers using net E advance."""
+    if not weights:
+        return {}
+    only_tool = next(iter(weights)) if len(weights) == 1 else None
+    active_tool = only_tool
+    relative_extrusion = True
+    absolute_e: dict[int, float] = {}
+    layer_index = 0
+    saw_layer = False
+    per_layer: dict[int, dict[int, float]] = {}
+
+    scanned = 0
+    for raw_line in stream:
+        scanned += len(raw_line)
+        if scanned > _MAX_GCODE:
+            return {}
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _LAYER_CHANGE_RE.match(line):
+            if saw_layer:
+                layer_index += 1
+            else:
+                saw_layer = True
+            continue
+        command = line.split(b";", 1)[0].strip()
+        if not command:
+            continue
+        upper = command.upper()
+        if re.match(rb"^M83(?:\s|$)", upper):
+            relative_extrusion = True
+            continue
+        if re.match(rb"^M82(?:\s|$)", upper):
+            relative_extrusion = False
+            continue
+        tool_match = _TOOL_COMMAND_RE.match(command)
+        if tool_match is not None:
+            candidate = int(tool_match.group(1))
+            active_tool = candidate if candidate in weights else only_tool
+            continue
+        extrusion_match = _EXTRUSION_RE.search(command)
+        if extrusion_match is None or active_tool is None:
+            continue
+        try:
+            value = float(extrusion_match.group(1))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value):
+            continue
+        if re.match(rb"^G92(?:\s|$)", upper):
+            absolute_e[active_tool] = value
+            continue
+        if not re.match(rb"^G(?:0|1)(?:\s|$)", upper):
+            continue
+        if relative_extrusion:
+            delta = value
+        else:
+            previous = absolute_e.get(active_tool)
+            absolute_e[active_tool] = value
+            if previous is None:
+                continue
+            delta = value - previous
+        if delta != 0:
+            layer = per_layer.setdefault(layer_index, {})
+            layer[active_tool] = layer.get(active_tool, 0.0) + delta
+
+    if not per_layer:
+        return {}
+    layer_count = max(per_layer) + 1
+    result: dict[int, list[float]] = {}
+    for logical, total_weight in weights.items():
+        cumulative = 0.0
+        peak = 0.0
+        advances = []
+        for layer in range(layer_count):
+            cumulative += per_layer.get(layer, {}).get(logical, 0.0)
+            peak = max(peak, cumulative)
+            advances.append(peak)
+        if not math.isfinite(peak) or peak <= 0:
+            continue
+        curve = [total_weight * advance / peak for advance in advances]
+        curve[-1] = total_weight
+        result[logical] = curve
+    return result
+
+
+def _layer_weights_from_gcode(data: bytes, weights: dict[int, float]) -> dict[int, list[float]]:
+    return _layer_weights_from_gcode_stream(io.BytesIO(data), weights)
+
+
+def _same_weight_vector(left: dict, right: dict) -> bool:
+    normalized_left = {int(key): float(value) for key, value in left.items()}
+    normalized_right = {int(key): float(value) for key, value in right.items()}
+    if set(normalized_left) != set(normalized_right):
+        return False
+    for key, value in normalized_left.items():
+        other = normalized_right[key]
+        if abs(value - other) > max(0.01, value * 0.0001):
+            return False
+    return True
+
+
+def enrich_bambu_estimate_from_slice_cache(report, estimate):
+    """Recover a layer curve from plugin-owned G-code when printer FTP no longer has it."""
+    if not isinstance(estimate, dict) or estimate.get("layer_weights"):
+        return estimate
+    weights = {
+        int(key): float(value)
+        for key, value in (estimate.get("weights") or {}).items()
+    }
+    total_layers = _bambu_int(report.get("total_layer_num"))
+    if not weights or total_layers is None or total_layers <= 0:
+        return estimate
+    try:
+        with open(_SLICE_INDEX_FILE, encoding="utf-8") as handle:
+            index = json.load(handle)
+    except (OSError, ValueError):
+        return estimate
+    if not isinstance(index, dict):
+        return estimate
+    cache_root = os.path.realpath(_SLICE_CACHE_DIR)
+    candidates = []
+    for source_key, item in reversed(list(index.items())):
+        path = item.get("path") if isinstance(item, dict) else None
+        if not isinstance(path, str):
+            continue
+        resolved = os.path.realpath(path)
+        try:
+            inside_cache = os.path.commonpath([cache_root, resolved]) == cache_root
+        except ValueError:
+            inside_cache = False
+        if not inside_cache or not os.path.isfile(resolved):
+            continue
+        try:
+            size = os.path.getsize(resolved)
+        except OSError:
+            continue
+        if size <= 0 or size > _MAX_GCODE:
+            continue
+        if _same_weight_vector(weights, _weights_from_gcode_path(resolved) or {}):
+            candidates.append((source_key, resolved))
+        if len(candidates) >= 4:
+            break
+    matches = []
+    for source_key, path in candidates:
+        try:
+            with open(path, "rb") as stream:
+                curves = _layer_weights_from_gcode_stream(stream, weights)
+        except OSError:
+            continue
+        if curves and max(len(curve) for curve in curves.values()) == total_layers:
+            matches.append((source_key, curves))
+    if len(matches) != 1:
+        return estimate
+    source_key, curves = matches[0]
+    return {**estimate, "layer_weights": curves, "layer_source_key": source_key}
 
 
 def _safe_zip_info(info: zipfile.ZipInfo, limit: int) -> bool:
@@ -7915,12 +8109,22 @@ def parse_bambu_consumption_file(data: bytes, plate_path: str | None = None) -> 
     A multi-plate 3MF requires ``plate_path``; no implicit plate 1 selection is
     made.  The function never treats printer telemetry as consumption evidence.
     """
-    if not isinstance(data, (bytes, bytearray, memoryview)) or len(data) > _MAX_INPUT:
+    if not isinstance(data, (bytes, bytearray, memoryview)):
         return None
     payload = bytes(data)
     if not payload.startswith(b"PK\x03\x04"):
+        if len(payload) > _MAX_GCODE:
+            return None
         weights = _weights_from_gcode(payload)
-        return {"source": "slicer_gcode", "weights": weights} if weights else None
+        if not weights:
+            return None
+        result = {"source": "slicer_gcode", "weights": weights}
+        layer_weights = _layer_weights_from_gcode(payload, weights)
+        if layer_weights:
+            result["layer_weights"] = layer_weights
+        return result
+    if len(payload) > _MAX_INPUT:
+        return None
 
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
@@ -7954,19 +8158,27 @@ def parse_bambu_consumption_file(data: bytes, plate_path: str | None = None) -> 
             metadata_bytes = archive.read(metadata) if metadata is not None else b""
             if b"<!DOCTYPE" in metadata_bytes.upper() or b"<!ENTITY" in metadata_bytes.upper():
                 return None
+            safe_gcode = _safe_zip_info(selected, _MAX_GCODE)
             weights = _weights_from_slice_info(metadata_bytes, plate_index)
             if weights is None:
-                if not _safe_zip_info(selected, _MAX_GCODE):
+                if not safe_gcode:
                     return None
-                weights = _weights_from_gcode(archive.read(selected))
+                with archive.open(selected) as gcode_stream:
+                    weights = _weights_from_gcode_stream(gcode_stream)
             if not weights:
                 return None
-            return {
+            result = {
                 "source": "slicer_3mf",
                 "weights": weights,
                 "plate_index": plate_index,
                 "plate_path": _normal_name(selected.filename),
             }
+            if safe_gcode:
+                with archive.open(selected) as gcode_stream:
+                    layer_weights = _layer_weights_from_gcode_stream(gcode_stream, weights)
+                if layer_weights:
+                    result["layer_weights"] = layer_weights
+            return result
     except (OSError, RuntimeError, zipfile.BadZipFile, zipfile.LargeZipFile):
         return None
 
@@ -8161,9 +8373,12 @@ def _bambu_usage_counters(report, routes, estimate):
     slots = {item["index"]: item for item in feed.get("slots") or []}
     progress = _bambu_progress(report)
     weights = (estimate or {}).get("weights") or {}
+    layer_weights = (estimate or {}).get("layer_weights") or {}
+    current_layer = _bambu_int(report.get("layer_num"))
+    finished = str(report.get("gcode_state") or "").upper() == "FINISH"
     mapping = report.get("ams_mapping")
     totals = {}
-    if weights and progress is not None:
+    if weights and (progress is not None or current_layer is not None):
         for logical, weight in weights.items():
             logical = int(logical)
             index = None
@@ -8177,7 +8392,26 @@ def _bambu_usage_counters(report, routes, estimate):
             elif len(weights) == 1:
                 index = feed.get("active_index")
             if index in routes:
-                totals[index] = totals.get(index, 0.0) + float(weight)
+                curve = layer_weights.get(str(logical), layer_weights.get(logical))
+                layer_point = None
+                if isinstance(curve, list) and curve and (current_layer or finished):
+                    layer_point = float(weight) if finished else _finite_positive(
+                        curve[min(max(current_layer, 1), len(curve)) - 1]
+                    )
+                entry = totals.setdefault(index, {
+                    "counter": 0.0,
+                    "total": 0.0,
+                    "all_layer_based": True,
+                })
+                if layer_point is not None:
+                    entry["counter"] += layer_point
+                elif progress is not None:
+                    entry["counter"] += float(weight) * progress
+                    entry["all_layer_based"] = False
+                else:
+                    totals.pop(index, None)
+                    continue
+                entry["total"] += float(weight)
     result = {}
     for index, route in routes.items():
         slot = slots.get(index) or {}
@@ -8185,11 +8419,12 @@ def _bambu_usage_counters(report, routes, estimate):
             continue
         identity = slot.get("provider_uid")
         if index in totals:
+            total = totals[index]
             result[index] = {
-                "counter": totals[index] * progress,
-                "source": "slicer_progress",
+                "counter": total["counter"],
+                "source": "slicer_gcode" if total["all_layer_based"] else "slicer_progress",
                 "identity": identity,
-                "scale": [estimate.get("sha256"), totals[index]],
+                "scale": [estimate.get("sha256"), total["total"]],
             }
         else:
             remaining = slot.get("remaining_g")
@@ -8288,6 +8523,43 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
                 continue
         point = {**counter, "route": route, "observed_at": observed_at}
         before = previous.get(str(index))
+        remaps = tracker.setdefault("counter_remaps", {})
+        remap = remaps.get(str(index))
+        if (remap is not None and remap.get("source") == point["source"]
+                and remap.get("scale") == point.get("scale")):
+            raw_start = float(remap["raw_start"])
+            adjusted_start = float(remap["adjusted_start"])
+            total = float(remap["total"])
+            raw = max(raw_start, float(point["counter"]))
+            if total > raw_start:
+                point["counter"] = min(total, adjusted_start + (
+                    (raw - raw_start) * (total - adjusted_start) / (total - raw_start)
+                ))
+            else:
+                point["counter"] = max(adjusted_start, raw)
+        same_slicer_job = (
+            before is not None
+            and before.get("source") in {"slicer_progress", "slicer_gcode"}
+            and point.get("source") in {"slicer_progress", "slicer_gcode"}
+            and before.get("scale") == point.get("scale")
+        )
+        if same_slicer_job and before["source"] != point["source"]:
+            raw = float(counter["counter"])
+            total = float(point["scale"][1])
+            remaps[str(index)] = {
+                "source": point["source"],
+                "scale": point["scale"],
+                "raw_start": raw,
+                "adjusted_start": float(before["counter"]),
+                "total": total,
+            }
+            point["counter"] = float(before["counter"])
+        elif before is not None and (
+            before.get("route") != route
+            or before.get("identity") != point.get("identity")
+            or before.get("scale") != point.get("scale")
+        ):
+            remaps.pop(str(index), None)
         current[str(index)] = point
         if (before is None or before["route"] != route
                 or before["source"] != point["source"]
@@ -8489,6 +8761,7 @@ class BambuBridgeRuntime:
             state["estimate"] = None
             state["estimate_key"] = key
             state["file_retry_at"] = 0
+            state["layer_curve_retry_at"] = 0
         if (report.get("gcode_state") in {"RUNNING", "PAUSE", "FINISH", "FAILED"}
                 and state.get("estimate") is None
                 and not state.get("file_permission_denied")
@@ -8501,6 +8774,13 @@ class BambuBridgeRuntime:
                 fh_log("Bambu artifact permission denied; file reads are disabled for this binding")
             except (OSError, ValueError, EOFError, ftplib.Error) as exc:
                 fh_log("Bambu usage artifact unavailable: %s" % type(exc).__name__)
+        if (state.get("estimate") is not None
+                and not state["estimate"].get("layer_weights")
+                and time.time() >= state.get("layer_curve_retry_at", 0)):
+            state["layer_curve_retry_at"] = time.time() + 600
+            state["estimate"] = enrich_bambu_estimate_from_slice_cache(
+                report, state["estimate"]
+            )
         status, body = http_get_bridge_json("/printer-bridge/snapshot", config["bridge_token"])
         observation_accepted = False
         if status == 200:

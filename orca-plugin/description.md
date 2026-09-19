@@ -20,9 +20,9 @@ The settings and Bambu usage accounting described below are for **FilamentHub 0.
 
 Connect a Bambu printer over your local network using its address and LAN access code. This connection does not require Bambu Cloud. Available information depends on the printer and firmware; the integration is not limited to one printer model.
 
-With a spool assigned in FilamentHub, the plugin can use the current job's sliced filament quantities and reported progress, or usable changes in the printer's reported remaining filament, to calculate consumption. **Calculated usage automatically reduces the assigned spool's balance and is clearly marked as estimated in its history.** This is a calculation, not a scale measurement. If the available data cannot be safely linked to a spool, the plugin does not invent a deduction.
+With a spool assigned in FilamentHub, the plugin reads the slicer's declared weight and the planned extrusion distribution from that job's G-code. The printer's current layer then selects how much of that planned extrusion has been reached. Retractions are removed from the curve. If the layer curve is unavailable, the plugin can fall back to a clearly labelled progress calculation or to a usable change in the printer's reported remaining filament. **Calculated usage automatically reduces the assigned spool's balance and is clearly marked as estimated in its history.** This is a G-code calculation, not a scale measurement. If the available data cannot be safely linked to a spool, the plugin does not invent a deduction.
 
-A spool assigned partway through a print starts from the balance you enter and the first usable observation after assignment. Earlier consumption is not charged again. For a cancelled print, accounting uses the observed partial progress when available.
+A spool assigned partway through a print starts from the balance you enter and the first usable observation after assignment. Earlier consumption is not charged again. For a cancelled print, accounting keeps the consumption reached at the last observed layer.
 
 Keep OrcaSlicer running for continuous collection. Saved accounting state survives a restart, and the plugin can recover a still-identifiable job from the printer. It cannot reconstruct every print that happened while OrcaSlicer was closed.
 

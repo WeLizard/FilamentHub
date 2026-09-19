@@ -144,6 +144,157 @@ def test_slicer_file_weights_follow_multispool_mapping(plugin_module):
     assert by_spool == {7: pytest.approx(20), 8: pytest.approx(30)}
 
 
+def test_gcode_layer_curve_follows_extrusion_instead_of_linear_progress(plugin_module):
+    gcode = b"""; filament used [g] = 10, 20
+M83
+T0
+; CHANGE_LAYER
+G1 X1 E2
+T1
+G1 X2 E4
+; CHANGE_LAYER
+T0
+G1 X3 E3
+T1
+G1 X4 E1
+"""
+    estimate = plugin_module.parse_bambu_consumption_file(gcode)
+    assert estimate["layer_weights"][0] == pytest.approx([4, 10])
+    assert estimate["layer_weights"][1] == pytest.approx([16, 20])
+
+    desired = {"slots": [
+        {"index": 0, "usage_route_proof": "a", "spool": {"id": 7}},
+        {"index": 1, "usage_route_proof": "b", "spool": {"id": 8}},
+    ]}
+
+    def layer_report(layer, progress):
+        report = _report(remaining=1000, mc_percent=progress)
+        report["layer_num"] = layer
+        report["total_layer_num"] = 2
+        report["ams_mapping"] = [0, 1]
+        report["ams"]["tray_exist_bits"] = "3"
+        report["ams"]["ams"][0]["tray"].append({
+            "id": "1", "tray_type": "PETG", "remain_g": 1000,
+            "remain": 100, "tray_uuid": "TAG-B",
+        })
+        return report
+
+    state = {}
+    assert _events(
+        plugin_module, state, layer_report(1, 50), desired,
+        "2026-09-19T10:00:00+00:00", estimate,
+    ) == []
+    events = _events(
+        plugin_module, state, layer_report(2, 60), desired,
+        "2026-09-19T10:05:00+00:00", estimate,
+    )
+    by_spool = {item["spool_id"]: item for item in events[0]["items"]}
+    assert by_spool[7]["used_weight_g"] == pytest.approx(6)
+    assert by_spool[8]["used_weight_g"] == pytest.approx(4)
+    assert {item["estimate_source"] for item in by_spool.values()} == {"slicer_gcode"}
+
+
+def test_gcode_layer_curve_does_not_count_retraction_twice(plugin_module):
+    gcode = b"""; filament used [g] = 15
+M83
+; CHANGE_LAYER
+G1 E10
+G1 E-2
+; CHANGE_LAYER
+G1 E2
+G1 E5
+"""
+
+    estimate = plugin_module.parse_bambu_consumption_file(gcode)
+
+    assert estimate["layer_weights"][0] == pytest.approx([8, 15])
+
+
+def test_switch_from_progress_to_layer_curve_does_not_double_charge(plugin_module):
+    desired = {"slots": [{
+        "index": 0,
+        "usage_route_proof": "proof-a",
+        "spool": {"id": 7},
+    }]}
+    state = {}
+    progress_estimate = {"sha256": "job-a", "weights": {0: 10}}
+    layer_estimate = {
+        **progress_estimate,
+        "layer_weights": {0: [4, 10]},
+    }
+
+    start = _report(remaining=1000, mc_percent=0)
+    start["layer_num"] = 0
+    start["total_layer_num"] = 2
+    assert _events(
+        plugin_module, state, start, desired,
+        "2026-09-19T10:00:00+00:00", progress_estimate,
+    ) == []
+
+    progress = _report(remaining=1000, mc_percent=50)
+    progress["layer_num"] = 1
+    progress["total_layer_num"] = 2
+    progress_events = _events(
+        plugin_module, state, progress, desired,
+        "2026-09-19T10:05:00+00:00", progress_estimate,
+    )
+    assert progress_events[0]["items"][0]["used_weight_g"] == pytest.approx(5)
+
+    assert _events(
+        plugin_module, state, progress, desired,
+        "2026-09-19T10:06:00+00:00", layer_estimate,
+    ) == []
+
+    finished = _report(state="FINISH", remaining=1000, mc_percent=100)
+    finished["layer_num"] = 2
+    finished["total_layer_num"] = 2
+    terminal = _events(
+        plugin_module, state, finished, desired,
+        "2026-09-19T10:10:00+00:00", layer_estimate,
+    )
+    assert terminal[0]["items"][0]["used_weight_g"] == pytest.approx(5)
+
+
+def test_existing_estimate_recovers_unique_layer_curve_from_slice_cache(
+    plugin_module, tmp_path, monkeypatch
+):
+    cache = tmp_path / "slices"
+    cache.mkdir()
+    two_layers = cache / "two.gcode"
+    two_layers.write_bytes(b"""M83
+; CHANGE_LAYER
+G1 E2
+; CHANGE_LAYER
+G1 E3
+; filament used [g] = 10
+""")
+    three_layers = cache / "three.gcode"
+    three_layers.write_bytes(b"""M83
+; CHANGE_LAYER
+G1 E1
+; CHANGE_LAYER
+G1 E1
+; CHANGE_LAYER
+G1 E1
+; filament used [g] = 10
+""")
+    index = tmp_path / "slices.json"
+    index.write_text(json.dumps({
+        "two": {"path": str(two_layers), "name": "two.gcode"},
+        "three": {"path": str(three_layers), "name": "three.gcode"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(cache))
+    monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(index))
+
+    enriched = plugin_module.enrich_bambu_estimate_from_slice_cache(
+        {"total_layer_num": 2},
+        {"weights": {"0": 10}, "sha256": "archive"},
+    )
+
+    assert enriched["layer_source_key"] == "two"
+    assert enriched["layer_weights"][0] == pytest.approx([4, 10])
+
+
 def test_runtime_retries_identical_outbox_after_lost_ack(plugin_module, tmp_path, monkeypatch):
     config_file = tmp_path / "bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(config_file))
