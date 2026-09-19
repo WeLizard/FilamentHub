@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "끄면 확인이 필요한 일이 있을 때만 알림이 표시됩니다.",
   "settingsDeveloperMode": "개발자 모드",
   "settingsDeveloperModeHint": "플러그인 로그를 첨부하는 문제 신고 버튼을 표시합니다.",
-  "settingsAccountHint": "동기화할 프리셋은 FilamentHub 프로필에서 설정합니다."
+  "settingsAccountHint": "동기화할 프리셋은 FilamentHub 프로필에서 설정합니다.",
+  "printerBundleLive": "설치된 프린터 프로필: {machines}; 출력 프로필: {processes}. 바로 사용할 수 있습니다.",
+  "bambuSearch": "로컬 네트워크 검색",
+  "bambuSearchAgain": "다시 검색",
+  "bambuSearching": "이 네트워크에서 프린터를 찾는 중…",
+  "bambuChoosePrinter": "프린터",
+  "bambuFound": "프린터를 선택하고 LAN 액세스 코드를 입력하세요. 급지 시스템은 연결 후에 읽어옵니다.",
+  "bambuNotFound": "이번 검색에서 프린터를 찾지 못했습니다. 다시 시도하거나 아래에 주소를 입력하세요. 기존 프린터 설정은 유지됩니다.",
+  "bambuSearchIncomplete": "네트워크 검색을 완료하지 못했습니다. 다시 시도하거나 저장된 주소 또는 직접 입력한 주소를 사용하세요.",
+  "bambuManual": "주소 직접 입력",
+  "bambuSetupTimeout": "아직 응답이 없습니다. 프린터 설정은 유지됩니다. 이 창을 닫고 연결을 확인하거나 다시 시도하세요.",
+  "bambuConnecting": "프린터에 연결하는 중…",
+  "bambuSerialRequired": "프린터가 일련번호 없이 응답했습니다. 프린터에서 LAN 전용 모드와 개발자 모드가 켜져 있는지 확인한 뒤 다시 시도하세요.",
+  "bambuSetupUnavailable": "프린터 설정 구성 요소를 사용할 수 없습니다. 이 창을 닫고 설정을 다시 여세요.",
+  "localPermissionRetryFailed": "로컬 연결이 여전히 차단되어 있습니다. 프린터나 계정 데이터는 변경되지 않았습니다."
 }

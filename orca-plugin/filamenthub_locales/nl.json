@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Uit: er verschijnt alleen een melding als iets je aandacht nodig heeft.",
   "settingsDeveloperMode": "Ontwikkelaarsmodus",
   "settingsDeveloperModeHint": "Toont de knop Probleem melden, die het pluginlogboek aan je melding toevoegt.",
-  "settingsAccountHint": "Welke presets worden gesynchroniseerd, stel je in via je profiel op FilamentHub."
+  "settingsAccountHint": "Welke presets worden gesynchroniseerd, stel je in via je profiel op FilamentHub.",
+  "printerBundleLive": "Geïnstalleerde printerprofielen: {machines}; afdrukprofielen: {processes}. Ze zijn direct te gebruiken.",
+  "bambuSearch": "Zoeken in lokaal netwerk",
+  "bambuSearchAgain": "Opnieuw zoeken",
+  "bambuSearching": "Printers zoeken op dit netwerk…",
+  "bambuChoosePrinter": "Printer",
+  "bambuFound": "Kies je printer en voer de LAN-toegangscode in. Het toevoersysteem wordt na het verbinden uitgelezen.",
+  "bambuNotFound": "Bij deze zoekopdracht is geen printer gevonden. Je kunt het opnieuw proberen of hieronder het adres invoeren. De bestaande printerinstellingen blijven behouden.",
+  "bambuSearchIncomplete": "Het zoeken in het netwerk kon niet worden voltooid. Je kunt het opnieuw proberen of een opgeslagen of handmatig ingevoerd adres gebruiken.",
+  "bambuManual": "Adres handmatig invoeren",
+  "bambuSetupTimeout": "Nog geen antwoord. Je printerinstellingen blijven behouden. Je kunt dit venster sluiten en de verbinding controleren, of het opnieuw proberen.",
+  "bambuConnecting": "Verbinden met de printer…",
+  "bambuSerialRequired": "De printer antwoordde zonder serienummer. Controleer of Alleen LAN en de ontwikkelaarsmodus op de printer zijn ingeschakeld en probeer het opnieuw.",
+  "bambuSetupUnavailable": "Het onderdeel voor printerinstelling is niet beschikbaar. Sluit dit venster en open de instelling opnieuw.",
+  "localPermissionRetryFailed": "De lokale verbinding is nog steeds geblokkeerd. Er zijn geen printer- of accountgegevens gewijzigd."
 }

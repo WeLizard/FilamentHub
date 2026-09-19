@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Kapalıyken bildirim yalnızca bir şey dikkatinizi gerektirdiğinde görünür.",
   "settingsDeveloperMode": "Geliştirici modu",
   "settingsDeveloperModeHint": "Eklenti günlüğünü raporunuza ekleyen Sorun bildir düğmesini gösterir.",
-  "settingsAccountHint": "Hangi profillerin senkronize edileceği FilamentHub profilinizde ayarlanır."
+  "settingsAccountHint": "Hangi profillerin senkronize edileceği FilamentHub profilinizde ayarlanır.",
+  "printerBundleLive": "Yüklenen yazıcı profilleri: {machines}; baskı profilleri: {processes}. Hemen kullanıma hazırlar.",
+  "bambuSearch": "Yerel ağda ara",
+  "bambuSearchAgain": "Yeniden ara",
+  "bambuSearching": "Bu ağdaki yazıcılar aranıyor…",
+  "bambuChoosePrinter": "Yazıcı",
+  "bambuFound": "Yazıcınızı seçin ve LAN erişim kodunu girin. Besleme sistemi bağlandıktan sonra okunur.",
+  "bambuNotFound": "Bu aramada yazıcı bulunamadı. Yeniden deneyebilir veya adresini aşağıya girebilirsiniz. Mevcut yazıcı ayarları korunur.",
+  "bambuSearchIncomplete": "Ağ araması tamamlanamadı. Yeniden deneyebilir veya kayıtlı ya da elle girilmiş bir adres kullanabilirsiniz.",
+  "bambuManual": "Adresi elle girin",
+  "bambuSetupTimeout": "Henüz yanıt yok. Yazıcı ayarlarınız korunur. Bu pencereyi kapatıp bağlantıyı kontrol edebilir veya yeniden deneyebilirsiniz.",
+  "bambuConnecting": "Yazıcıya bağlanılıyor…",
+  "bambuSerialRequired": "Yazıcı seri numarası olmadan yanıt verdi. Yazıcıda Yalnızca LAN Modu’nun ve Geliştirici Modu’nun etkin olduğunu kontrol edip yeniden deneyin.",
+  "bambuSetupUnavailable": "Yazıcı kurulum bileşeni kullanılamıyor. Bu pencereyi kapatıp kurulumu yeniden açın.",
+  "localPermissionRetryFailed": "Yerel bağlantı hâlâ engelli. Yazıcı veya hesap verileri değiştirilmedi."
 }

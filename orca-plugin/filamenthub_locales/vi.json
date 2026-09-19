@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Khi tắt, thông báo chỉ xuất hiện khi có điều cần bạn chú ý.",
   "settingsDeveloperMode": "Chế độ nhà phát triển",
   "settingsDeveloperModeHint": "Hiển thị nút Báo cáo sự cố, nút này đính kèm nhật ký plugin vào báo cáo của bạn.",
-  "settingsAccountHint": "Việc chọn cấu hình nào được đồng bộ được đặt trong hồ sơ của bạn trên FilamentHub."
+  "settingsAccountHint": "Việc chọn cấu hình nào được đồng bộ được đặt trong hồ sơ của bạn trên FilamentHub.",
+  "printerBundleLive": "Đã cài cấu hình máy in: {machines}; cấu hình in: {processes}. Có thể sử dụng ngay.",
+  "bambuSearch": "Tìm trong mạng cục bộ",
+  "bambuSearchAgain": "Tìm lại",
+  "bambuSearching": "Đang tìm máy in trong mạng này…",
+  "bambuChoosePrinter": "Máy in",
+  "bambuFound": "Chọn máy in và nhập mã truy cập LAN của máy. Hệ thống nạp sợi sẽ được đọc sau khi kết nối.",
+  "bambuNotFound": "Không tìm thấy máy in nào trong lần tìm này. Bạn có thể thử lại hoặc nhập địa chỉ bên dưới. Cài đặt máy in hiện có vẫn được giữ nguyên.",
+  "bambuSearchIncomplete": "Không thể hoàn tất việc tìm trong mạng. Bạn có thể thử lại hoặc dùng địa chỉ đã lưu hay nhập thủ công.",
+  "bambuManual": "Nhập địa chỉ thủ công",
+  "bambuSetupTimeout": "Chưa có phản hồi. Cài đặt máy in vẫn được giữ nguyên. Bạn có thể đóng cửa sổ này và kiểm tra kết nối, hoặc thử lại.",
+  "bambuConnecting": "Đang kết nối với máy in…",
+  "bambuSerialRequired": "Máy in phản hồi mà không có số sê-ri. Hãy kiểm tra chế độ Chỉ LAN và chế độ Nhà phát triển đã được bật trên máy in, rồi thử lại.",
+  "bambuSetupUnavailable": "Thành phần thiết lập máy in không khả dụng. Hãy đóng cửa sổ này và mở lại phần thiết lập.",
+  "localPermissionRetryFailed": "Kết nối cục bộ vẫn bị chặn. Không có dữ liệu máy in hay tài khoản nào bị thay đổi."
 }

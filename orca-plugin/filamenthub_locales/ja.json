@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "オフの場合、確認が必要なときだけ通知が表示されます。",
   "settingsDeveloperMode": "開発者モード",
   "settingsDeveloperModeHint": "プラグインのログを添付する「問題を報告」ボタンを表示します。",
-  "settingsAccountHint": "同期するプリセットは FilamentHub のプロフィールで設定します。"
+  "settingsAccountHint": "同期するプリセットは FilamentHub のプロフィールで設定します。",
+  "printerBundleLive": "プリンタープロファイル: {machines}、印刷プロファイル: {processes} をインストールしました。すぐに使用できます。",
+  "bambuSearch": "ローカルネットワークを検索",
+  "bambuSearchAgain": "再検索",
+  "bambuSearching": "このネットワーク上のプリンターを検索しています…",
+  "bambuChoosePrinter": "プリンター",
+  "bambuFound": "プリンターを選択し、LAN アクセスコードを入力してください。給紙システムは接続後に読み込まれます。",
+  "bambuNotFound": "今回の検索ではプリンターが見つかりませんでした。もう一度試すか、下にアドレスを入力してください。既存のプリンター設定は保持されます。",
+  "bambuSearchIncomplete": "ネットワーク検索を完了できませんでした。もう一度試すか、保存済みまたは手動で入力したアドレスを使用してください。",
+  "bambuManual": "アドレスを手動で入力",
+  "bambuSetupTimeout": "まだ応答がありません。プリンター設定は保持されています。このウィンドウを閉じて接続を確認するか、もう一度試してください。",
+  "bambuConnecting": "プリンターに接続しています…",
+  "bambuSerialRequired": "プリンターがシリアル番号なしで応答しました。プリンターで LAN Only モードと開発者モードが有効になっていることを確認して、もう一度試してください。",
+  "bambuSetupUnavailable": "プリンターのセットアップ機能を利用できません。このウィンドウを閉じて、もう一度セットアップを開いてください。",
+  "localPermissionRetryFailed": "ローカル接続はまだブロックされています。プリンターやアカウントのデータは変更されていません。"
 }

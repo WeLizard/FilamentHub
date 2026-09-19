@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Desaktibatuta, jakinarazpena zerbaitek arreta behar duenean bakarrik agertzen da.",
   "settingsDeveloperMode": "Garatzaile modua",
   "settingsDeveloperModeHint": "Arazo baten berri eman botoia erakusten du, pluginaren erregistroa zure txostenari eransten diona.",
-  "settingsAccountHint": "Zein aurrezarpen sinkronizatu FilamentHub-eko zure profilean ezartzen da."
+  "settingsAccountHint": "Zein aurrezarpen sinkronizatu FilamentHub-eko zure profilean ezartzen da.",
+  "printerBundleLive": "Instalatutako inprimagailu-profilak: {machines}; inprimatze-profilak: {processes}. Erabiltzeko prest daude.",
+  "bambuSearch": "Bilatu sare lokalean",
+  "bambuSearchAgain": "Bilatu berriro",
+  "bambuSearching": "Sare honetako inprimagailuak bilatzen…",
+  "bambuChoosePrinter": "Inprimagailua",
+  "bambuFound": "Aukeratu inprimagailua eta sartu haren LAN sarbide-kodea. Elikadura-sistema konektatu ondoren irakurriko da.",
+  "bambuNotFound": "Bilaketa honetan ez da inprimagailurik aurkitu. Berriro saia zaitezke edo haren helbidea behean sartu. Inprimagailuaren egungo ezarpenak gordetzen dira.",
+  "bambuSearchIncomplete": "Ezin izan da sareko bilaketa amaitu. Berriro saia zaitezke edo gordetako edo eskuz sartutako helbide bat erabili.",
+  "bambuManual": "Sartu helbidea eskuz",
+  "bambuSetupTimeout": "Oraindik ez dago erantzunik. Inprimagailuaren ezarpenak gordetzen dira. Leiho hau itxi eta konexioa egiazta dezakezu, edo berriro saiatu.",
+  "bambuConnecting": "Inprimagailura konektatzen…",
+  "bambuSerialRequired": "Inprimagailuak serie-zenbakirik gabe erantzun du. Egiaztatu inprimagailuan LAN soilik modua eta garatzaile modua gaituta daudela, eta saiatu berriro.",
+  "bambuSetupUnavailable": "Inprimagailua konfiguratzeko osagaia ez dago erabilgarri. Itxi leiho hau eta ireki konfigurazioa berriro.",
+  "localPermissionRetryFailed": "Konexio lokala blokeatuta dago oraindik. Ez da inprimagailuaren edo kontuaren daturik aldatu."
 }

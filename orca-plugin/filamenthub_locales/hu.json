@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Kikapcsolva értesítés csak akkor jelenik meg, ha valami figyelmet igényel.",
   "settingsDeveloperMode": "Fejlesztői mód",
   "settingsDeveloperModeHint": "Megjeleníti a Probléma jelentése gombot, amely a bővítmény naplóját csatolja a jelentéshez.",
-  "settingsAccountHint": "Hogy mely profilok szinkronizálódjanak, a FilamentHub-profiljában állíthatja be."
+  "settingsAccountHint": "Hogy mely profilok szinkronizálódjanak, a FilamentHub-profiljában állíthatja be.",
+  "printerBundleLive": "Telepített nyomtatóprofilok: {machines}; nyomtatási profilok: {processes}. Már használatra készek.",
+  "bambuSearch": "Keresés a helyi hálózaton",
+  "bambuSearchAgain": "Keresés újra",
+  "bambuSearching": "Nyomtatók keresése ezen a hálózaton…",
+  "bambuChoosePrinter": "Nyomtató",
+  "bambuFound": "Válassza ki a nyomtatót, és adja meg a LAN-hozzáférési kódját. Az adagolórendszert a csatlakozás után olvassuk be.",
+  "bambuNotFound": "Ebben a keresésben nem található nyomtató. Próbálja újra, vagy adja meg a címét lent. A nyomtató meglévő beállításai megmaradnak.",
+  "bambuSearchIncomplete": "A hálózati keresés nem fejeződött be. Próbálja újra, vagy használjon mentett vagy kézzel megadott címet.",
+  "bambuManual": "Cím megadása kézzel",
+  "bambuSetupTimeout": "Még nincs válasz. A nyomtató beállításai megmaradnak. Bezárhatja ezt az ablakot és ellenőrizheti a kapcsolatot, vagy próbálja újra.",
+  "bambuConnecting": "Csatlakozás a nyomtatóhoz…",
+  "bambuSerialRequired": "A nyomtató sorozatszám nélkül válaszolt. Ellenőrizze, hogy a nyomtatón be van-e kapcsolva a Csak LAN mód és a Fejlesztői mód, majd próbálja újra.",
+  "bambuSetupUnavailable": "A nyomtatóbeállító összetevő nem érhető el. Zárja be ezt az ablakot, és nyissa meg újra a beállítást.",
+  "localPermissionRetryFailed": "A helyi kapcsolat továbbra is blokkolva van. Sem a nyomtató, sem a fiók adatai nem változtak."
 }

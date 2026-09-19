@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Désactivé, une notification n'apparaît que si quelque chose demande votre attention.",
   "settingsDeveloperMode": "Mode développeur",
   "settingsDeveloperModeHint": "Affiche le bouton Signaler un problème, qui joint le journal du plugin à votre signalement.",
-  "settingsAccountHint": "Les préréglages à synchroniser se choisissent dans votre profil sur FilamentHub."
+  "settingsAccountHint": "Les préréglages à synchroniser se choisissent dans votre profil sur FilamentHub.",
+  "printerBundleLive": "Profils d’imprimante installés : {machines} ; profils d’impression : {processes}. Ils sont prêts à l’emploi.",
+  "bambuSearch": "Rechercher sur le réseau local",
+  "bambuSearchAgain": "Rechercher à nouveau",
+  "bambuSearching": "Recherche d’imprimantes sur ce réseau…",
+  "bambuChoosePrinter": "Imprimante",
+  "bambuFound": "Choisissez votre imprimante et saisissez son code d’accès LAN. Son système d’alimentation sera lu après la connexion.",
+  "bambuNotFound": "Aucune imprimante n’a été trouvée lors de cette recherche. Vous pouvez réessayer ou saisir son adresse ci-dessous. Les réglages actuels de l’imprimante sont conservés.",
+  "bambuSearchIncomplete": "La recherche sur le réseau n’a pas pu aboutir. Vous pouvez réessayer ou utiliser une adresse enregistrée ou saisie manuellement.",
+  "bambuManual": "Saisir une adresse manuellement",
+  "bambuSetupTimeout": "Pas encore de réponse. Les réglages de votre imprimante sont conservés. Vous pouvez fermer cette fenêtre et vérifier la connexion, ou réessayer.",
+  "bambuConnecting": "Connexion à l’imprimante…",
+  "bambuSerialRequired": "L’imprimante a répondu sans numéro de série. Vérifiez que le mode LAN uniquement et le mode développeur sont activés sur l’imprimante, puis réessayez.",
+  "bambuSetupUnavailable": "Le composant de configuration de l’imprimante n’est pas disponible. Fermez cette fenêtre et rouvrez la configuration.",
+  "localPermissionRetryFailed": "La connexion locale est toujours bloquée. Aucune donnée d’imprimante ni de compte n’a été modifiée."
 }

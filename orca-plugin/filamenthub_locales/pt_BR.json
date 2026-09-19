@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Desativado, um aviso aparece apenas quando algo precisa da sua atenção.",
   "settingsDeveloperMode": "Modo de desenvolvedor",
   "settingsDeveloperModeHint": "Mostra o botão Relatar um problema, que anexa o registro do plugin ao seu relato.",
-  "settingsAccountHint": "Quais perfis sincronizar é definido no seu perfil do FilamentHub."
+  "settingsAccountHint": "Quais perfis sincronizar é definido no seu perfil do FilamentHub.",
+  "printerBundleLive": "Perfis de impressora instalados: {machines}; perfis de impressão: {processes}. Eles já estão prontos para uso.",
+  "bambuSearch": "Buscar na rede local",
+  "bambuSearchAgain": "Buscar novamente",
+  "bambuSearching": "Procurando impressoras nesta rede…",
+  "bambuChoosePrinter": "Impressora",
+  "bambuFound": "Escolha sua impressora e informe o código de acesso LAN dela. O sistema de alimentação será lido após a conexão.",
+  "bambuNotFound": "Nenhuma impressora foi encontrada nesta busca. Você pode tentar novamente ou informar o endereço abaixo. As configurações atuais da impressora são mantidas.",
+  "bambuSearchIncomplete": "Não foi possível concluir a busca na rede. Você pode tentar novamente ou usar um endereço salvo ou informado manualmente.",
+  "bambuManual": "Informar um endereço manualmente",
+  "bambuSetupTimeout": "Ainda sem resposta. As configurações da impressora são mantidas. Você pode fechar esta janela e verificar a conexão, ou tentar novamente.",
+  "bambuConnecting": "Conectando à impressora…",
+  "bambuSerialRequired": "A impressora respondeu sem número de série. Verifique se o modo Somente LAN e o modo Desenvolvedor estão ativados na impressora e tente novamente.",
+  "bambuSetupUnavailable": "O componente de configuração da impressora não está disponível. Feche esta janela e abra a configuração novamente.",
+  "localPermissionRetryFailed": "A conexão local continua bloqueada. Nenhum dado da impressora ou da conta foi alterado."
 }

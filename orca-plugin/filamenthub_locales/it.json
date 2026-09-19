@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Se disattivato, una notifica appare solo quando qualcosa richiede la tua attenzione.",
   "settingsDeveloperMode": "Modalità sviluppatore",
   "settingsDeveloperModeHint": "Mostra il pulsante Segnala un problema, che allega il registro del plugin alla segnalazione.",
-  "settingsAccountHint": "Quali profili sincronizzare si imposta nel tuo profilo su FilamentHub."
+  "settingsAccountHint": "Quali profili sincronizzare si imposta nel tuo profilo su FilamentHub.",
+  "printerBundleLive": "Profili stampante installati: {machines}; profili di stampa: {processes}. Sono già pronti all’uso.",
+  "bambuSearch": "Cerca nella rete locale",
+  "bambuSearchAgain": "Cerca di nuovo",
+  "bambuSearching": "Ricerca delle stampanti in questa rete…",
+  "bambuChoosePrinter": "Stampante",
+  "bambuFound": "Scegli la stampante e inserisci il suo codice di accesso LAN. Il sistema di alimentazione verrà letto dopo la connessione.",
+  "bambuNotFound": "Nessuna stampante trovata in questa ricerca. Puoi riprovare o inserire il suo indirizzo qui sotto. Le impostazioni attuali della stampante restano invariate.",
+  "bambuSearchIncomplete": "Non è stato possibile completare la ricerca nella rete. Puoi riprovare o usare un indirizzo salvato o inserito manualmente.",
+  "bambuManual": "Inserisci un indirizzo manualmente",
+  "bambuSetupTimeout": "Ancora nessuna risposta. Le impostazioni della stampante restano invariate. Puoi chiudere questa finestra e controllare la connessione, oppure riprovare.",
+  "bambuConnecting": "Connessione alla stampante…",
+  "bambuSerialRequired": "La stampante ha risposto senza numero di serie. Controlla che sulla stampante siano attive la modalità Solo LAN e la modalità Sviluppatore, poi riprova.",
+  "bambuSetupUnavailable": "Il componente di configurazione della stampante non è disponibile. Chiudi questa finestra e riapri la configurazione.",
+  "localPermissionRetryFailed": "La connessione locale è ancora bloccata. Nessun dato della stampante o dell’account è stato modificato."
 }

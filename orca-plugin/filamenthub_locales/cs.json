@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Když je vypnuto, oznámení se zobrazí jen tehdy, když něco vyžaduje pozornost.",
   "settingsDeveloperMode": "Režim vývojáře",
   "settingsDeveloperModeHint": "Zobrazí tlačítko Nahlásit problém, které k hlášení připojí protokol pluginu.",
-  "settingsAccountHint": "Které profily synchronizovat, nastavíte ve svém profilu na FilamentHub."
+  "settingsAccountHint": "Které profily synchronizovat, nastavíte ve svém profilu na FilamentHub.",
+  "printerBundleLive": "Nainstalované profily tiskáren: {machines}; tiskové profily: {processes}. Jsou připravené k použití.",
+  "bambuSearch": "Hledat v místní síti",
+  "bambuSearchAgain": "Hledat znovu",
+  "bambuSearching": "Hledám tiskárny v této síti…",
+  "bambuChoosePrinter": "Tiskárna",
+  "bambuFound": "Vyberte tiskárnu a zadejte její přístupový kód LAN. Systém podávání se načte po připojení.",
+  "bambuNotFound": "Při tomto hledání nebyla nalezena žádná tiskárna. Můžete to zkusit znovu nebo níže zadat její adresu. Stávající nastavení tiskárny zůstává zachováno.",
+  "bambuSearchIncomplete": "Hledání v síti se nepodařilo dokončit. Můžete to zkusit znovu nebo použít uloženou či ručně zadanou adresu.",
+  "bambuManual": "Zadat adresu ručně",
+  "bambuSetupTimeout": "Zatím bez odpovědi. Nastavení tiskárny zůstává zachováno. Můžete toto okno zavřít a zkontrolovat připojení, nebo to zkusit znovu.",
+  "bambuConnecting": "Připojování k tiskárně…",
+  "bambuSerialRequired": "Tiskárna odpověděla bez sériového čísla. Zkontrolujte, že je na tiskárně zapnutý režim Pouze LAN a vývojářský režim, a zkuste to znovu.",
+  "bambuSetupUnavailable": "Služba pro nastavení tiskárny není dostupná. Zavřete toto okno a otevřete nastavení znovu.",
+  "localPermissionRetryFailed": "Místní připojení je stále blokováno. Žádná data tiskárny ani účtu nebyla změněna."
 }

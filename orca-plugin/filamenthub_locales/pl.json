@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Po wyłączeniu powiadomienie pojawi się tylko, gdy coś wymaga uwagi.",
   "settingsDeveloperMode": "Tryb dewelopera",
   "settingsDeveloperModeHint": "Pokazuje przycisk Zgłoś problem, który dołącza dziennik wtyczki do zgłoszenia.",
-  "settingsAccountHint": "To, które profile synchronizować, ustawiasz w swoim profilu w FilamentHub."
+  "settingsAccountHint": "To, które profile synchronizować, ustawiasz w swoim profilu w FilamentHub.",
+  "printerBundleLive": "Zainstalowane profile drukarek: {machines}; profile druku: {processes}. Są gotowe do użycia.",
+  "bambuSearch": "Szukaj w sieci lokalnej",
+  "bambuSearchAgain": "Szukaj ponownie",
+  "bambuSearching": "Szukam drukarek w tej sieci…",
+  "bambuChoosePrinter": "Drukarka",
+  "bambuFound": "Wybierz drukarkę i wpisz jej kod dostępu LAN. System podawania zostanie odczytany po połączeniu.",
+  "bambuNotFound": "Podczas tego wyszukiwania nie znaleziono drukarki. Możesz spróbować ponownie lub wpisać jej adres poniżej. Obecne ustawienia drukarki zostają zachowane.",
+  "bambuSearchIncomplete": "Nie udało się ukończyć wyszukiwania w sieci. Możesz spróbować ponownie lub użyć zapisanego albo wpisanego ręcznie adresu.",
+  "bambuManual": "Wpisz adres ręcznie",
+  "bambuSetupTimeout": "Brak odpowiedzi. Ustawienia drukarki zostają zachowane. Możesz zamknąć to okno i sprawdzić połączenie albo spróbować ponownie.",
+  "bambuConnecting": "Łączenie z drukarką…",
+  "bambuSerialRequired": "Drukarka odpowiedziała bez numeru seryjnego. Sprawdź, czy w drukarce włączone są tryb Tylko LAN i tryb deweloperski, i spróbuj ponownie.",
+  "bambuSetupUnavailable": "Komponent konfiguracji drukarki jest niedostępny. Zamknij to okno i otwórz konfigurację ponownie.",
+  "localPermissionRetryFailed": "Połączenie lokalne nadal jest zablokowane. Nie zmieniono żadnych danych drukarki ani konta."
 }

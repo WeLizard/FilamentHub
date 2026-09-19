@@ -14,6 +14,7 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 - Plugin settings in OrcaSlicer's Plugins dialog: choose the server (filamenthub.ru or filamenthub.club, applied after a restart), turn automatic sync off, keep successful automatic syncs silent, and turn on developer mode.
 - In developer mode, a bug button in the toolbar and the icon on error messages open a problem report with the plugin log attached. Passwords, access codes and tokens are removed from the log first, and the report can be sent without it.
 - Removed the unused single-preset import with its native dialogs and the developer-only log button.
+- The Bambu network setup window and the printer profile install message are translated into every OrcaSlicer language instead of falling back to English.
 - Connecting a Bambu printer over the local network again needs only its address and LAN access code. The serial number is read from the printer's own reply, so setup never asks for it and never scans the network to obtain it.
 - The Bambu setup window reacts to **Search local network** and **Connect** again. Since 0.1.10 its script stopped at the first message it tried to show in the window, so neither button ever reached the plugin.
 - Search and Connect now end in a clear result instead of staying busy indefinitely, and a setup request that cannot be paired reports the pairing failure instead of being ignored without an answer.

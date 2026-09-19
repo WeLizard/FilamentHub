@@ -91,5 +91,19 @@
   "settingsSuccessNoticeHint": "Av: ett meddelande visas bara när något behöver din uppmärksamhet.",
   "settingsDeveloperMode": "Utvecklarläge",
   "settingsDeveloperModeHint": "Visar knappen Rapportera ett problem, som bifogar tilläggets logg till rapporten.",
-  "settingsAccountHint": "Vilka förinställningar som synkas ställer du in i din profil på FilamentHub."
+  "settingsAccountHint": "Vilka förinställningar som synkas ställer du in i din profil på FilamentHub.",
+  "printerBundleLive": "Installerade skrivarprofiler: {machines}; utskriftsprofiler: {processes}. De är redo att användas.",
+  "bambuSearch": "Sök i lokalt nätverk",
+  "bambuSearchAgain": "Sök igen",
+  "bambuSearching": "Söker efter skrivare i det här nätverket…",
+  "bambuChoosePrinter": "Skrivare",
+  "bambuFound": "Välj din skrivare och ange dess LAN-åtkomstkod. Matningssystemet läses in efter anslutningen.",
+  "bambuNotFound": "Ingen skrivare hittades vid den här sökningen. Du kan försöka igen eller ange dess adress nedan. Befintliga skrivarinställningar behålls.",
+  "bambuSearchIncomplete": "Nätverkssökningen kunde inte slutföras. Du kan försöka igen eller använda en sparad eller manuellt angiven adress.",
+  "bambuManual": "Ange en adress manuellt",
+  "bambuSetupTimeout": "Inget svar ännu. Dina skrivarinställningar behålls. Du kan stänga fönstret och kontrollera anslutningen, eller försöka igen.",
+  "bambuConnecting": "Ansluter till skrivaren…",
+  "bambuSerialRequired": "Skrivaren svarade utan serienummer. Kontrollera att Endast LAN-läge och utvecklarläge är aktiverade på skrivaren och försök igen.",
+  "bambuSetupUnavailable": "Komponenten för skrivarinställning är inte tillgänglig. Stäng det här fönstret och öppna inställningen igen.",
+  "localPermissionRetryFailed": "Den lokala anslutningen är fortfarande blockerad. Inga skrivar- eller kontouppgifter har ändrats."
 }
