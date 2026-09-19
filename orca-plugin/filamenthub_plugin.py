@@ -63,6 +63,12 @@ capability may be cached locally until expiry so a reopened window can resume.
 """
 
 import csv
+import ftplib
+import io
+import math
+import posixpath
+import zipfile
+from xml.etree import ElementTree
 import datetime
 import hashlib
 import hmac
@@ -910,7 +916,7 @@ def configure_plugin_storage():
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE
-    global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
+    global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
 
     fallback_root = fallback_plugin_storage_dir()
     target_root = ""
@@ -940,6 +946,7 @@ def configure_plugin_storage():
         ".fh_imported.json",
         ".fh_sync.json",
         ".fh_slices.json",
+        ".fh_slice_reports.json",
         ".fh_bambu.json",
         ".fh_bambu_revoke.json",
         ".fh_printer_bundles.json",
@@ -983,6 +990,7 @@ def configure_plugin_storage():
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
     _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
+    _SLICE_REPORT_OUTBOX_FILE = os.path.join(target_root, ".fh_slice_reports.json")
     _SLICE_CACHE_DIR = target_cache
     return True
 
@@ -6820,11 +6828,11 @@ def _bambu_int(value, default=None):
     if isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return int(value)
+        return int(value) if math.isfinite(value) else default
     if isinstance(value, str) and value.strip():
         try:
             return int(float(value.strip()))
-        except ValueError:
+        except (ValueError, OverflowError):
             return default
     return default
 
@@ -6863,6 +6871,7 @@ def _bambu_slot(tray, index, present):
         "color_hex": _bambu_color(tray.get("tray_color")),
         "remaining_pct": _bambu_amount(tray.get("remain")),
         "remaining_g": _bambu_amount(tray.get("remain_g")),
+        "reported_capacity_g": _bambu_amount(tray.get("tray_weight")),
         "filament_id": str(tray.get("tray_info_idx") or "").strip() or None,
         "setting_id": str(tray.get("setting_id") or "").strip() or None,
         "nozzle_temp_min": _bambu_int(tray.get("nozzle_temp_min")),
@@ -6892,7 +6901,7 @@ def _bambu_tag_read_capable(report):
 
 
 def _bambu_capabilities(report):
-    capabilities = ["read", "write", "presence"]
+    capabilities = ["read", "write", "presence", "consumption"]
     if _bambu_tag_read_capable(report):
         capabilities.append("tag_read")
     return capabilities
@@ -7046,6 +7055,8 @@ def _mqtt_read_packet(sock, deadline):
     for _ in range(4):
         digit = _recv_exact(sock, 1, deadline)[0]
         length += (digit & 0x7F) * multiplier
+        if length > 2 * 1024 * 1024:
+            raise ValueError("Bambu MQTT packet exceeds limit")
         if not digit & 0x80:
             body = _recv_exact(sock, length, deadline) if length else b""
             return header, body
@@ -7098,8 +7109,8 @@ def _open_bambu_mqtt(host, access_code, timeout):
         raise
 
 
-def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
-    """Read one full-ish Bambu MQTT report and disconnect.
+def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
+    """Read a Bambu snapshot, or keep receiving reports for a lifecycle-bound callback.
 
     The access code is used only for this local TLS connection. The returned
     payload deliberately contains no address or credential.
@@ -7111,7 +7122,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
     if not access_code:
         raise ValueError("missing Bambu access code")
     deadline = time.monotonic() + timeout
-    sock = _open_bambu_mqtt(host, access_code, timeout)
+    sock = _open_bambu_mqtt(host, access_code, min(timeout, BAMBU_MQTT_TIMEOUT))
     try:
         variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
         client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
@@ -7155,9 +7166,23 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             request_full_snapshot(serial)
 
         fallback = None
-        while time.monotonic() < deadline:
+        last_ping = time.monotonic()
+        while on_report is not None or time.monotonic() < deadline:
+            if on_report is not None:
+                ensure_worker_generation_active()
+                if time.monotonic() - last_ping >= 15:
+                    with external_operation():
+                        sock.sendall(b"\xC0\x00")
+                    last_ping = time.monotonic()
+                with external_operation():
+                    ready = sock.pending() or select.select([sock], [], [], 2)[0]
+                if not ready:
+                    continue
             try:
-                header, packet = _mqtt_read_packet(sock, deadline)
+                header, packet = _mqtt_read_packet(
+                    sock, time.monotonic() + BAMBU_MQTT_TIMEOUT
+                    if on_report is not None else deadline
+                )
             except TimeoutError:
                 if fallback is not None:
                     return serial, fallback
@@ -7198,6 +7223,9 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
                 continue
             report = message.get("print") if isinstance(message, dict) else None
             if not isinstance(report, dict):
+                continue
+            if on_report is not None:
+                on_report(serial, report)
                 continue
             if "gcode_state" in report or "nozzle_temper" in report:
                 fallback = report
@@ -7539,7 +7567,8 @@ def _bambu_number(report, name):
     if isinstance(value, bool) or value is None:
         return None
     try:
-        return float(value)
+        result = float(value)
+        return result if math.isfinite(result) else None
     except (TypeError, ValueError):
         return None
 
@@ -7792,6 +7821,544 @@ def _bambu_material_preview(report, assignments, host_profiles):
     return changes, unresolved, targets
 
 
+_MAX_INPUT = 64 * 1024 * 1024
+_MAX_METADATA = 1024 * 1024
+_MAX_GCODE = 64 * 1024 * 1024
+_MAX_RATIO = 1_000
+_WEIGHT_VECTOR_RE = re.compile(
+    rb"^\s*;\s*filament\s+(?:used|weight)\s*\[g\]\s*[:=]\s*([^\r\n;]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _finite_positive(value: str) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
+    match = _WEIGHT_VECTOR_RE.search(data)
+    if match is None:
+        return None
+    values: dict[int, float] = {}
+    for index, raw in enumerate(re.split(rb"[,\s]+", match.group(1).strip())):
+        value = _finite_positive(raw.decode("ascii", "ignore"))
+        if value is not None:
+            values[index] = value
+    return values or None
+
+
+def _safe_zip_info(info: zipfile.ZipInfo, limit: int) -> bool:
+    uncompressed = int(info.file_size)
+    compressed = int(info.compress_size)
+    if uncompressed < 0 or uncompressed > limit:
+        return False
+    if uncompressed and (compressed <= 0 or uncompressed > compressed * _MAX_RATIO):
+        return False
+    return True
+
+
+def _normal_name(name: str) -> str:
+    candidate = name.replace("\\", "/")
+    if candidate.startswith("/") or any(part == ".." for part in candidate.split("/")):
+        return ""
+    normalized = posixpath.normpath(candidate)
+    return "" if normalized in {"", "."} or normalized.startswith("../") else normalized
+
+
+def _plate_number(path: str) -> int | None:
+    match = re.fullmatch(r"metadata/plate_(\d+)\.gcode", _normal_name(path), re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def _weights_from_slice_info(payload: bytes, plate_index: int) -> dict[int, float] | None:
+    upper = payload.upper()
+    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
+        return None
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError:
+        return None
+    for plate in root.findall(".//plate"):
+        metadata = {
+            item.get("key"): item.get("value")
+            for item in plate.findall("metadata")
+            if item.get("key")
+        }
+        try:
+            current = int(metadata.get("index", ""))
+        except (TypeError, ValueError):
+            continue
+        if current != plate_index:
+            continue
+        weights: dict[int, float] = {}
+        for item in plate.findall("filament"):
+            try:
+                logical = int(item.get("id", "")) - 1
+            except (TypeError, ValueError):
+                continue
+            if logical < 0:
+                continue
+            value = _finite_positive(item.get("used_g", ""))
+            if value is not None:
+                weights[logical] = value
+        return weights or None
+    return None
+
+
+def parse_bambu_consumption_file(data: bytes, plate_path: str | None = None) -> dict | None:
+    """Extract positive per-logical-filament slicer weights from G-code/3MF.
+
+    A multi-plate 3MF requires ``plate_path``; no implicit plate 1 selection is
+    made.  The function never treats printer telemetry as consumption evidence.
+    """
+    if not isinstance(data, (bytes, bytearray, memoryview)) or len(data) > _MAX_INPUT:
+        return None
+    payload = bytes(data)
+    if not payload.startswith(b"PK\x03\x04"):
+        weights = _weights_from_gcode(payload)
+        return {"source": "slicer_gcode", "weights": weights} if weights else None
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            infos = archive.infolist()
+            if not infos or len(infos) > 4096:
+                return None
+            names = [_normal_name(item.filename) for item in infos]
+            if len(names) != len(set(names)) or "" in names:
+                return None
+            plates = [item for item in infos if _plate_number(item.filename) is not None]
+            if not plates:
+                return None
+            requested = _normal_name(plate_path) if plate_path else None
+            if requested is None and len(plates) != 1:
+                return None
+            selected = next(
+                (item for item in plates if _normal_name(item.filename) == requested),
+                plates[0] if requested is None else None,
+            )
+            if selected is None or not _safe_zip_info(selected, _MAX_GCODE):
+                return None
+            metadata = next(
+                (item for item in infos if _normal_name(item.filename).lower() == "metadata/slice_info.config"),
+                None,
+            )
+            if metadata is not None and not _safe_zip_info(metadata, _MAX_METADATA):
+                return None
+            plate_index = _plate_number(selected.filename)
+            if plate_index is None:
+                return None
+            metadata_bytes = archive.read(metadata) if metadata is not None else b""
+            if b"<!DOCTYPE" in metadata_bytes.upper() or b"<!ENTITY" in metadata_bytes.upper():
+                return None
+            weights = _weights_from_slice_info(metadata_bytes, plate_index)
+            if weights is None:
+                weights = _weights_from_gcode(archive.read(selected))
+            if not weights:
+                return None
+            return {
+                "source": "slicer_3mf",
+                "weights": weights,
+                "plate_index": plate_index,
+                "plate_path": _normal_name(selected.filename),
+            }
+    except (OSError, RuntimeError, zipfile.BadZipFile, zipfile.LargeZipFile):
+        return None
+
+
+def _merge_bambu_report(previous, update):
+    result = dict(previous)
+    for key, value in update.items():
+        old = result.get(key)
+        if isinstance(old, dict) and isinstance(value, dict):
+            result[key] = _merge_bambu_report(old, value)
+        elif (isinstance(old, list) and isinstance(value, list) and value
+              and all(isinstance(item, dict) and "id" in item for item in old + value)):
+            indexed = {str(item["id"]): item for item in old}
+            for item in value:
+                item_key = str(item["id"])
+                indexed[item_key] = _merge_bambu_report(indexed.get(item_key, {}), item)
+            result[key] = list(indexed.values())
+        else:
+            result[key] = value
+    return result
+
+
+class _BambuStreamLifecycle:
+    def __init__(self, runtime, stop):
+        self.runtime = runtime
+        self.stop = stop
+
+    def authorize_external_operation(self, generation):
+        self.runtime.authorize_external_operation(generation)
+        if self.stop.is_set():
+            raise PluginLifecycleStopped("Bambu stream binding has stopped")
+
+
+def _bambu_job_key(report):
+    identifiers = [str(report.get(key) or "") for key in ("task_id", "subtask_id", "project_id")]
+    keys = ("gcode_file",) if any(value not in {"", "0"} for value in identifiers) else (
+        "gcode_file", "subtask_name"
+    )
+    fields = identifiers + [str(report.get(key) or "") for key in keys]
+    return hashlib.sha256(json.dumps(fields).encode()).hexdigest()
+
+
+def _bambu_file_candidates(report):
+    candidates = set()
+    for field in ("gcode_file", "subtask_name"):
+        value = report.get(field)
+        if not isinstance(value, str) or len(value) > 500:
+            continue
+        value = value.replace("\\", "/")
+        if any(ord(char) < 32 for char in value) or ":" in value:
+            continue
+        if any(part == ".." for part in value.split("/")):
+            continue
+        if value.lower().startswith("metadata/"):
+            continue
+        name = posixpath.basename(value)
+        if not name:
+            continue
+        if name.lower().endswith((".3mf", ".gcode")):
+            candidates.add(name)
+        else:
+            candidates.update((name + ".3mf", name + ".gcode.3mf", name + ".gcode"))
+    return candidates
+
+
+class _BambuReadOnlyFTP(ftplib.FTP_TLS):
+    """Implicit LAN TLS; data connections remain pinned to the control peer."""
+
+    def putcmd(self, line):
+        ensure_worker_generation_active()
+        return super().putcmd(line)
+
+    def ntransfercmd(self, cmd, rest=None):
+        ensure_worker_generation_active()
+        connection, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
+        try:
+            if self._prot_p:
+                ensure_worker_generation_active()
+                connection = self.context.wrap_socket(
+                    connection, server_hostname=self.host, session=self.sock.session
+                )
+            return connection, size
+        except Exception:
+            connection.close()
+            raise
+
+
+def read_bambu_consumption_file(config, report):
+    """Read a uniquely named current artifact, never the newest file on storage."""
+    candidates = _bambu_file_candidates(report)
+    if not candidates:
+        return None
+    _, _, _, address = _resolved_bambu_address(config.get("host") or "")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
+    ftp = _BambuReadOnlyFTP(context=context, timeout=5)
+    ftp.host = address[0]
+    deadline = time.monotonic() + 30
+    try:
+        with external_operation():
+            raw = socket.create_connection((ftp.host, 990), timeout=5)
+            try:
+                ensure_worker_generation_active()
+                ftp.sock = context.wrap_socket(raw, server_hostname=ftp.host)
+            except Exception:
+                raw.close()
+                raise
+            ftp.af = ftp.sock.family
+            ftp.file = ftp.sock.makefile("r", encoding=ftp.encoding)
+            ftp.welcome = ftp.getresp()
+            ftp.login("bblp", config.get("access_code") or "")
+            ftp.prot_p()
+            matches = set()
+            for directory in ("/", "/cache", "/model"):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Bambu file lookup timed out")
+                lines = []
+
+                def append_name(line):
+                    if len(lines) >= 4096 or time.monotonic() >= deadline:
+                        raise ValueError("Bambu file listing exceeds limit")
+                    lines.append(line)
+
+                try:
+                    ftp.retrlines("NLST " + directory, append_name)
+                except ftplib.error_perm:
+                    continue
+                for name in lines:
+                    basename = posixpath.basename(name)
+                    if basename in candidates and not any(ord(c) < 32 for c in name):
+                        matches.add(posixpath.join(directory, basename))
+            if len(matches) != 1:
+                return None
+            path = next(iter(matches))
+            ftp.voidcmd("TYPE I")
+            size = ftp.size(path)
+            if size is None or size <= 0 or size > _MAX_INPUT:
+                return None
+            data = bytearray()
+
+            def receive(chunk):
+                ensure_worker_generation_active()
+                if len(data) + len(chunk) > _MAX_INPUT or time.monotonic() >= deadline:
+                    raise ValueError("Bambu artifact exceeds transfer limit")
+                data.extend(chunk)
+
+            ftp.retrbinary("RETR " + path, receive, blocksize=65536)
+            if len(data) != size or ftp.size(path) != size:
+                return None
+        plate_path = str(report.get("gcode_file") or "")
+        if _plate_number(plate_path) is None:
+            index = _bambu_int(report.get("plate_idx"))
+            plate_path = "Metadata/plate_%d.gcode" % index if index and index > 0 else None
+        result = parse_bambu_consumption_file(data, plate_path)
+        if result is not None:
+            result["sha256"] = hashlib.sha256(data).hexdigest()
+        return result
+    finally:
+        ftp.close()
+
+
+def _bambu_usage_routes(desired):
+    result = {}
+    for slot in desired.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        spool = slot.get("spool")
+        proof = slot.get("usage_route_proof")
+        index = slot.get("index")
+        if (isinstance(spool, dict) and isinstance(spool.get("id"), int)
+                and isinstance(index, int) and isinstance(proof, str) and proof):
+            result[index] = {
+                "slot_index": index, "spool_id": spool["id"],
+                "usage_route_proof": proof, "evidence": "route_proof",
+                "initial_weight_g": spool.get("initial_weight_g"),
+            }
+    return result
+
+
+def _bambu_progress(report):
+    if report.get("gcode_state") == "FINISH":
+        return 1.0
+    percent = _bambu_number(report, "mc_percent")
+    return min(max(percent / 100, 0), 1) if percent is not None else None
+
+
+def _bambu_usage_counters(report, routes, estimate):
+    """Return comparable per-slot estimates with a source and physical identity."""
+    feed = parse_bambu_feed(report) or {}
+    slots = {item["index"]: item for item in feed.get("slots") or []}
+    progress = _bambu_progress(report)
+    weights = (estimate or {}).get("weights") or {}
+    mapping = report.get("ams_mapping")
+    totals = {}
+    if weights and progress is not None:
+        for logical, weight in weights.items():
+            logical = int(logical)
+            index = None
+            if isinstance(mapping, list) and logical < len(mapping):
+                flat = _bambu_int(mapping[logical])
+                # Bambu's task mapping uses flat 16..23 for HT units 128..135.
+                if flat is not None:
+                    index = BAMBU_WIDE_UNIT_BASE + flat - 16 if 16 <= flat < 24 else flat
+                    if flat == -1 and len(weights) == 1 and feed.get("active_index") in {254, 255}:
+                        index = feed["active_index"]
+            elif len(weights) == 1:
+                index = feed.get("active_index")
+            if index in routes:
+                totals[index] = totals.get(index, 0.0) + float(weight)
+    result = {}
+    for index, route in routes.items():
+        slot = slots.get(index) or {}
+        if slot.get("present") is False:
+            continue
+        identity = slot.get("provider_uid")
+        if index in totals:
+            result[index] = {
+                "counter": totals[index] * progress,
+                "source": "slicer_progress",
+                "identity": identity,
+                "scale": [estimate.get("sha256"), totals[index]],
+            }
+        else:
+            remaining = slot.get("remaining_g")
+            if remaining is None:
+                percent = slot.get("remaining_pct")
+                capacity = _finite_positive(slot.get("reported_capacity_g"))
+                if percent is not None and 0 <= percent <= 100 and capacity is not None:
+                    remaining = capacity * percent / 100
+            reading = _bambu_bits((report.get("ams") or {}).get("tray_reading_bits"))
+            if (not reading and identity and remaining is not None
+                    and math.isfinite(remaining) and remaining >= 0):
+                result[index] = {
+                    "counter": -remaining, "source": "ams_remaining",
+                    "identity": identity, "scale": slot.get("reported_capacity_g"),
+                }
+    return result
+
+
+def capture_bambu_usage(state, report, desired, estimate, observed_at):
+    """Persistable deltas start at the observed spool binding, including late binds."""
+    status = str(report.get("gcode_state") or "").upper()
+    active = status in {"RUNNING", "PAUSE", "PREPARE"}
+    terminal = status in {"FINISH", "FAILED"}
+    key = _bambu_job_key(report)
+    progress = _bambu_progress(report)
+    tracker = state.get("tracker")
+    new_run = (tracker is None or tracker.get("key") != key
+               or (active and (tracker.get("terminal") or tracker.get("inactive")))
+               or (active and progress is not None and tracker.get("progress") is not None
+                   and progress + 0.02 < tracker["progress"]))
+    events = []
+
+    def emit(current, *, outcome=None, reason="periodic"):
+        pending = current.get("pending") or {}
+        if not pending and outcome is None:
+            return
+        sequence = current["segment_sequence"]
+        events.append({
+            "contract_version": 2,
+            "event_id": current["job_id"] + ":%d" % sequence,
+            "job_id": current["job_id"], "segment_sequence": sequence,
+            "event_type": "terminal" if outcome is not None else "checkpoint",
+            "reasons": ["terminal" if outcome is not None else reason],
+            "started_at": current["started_at"], "observed_at": observed_at,
+            "file_name": current.get("file_name"),
+            "items": list(pending.values()),
+            **({"outcome": outcome} if outcome is not None else {}),
+        })
+        current["pending"] = {}
+        current["segment_sequence"] += 1
+        current["last_emit"] = observed_at
+
+    if not active and not terminal:
+        if tracker is not None:
+            emit(tracker, reason="disconnect")
+            tracker["previous"] = {}
+            tracker["inactive"] = True
+        return events
+    if new_run:
+        if tracker is not None and not tracker.get("terminal"):
+            emit(tracker, reason="disconnect")
+        tracker = {
+            "key": key, "job_id": "bambu:" + uuid.uuid4().hex,
+            "file_name": str(report.get("subtask_name") or report.get("gcode_file") or "")[:500],
+            "started_at": observed_at, "last_emit": observed_at,
+            "segment_sequence": 1, "previous": {}, "pending": {},
+            "terminal": terminal,
+        }
+        state["tracker"] = tracker
+    if tracker.get("terminal"):
+        return events
+    if isinstance(report.get("ams_mapping"), list):
+        tracker["ams_mapping"] = report["ams_mapping"]
+    elif tracker.get("ams_mapping") is not None:
+        report = {**report, "ams_mapping": tracker["ams_mapping"]}
+    routes = _bambu_usage_routes(desired)
+    counters = _bambu_usage_counters(report, routes, estimate)
+    previous = tracker["previous"]
+    proofs = {route["usage_route_proof"] for route in routes.values()}
+    tag_bindings = {
+        proof: identity for proof, identity in state.get("tag_bindings", {}).items()
+        if proof in proofs
+    }
+    state["tag_bindings"] = tag_bindings
+    current = {}
+    for index, counter in counters.items():
+        route = dict(routes[index])
+        route.pop("initial_weight_g", None)
+        proof = route["usage_route_proof"]
+        identity = counter.get("identity")
+        if identity is not None:
+            bound = tag_bindings.setdefault(proof, identity)
+            if bound != identity:
+                # A replacement physical tag cannot inherit the old desired
+                # spool merely because it occupies the same printer slot.
+                continue
+        point = {**counter, "route": route, "observed_at": observed_at}
+        before = previous.get(str(index))
+        current[str(index)] = point
+        if (before is None or before["route"] != route
+                or before["source"] != point["source"]
+                or before.get("identity") != point.get("identity")
+                or before.get("scale") != point.get("scale")):
+            continue
+        delta = point["counter"] - before["counter"]
+        if delta <= 0 or not math.isfinite(delta):
+            if point["source"] == "ams_remaining" and delta < 0:
+                # A sensor rebound must not charge the same decrease again.
+                # A new tag, route or calibrated capacity has its own baseline.
+                point["counter"] = before["counter"]
+            continue
+        pending_key = str(route["spool_id"])
+        pending = tracker["pending"].get(pending_key)
+        if pending is not None and (
+            pending["estimate_source"] != point["source"] or pending["slot_index"] != index
+            or pending["usage_route_proof"] != proof
+        ):
+            emit(tracker, reason="slot_change")
+            pending = None
+        if pending is None:
+            pending = {
+                **route, "used_weight_g": 0.0, "consumption_kind": "estimated",
+                "estimate_source": point["source"],
+                "usage_started_at": before["observed_at"],
+            }
+            tracker["pending"][pending_key] = pending
+        pending["used_weight_g"] += delta
+    tracker["previous"] = current
+    tracker["progress"] = progress
+    elapsed = (datetime.datetime.fromisoformat(observed_at)
+               - datetime.datetime.fromisoformat(tracker["last_emit"])).total_seconds()
+    if terminal:
+        emit(tracker, outcome="completed" if status == "FINISH" else "failed")
+        tracker["terminal"] = True
+    elif elapsed >= 300 or status == "PAUSE":
+        emit(tracker, reason="paused" if status == "PAUSE" else "periodic")
+    return events
+
+
+def _bambu_stream_key(config):
+    return hashlib.sha256(json.dumps([
+        config.get("host"), config.get("serial"), config.get("access_code"),
+        config.get("bridge_token"), config.get("physical_printer_id"),
+        config.get("material_system_id"),
+    ]).encode()).hexdigest()
+
+
+def _buffer_bambu_usage_report(stream, report, observed_at):
+    """Keep accounting transitions until the journal has accepted them."""
+    feed = parse_bambu_feed(report) or {}
+    signature = json.dumps([
+        _bambu_job_key(report), report.get("gcode_state"), _bambu_progress(report),
+        report.get("ams_mapping"),
+        [{name: slot.get(name) for name in (
+            "index", "present", "provider_uid", "remaining_g", "remaining_pct",
+            "reported_capacity_g",
+        )} for slot in feed.get("slots", [])],
+    ], sort_keys=True)
+    if signature == stream.get("usage_signature"):
+        return
+    stream["usage_signature"] = signature
+    pending = stream.setdefault("usage_reports", [])
+    observation = {"report": json.loads(json.dumps(report)), "observed_at": observed_at}
+    if len(pending) >= 256:
+        # Do not infer consumption across a lost observation interval. Already
+        # journaled deltas remain intact, and the newest point starts a baseline.
+        pending.clear()
+        observation["report"]["_fh_observation_gap"] = True
+    pending.append(observation)
+
+
 class BambuBridgeRuntime:
     """One bounded daemon serializes all configured local Bambu observations."""
 
@@ -7807,8 +8374,182 @@ class BambuBridgeRuntime:
         self._last_heartbeat_at = {}
         self._failure_count = {}
         self._retry_at = {}
+        self._usage_states = {}
+        self._usage_retry_at = {}
+        self._streams = {}
+
+    def _stream_observation(self, config):
+        key = _bambu_stream_key(config)
+        stream = self._streams.get(key)
+        if stream is None or not stream["thread"].is_alive():
+            generation = self._generation
+            stream = {
+                "ready": threading.Event(), "lock": threading.Lock(),
+                "stop": threading.Event(),
+                "binding": (config.get("physical_printer_id"), config.get("material_system_id")),
+            }
+
+            def receive(serial, report):
+                with stream["lock"]:
+                    merged = stream.get("report") or {}
+                    if (report.get("gcode_state") in {"PREPARE", "RUNNING"}
+                            and merged.get("gcode_state") in {"FINISH", "FAILED", "IDLE"}):
+                        merged = {}
+                    if any(report.get(field) and merged.get(field)
+                           and report[field] != merged[field]
+                           for field in ("task_id", "subtask_id", "gcode_file", "subtask_name")):
+                        merged = {key: value for key, value in merged.items() if key != "ams_mapping"}
+                    # Snapshot packets replace nested feed state; partial MQTT
+                    # updates merge fields and slots by their provider IDs.
+                    stream["report"] = _merge_bambu_report(merged, report)
+                    _buffer_bambu_usage_report(
+                        stream, stream["report"],
+                        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    )
+                    stream["serial"] = serial
+                    stream["at"] = time.monotonic()
+                    stream["ready"].set()
+
+            def run():
+                with bind_lifecycle_generation(_BambuStreamLifecycle(self, stream["stop"]), generation):
+                    while not self._stop.is_set() and not stream["stop"].is_set():
+                        try:
+                            read_bambu_lan_snapshot(config, timeout=3600, on_report=receive)
+                        except Exception as exc:
+                            if self._stop.is_set() or stream["stop"].is_set():
+                                break
+                            fh_log("Bambu LAN stream reconnecting: %s" % type(exc).__name__)
+                            self._stop.wait(5)
+
+            stream["thread"] = threading.Thread(target=run, name="filamenthub-bambu-lan", daemon=True)
+            self._streams[key] = stream
+            stream["thread"].start()
+        deadline = time.monotonic() + BAMBU_MQTT_TIMEOUT
+        while not stream["ready"].wait(0.1):
+            if self._stop.is_set() or stream["stop"].is_set():
+                raise PluginLifecycleStopped("Bambu stream observation stopped")
+            if time.monotonic() >= deadline:
+                break
+        with stream["lock"]:
+            if "report" not in stream or time.monotonic() - stream.get("at", 0) > 60:
+                raise TimeoutError("Bambu LAN stream is unavailable")
+            return stream["serial"], json.loads(json.dumps(stream["report"]))
+
+    def _record_stream_usage(self, config, source_instance_id, report, observed_at,
+                             stream_config=None):
+        key = _bambu_stream_key(stream_config if stream_config is not None else config)
+        stream = self._streams.get(key)
+        if stream is None:
+            return self._record_usage(config, source_instance_id, report, observed_at)
+        with stream["lock"]:
+            pending = list(stream.get("usage_reports", []))
+        if not pending:
+            return self._record_usage(config, source_instance_id, report, observed_at)
+        for observation in pending:
+            if self._stop.is_set():
+                return
+            if self._record_usage(config, source_instance_id, **observation) is False:
+                return
+            with stream["lock"]:
+                queue = stream["usage_reports"]
+                if queue and queue[0] is observation:
+                    queue.pop(0)
+
+    def _record_usage(self, config, source_instance_id, report, observed_at):
+        binding = hashlib.sha256(json.dumps([
+            config["physical_printer_id"], config["material_system_id"],
+            source_instance_id, config["bridge_token"],
+        ]).encode()).hexdigest()
+        path = os.path.join(os.path.dirname(BAMBU_CONFIG_FILE), "bambu_usage", binding + ".json")
+        state = self._usage_states.get(binding)
+        if state is None:
+            try:
+                if os.path.getsize(path) > 8 * 1024 * 1024:
+                    raise ValueError("Bambu usage journal exceeds limit")
+                with open(path, encoding="utf-8") as handle:
+                    state = json.load(handle)
+                if not isinstance(state, dict) or state.get("version") != 1:
+                    raise ValueError("Invalid Bambu usage journal")
+            except FileNotFoundError:
+                state = {"version": 1, "next_sequence": 1, "events": []}
+        # A failed disk write must not advance the in-memory accounting baseline.
+        state = json.loads(json.dumps(state))
+        if report.get("_fh_observation_gap") and state.get("tracker") is not None:
+            state["tracker"]["previous"] = {}
+        key = _bambu_job_key(report)
+        tracker = state.get("tracker")
+        if not state.get("outbox") and not state["events"]:
+            idle = report.get("gcode_state") not in {"PREPARE", "RUNNING", "PAUSE"}
+            if idle and (tracker is None or (tracker.get("terminal") and tracker.get("key") == key)):
+                self._usage_states[binding] = state
+                return True
+        if state.get("estimate_key") != key:
+            state["estimate"] = None
+            state["estimate_key"] = key
+            state["file_retry_at"] = 0
+        if (report.get("gcode_state") in {"RUNNING", "PAUSE", "FINISH", "FAILED"}
+                and state.get("estimate") is None
+                and not state.get("file_permission_denied")
+                and time.time() >= state.get("file_retry_at", 0)):
+            state["file_retry_at"] = time.time() + 600
+            try:
+                state["estimate"] = read_bambu_consumption_file(config, report)
+            except PermissionError:
+                state["file_permission_denied"] = True
+                fh_log("Bambu artifact permission denied; file reads are disabled for this binding")
+            except (OSError, ValueError, EOFError, ftplib.Error) as exc:
+                fh_log("Bambu usage artifact unavailable: %s" % type(exc).__name__)
+        status, body = http_get_bridge_json("/printer-bridge/snapshot", config["bridge_token"])
+        observation_accepted = False
+        if status == 200:
+            desired = json.loads(body.decode("utf-8"))
+            if not isinstance(desired, dict):
+                raise ValueError("Invalid Bambu desired snapshot")
+            if len(state["events"]) < 512:
+                state["events"].extend(capture_bambu_usage(
+                    state, report, desired, state.get("estimate"), observed_at
+                ))
+                observation_accepted = True
+            else:
+                fh_log("Bambu usage queue is full; draining before resuming observations")
+        # An unavailable desired snapshot defers this observation. Keep the
+        # last durable baseline; a changed route proof after reconnection starts
+        # its own interval, while an unchanged assignment can resume accounting.
+        if state.get("outbox") is None and state["events"]:
+            events = state["events"][:32]
+            state["events"] = state["events"][32:]
+            state["outbox"] = {
+                "material_system_id": config["material_system_id"],
+                "provider": "bambu", "transport": "orca_plugin_lan",
+                "source_instance_id": source_instance_id,
+                "sequence": state["next_sequence"], "events": events,
+            }
+        write_json_atomic(path, state, mode=0o600)
+        self._usage_states[binding] = state
+        pending = state.get("outbox")
+        if pending is None or time.monotonic() < self._usage_retry_at.get(binding, 0):
+            return observation_accepted
+        status, body, retry_after = http_post_bridge_json(
+            "/printer-bridge/usage-batches", config["bridge_token"], pending
+        )
+        if status == 200:
+            ack = json.loads(body.decode("utf-8"))
+            if ack.get("accepted") is True and ack.get("ack_sequence") == pending["sequence"]:
+                committed = dict(state)
+                committed["outbox"] = None
+                committed["next_sequence"] = pending["sequence"] + 1
+                write_json_atomic(path, committed, mode=0o600)
+                self._usage_states[binding] = committed
+                self._usage_retry_at.pop(binding, None)
+                return observation_accepted
+        self._usage_retry_at[binding] = time.monotonic() + max(60, retry_after or 0)
+        fh_log("Bambu usage upload pending: HTTP %s" % status)
+        return observation_accepted
 
     def _start_locked(self):
+        for stream in self._streams.values():
+            stream["stop"].set()
+        self._streams = {}
         self._stop.clear()
         self._generation += 1
         generation = self._generation
@@ -7846,6 +8587,8 @@ class BambuBridgeRuntime:
             thread = self._thread
             self._restart_requested = False
             self._stop.set()
+            for stream in self._streams.values():
+                stream["stop"].set()
             self._wake.set()
         if (
             thread is not None
@@ -7886,6 +8629,10 @@ class BambuBridgeRuntime:
         while not self._stop.is_set():
             local = load_bambu_config()
             active = [item for item in local["printers"] if item.get("bridge_token")]
+            active_keys = {_bambu_stream_key(item) for item in active}
+            for key in list(self._streams):
+                if key not in active_keys:
+                    self._streams.pop(key)["stop"].set()
             if not active:
                 self._retire_current_thread()
                 return
@@ -7900,9 +8647,10 @@ class BambuBridgeRuntime:
                 if now_monotonic < self._retry_at.get(binding_key, 0.0):
                     continue
                 try:
-                    serial, report = read_bambu_lan_snapshot(config)
+                    serial, report = self._stream_observation(config)
                     if self._stop.is_set():
                         break
+                    stream_config = config
                     config, source_instance_id = _prepare_bambu_observation(
                         config,
                         serial,
@@ -7970,6 +8718,14 @@ class BambuBridgeRuntime:
                     else:
                         status = 200
                         retry_after = None
+                    if status == 200 and not self._stop.is_set():
+                        try:
+                            self._record_stream_usage(
+                                config, source_instance_id, report, snapshot["observed_at"],
+                                stream_config=stream_config,
+                            )
+                        except Exception as exc:
+                            fh_log("Bambu usage remains pending: %s" % type(exc).__name__)
                     if self._stop.is_set():
                         break
                     if status == 401:
@@ -8129,8 +8885,11 @@ _SLICING = getattr(orca, "slicing", None)
 _SLICE_CAPABILITY_BASE = getattr(_SLICING, "SlicingPipelineCapabilityBase", None)
 _TAIL_BYTES = 300000
 _SLICE_INDEX_FILE = os.path.join(PLUGIN_DIR, ".fh_slices.json")
+_SLICE_REPORT_OUTBOX_FILE = os.path.join(PLUGIN_DIR, ".fh_slice_reports.json")
 _SLICE_INDEX_LIMIT = 300
 _SLICE_INDEX_LOCK = threading.Lock()
+_SLICE_REPORT_OUTBOX_LIMIT = 300
+_SLICE_REPORT_OUTBOX_LOCK = threading.Lock()
 # Sending a print writes the G-code to a temporary file the host deletes right
 # after the upload, so the path alone would be worthless by the time a person
 # asks for a calculation. Those slices are kept here instead, newest few only.
@@ -8316,17 +9075,6 @@ def _read_slice_identity(path):
     return identity or None
 
 
-def _is_temporary_slice(path):
-    """Whether the host wrote this G-code only to hand it to a printer."""
-    if os.path.basename(path).startswith(".OrcaSlicer.upload"):
-        return True
-    try:
-        temp_root = os.path.realpath(tempfile.gettempdir())
-        return os.path.commonpath([temp_root, os.path.realpath(path)]) == temp_root
-    except (OSError, ValueError):
-        return False
-
-
 def _prune_slice_cache():
     """Keep the newest few copies while they fit the budget; the newest always."""
     try:
@@ -8374,18 +9122,19 @@ def _remember_slice_path(path, file_name=""):
     """
     stamp = "%s|%s" % (path, os.path.getmtime(path))
     key = hashlib.sha256(stamp.encode("utf-8")).hexdigest()
-    if _is_temporary_slice(path):
-        path = _cache_slice_file(path, key) or path
+    file_name = file_name or os.path.basename(path)
+    # The host owns this working file, including File exports' .pp copies.
+    # Keep our own bounded copy without probing the OS temporary directory.
+    path = _cache_slice_file(path, key)
+    if not path:
+        raise OSError("Could not retain the sliced file")
     with _SLICE_INDEX_LOCK:
         index = _load_slice_index()
-        index[key] = {"path": path, "name": file_name or os.path.basename(path)}
+        index[key] = {"path": path, "name": file_name}
         if len(index) > _SLICE_INDEX_LIMIT:
             for stale in list(index)[: len(index) - _SLICE_INDEX_LIMIT]:
                 index.pop(stale, None)
-        try:
-            write_json_atomic(_SLICE_INDEX_FILE, index, mode=0o600)
-        except OSError:
-            pass
+        write_json_atomic(_SLICE_INDEX_FILE, index, mode=0o600)
     return key
 
 
@@ -8418,14 +9167,83 @@ def slice_path_for_key(key):
     return entry["path"] if entry else None
 
 
+_SLICE_DELIVERY_TARGET_LOCK = threading.Lock()
+_SLICE_DELIVERY_TARGET = None
+
+
+def _set_slice_delivery_target(target):
+    global _SLICE_DELIVERY_TARGET
+    with _SLICE_DELIVERY_TARGET_LOCK:
+        _SLICE_DELIVERY_TARGET = target
+
+
+def _slice_delivery_target():
+    with _SLICE_DELIVERY_TARGET_LOCK:
+        return _SLICE_DELIVERY_TARGET
+
+
+def _load_slice_report_outbox():
+    try:
+        with open(_SLICE_REPORT_OUTBOX_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _queue_slice_report(identity):
+    source_key = identity.get("source_key")
+    if not isinstance(source_key, str) or not source_key:
+        raise ValueError("slice report has no source key")
+    with _SLICE_REPORT_OUTBOX_LOCK:
+        pending = [
+            item for item in _load_slice_report_outbox()
+            if item.get("source_key") != source_key
+        ]
+        pending.append(dict(identity))
+        pending = pending[-_SLICE_REPORT_OUTBOX_LIMIT:]
+        write_json_atomic(_SLICE_REPORT_OUTBOX_FILE, pending, mode=0o600)
+    return source_key
+
+
+def _acknowledge_slice_reports(source_keys):
+    acknowledged = {
+        key for key in source_keys
+        if isinstance(key, str) and 0 < len(key) <= 64
+    }
+    if not acknowledged:
+        return 0
+    with _SLICE_REPORT_OUTBOX_LOCK:
+        pending = _load_slice_report_outbox()
+        kept = [item for item in pending if item.get("source_key") not in acknowledged]
+        if len(kept) != len(pending):
+            write_json_atomic(_SLICE_REPORT_OUTBOX_FILE, kept, mode=0o600)
+        return len(pending) - len(kept)
+
+
+def _deliver_pending_slice_reports(target=None):
+    target = target or _slice_delivery_target()
+    if target is None:
+        return False
+    with _SLICE_REPORT_OUTBOX_LOCK:
+        pending = _load_slice_report_outbox()[:25]
+    if not pending:
+        return False
+    target._deliver(
+        "slice-report-batch",
+        requestId="slice-report-" + uuid.uuid4().hex,
+        slices=pending,
+    )
+    return True
+
+
 def report_slice(gcode_path, output_name="", host=""):
-    """Tell FilamentHub a slice exists. Returns (sent, reason)."""
+    """Queue one slice for the signed-in FilamentHub page to report."""
     identity = _read_slice_identity(gcode_path)
     if identity is None:
         return False, ui_text("sliceUnreadable")
-    token = (load_saved_auth() or {}).get("accessToken") or ""
-    if not token:
-        return False, ui_text("sliceNotSignedIn")
     identity["file_name"] = (
         os.path.basename(output_name or gcode_path) or "print.gcode"
     )[:300]
@@ -8433,19 +9251,83 @@ def report_slice(gcode_path, output_name="", host=""):
     identity["source_instance_id"] = plugin_source_instance_id()
     if host:
         identity["target_host"] = host[:50]
-    status, _ = http_post_json("/orcaslicer/slices", token, {"slices": [identity]})
-    if status != 200:
-        return False, "HTTP %s" % status
+    _queue_slice_report(identity)
+    _deliver_pending_slice_reports()
     return True, identity["file_name"]
 
 
 # The name the host matches against a process preset's slicing_pipeline_plugin.
 SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
+SLICE_SETTINGS_DEFAULTS = {"report_slices": False}
+SLICE_SETTINGS_COPY_KEYS = (
+    "sliceSettingsTitle", "sliceSettingsPurpose", "sliceSettingsLocal",
+    "sliceSettingsRemote", "sliceSettingsPermission", "sliceSettingsEnable",
+)
+SLICE_SETTINGS_PAGE = SETTINGS_PAGE.split("</style>", 1)[0] + r"""</style>
+<h3 data-copy="sliceSettingsTitle"></h3>
+<p data-copy="sliceSettingsPurpose"></p>
+<p class="note" data-copy="sliceSettingsLocal"></p>
+<p class="note" data-copy="sliceSettingsRemote"></p>
+<p class="note" data-copy="sliceSettingsPermission"></p>
+<p><code id="slice-endpoint" style="overflow-wrap:anywhere"></code></p>
+<label class="row" style="margin-top:16px"><input type="checkbox" id="report-slices"><span data-copy="sliceSettingsEnable"></span></label>
+<script>
+(function () {
+  var copy = __COPY__;
+  var checkbox = document.getElementById("report-slices");
+  var settings = {};
+  document.querySelectorAll("[data-copy]").forEach(function (node) {
+    node.textContent = copy[node.getAttribute("data-copy")];
+  });
+  document.getElementById("slice-endpoint").textContent = __ENDPOINT__;
+  checkbox.disabled = true;
+  window.orca.onConfig(function (config) {
+    settings = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+    checkbox.checked = settings.report_slices === true;
+    checkbox.disabled = !!(window.orca.getContext() || {}).readOnly;
+  });
+  checkbox.addEventListener("change", function () {
+    settings.report_slices = checkbox.checked;
+    window.orca.saveConfig(settings);
+  });
+})();
+</script>"""
+
+
+def render_slice_settings_page():
+    catalog = resolved_ui_catalog(refresh_ui_language())
+    copy = {key: catalog.get(key, key) for key in SLICE_SETTINGS_COPY_KEYS}
+    return SLICE_SETTINGS_PAGE.replace(
+        "__COPY__", json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
+    ).replace(
+        "__ENDPOINT__", json.dumps(API_BASE + "/orcaslicer/slices").replace("</", "<\\/")
+    )
+
+
+def slice_reporting_enabled(capability):
+    get_config = getattr(capability, "get_config", None)
+    if not callable(get_config):
+        return False
+    try:
+        settings = json.loads(get_config())
+    except Exception as exc:
+        fh_log("slice settings unreadable: %s" % type(exc).__name__)
+        return False
+    return isinstance(settings, dict) and settings.get("report_slices") is True
 
 
 class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
     def get_name(self):
         return SLICE_CAPABILITY_NAME
+
+    def has_config_ui(self):
+        return True
+
+    def get_config_ui(self):
+        return render_slice_settings_page()
+
+    def get_default_config(self):
+        return dict(SLICE_SETTINGS_DEFAULTS)
 
     def execute(self, ctx):
         step = getattr(ctx, "step", None)
@@ -8456,12 +9338,16 @@ class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
         if step is not None and post is not None and step != post:
             return orca.ExecutionResult.skipped(ui_text("sliceWrongStep"))
 
+        if not slice_reporting_enabled(self):
+            return orca.ExecutionResult.skipped(ui_text("sliceReportingDisabled"))
+
         path = getattr(ctx, "gcode_path", "") or ""
         if not path or not os.path.exists(path):
             return orca.ExecutionResult.skipped(ui_text("sliceNotReady"))
 
         try:
-            _append_fhub_slice_identities(path, _slice_managed_identities(ctx))
+            if not _append_fhub_slice_identities(path, _slice_managed_identities(ctx)):
+                return orca.ExecutionResult.skipped(ui_text("sliceUnreadable"))
             sent, reason = report_slice(
                 path,
                 getattr(ctx, "output_name", "") or "",
@@ -8473,7 +9359,7 @@ class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
             return orca.ExecutionResult.skipped(ui_text("sliceReportFailed"))
         if not sent:
             return orca.ExecutionResult.skipped(reason)
-        return orca.ExecutionResult.success(ui_text("sliceReported", name=reason))
+        return orca.ExecutionResult.success(ui_text("sliceQueued", name=reason))
 
 
 if _SLICE_CAPABILITY_BASE is not None:
@@ -8511,6 +9397,7 @@ class FilamentHubCatalog(
             on_message=self.on_message,
             on_close=self.on_close,
         )
+        _set_slice_delivery_target(self)
         return True
 
     def _report_local_dialog_state(self, open_, outcome=None):
@@ -8701,6 +9588,8 @@ class FilamentHubCatalog(
 
     def on_close(self):
         self._close_local_dialog()
+        if _slice_delivery_target() is self:
+            _set_slice_delivery_target(None)
         self.win = None
 
     def on_unload(self):
@@ -10162,6 +11051,26 @@ class FilamentHubCatalog(
             # The session sync waits for the capability the signed-in page mints
             # right after this: a saved one is usually already expired.
             self._deliver("transport", push=True)
+        elif msg_type == "request-slice-reports":
+            _deliver_pending_slice_reports(self)
+        elif msg_type == "slice-report-result":
+            request_id = msg.get("requestId")
+            source_keys = msg.get("sourceKeys")
+            if not (
+                isinstance(request_id, str)
+                and request_id.startswith("slice-report-")
+                and len(request_id) <= 100
+                and isinstance(source_keys, list)
+                and len(source_keys) <= 25
+            ):
+                return
+            if msg.get("ok") is True:
+                removed = _acknowledge_slice_reports(source_keys)
+                fh_log("slice reports delivered through page: %d" % removed)
+                if removed:
+                    _deliver_pending_slice_reports(self)
+            else:
+                fh_log("slice report page delivery failed; queued reports kept")
         elif msg_type == "plugin-capabilities-request":
             self._deliver(
                 "plugin-capabilities",
@@ -11772,6 +12681,7 @@ if _PAGE_CAPABILITY_BASE is not None:
         def on_load(self):
             apply_plugin_settings(read_capability_settings(self), apply_server=True)
             super().on_load()
+            _set_slice_delivery_target(self._catalog)
 
         def has_config_ui(self):
             return True
@@ -11798,6 +12708,8 @@ if _PAGE_CAPABILITY_BASE is not None:
 
         def on_unload(self):
             self._catalog.on_close()
+            if _slice_delivery_target() is self._catalog:
+                _set_slice_delivery_target(None)
             stop_plugin_runtime()
 else:
     FilamentHubPage = None

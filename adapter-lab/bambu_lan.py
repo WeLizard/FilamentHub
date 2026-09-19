@@ -12,6 +12,8 @@ import ssl
 import struct
 import threading
 import time
+import urllib.parse
+import select
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -24,6 +26,12 @@ DISCOVERY_PORT = 2021
 DISCOVERY_INTERVAL_SECONDS = 0.5
 
 _state_lock = threading.Lock()
+GCODE_FILE_NAME = os.environ.get("BAMBU_GCODE_FILE", "part.gcode")
+GCODE_BYTES = (
+    b"; filament used [g] : 12.5, 7.5\n"
+    b"; adapter-lab synthetic 20g two-filament print\n"
+    b"G1 X1 Y1 E1\n"
+)
 _report = {
     "gcode_state": "IDLE",
     "mc_percent": 0,
@@ -107,6 +115,39 @@ _report = {
 def snapshot() -> dict:
     with _state_lock:
         return copy.deepcopy(_report)
+
+
+def _apply_stage(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    allowed = {"gcode_state", "mc_percent", "remaining_g", "filename",
+               "gcode_file", "subtask_name", "task_id", "subtask_id",
+               "ams_mapping"}
+    if not any(key in payload for key in allowed):
+        return False
+    mapping = payload.get("ams_mapping")
+    if "ams_mapping" in payload and (
+        not isinstance(mapping, list) or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 255
+            for value in mapping
+        )
+    ):
+        return False
+    with _state_lock:
+        for key in allowed - {"remaining_g", "filename", "gcode_file", "subtask_name"}:
+            if key in payload:
+                _report[key] = payload[key]
+        if "filename" in payload:
+            _report["gcode_file"] = str(payload["filename"])
+            _report["subtask_name"] = str(payload["filename"])
+        for key in ("gcode_file", "subtask_name"):
+            if key in payload:
+                _report[key] = str(payload[key])
+        if "ams_mapping" in payload:
+            _report["ams_mapping"] = list(mapping)
+        if "remaining_g" in payload:
+            _report["ams"]["ams"][0]["tray"][0]["remain_g"] = payload["remaining_g"]
+    return True
 
 
 def discovery_announcement(host: str) -> bytes:
@@ -296,7 +337,15 @@ class BambuMqttHandler(socketserver.StreamRequestHandler):
                 return
             self.wfile.write(b"\x20\x02\x00\x00")
             self.wfile.flush()
+            subscribed = False
+            last_report = 0.0
             while True:
+                ready, _, _ = select.select([self.connection], [], [], 1.0)
+                if not ready:
+                    if subscribed and time.monotonic() - last_report >= 1:
+                        _publish_report(self.wfile)
+                        last_report = time.monotonic()
+                    continue
                 header, body = _read_packet(self.rfile)
                 packet_type = header & 0xF0
                 if packet_type == 0x80:
@@ -306,6 +355,8 @@ class BambuMqttHandler(socketserver.StreamRequestHandler):
                     self.wfile.write(b"\x90\x03" + packet_id + b"\x00")
                     self.wfile.flush()
                     _publish_report(self.wfile)
+                    subscribed = True
+                    last_report = time.monotonic()
                 elif packet_type == 0x30:
                     topic, offset = _take_field(body, 0)
                     if (header >> 1) & 0x03:
@@ -357,7 +408,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        if self.path != "/healthz":
+        if urllib.parse.urlsplit(self.path).path != "/healthz":
             self.send_error(404)
             return
         body = b'{"status":"ok"}'
@@ -367,6 +418,112 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if urllib.parse.urlsplit(self.path).path != "/state":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(min(length, 65536)).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self.send_error(400)
+            return
+        if not _apply_stage(payload):
+            self.send_error(400)
+            return
+        body = json.dumps(snapshot(), separators=(",", ":")).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class BambuFtpsHandler(socketserver.StreamRequestHandler):
+    """Small implicit-FTPS read-only surface for the synthetic print file."""
+
+    def _reply(self, text: str) -> None:
+        self.wfile.write((text + "\r\n").encode("ascii"))
+        self.wfile.flush()
+
+    def _data_listener(self, extended: bool):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((self.request.getsockname()[0], 0))
+        listener.listen(1)
+        host, port = listener.getsockname()
+        if extended:
+            self._reply("229 Entering Extended Passive Mode (|||%d|)" % port)
+        else:
+            self._reply("227 Entering Passive Mode (%s)" % ",".join(
+                host.split(".") + [str(port // 256), str(port % 256)]
+            ))
+        return listener
+
+    def _data(self, listener, payload: bytes) -> None:
+        listener.settimeout(5)
+        connection, _ = listener.accept()
+        listener.close()
+        try:
+            tls = self.server.context.wrap_socket(connection, server_side=True)
+            tls.settimeout(5)
+            tls.sendall(payload)
+            # FTP_TLS clients explicitly call unwrap() after reading the data
+            # stream.  Closing the SSLSocket here does not emit the TLS close
+            # notify soon enough for that handshake on all Python versions.
+            try:
+                tls.unwrap()
+            except (OSError, ssl.SSLError):
+                tls.close()
+        finally:
+            connection.close()
+
+    def handle(self) -> None:
+        self._reply("220 adapter-lab Bambu FTPS")
+        data_listener = None
+        while True:
+            line = self.rfile.readline(4096)
+            if not line:
+                return
+            parts = line.decode("ascii", "replace").strip().split(" ", 1)
+            command = parts[0].upper()
+            argument = parts[1] if len(parts) == 2 else ""
+            if command == "USER":
+                self._reply("331 Password required")
+            elif command == "PASS":
+                self._reply("230 Logged in") if argument == ACCESS_CODE else self._reply("530 Login incorrect")
+            elif command in {"PBSZ", "PROT", "TYPE"}:
+                self._reply("200 OK")
+            elif command in {"PASV", "EPSV"}:
+                if data_listener is not None:
+                    data_listener.close()
+                data_listener = self._data_listener(command == "EPSV")
+            elif command == "NLST":
+                if data_listener is None:
+                    self._reply("425 Use PASV first")
+                    continue
+                listener, data_listener = data_listener, None
+                self._reply("150 Opening data connection")
+                directory = argument.rstrip("/") or "/"
+                listing = (GCODE_FILE_NAME + "\r\n") if directory == "/cache" else ""
+                self._data(listener, listing.encode("ascii"))
+                self._reply("226 Transfer complete")
+            elif command == "SIZE":
+                self._reply("213 %d" % len(GCODE_BYTES))
+            elif command == "RETR":
+                if data_listener is None:
+                    self._reply("425 Use PASV first")
+                    continue
+                listener, data_listener = data_listener, None
+                self._reply("150 Opening data connection")
+                self._data(listener, GCODE_BYTES)
+                self._reply("226 Transfer complete")
+            elif command == "QUIT":
+                self._reply("221 Bye")
+                return
+            else:
+                self._reply("502 Command not implemented")
+
 
 def main() -> None:
     health = ThreadingHTTPServer(("0.0.0.0", 8884), HealthHandler)
@@ -375,6 +532,8 @@ def main() -> None:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(CERT_FILE, KEY_FILE)
     server = ThreadingTlsServer(("0.0.0.0", 8883), BambuMqttHandler, context)
+    ftps = ThreadingTlsServer(("0.0.0.0", 990), BambuFtpsHandler, context)
+    threading.Thread(target=ftps.serve_forever, daemon=True).start()
     server.serve_forever()
 
 

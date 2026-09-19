@@ -232,10 +232,16 @@ def _module_with_pages(native_lifecycle=False):
     return module, registered
 
 def _slice_storage(module, tmp_path, monkeypatch):
-    """Index and cache in a scratch dir, and a temp root nothing else lives in."""
+    """Index and cache in a scratch dir; temp-directory probing is forbidden."""
     monkeypatch.setattr(module, "_SLICE_INDEX_FILE", str(tmp_path / "slices.json"))
+    monkeypatch.setattr(
+        module, "_SLICE_REPORT_OUTBOX_FILE", str(tmp_path / "slice-reports.json")
+    )
     monkeypatch.setattr(module, "_SLICE_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr(module.tempfile, "gettempdir", lambda: str(tmp_path / "no-temp-here"))
+    def fail_if_probed():
+        raise AssertionError("slice storage must not probe tempfile.gettempdir()")
+
+    monkeypatch.setattr(module.tempfile, "gettempdir", fail_if_probed)
 
 def _bambu_report(**overrides):
     report = {

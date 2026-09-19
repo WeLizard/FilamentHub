@@ -11,6 +11,7 @@
 
 import { stripLocalePrefix } from './siteLocale';
 import type { PrinterSetupConnection } from '../api/client';
+import type { OrcaSliceReportInput } from '../types/api';
 
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 const PLUGIN_HOST_MESSAGE_SOURCE = 'filamenthub-host';
@@ -478,6 +479,73 @@ export function subscribeToPluginDiagnostics(onDiagnostics: (text: string) => vo
   };
   window.addEventListener('message', handler);
   return () => window.removeEventListener('message', handler);
+}
+
+export interface PluginSliceReportBatch {
+  requestId: string;
+  slices: OrcaSliceReportInput[];
+}
+
+function pluginSliceReportBatch(data: Partial<PluginMessage>): PluginSliceReportBatch | null {
+  const requestId = (data as { requestId?: unknown }).requestId;
+  const slices = (data as { slices?: unknown }).slices;
+  if (
+    typeof requestId !== 'string'
+    || !/^slice-report-[a-f0-9]{32}$/.test(requestId)
+    || !Array.isArray(slices)
+    || slices.length < 1
+    || slices.length > 25
+  ) {
+    return null;
+  }
+  const valid = slices.every((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+    const report = item as Record<string, unknown>;
+    return typeof report.file_name === 'string'
+      && report.file_name.length > 0
+      && report.file_name.length <= 300
+      && typeof report.source_key === 'string'
+      && report.source_key.length > 0
+      && report.source_key.length <= 64;
+  });
+  return valid ? { requestId, slices: slices as OrcaSliceReportInput[] } : null;
+}
+
+/** Receive locally queued slice metadata from the installed Orca plugin. */
+export function subscribeToPluginSliceReports(
+  onBatch: (batch: PluginSliceReportBatch) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'slice-report-batch') {
+      return;
+    }
+    const batch = pluginSliceReportBatch(data);
+    if (batch) onBatch(batch);
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/** Ask the plugin to resend any slice reports retained across a restart. */
+export function requestPendingPluginSliceReports(): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'request-slice-reports' });
+}
+
+/** Acknowledge only source keys from a batch the page actually attempted. */
+export function sendPluginSliceReportResult(
+  requestId: string,
+  sourceKeys: string[],
+  ok: boolean,
+): void {
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'slice-report-result',
+    requestId,
+    sourceKeys,
+    ok,
+  });
 }
 
 /**

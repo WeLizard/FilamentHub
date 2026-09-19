@@ -5,6 +5,12 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.2.0
+- Slice reports now use the signed-in FilamentHub page's normal authenticated API connection. The slicing worker only saves metadata to a durable local queue, so plugin activation and slicing no longer make the audited HTTP request or open its native permission dialog. Failed and signed-out deliveries remain queued for retry without interrupting export or printer upload.
+- Bambu cancellation keeps the estimated material used before stopping. Rapid transitions to idle remain in order until saved, so the end of a job is not lost between updates.
+- Bambu LAN connections can record estimated filament consumption without a Bambu cloud account. Available print files and identified spool balance changes feed the same print history, with explicit estimate labels. A local journal preserves pending reports and observed spool bindings across restarts; repeated delivery does not debit a spool twice.
+- Consumption starts from the observed spool assignment, including a spool added during a print. File-based progress estimates remain separate from measured consumption, and unavailable evidence is not reported as zero usage.
+- Saving sliced files and reporting their details now requires explicit opt-in in the slicing plugin's settings. The settings explain local G-code comments and caching, exactly which details go to the selected server, and that uploading the full G-code requires a calculation request.
+- Export no longer probes the system's temporary directory, avoiding a permission request for an unrelated random file. The plugin keeps its own limited copy of enabled slice reports so a calculation remains possible after OrcaSlicer removes its working file.
 - **Check materials** for Bambu and **Check printer** for Happy Hare work again in the current OrcaSlicer, and a saved slot assignment is sent to the printer right away again. The plugin used to drop these commands before contacting the printer, so the page waited and then reported a printer timeout.
 - Opening OrcaSlicer after a break no longer shows a red "sync settings temporarily unavailable" message. The plugin waits for the sign-in the page renews and then runs the start-up sync that used to be skipped.
 - Sync results are worded plainly and colored by meaning: green when done, yellow only when something did not sync, red when something failed. Failed presets are named instead of counted, and technical codes stay in the log.

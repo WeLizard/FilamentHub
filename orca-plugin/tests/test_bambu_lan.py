@@ -20,11 +20,12 @@ from .filamenthub_plugin_test_support import (
 
 
 def test_bambu_bridge_declares_exact_runtime_capabilities(plugin_module):
-    assert plugin_module._bambu_capabilities({}) == ["read", "write", "presence"]
+    assert plugin_module._bambu_capabilities({}) == ["read", "write", "presence", "consumption"]
     assert plugin_module._bambu_capabilities(_bambu_report()) == [
         "read",
         "write",
         "presence",
+        "consumption",
         "tag_read",
     ]
 
@@ -1209,11 +1210,13 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     plugin_module.configure_bambu_bridge(
         3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_revoked"
     )
+    runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(
-        plugin_module,
-        "read_bambu_lan_snapshot",
+        runtime,
+        "_stream_observation",
         lambda _config: ("SERIAL-2", _bambu_report()),
     )
+    monkeypatch.setattr(runtime, "_record_usage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         plugin_module,
         "http_post_bridge_json",
@@ -1221,7 +1224,6 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     )
     monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (404, b""))
 
-    runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
     runtime._run()
 
@@ -1241,11 +1243,13 @@ def test_bambu_runtime_deduplicates_stable_snapshots_and_uses_heartbeat(
     posts = []
 
     monkeypatch.setattr(plugin_module, "load_bambu_config", lambda: next(configs))
+    runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(
-        plugin_module,
-        "read_bambu_lan_snapshot",
+        runtime,
+        "_stream_observation",
         lambda _config: ("SERIAL-2", _bambu_report()),
     )
+    monkeypatch.setattr(runtime, "_record_usage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(plugin_module.time, "monotonic", lambda: next(times))
     monkeypatch.setattr(
         plugin_module,
@@ -1261,7 +1265,6 @@ def test_bambu_runtime_deduplicates_stable_snapshots_and_uses_heartbeat(
         ),
     )
 
-    runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
     runtime._run()
 
@@ -1282,11 +1285,13 @@ def test_bambu_runtime_fails_closed_when_the_printer_serial_changes(
         "fhpb_live",
         identity,
     )
+    runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(
-        plugin_module,
-        "read_bambu_lan_snapshot",
+        runtime,
+        "_stream_observation",
         lambda _config: ("OTHER-SERIAL", _bambu_report()),
     )
+    monkeypatch.setattr(runtime, "_record_usage", lambda *_args, **_kwargs: None)
     posts = []
     monkeypatch.setattr(
         plugin_module,
@@ -1294,7 +1299,6 @@ def test_bambu_runtime_fails_closed_when_the_printer_serial_changes(
         lambda path, _token, _payload: posts.append(path) or (200, b"", None),
     )
 
-    runtime = plugin_module.BambuBridgeRuntime()
     waits = 0
 
     def wait(_timeout):
@@ -1470,7 +1474,7 @@ def test_bambu_runtime_does_not_upload_after_stop_during_lan_read(
         assert release_read.wait(2)
         return "SERIAL-2", _bambu_report()
 
-    monkeypatch.setattr(plugin_module, "read_bambu_lan_snapshot", read_snapshot)
+    monkeypatch.setattr(runtime, "_stream_observation", read_snapshot)
     monkeypatch.setattr(
         plugin_module,
         "http_post_bridge_json",

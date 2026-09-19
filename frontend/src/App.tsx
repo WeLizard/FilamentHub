@@ -15,9 +15,13 @@ import {
   subscribeToPluginNotice,
   subscribeToPluginSyncResult,
   subscribeToPluginRecoverList,
+  subscribeToPluginSliceReports,
+  requestPendingPluginSliceReports,
+  sendPluginSliceReportResult,
   sendRecoverImport,
   type RecoverItem,
 } from './utils/pluginBridge';
+import { orcaSlicesAPI } from './api/client';
 import {
   openProblemReport,
   subscribeToProblemReport,
@@ -115,6 +119,45 @@ function AppContent() {
   const signedIn = Boolean(user);
   const pluginDeveloperMode = usePluginDeveloperMode();
   const canReportProblem = signedIn && pluginDeveloperMode;
+
+  useEffect(() => {
+    if (!isPluginEmbed()) return;
+    let retryTimer: number | undefined;
+    const retryPending = () => {
+      if (retryTimer !== undefined) return;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        requestPendingPluginSliceReports();
+      }, 30_000);
+    };
+    const unsubscribe = subscribeToPluginSliceReports((batch) => {
+      if (!user) return;
+      const sourceKeys = batch.slices
+        .map((item) => item.source_key)
+        .filter((key): key is string => typeof key === 'string');
+      void orcaSlicesAPI.report(batch.slices).then((result) => {
+        if (result.accepted + result.duplicates !== batch.slices.length) {
+          sendPluginSliceReportResult(batch.requestId, sourceKeys, false);
+          retryPending();
+          return;
+        }
+        if (retryTimer !== undefined) {
+          window.clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+        sendPluginSliceReportResult(batch.requestId, sourceKeys, true);
+        void queryClient.invalidateQueries({ queryKey: ['orca-slices'] });
+      }).catch(() => {
+        sendPluginSliceReportResult(batch.requestId, sourceKeys, false);
+        retryPending();
+      });
+    });
+    if (user) requestPendingPluginSliceReports();
+    return () => {
+      unsubscribe();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [user, queryClient]);
 
   useEffect(() => {
     if (!isPluginEmbed()) {

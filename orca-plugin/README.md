@@ -14,6 +14,38 @@ embed route in our existing frontend.
 
 ## Approach: direct embedded page with a local secret boundary
 
+### Bambu LAN filament accounting
+
+The LAN adapter uses the capabilities actually reported by the printer; it does
+not select a supported model list or require a Bambu cloud account. While Orca
+is running, a local MQTT connection retains job and AMS mapping updates.
+Available current-job G-code/3MF files are read through local FTPS. The adapter
+requires an unambiguous matching filename and plate; it never picks the newest
+file on the printer. File transfers are bounded to 64 MiB and metadata to 1 MiB.
+Storage availability and LAN permissions depend on the printer firmware.
+
+Slicer weights scaled by reported print progress are explicitly approximate,
+especially for partial or multi-material jobs. If file evidence is unavailable,
+changes in an identified spool's reported remaining grams or percentage can
+provide a separate estimate. Percentages use the printer's reported original
+spool weight. Unknown readings, RFID reads, changed tags and increased remaining
+weight do not become consumption deltas. Estimates appear separately from
+confirmed consumption in FilamentHub; the label identifies their source.
+
+The local journal saves the observed spool binding and pending reports before
+upload. After restart, a still-identifiable job can continue from that baseline,
+and retrying an acknowledged report cannot debit it twice. A spool assigned
+during printing starts a new accounting interval. Running, cancellation and idle
+transitions remain ordered until journaled; cancellation records only the
+observed partial estimate. A bounded queue overflow starts a fresh baseline
+instead of estimating an interval whose observations were lost. The plugin cannot reconstruct
+arbitrary jobs that ran while Orca was closed and are no longer identifiable on
+the printer. Continuous collection with Orca closed requires a separate local
+runtime; the existing standalone Edge runtime does not yet provide Bambu support.
+
+The matching FilamentHub backend must support estimated bridge usage before
+these reports can be accepted. Older backends leave the local reports pending.
+
 On current OrcaSlicer builds, `get_ui()` returns a small localized bootstrap that
 navigates the top-level Pages WebView to
 `https://filamenthub.ru/embed/catalog`. The React route renders the compact
@@ -156,8 +188,8 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.10"
-# network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
+# version = "0.2.0"
+# network = ["filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club"]
 # ///
 ```
 
@@ -173,13 +205,41 @@ OrcaSlicer build exposes the same capabilities:
 - `orca.script.ScriptPluginCapabilityBase` remains the compatible window
   fallback;
 - `orca.slicing.SlicingPipelineCapabilityBase` reports and annotates completed
-  G-code at `psGCodePostProcess` when the host exposes it;
+  G-code at `psGCodePostProcess` when the host exposes it and reporting is
+  explicitly enabled in that capability's settings;
 - current capability lifecycle hooks start plugin resources from `on_load` and
   stop queued work and the local Bambu observer from
   `on_cancelled`/`on_unload`; older hosts keep the registration-time fallback;
 - `orca.host.ui`, `orca.host.preset_bundle()`, optional
   `orca.host.app_language()` and optional `orca.host.plugin.storage()` provide
   UI, read-only preset observations, locale and private plugin state.
+
+### Sliced-file reporting
+
+Open the settings for `filamenthub-slice-reporter` in the slicing pipeline
+plugin list before enabling **Save sliced files and send their details to
+FilamentHub**. Reporting defaults to off, including for existing process
+presets without that setting. The capability name stays unchanged because
+OrcaSlicer uses it to identify plugins saved in process presets.
+
+When enabled, the reporter reads OrcaSlicer's working G-code, adds comments
+identifying managed FilamentHub profiles, and retains a limited local copy for
+later calculations. It does not change print moves. The slicing worker adds the
+file name, printer model, printer and print profile names and identifiers,
+slicer version, export destination type, and identifiers linking the slice to
+this plugin installation to a durable local queue. It never sends that queue
+through Python HTTP.
+
+The signed-in FilamentHub page requests pending entries through the bound Pages
+bridge and submits them through its normal authenticated API client. Python
+removes only entries acknowledged after a successful response. If the page is
+signed out, closed, or temporarily offline, the queue survives and is retried
+when the page becomes available. This keeps the audited report endpoint out of
+plugin activation and the slicing worker, so it cannot open the native HTTP
+permission dialog or block either lifecycle. The full G-code is uploaded only
+when a calculation is explicitly requested. Reporting failures never fail
+G-code export or printer upload, and the reporter never probes the system
+temporary directory.
 
 Preset installation is not a host capability in the reviewed API snapshot.
 Managed filament/machine/process files are therefore written atomically below

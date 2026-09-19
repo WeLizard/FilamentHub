@@ -1086,6 +1086,25 @@ export interface OrcaSliceReport {
   received_at: string;
 }
 
+export interface OrcaSliceReportInput {
+  file_name: string;
+  printer_settings_id?: string | null;
+  print_settings_id?: string | null;
+  printer_model?: string | null;
+  fhub_printer_profile_id?: number | null;
+  fhub_print_profile_id?: number | null;
+  source_instance_id?: string | null;
+  target_host?: string | null;
+  slicer_version?: string | null;
+  source_key?: string | null;
+  sliced_at?: string | null;
+}
+
+export interface OrcaSliceReportAccepted {
+  accepted: number;
+  duplicates: number;
+}
+
 export interface SpoolUsageEvent {
   id: number;
   /** printer_report · manual_adjust · reconcile_adjust · print_estimate */

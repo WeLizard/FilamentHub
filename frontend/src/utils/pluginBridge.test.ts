@@ -23,12 +23,15 @@ import {
   requestPluginCapabilities,
   requestPluginDiagnosticLog,
   requestPluginRecovery,
+  requestPendingPluginSliceReports,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
+  sendPluginSliceReportResult,
   subscribeToPluginCapabilities,
   subscribeToLocalPrinterSetup,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
+  subscribeToPluginSliceReports,
   subscribeToPluginSyncResult,
   startPluginOAuth,
 } from './pluginBridge';
@@ -186,7 +189,9 @@ describe('pluginBridge inbound messages', () => {
     });
     window.history.pushState({}, '', `/embed/catalog#fh_bridge=${bridgeSession}`);
     const onCapabilities = vi.fn();
+    const onSliceReports = vi.fn();
     const unsubscribe = subscribeToPluginCapabilities(onCapabilities);
+    const unsubscribeSliceReports = subscribeToPluginSliceReports(onSliceReports);
 
     try {
       requestPluginCapabilities();
@@ -212,13 +217,43 @@ describe('pluginBridge inbound messages', () => {
         bridgeSession,
       });
 
+      requestPendingPluginSliceReports();
+      expect(postMessage).toHaveBeenNthCalledWith(4, {
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'request-slice-reports',
+        bridgeSession,
+      });
+
       deliver?.({
         source: 'filamenthub-host',
         type: 'plugin-capabilities',
         capabilities: ['profile-sync'],
       });
       expect(onCapabilities).toHaveBeenCalledWith(new Set(['profile-sync']));
+
+      const requestId = `slice-report-${'a'.repeat(32)}`;
+      deliver?.({
+        source: 'filamenthub-host',
+        type: 'slice-report-batch',
+        requestId,
+        slices: [{ file_name: 'cube.gcode', source_key: 'slice-key' }],
+      });
+      expect(onSliceReports).toHaveBeenCalledWith({
+        requestId,
+        slices: [{ file_name: 'cube.gcode', source_key: 'slice-key' }],
+      });
+
+      sendPluginSliceReportResult(requestId, ['slice-key'], true);
+      expect(postMessage).toHaveBeenNthCalledWith(5, {
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'slice-report-result',
+        requestId,
+        sourceKeys: ['slice-key'],
+        ok: true,
+        bridgeSession,
+      });
     } finally {
+      unsubscribeSliceReports();
       unsubscribe();
       Object.defineProperty(window, 'orca', { configurable: true, value: originalOrca });
       window.history.pushState({}, '', '/');
