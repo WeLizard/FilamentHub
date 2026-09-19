@@ -37,7 +37,7 @@ export function AdminMaterials() {
         size: PAGE_SIZE,
         active_only: !showOffShelf,
         search: debouncedSearch || undefined,
-      }),
+      }, { bypassSharedCache: true }),
   });
 
   const refresh = () => {

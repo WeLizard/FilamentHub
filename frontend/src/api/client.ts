@@ -1150,8 +1150,11 @@ export const filamentsAPI = {
     country?: string;
     color_group?: import('../types/api').FilamentColorGroup;
     multicolor?: boolean;
-  }) => {
-    const response = await api.get<FilamentListResponse>('/filaments/', { params });
+  }, options?: { bypassSharedCache?: boolean }) => {
+    const response = await api.get<FilamentListResponse>('/filaments/', {
+      params,
+      headers: options?.bypassSharedCache ? { 'Cache-Control': 'no-cache' } : undefined,
+    });
     return response.data;
   },
 

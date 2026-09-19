@@ -106,6 +106,18 @@ describe('api/client interceptors', () => {
     expect(updatedConfig.headers.Authorization).toBe('Bearer access-123');
   });
 
+  it('requests an authoritative catalogue snapshot for management screens', async () => {
+    const { filamentsAPI } = await loadClientModule();
+    axiosState.apiInstance.get.mockResolvedValueOnce({ data: { items: [], total: 0 } });
+
+    await filamentsAPI.list({ search: 'petg' }, { bypassSharedCache: true });
+
+    expect(axiosState.apiInstance.get).toHaveBeenCalledWith('/filaments/', {
+      params: { search: 'petg' },
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+  });
+
   it('triggers refresh flow on 401 response', async () => {
     localStorage.setItem('access_token', 'expired-token');
     localStorage.setItem('refresh_token', 'refresh-token');
