@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Eye, Send, XCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, SmilePlus, Trash2 } from 'lucide-react';
+import { MessageCircle, Eye, Send, XCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, SmilePlus, Trash2, Paperclip, Download } from 'lucide-react';
 import { adminFeedbackAPI } from '../../api/client';
+import { downloadBlob } from '../../utils/download';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
@@ -496,6 +497,31 @@ export function AdminFeedback() {
                       })}
                     </div>
                   </div>
+
+                  {selectedFeedbackView.plugin_log_size ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300">
+                      <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('adminFeedback.pluginLog', {
+                          size: Math.max(1, Math.round(selectedFeedbackView.plugin_log_size / 1024)),
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const feedbackId = selectedFeedbackView.id;
+                          adminFeedbackAPI
+                            .downloadPluginLog(feedbackId)
+                            .then((blob) => downloadBlob(blob, `feedback-${feedbackId}-plugin.log`))
+                            .catch(() => toast.error(t('adminFeedback.pluginLogDownloadError')));
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/15 px-2.5 py-1 text-xs font-medium text-gray-200 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t('adminFeedback.downloadPluginLog')}
+                      </button>
+                    </div>
+                  ) : null}
 
                   {/* Форма ответа */}
                   <div>

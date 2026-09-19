@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Layout } from './Layout';
+import { subscribeToProblemReport } from '../utils/problemReport';
 
 const { scanQr, authState, pluginBridgeState } = vi.hoisted(() => ({
   scanQr: vi.fn(),
@@ -12,7 +13,7 @@ const { scanQr, authState, pluginBridgeState } = vi.hoisted(() => ({
     user: null as null | { id: number; username: string; role: string },
     login: vi.fn(), register: vi.fn(), logout: vi.fn(),
   },
-  pluginBridgeState: { embed: false, direct: false, showDiagnostics: false },
+  pluginBridgeState: { embed: false, direct: false, developerMode: false },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -38,11 +39,9 @@ vi.mock('../utils/pluginBridge', () => ({
   startPluginOAuth: vi.fn(),
   requestPluginProfileSync: vi.fn().mockResolvedValue({}),
   requestPluginRecovery: vi.fn(),
-  requestPluginDiagnostics: vi.fn(),
-  subscribeToPluginRuntime: (listener: (state: { showDiagnostics: boolean }) => void) => {
-    listener({ showDiagnostics: pluginBridgeState.showDiagnostics });
-    return vi.fn();
-  },
+  requestPluginCapabilities: vi.fn(),
+  subscribeToPluginCapabilities: () => vi.fn(),
+  isPluginDeveloperMode: () => pluginBridgeState.developerMode,
 }));
 
 vi.mock('./Captcha', () => ({ Recaptcha: () => null, getRecaptchaToken: vi.fn() }));
@@ -84,7 +83,7 @@ describe('Layout', () => {
     authState.login.mockReset();
     pluginBridgeState.embed = false;
     pluginBridgeState.direct = false;
-    pluginBridgeState.showDiagnostics = false;
+    pluginBridgeState.developerMode = false;
   });
 
   const renderReturnLogin = () => {
@@ -197,16 +196,15 @@ describe('Layout', () => {
     expect(accountGroup).toContainElement(screen.getByText('return-user'));
     expect(accountGroup).toContainElement(screen.getByRole('button', { name: /layout.nav_logout/ }));
     expect(accountGroup.nextElementSibling).toBe(screen.getByRole('button', { name: /layout.nav_catalog/ }));
-    expect(screen.queryByRole('button', { name: 'layout.plugin_log' })).not.toBeInTheDocument();
   });
 
-  it('shows the Orca diagnostic log only when the plugin host enables it', () => {
+  it('offers a problem report to signed-in users in plugin developer mode', () => {
+    const reports = vi.fn();
+    const unsubscribe = subscribeToProblemReport(reports);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     pluginBridgeState.embed = true;
     pluginBridgeState.direct = true;
-    pluginBridgeState.showDiagnostics = true;
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
+    const renderToolbar = () => render(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <Layout><div>embedded catalog</div></Layout>
@@ -214,7 +212,21 @@ describe('Layout', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: 'layout.plugin_log' })).toBeInTheDocument();
+    const guest = renderToolbar();
+    expect(screen.queryByRole('button', { name: 'layout.plugin_report_problem' })).not.toBeInTheDocument();
+    guest.unmount();
+
+    authState.user = { id: 7, username: 'return-user', role: 'user' };
+    const regular = renderToolbar();
+    expect(screen.queryByRole('button', { name: 'layout.plugin_report_problem' })).not.toBeInTheDocument();
+    regular.unmount();
+
+    pluginBridgeState.developerMode = true;
+    renderToolbar();
+    fireEvent.click(screen.getByRole('button', { name: 'layout.plugin_report_problem' }));
+
+    expect(reports).toHaveBeenCalledWith({});
+    unsubscribe();
   });
 
   it('keeps all primary mobile actions in the header without decorative crowding', () => {

@@ -24,30 +24,9 @@ const EMBED_FLAG = 'fh_plugin_embed';
 let embedSessionFlag = false;
 let activePluginToken: string | null = null;
 let activePluginCapabilities = new Set<string>();
+let activePluginDeveloperMode = false;
 let directPluginBridgeInstalled = false;
 let activeDirectBridgeSession: string | null = null;
-let activePluginRuntime = { showDiagnostics: false };
-const pluginRuntimeListeners = new Set<(runtime: PluginRuntimeState) => void>();
-
-export interface PluginRuntimeState {
-  showDiagnostics: boolean;
-}
-
-function updatePluginRuntime(incoming: Record<string, unknown>): void {
-  activePluginRuntime = {
-    showDiagnostics: incoming.showDiagnostics === true,
-  };
-  pluginRuntimeListeners.forEach((listener) => listener(activePluginRuntime));
-}
-
-/** Follow host-owned runtime flags; build mode is not a plugin setting. */
-export function subscribeToPluginRuntime(
-  listener: (runtime: PluginRuntimeState) => void,
-): () => void {
-  pluginRuntimeListeners.add(listener);
-  listener(activePluginRuntime);
-  return () => pluginRuntimeListeners.delete(listener);
-}
 
 function directBridgeSession(): string | null {
   if (typeof window === 'undefined') return null;
@@ -96,9 +75,6 @@ function ensureDirectPluginBridge(): boolean {
       ) {
         window.location.replace(message.url);
         return;
-      }
-      if (message.source === PLUGIN_HOST_MESSAGE_SOURCE && message.type === 'transport') {
-        updatePluginRuntime(message);
       }
       if (message.source === PLUGIN_HOST_MESSAGE_SOURCE) {
         data = { ...message, source: PLUGIN_MESSAGE_SOURCE };
@@ -324,6 +300,9 @@ export interface PluginSyncResult {
   operationId: string;
   scope: PluginSyncScope;
   status: 'success' | 'warning' | 'error';
+  /** False for an automatic run that changed nothing; older plugins omit it. */
+  notify: boolean;
+  connectionReview: boolean;
   contours: Array<{
     kind: 'filament' | 'machine' | 'process';
     status: 'success' | 'warning' | 'error';
@@ -357,6 +336,8 @@ export function subscribeToPluginSyncResult(
       operationId?: unknown;
       scope?: unknown;
       status?: unknown;
+      notify?: unknown;
+      connectionReview?: unknown;
       contours?: unknown;
     };
     const text = payload.text;
@@ -374,6 +355,8 @@ export function subscribeToPluginSyncResult(
         status: ['success', 'warning', 'error'].includes(String(payload.status))
           ? payload.status as PluginSyncResult['status']
           : 'success',
+        notify: payload.notify !== false,
+        connectionReview: payload.connectionReview === true,
         contours: Array.isArray(payload.contours)
           ? payload.contours.flatMap((item): PluginSyncResult['contours'] => {
               if (!item || typeof item !== 'object') return [];
@@ -498,6 +481,26 @@ export function subscribeToPluginDiagnostics(onDiagnostics: (text: string) => vo
 }
 
 /**
+ * The plugin log prepared for a problem report, or null when the plugin does
+ * not answer (older builds only answered in developer mode).
+ */
+export function requestPluginDiagnosticLog(timeoutMs = 3000): Promise<string | null> {
+  if (!isPluginEmbed()) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe();
+      resolve(null);
+    }, timeoutMs);
+    const unsubscribe = subscribeToPluginDiagnostics((text) => {
+      window.clearTimeout(timeoutId);
+      unsubscribe();
+      resolve(text);
+    });
+    requestPluginDiagnostics();
+  });
+}
+
+/**
  * Статус сессии для тулбара шелла: имя пользователя + счётчик пресетов
  * (аналог лейблов форковой панели). null — гость, шелл вернёт бренд-надпись.
  */
@@ -619,26 +622,17 @@ export function subscribeToPluginLogout(onLogout: () => void): () => void {
   return () => window.removeEventListener('message', handler);
 }
 
-/**
- * Импортировать пресет в OrcaSlicer через плагин: шелл → Python → data_dir.
- * В сообщение попадает только короткоживущая plugin capability, а не браузерная
- * account session.
- */
-export function importPresetToPlugin(presetId: number): void {
-  postToPlugin({
-    source: PLUGIN_MESSAGE_SOURCE,
-    type: 'import-preset',
-    presetId,
-    token: activePluginToken ?? '',
-  });
-}
-
 /** Ask the current plugin shell which optional actions it actually supports. */
 export function requestPluginCapabilities(): void {
   postToPlugin({
     source: PLUGIN_MESSAGE_SOURCE,
     type: 'plugin-capabilities-request',
   });
+}
+
+/** Whether the user turned on developer mode in the plugin settings in Orca. */
+export function isPluginDeveloperMode(): boolean {
+  return activePluginDeveloperMode;
 }
 
 /**
@@ -663,6 +657,7 @@ export function subscribeToPluginCapabilities(
     activePluginCapabilities = new Set(
       capabilities.filter((item): item is string => typeof item === 'string'),
     );
+    activePluginDeveloperMode = (data as { developerMode?: unknown }).developerMode === true;
     onCapabilities(new Set(activePluginCapabilities));
   };
   window.addEventListener('message', handler);

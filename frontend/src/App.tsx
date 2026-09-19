@@ -6,7 +6,6 @@ import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
 import { ToastContainer, toast } from './components/Toast';
 import { useCurrencyCatalogue } from './hooks/useCurrencyCatalogue';
-import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useTokenRefresh } from './hooks/useTokenRefresh';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import {
@@ -19,7 +18,13 @@ import {
   sendRecoverImport,
   type RecoverItem,
 } from './utils/pluginBridge';
+import {
+  openProblemReport,
+  subscribeToProblemReport,
+  type ProblemReportRequest,
+} from './utils/problemReport';
 import { useAuth } from './contexts/AuthContext';
+import { usePluginDeveloperMode } from './hooks/usePluginDeveloperMode';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
@@ -50,6 +55,7 @@ const SharedQuotePage = lazy(() => import('./pages/SharedQuotePage').then(m => (
 const FeedbackThreadPage = lazy(() => import('./pages/FeedbackThreadPage').then(m => ({ default: m.FeedbackThreadPage })));
 const Notifications = lazy(() => import('./components/Notifications').then(m => ({ default: m.Notifications })));
 const RecoverPresetsModal = lazy(() => import('./components/RecoverPresetsModal').then(m => ({ default: m.RecoverPresetsModal })));
+const FeedbackModal = lazy(() => import('./components/FeedbackModal').then(m => ({ default: m.FeedbackModal })));
 const LegalOnboardingModal = lazy(() => import('./components/LegalOnboardingModal').then(m => ({ default: m.LegalOnboardingModal })));
 const MaintenancePage = lazy(() => import('./components/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
 const DevUiKitPage = import.meta.env.DEV
@@ -67,8 +73,6 @@ function PageLoader() {
 const LEGAL_PATHS = ['/user-agreement', '/privacy-policy', '/personal-data-consent'];
 
 function AppContent() {
-  // Обработчик уведомлений от OrcaSlicer
-  useOrcaSlicerNotifications();
   useCurrencyCatalogue();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -108,27 +112,42 @@ function AppContent() {
     return subscribeToPluginNavigation(navigate);
   }, [navigate]);
 
+  const signedIn = Boolean(user);
+  const pluginDeveloperMode = usePluginDeveloperMode();
+  const canReportProblem = signedIn && pluginDeveloperMode;
+
   useEffect(() => {
     if (!isPluginEmbed()) {
       return;
     }
     return subscribeToPluginSyncResult((result) => {
-      toast.show(
-        result.text,
-        result.status === 'error'
-          ? 'error'
-          : result.status === 'warning'
-            ? 'warning'
-            : 'success',
-        result.draftCount > 0 ? 10_000 : undefined,
-        'sync',
-        result.draftCount > 0
+      if (result.notify) {
+        const action = result.draftCount > 0
           ? {
               label: t('profilePage.openDraftQueue'),
               onClick: () => navigate('/profile?tab=presets&preset_filter=drafts'),
             }
-          : undefined,
-      );
+          : result.connectionReview
+            ? {
+                label: t('layout.plugin_open_printers'),
+                onClick: () => navigate('/profile?tab=printer-profiles'),
+              }
+            : undefined;
+        const failed = result.status === 'error';
+        toast.show(
+          result.text,
+          result.status,
+          action || failed ? 10_000 : undefined,
+          'sync',
+          action,
+          failed && canReportProblem
+            ? () => openProblemReport({
+                subject: t('feedback.pluginReportSubject'),
+                message: result.text,
+              })
+            : undefined,
+        );
+      }
       const kinds = new Set(result.contours.map((item) => item.kind));
       if (kinds.has('machine') || kinds.has('process')) {
         void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
@@ -139,13 +158,31 @@ function AppContent() {
         void queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
       }
     });
-  }, [navigate, queryClient, t]);
+  }, [navigate, queryClient, t, canReportProblem]);
 
   useEffect(() => {
     if (!isPluginEmbed()) return;
     return subscribeToPluginNotice(({ text, status }) => {
-      toast.show(text, status, undefined, 'plugin-notice');
+      const failed = status === 'error';
+      toast.show(
+        text,
+        status,
+        failed ? 10_000 : undefined,
+        'plugin-notice',
+        undefined,
+        failed && canReportProblem
+          ? () => openProblemReport({ subject: t('feedback.pluginReportSubject'), message: text })
+          : undefined,
+      );
     });
+  }, [t, canReportProblem]);
+
+  const [problemReport, setProblemReport] = useState<
+    (ProblemReportRequest & { id: number }) | null
+  >(null);
+  useEffect(() => {
+    if (!isPluginEmbed()) return;
+    return subscribeToProblemReport((request) => setProblemReport({ ...request, id: Date.now() }));
   }, []);
 
   const [recoverItems, setRecoverItems] = useState<RecoverItem[] | null>(null);
@@ -192,6 +229,20 @@ function AppContent() {
               sendRecoverImport(names);
               setRecoverItems(null);
             }}
+          />
+        </Suspense>
+      )}
+      {problemReport && (
+        <Suspense fallback={null}>
+          <FeedbackModal
+            key={problemReport.id}
+            isOpen
+            onClose={() => setProblemReport(null)}
+            initialType="bug"
+            initialSubject={problemReport.subject}
+            initialMessage={problemReport.message}
+            source="orca_plugin"
+            attachPluginLog
           />
         </Suspense>
       )}

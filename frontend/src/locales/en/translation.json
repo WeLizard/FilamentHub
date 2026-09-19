@@ -494,7 +494,8 @@
     "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)",
     "plugin_sync": "Sync",
     "plugin_recover": "Recover",
-    "plugin_log": "Log"
+    "plugin_report_problem": "Report a problem",
+    "plugin_open_printers": "Open My Printers"
   },
   "legalDocument": {
     "backHome": "Back to home",
@@ -996,7 +997,8 @@
     "apply_all_remaining": "Apply to all {{count}} remaining presets, including those not loaded"
   },
   "toast": {
-    "close_button_aria_label": "Close"
+    "close_button_aria_label": "Close",
+    "report_problem": "Report a problem"
   },
   "adminBrandRequests": {
     "loading_requests": "Loading requests...",
@@ -1298,7 +1300,10 @@
     "user": "User",
     "deleteButton": "Delete",
     "deleteError": "Error deleting feedback",
-    "confirmDelete": "Delete this message? This action cannot be undone."
+    "confirmDelete": "Delete this message? This action cannot be undone.",
+    "pluginLog": "Plugin log · {{size}} KB",
+    "downloadPluginLog": "Download .log",
+    "pluginLogDownloadError": "Could not download the plugin log"
   },
   "feedbackThread": {
     "back": "Back",
@@ -6692,6 +6697,18 @@
         "messagePlaceholder": "Describe your question, suggestion, or issue in detail.\n\nYour feedback is very important to us!",
         "instructions": "Describe your feedback in detail"
       }
+    },
+    "pluginReportSubject": "Problem in the OrcaSlicer plugin",
+    "pluginLog": {
+      "loading": "Attaching the plugin log…",
+      "attached": "filamenthub-plugin.log · {{size}} KB",
+      "privacy": "No passwords or access keys.",
+      "show": "Show",
+      "hide": "Hide",
+      "remove": "Don't attach the log",
+      "removed": "The log will not be attached.",
+      "restore": "Attach again",
+      "unavailable": "The plugin log is unavailable — the message will be sent without it."
     }
   },
   "wikiFeedback": {

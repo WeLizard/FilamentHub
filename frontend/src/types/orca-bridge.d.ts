@@ -14,7 +14,6 @@ declare global {
       exportPrinterProfiles?: () => Promise<{ message?: string }>;
       exportPrintProfiles?: () => Promise<{ message?: string }>;
       sendLoginSuccess?: (accessToken: string, userId: number, refreshToken: string) => void;
-      showNotification?: (message: string, type?: string) => void;
       scanOrphanedPresets?: () => Promise<void>;
     };
     wx?: {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedbackDetail } from '../../types/api';
@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  downloadLog: vi.fn(),
+  downloadBlob: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -26,8 +28,11 @@ vi.mock('../../api/client', () => ({
     get: (...args: unknown[]) => mocks.get(...args),
     update: (...args: unknown[]) => mocks.update(...args),
     delete: (...args: unknown[]) => mocks.remove(...args),
+    downloadPluginLog: (...args: unknown[]) => mocks.downloadLog(...args),
   },
 }));
+
+vi.mock('../../utils/download', () => ({ downloadBlob: mocks.downloadBlob }));
 
 vi.mock('../Toast', () => ({
   toast: {
@@ -113,5 +118,23 @@ describe('AdminFeedback emoji picker', () => {
     fireEvent.click(screen.getByText(feedback.subject));
     expect(await screen.findAllByText(/jaxon/)).toHaveLength(2);
     expect(screen.queryByText(/User #4|Пользователь #4/)).not.toBeInTheDocument();
+  });
+
+  it('offers an attached plugin log only as a file download', async () => {
+    const withLog = { ...feedback, plugin_log_size: 12_288 };
+    const blob = new Blob(['FilamentHub plugin 0.2.0']);
+    mocks.list.mockResolvedValue({ items: [withLog], total: 1, page: 1, size: 20, pages: 1 });
+    mocks.get.mockResolvedValue(withLog);
+    mocks.downloadLog.mockResolvedValue(blob);
+    renderFeedback();
+
+    fireEvent.click(await screen.findByText(feedback.subject));
+    fireEvent.click(await screen.findByRole('button', { name: /adminFeedback.downloadPluginLog/ }));
+
+    await waitFor(() => (
+      expect(mocks.downloadBlob).toHaveBeenCalledWith(blob, 'feedback-17-plugin.log')
+    ));
+    expect(mocks.downloadLog).toHaveBeenCalledWith(17);
+    expect(screen.queryByText('FilamentHub plugin 0.2.0')).not.toBeInTheDocument();
   });
 });

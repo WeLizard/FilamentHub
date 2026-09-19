@@ -494,7 +494,8 @@
     "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）",
     "plugin_sync": "同步",
     "plugin_recover": "恢复",
-    "plugin_log": "日志"
+    "plugin_report_problem": "报告问题",
+    "plugin_open_printers": "打开“我的打印机”"
   },
   "legalDocument": {
     "backHome": "返回首页",
@@ -996,7 +997,8 @@
     "apply_all_remaining": "应用到所有 {{count}} 个剩余预设，包括尚未加载的预设"
   },
   "toast": {
-    "close_button_aria_label": "关闭"
+    "close_button_aria_label": "关闭",
+    "report_problem": "报告问题"
   },
   "adminBrandRequests": {
     "loading_requests": "加载请求中...",
@@ -1298,7 +1300,10 @@
     "user": "用户",
     "deleteButton": "删除",
     "deleteError": "删除反馈出错",
-    "confirmDelete": "删除此消息？此操作无法撤销。"
+    "confirmDelete": "删除此消息？此操作无法撤销。",
+    "pluginLog": "插件日志 · {{size}} KB",
+    "downloadPluginLog": "下载 .log",
+    "pluginLogDownloadError": "无法下载插件日志"
   },
   "feedbackThread": {
     "back": "返回",
@@ -6686,6 +6691,18 @@
         "messagePlaceholder": "请详细描述您的问题、建议或问题。\n\n您的反馈对我们非常重要！",
         "instructions": "详细描述您的反馈"
       }
+    },
+    "pluginReportSubject": "OrcaSlicer 插件出现问题",
+    "pluginLog": {
+      "loading": "正在附加插件日志…",
+      "attached": "filamenthub-plugin.log · {{size}} KB",
+      "privacy": "不包含密码和访问密钥。",
+      "show": "查看",
+      "hide": "隐藏",
+      "remove": "不附加日志",
+      "removed": "日志将不会附加。",
+      "restore": "重新附加",
+      "unavailable": "插件日志不可用 — 消息将不附带日志发送。"
     }
   },
   "wikiFeedback": {

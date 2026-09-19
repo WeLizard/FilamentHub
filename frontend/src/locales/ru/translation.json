@@ -494,7 +494,8 @@
     "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})",
     "plugin_sync": "Синхронизация",
     "plugin_recover": "Восстановить",
-    "plugin_log": "Журнал"
+    "plugin_report_problem": "Сообщить о проблеме",
+    "plugin_open_printers": "Открыть «Мои принтеры»"
   },
   "legalDocument": {
     "backHome": "Вернуться на главную",
@@ -1155,7 +1156,8 @@
     "apply_all_remaining": "Применить ко всем оставшимся пресетам ({{count}}), включая ещё не загруженные"
   },
   "toast": {
-    "close_button_aria_label": "Закрыть"
+    "close_button_aria_label": "Закрыть",
+    "report_problem": "Сообщить о проблеме"
   },
   "adminBrandRequests": {
     "loading_requests": "Загрузка заявок...",
@@ -1457,7 +1459,10 @@
     "user": "Пользователь",
     "deleteButton": "Удалить",
     "deleteError": "Ошибка удаления",
-    "confirmDelete": "Удалить это сообщение? Действие необратимо."
+    "confirmDelete": "Удалить это сообщение? Действие необратимо.",
+    "pluginLog": "Журнал плагина · {{size}} КБ",
+    "downloadPluginLog": "Скачать .log",
+    "pluginLogDownloadError": "Не удалось скачать журнал плагина"
   },
   "feedbackThread": {
     "back": "Назад",
@@ -6859,6 +6864,18 @@
         "messagePlaceholder": "Опишите ваш вопрос, предложение или проблему подробно.\n\nВаша обратная связь очень важна для нас!",
         "instructions": "Опишите вашу обратную связь подробно"
       }
+    },
+    "pluginReportSubject": "Проблема в плагине OrcaSlicer",
+    "pluginLog": {
+      "loading": "Прикладываем журнал плагина…",
+      "attached": "filamenthub-plugin.log · {{size}} КБ",
+      "privacy": "Без паролей и ключей доступа.",
+      "show": "Показать",
+      "hide": "Скрыть",
+      "remove": "Не прикладывать журнал",
+      "removed": "Журнал не будет приложен.",
+      "restore": "Вернуть",
+      "unavailable": "Журнал плагина недоступен — сообщение уйдёт без него."
     }
   },
   "wikiFeedback": {

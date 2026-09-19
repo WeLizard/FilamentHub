@@ -1,33 +1,54 @@
-import { useState } from 'react';
-import { BookOpen, LogOut, Package, RefreshCw, RotateCcw, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { BookOpen, Bug, LogOut, Package, RefreshCw, RotateCcw, User } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import {
-  requestPluginDiagnostics,
   requestPluginProfileSync,
   requestPluginRecovery,
 } from '../utils/pluginBridge';
+import { openProblemReport } from '../utils/problemReport';
+import { usePluginDeveloperMode } from '../hooks/usePluginDeveloperMode';
 
 interface OrcaPluginToolbarProps {
   authenticated: boolean;
   accountLabel: string | null;
-  showDiagnostics: boolean;
   onLogin: () => void;
   onLogout: () => void;
 }
 
+const TOOLBAR_HEIGHT_PROPERTY = '--orca-plugin-toolbar-height';
+
 export function OrcaPluginToolbar({
   authenticated,
   accountLabel,
-  showDiagnostics,
   onLogin,
   onLogout,
 }: OrcaPluginToolbarProps) {
   const { t } = useTranslation();
+  const developerMode = usePluginDeveloperMode();
   const navigate = useNavigate();
   const location = useLocation();
   const [syncing, setSyncing] = useState(false);
+  const toolbarRef = useRef<HTMLElement>(null);
+
+  // Toasts are positioned below the toolbar instead of over its controls; the
+  // toolbar wraps on narrow Orca panels, so its height is measured, not fixed.
+  useEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return undefined;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty(TOOLBAR_HEIGHT_PROPERTY, `${toolbar.offsetHeight}px`);
+    };
+    publish();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    observer?.observe(toolbar);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty(TOOLBAR_HEIGHT_PROPERTY);
+    };
+  }, []);
 
   const destinations = [
     { path: '/', label: t('layout.nav_catalog'), icon: Package, authenticated: false },
@@ -62,6 +83,7 @@ export function OrcaPluginToolbar({
 
   return (
     <header
+      ref={toolbarRef}
       data-testid="orca-plugin-toolbar"
       className="sticky top-0 z-[90] border-b border-white/10 bg-slate-950/95 px-3 py-2 shadow-lg backdrop-blur"
     >
@@ -109,13 +131,18 @@ export function OrcaPluginToolbar({
               <RotateCcw className="h-4 w-4" />
               {t('layout.plugin_recover')}
             </button>
+            {developerMode && (
+              <button
+                type="button"
+                onClick={() => openProblemReport()}
+                className={buttonClass()}
+                title={t('layout.plugin_report_problem')}
+                aria-label={t('layout.plugin_report_problem')}
+              >
+                <Bug className="h-4 w-4" />
+              </button>
+            )}
           </>
-        )}
-
-        {showDiagnostics && (
-          <button type="button" onClick={requestPluginDiagnostics} className={buttonClass()}>
-            {t('layout.plugin_log')}
-          </button>
         )}
       </div>
     </header>

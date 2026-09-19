@@ -12,7 +12,6 @@ import {
   isDirectPluginHost,
   isPluginEmbed,
   reportAuthStateToPlugin,
-  subscribeToPluginRuntime,
 } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
@@ -46,7 +45,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
   const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
-  const [showPluginDiagnostics, setShowPluginDiagnostics] = useState(false);
 
   const handleScanDetected = async (rawCode: string): Promise<boolean> => {
     const code = ownQrShortCode(rawCode);
@@ -135,16 +133,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const directPluginHost = pluginEmbed && isDirectPluginHost();
   const hideChrome = isInOrcaSlicer || pluginEmbed;
 
-  useEffect(() => {
-    if (!directPluginHost) {
-      setShowPluginDiagnostics(false);
-      return;
-    }
-    return subscribeToPluginRuntime(({ showDiagnostics }) => {
-      setShowPluginDiagnostics(showDiagnostics);
-    });
-  }, [directPluginHost]);
-
   // Статус сессии для тулбара шелла плагина: имя + счётчик пресетов
   // (тот же /auth/me/presets-stats, что использовала форковая панель)
   const { data: pluginPresetStats } = useQuery({
@@ -182,7 +170,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <OrcaPluginToolbar
           authenticated={Boolean(user)}
           accountLabel={pluginAccountLabel}
-          showDiagnostics={showPluginDiagnostics}
           onLogin={() => setIsAuthModalOpen(true)}
           onLogout={handleLogout}
         />

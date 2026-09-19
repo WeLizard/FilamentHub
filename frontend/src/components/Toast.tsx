@@ -16,6 +16,32 @@ export interface Toast {
     label: string;
     onClick: () => void;
   };
+  /** Turns an error icon into a "report this problem" control. */
+  onReport?: () => void;
+}
+
+function BugReportIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      {/* lucide "bug", scaled into the lower part of the triangle */}
+      <g transform="translate(6.96 9.56) scale(0.42)" strokeWidth={3.6}>
+        <path d="m8 2 1.88 1.88M14.12 3.88 16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
+        <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M12 20v-9" />
+        <path d="M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4" />
+        <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4" />
+      </g>
+    </svg>
+  );
 }
 
 interface ToastProps {
@@ -67,7 +93,22 @@ const ToastItem: React.FC<ToastProps> = ({ toast, onClose }) => {
         animation: 'slideIn 0.3s ease-out',
       }}
     >
-      <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
+      <div className="flex-shrink-0 mt-0.5">
+        {toast.onReport ? (
+          <button
+            type="button"
+            onClick={() => {
+              toast.onReport?.();
+              onClose(toast.id);
+            }}
+            title={t('toast.report_problem')}
+            aria-label={t('toast.report_problem')}
+            className="-m-1 rounded p-1 text-red-400 transition-colors hover:bg-white/10 hover:text-red-300"
+          >
+            <BugReportIcon className="w-5 h-5" />
+          </button>
+        ) : getIcon()}
+      </div>
       <div className="flex-1 text-xs text-white">
         <div className="whitespace-pre-line">{toast.message}</div>
         {toast.action && (
@@ -129,6 +170,7 @@ export const toast = {
     duration?: number,
     replaceKey?: string,
     action?: Toast['action'],
+    onReport?: Toast['onReport'],
   ) => {
     // A keyed toast replaces the previous one on the same channel and always
     // shows (no session dedup) — repeated actions like Sync must report each run.
@@ -147,7 +189,7 @@ export const toast = {
     logToast('SHOW', message, type, `total unique: ${shownMessages.size}`);
 
     const id = `toast-${++toastIdCounter}`;
-    const toastItem: Toast = { id, message, type, duration, replaceKey, action };
+    const toastItem: Toast = { id, message, type, duration, replaceKey, action, onReport };
     toasts.push(toastItem);
     notifyListeners();
     return id;
@@ -202,7 +244,10 @@ export const ToastContainer: React.FC = () => {
   }
 
   return (
-    <div className="fixed top-4 right-4 z-[99999] flex flex-col items-end">
+    <div
+      className="fixed right-4 z-[99999] flex flex-col items-end"
+      style={{ top: 'calc(var(--orca-plugin-toolbar-height, 0px) + 1rem)' }}
+    >
       {currentToasts.map((toastItem) => (
         <ToastItem key={toastItem.id} toast={toastItem} onClose={(id) => toast.remove(id)} />
       ))}

@@ -1181,6 +1181,7 @@ export interface Feedback {
   source: string | null; // wiki_article, preset, catalog, general
   source_url: string | null; // URL страницы, откуда отправили
   source_id: number | null; // ID связанного объекта
+  plugin_log_size?: number | null;
   status: FeedbackStatus;
   admin_unread_count?: number;
   admin_response: string | null;

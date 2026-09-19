@@ -9,7 +9,6 @@ vi.mock('../api/client', () => ({ authAPI: oauthApiMocks }));
 
 import {
   configureBambuBridgeInPlugin,
-  importPresetToPlugin,
   installPrinterBundleInPlugin,
   removePrinterBundleFromPlugin,
   PLUGIN_MESSAGE_SOURCE,
@@ -22,16 +21,15 @@ import {
   requestHappyHareSlotAssignment,
   requestPluginProfileSync,
   requestPluginCapabilities,
-  requestPluginDiagnostics,
+  requestPluginDiagnosticLog,
   requestPluginRecovery,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
   subscribeToPluginCapabilities,
-  subscribeToPluginDiagnostics,
   subscribeToLocalPrinterSetup,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
-  subscribeToPluginRuntime,
+  subscribeToPluginSyncResult,
   startPluginOAuth,
 } from './pluginBridge';
 
@@ -85,17 +83,15 @@ describe('pluginBridge inbound messages', () => {
     }
   });
 
-  it('routes recovery and diagnostics through the bound plugin bridge', () => {
+  it('routes recovery and the problem-report log through the bound plugin bridge', async () => {
     const originalParent = window.parent;
     const postMessage = vi.fn();
     const parent = { postMessage };
     Object.defineProperty(window, 'parent', { configurable: true, value: parent });
     window.history.pushState({}, '', '/embed/catalog');
-    const onDiagnostics = vi.fn();
-    const unsubscribe = subscribeToPluginDiagnostics(onDiagnostics);
     try {
       requestPluginRecovery();
-      requestPluginDiagnostics();
+      const log = requestPluginDiagnosticLog();
       expect(postMessage.mock.calls.map(([message]) => message.type)).toEqual([
         'recover',
         'read-diagnostics',
@@ -105,11 +101,30 @@ describe('pluginBridge inbound messages', () => {
         origin: window.location.origin,
         source: parent as unknown as Window,
       }));
-      expect(onDiagnostics).toHaveBeenCalledWith('healthy');
+      await expect(log).resolves.toBe('healthy');
     } finally {
-      unsubscribe();
       Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('keeps automatic sync results quiet only when the plugin says so', () => {
+    const results = vi.fn();
+    const unsubscribe = subscribeToPluginSyncResult(results);
+    const dispatch = (extra: Record<string, unknown>) => window.dispatchEvent(new MessageEvent('message', {
+      data: { source: PLUGIN_MESSAGE_SOURCE, type: 'sync-result', text: 'done', ...extra },
+      origin: window.location.origin,
+      source: window,
+    }));
+    try {
+      dispatch({});
+      dispatch({ notify: false, connectionReview: true });
+      expect(results.mock.calls.map(([result]) => [result.notify, result.connectionReview])).toEqual([
+        [true, false],
+        [false, true],
+      ]);
+    } finally {
+      unsubscribe();
     }
   });
 
@@ -171,9 +186,7 @@ describe('pluginBridge inbound messages', () => {
     });
     window.history.pushState({}, '', `/embed/catalog#fh_bridge=${bridgeSession}`);
     const onCapabilities = vi.fn();
-    const onRuntime = vi.fn();
     const unsubscribe = subscribeToPluginCapabilities(onCapabilities);
-    const unsubscribeRuntime = subscribeToPluginRuntime(onRuntime);
 
     try {
       requestPluginCapabilities();
@@ -205,16 +218,8 @@ describe('pluginBridge inbound messages', () => {
         capabilities: ['profile-sync'],
       });
       expect(onCapabilities).toHaveBeenCalledWith(new Set(['profile-sync']));
-      deliver?.({
-        source: 'filamenthub-host',
-        type: 'transport',
-        push: true,
-        showDiagnostics: true,
-      });
-      expect(onRuntime).toHaveBeenLastCalledWith({ showDiagnostics: true });
     } finally {
       unsubscribe();
-      unsubscribeRuntime();
       Object.defineProperty(window, 'orca', { configurable: true, value: originalOrca });
       window.history.pushState({}, '', '/');
     }
@@ -321,7 +326,6 @@ describe('pluginBridge inbound messages', () => {
 
     try {
       reportPluginSessionToPlugin('scoped-plugin-token');
-      importPresetToPlugin(42);
       const bundlePending = installPrinterBundleInPlugin(7);
       requestPluginCapabilities();
 
@@ -337,16 +341,6 @@ describe('pluginBridge inbound messages', () => {
       );
       expect(postMessage).toHaveBeenNthCalledWith(
         2,
-        {
-          source: PLUGIN_MESSAGE_SOURCE,
-          type: 'import-preset',
-          presetId: 42,
-          token: 'scoped-plugin-token',
-        },
-        '*',
-      );
-      expect(postMessage).toHaveBeenNthCalledWith(
-        3,
         {
           source: PLUGIN_MESSAGE_SOURCE,
           type: 'install-printer-bundle',
@@ -367,7 +361,7 @@ describe('pluginBridge inbound messages', () => {
       }));
       await expect(bundlePending).resolves.toEqual({ message: 'installed' });
       expect(postMessage).toHaveBeenNthCalledWith(
-        4,
+        3,
         {
           source: PLUGIN_MESSAGE_SOURCE,
           type: 'plugin-capabilities-request',

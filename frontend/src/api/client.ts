@@ -3344,6 +3344,7 @@ export const feedbackAPI = {
     source?: string | null;
     source_url?: string | null;
     source_id?: number | null;
+    plugin_log?: string | null;
   }): Promise<Feedback> => {
     const response = await api.post<Feedback>('/feedback/', data);
     return response.data;
@@ -3453,6 +3454,13 @@ export const adminFeedbackAPI = {
   // Удалить обратную связь
   delete: async (feedbackId: number): Promise<{ success: boolean }> => {
     const response = await api.delete(`/feedback/${feedbackId}`);
+    return response.data;
+  },
+
+  downloadPluginLog: async (feedbackId: number): Promise<Blob> => {
+    const response = await api.get(`/feedback/${feedbackId}/plugin-log`, {
+      responseType: 'blob',
+    });
     return response.data;
   },
 };

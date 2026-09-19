@@ -1,10 +1,11 @@
 /** Модалка обратной связи для бетатестеров и пользователей */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Send, Bug, Lightbulb, HelpCircle, MessageSquare } from 'lucide-react';
+import { X, Send, Bug, Lightbulb, HelpCircle, MessageSquare, Loader2, Paperclip } from 'lucide-react';
 import { feedbackAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { requestPluginDiagnosticLog } from '../utils/pluginBridge';
 import type { FeedbackType } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { ModalOverlay } from './ModalOverlay';
@@ -16,7 +17,14 @@ interface FeedbackModalProps {
   initialType?: FeedbackType;
   initialSubject?: string;
   initialMessage?: string;
+  source?: string;
+  /** Attach the OrcaSlicer plugin log; only meaningful inside the plugin. */
+  attachPluginLog?: boolean;
 }
+
+type PluginLogState =
+  | { status: 'idle' | 'loading' | 'unavailable' }
+  | { status: 'ready'; text: string };
 
 interface FeedbackTypeInfo {
   value: FeedbackType;
@@ -28,7 +36,15 @@ interface FeedbackTypeInfo {
   instructions: string;
 }
 
-export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, initialType, initialSubject, initialMessage }) => {
+export const FeedbackModal: React.FC<FeedbackModalProps> = ({
+  isOpen,
+  onClose,
+  initialType,
+  initialSubject,
+  initialMessage,
+  source,
+  attachPluginLog = false,
+}) => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const FEEDBACK_TYPES: FeedbackTypeInfo[] = [
@@ -76,6 +92,23 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, i
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [pluginLog, setPluginLog] = useState<PluginLogState>({
+    status: attachPluginLog ? 'loading' : 'idle',
+  });
+  const [pluginLogExpanded, setPluginLogExpanded] = useState(false);
+  const [pluginLogRemoved, setPluginLogRemoved] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !attachPluginLog) return undefined;
+    let cancelled = false;
+    void requestPluginDiagnosticLog().then((text) => {
+      if (cancelled) return;
+      setPluginLog(text ? { status: 'ready', text } : { status: 'unavailable' });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, attachPluginLog]);
 
   // Получаем текущий тип обратной связи
   const currentTypeInfo = FEEDBACK_TYPES.find(t => t.value === type) || FEEDBACK_TYPES[0];
@@ -83,8 +116,11 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, i
   // Показываем модалку только для авторизованных пользователей
   if (!isOpen || !user) return null;
 
+  const attachedPluginLog = pluginLog.status === 'ready' && !pluginLogRemoved ? pluginLog.text : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (pluginLog.status === 'loading') return;
     setError(null);
     setIsSubmitting(true);
 
@@ -94,6 +130,8 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, i
         subject: subject.trim(),
         message: message.trim(),
         email: null, // Email не нужен для авторизованных пользователей
+        source: source ?? null,
+        plugin_log: attachedPluginLog,
       });
 
       setSuccess(true);
@@ -235,12 +273,70 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, i
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     required
+                    maxLength={10000}
                     rows={5}
                     placeholder={currentTypeInfo.messagePlaceholder}
                     className="w-full px-3 md:px-4 py-2.5 md:py-2 bg-white/5 border border-white/10 rounded-lg text-sm md:text-base text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none custom-scrollbar md:font-mono"
                     disabled={isSubmitting}
                   />
                 </div>
+
+                {attachPluginLog && (
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300">
+                    {pluginLog.status === 'loading' ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        {t('feedback.pluginLog.loading')}
+                      </span>
+                    ) : pluginLog.status !== 'ready' ? (
+                      <span>{t('feedback.pluginLog.unavailable')}</span>
+                    ) : pluginLogRemoved ? (
+                      <span className="flex items-center justify-between gap-2">
+                        {t('feedback.pluginLog.removed')}
+                        <button
+                          type="button"
+                          onClick={() => setPluginLogRemoved(false)}
+                          className="shrink-0 font-medium text-purple-300 hover:text-purple-200"
+                        >
+                          {t('feedback.pluginLog.restore')}
+                        </button>
+                      </span>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Paperclip className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span className="min-w-0 flex-1 truncate">
+                            {t('feedback.pluginLog.attached', {
+                              size: Math.max(1, Math.round(new Blob([pluginLog.text]).size / 1024)),
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPluginLogExpanded((expanded) => !expanded)}
+                            className="shrink-0 font-medium text-purple-300 hover:text-purple-200"
+                          >
+                            {pluginLogExpanded ? t('feedback.pluginLog.hide') : t('feedback.pluginLog.show')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPluginLogRemoved(true)}
+                            aria-label={t('feedback.pluginLog.remove')}
+                            title={t('feedback.pluginLog.remove')}
+                            className="shrink-0 text-gray-400 hover:text-white"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[11px] text-gray-500">{t('feedback.pluginLog.privacy')}</p>
+                        {pluginLogExpanded && (
+                          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-black/30 p-2 font-mono text-[11px] text-gray-400 custom-scrollbar">
+                            {pluginLog.text}
+                          </pre>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Error */}
                 {error && (
@@ -266,7 +362,12 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, i
               <button
                 type="submit"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !subject.trim() || !message.trim()}
+                disabled={
+                  isSubmitting
+                  || !subject.trim()
+                  || !message.trim()
+                  || pluginLog.status === 'loading'
+                }
                 className="px-4 py-2.5 sm:py-2 rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (
