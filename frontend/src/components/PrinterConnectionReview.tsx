@@ -43,18 +43,22 @@ function ConnectionChoice({
       - Number(connection.candidate_printer_ids.includes(a.id)))
     .map((printer) => ({ value: String(printer.id), label: `${printer.name} · #${printer.id}` }));
   options.push({ value: 'new', label: t('printerConnections.newDevice') });
+  const connectionName = connection.preset_name ?? connection.provider;
   return (
-    <div className="space-y-2 rounded-lg border border-amber-400/20 p-3">
-      <p className="text-sm text-white">{connection.preset_name ?? connection.provider}</p>
-      <Dropdown size="sm" value={target} options={options} onChange={(value) => setTarget(String(value))}
-        placeholder={t('printerConnections.choose')}
-        disabled={candidateLookupPending || candidateLookupError} />
-      <button type="button"
-        disabled={!target || mutation.isPending || candidateLookupPending || candidateLookupError}
-        onClick={() => mutation.mutate()}
-        className="rounded-lg bg-purple-600 px-3 py-2 text-sm text-white disabled:opacity-50">
-        {t('printerConnections.confirm')}
-      </button>
+    <div className="min-w-0 space-y-2 rounded-lg border border-amber-400/20 p-3">
+      <p className="truncate text-sm text-white" title={connectionName ?? undefined}>{connectionName}</p>
+      <div className="flex items-center gap-2">
+        <Dropdown size="sm" className="min-w-0 flex-1" value={target} options={options}
+          onChange={(value) => setTarget(String(value))}
+          placeholder={t('printerConnections.choose')}
+          disabled={candidateLookupPending || candidateLookupError} />
+        <button type="button"
+          disabled={!target || mutation.isPending || candidateLookupPending || candidateLookupError}
+          onClick={() => mutation.mutate()}
+          className="shrink-0 whitespace-nowrap rounded-lg bg-purple-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
+          {t('printerConnections.confirm')}
+        </button>
+      </div>
       {candidateLookupError && (
         <button type="button" onClick={onRetryCandidateLookup} className="text-sm text-amber-300">
           {t('printerConnections.retry')}
@@ -109,30 +113,32 @@ export function PrinterConnectionReview({
     <section className="space-y-3 rounded-xl border border-amber-400/30 bg-amber-500/5 p-4">
       <h4 className="font-semibold text-amber-200">{t('printerConnections.title')}</h4>
       <p className="text-sm text-gray-300">{t('printerConnections.hint')}</p>
-      {data.map((connection) => {
-        const lookups = connection.candidate_printer_ids
-          .filter((printerId) => !visibleIds.has(printerId))
-          .map((printerId) => candidateQueryById.get(printerId))
-          .filter((query) => query !== undefined);
-        return (
-          <ConnectionChoice
-            key={`${connection.id}-${connection.revision}`}
-            connection={connection}
-            printers={knownPrinters}
-            candidateLookupPending={lookups.some((query) => query.isPending)}
-            candidateLookupError={lookups.some(
-              (query) => query.isError && !isMissingCandidate(query.error),
-            )}
-            onRetryCandidateLookup={() => {
-              void Promise.all(
-                lookups
-                  .filter((query) => query.isError && !isMissingCandidate(query.error))
-                  .map((query) => query.refetch()),
-              );
-            }}
-          />
-        );
-      })}
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {data.map((connection) => {
+          const lookups = connection.candidate_printer_ids
+            .filter((printerId) => !visibleIds.has(printerId))
+            .map((printerId) => candidateQueryById.get(printerId))
+            .filter((query) => query !== undefined);
+          return (
+            <ConnectionChoice
+              key={`${connection.id}-${connection.revision}`}
+              connection={connection}
+              printers={knownPrinters}
+              candidateLookupPending={lookups.some((query) => query.isPending)}
+              candidateLookupError={lookups.some(
+                (query) => query.isError && !isMissingCandidate(query.error),
+              )}
+              onRetryCandidateLookup={() => {
+                void Promise.all(
+                  lookups
+                    .filter((query) => query.isError && !isMissingCandidate(query.error))
+                    .map((query) => query.refetch()),
+                );
+              }}
+            />
+          );
+        })}
+      </div>
     </section>
   );
 }

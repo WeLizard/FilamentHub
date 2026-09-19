@@ -735,7 +735,7 @@ export function PresetSlotsPanel({
             const preferredColumns = Math.min(Math.max(activeSlotCount, 1), 9);
             const preferredWidthRem = Math.max(
               20,
-              preferredColumns * 7 + (preferredColumns - 1) * 0.375 + 2.625,
+              preferredColumns * 6 + (preferredColumns - 1) * 0.375 + 2.625,
             );
             return (
               <div

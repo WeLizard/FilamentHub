@@ -655,10 +655,10 @@ describe('PresetSlotsPanel', () => {
     expect(fiveSlotCard).toHaveClass('@container', 'min-w-0');
     expect(threeSlotCard).toHaveClass('@container', 'min-w-0');
     expect(fiveSlotWrapper).toHaveClass('min-w-[min(100%,20rem)]');
-    expect(fiveSlotWrapper.style.flexBasis).toBe('39.125rem');
+    expect(fiveSlotWrapper.style.flexBasis).toBe('34.125rem');
     expect(fiveSlotWrapper.style.flexGrow).toBe('5');
     expect(threeSlotWrapper).toHaveClass('min-w-[min(100%,20rem)]');
-    expect(threeSlotWrapper.style.flexBasis).toBe('24.375rem');
+    expect(threeSlotWrapper.style.flexBasis).toBe('21.375rem');
     expect(threeSlotWrapper.style.flexGrow).toBe('3');
     expect(layout).toBe(threeSlotWrapper.parentElement);
     expect(layout).toHaveClass('flex', 'flex-wrap', 'items-start', 'justify-center');
