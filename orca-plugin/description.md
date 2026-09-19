@@ -1,64 +1,41 @@
-FilamentHub brings community filament profiles, spool inventory, and print-cost tools into OrcaSlicer. Find a material, import its preset, and connect your slicing workflow to the filament you actually use.
-
-The settings and Bambu usage accounting described below are for **FilamentHub 0.2.0**, currently a release candidate. The public 0.1.10 package does not include all of these changes.
+FilamentHub brings filament discovery, native OrcaSlicer presets, physical spool inventory, printer material systems, and production costing into one connected workflow. Find a material, prepare it for printing, follow the spool in use, and continue from a completed slice to a calculation, quote, or order.
 
 ![Browse and import community filament presets from inside OrcaSlicer](https://api.orcaslicer.com/api/v1/bundles/media/3bc1c768-34ae-4b04-b451-28dbff52c564/content)
 
 ## From material to finished print
 
-- **Discover useful profiles.** Browse the catalog inside the plugin and filter it using the printer already selected in OrcaSlicer.
-- **Work with native presets.** FilamentHub profiles keep their colour and inheritance and appear in a dedicated group in OrcaSlicer's normal filament selector.
-- **Synchronize deliberately.** Enable synchronization per profile, pull an update, send a local edit back, or recover an existing local profile as a private draft. Local changes are never silently overwritten.
-- **Connect digital profiles to real material.** Track physical spools and compare saved assignments with supported Bambu AMS and Happy Hare material systems before explicitly applying a change.
-- **Calculate print costs.** Optionally keep recent sliced files locally so you can use them in FilamentHub calculations without finding and selecting the file again.
+- **Discover useful profiles.** Browse the FilamentHub catalog inside OrcaSlicer by brand, material type, or the printer already selected in the slicer.
+- **Use native OrcaSlicer presets.** Imported profiles keep their colour and inheritance and appear in a dedicated FilamentHub group in the normal filament selector.
+- **Keep selected profiles synchronized.** Receive catalog updates, save your own changes, and recover existing local work as a private profile.
+- **Connect profiles to physical spools.** See the material you own, its remaining weight, and its assignment to a printer or material-system slot.
+- **Work with Bambu AMS and Happy Hare.** Compare FilamentHub assignments with supported printer material systems and apply prepared slot changes.
+- **Track Bambu spool use over LAN.** Connect compatible Bambu printers directly and update assigned spool balances during a print, with calculated usage identified as an estimate.
+- **Continue into calculations and orders.** Reuse a completed OrcaSlicer slice to calculate production cost, save an estimate, prepare a customer quote, and continue accepted work as an order.
 
 ![Saved filament presets and sync status in the FilamentHub profile](https://api.orcaslicer.com/api/v1/bundles/media/3abf7f71-9324-4e66-93c2-a2afacb03519/content)
 
 ![Imported FilamentHub presets in OrcaSlicer's native filament dropdown](https://api.orcaslicer.com/api/v1/bundles/media/3d0440c2-cfd2-4286-98b6-488c5088efcd/content)
 
-## Bambu LAN and real spool balances
+## Built around the way you print
 
-Connect a Bambu printer over your local network using its address and LAN access code. This connection does not require Bambu Cloud. Available information depends on the printer and firmware; the integration is not limited to one printer model.
+Use the catalog and preset library on their own, or connect them to spool inventory, printer material systems, slice history, and production costing. The optional Slicing Pipeline reporter brings completed slices into FilamentHub ready for cost calculations, saved estimates, customer quotes, and production orders.
 
-With a spool assigned in FilamentHub, the plugin reads the slicer's declared weight and the planned extrusion distribution from that job's G-code. The printer's current layer then selects how much of that planned extrusion has been reached. Retractions are removed from the curve. If the layer curve is unavailable, the plugin can fall back to a clearly labelled progress calculation or to a usable change in the printer's reported remaining filament. **Calculated usage automatically reduces the assigned spool's balance and is clearly marked as estimated in its history.** This is a G-code calculation, not a scale measurement. If the available data cannot be safely linked to a spool, the plugin does not invent a deduction.
-
-A spool assigned partway through a print starts from the balance you enter and the first usable observation after assignment. Earlier consumption is not charged again. For a cancelled print, accounting keeps the consumption reached at the last observed layer.
-
-Keep OrcaSlicer running for continuous collection. Saved accounting state survives a restart, and the plugin can recover a still-identifiable job from the printer. It cannot reconstruct every print that happened while OrcaSlicer was closed.
+Printer connections run from OrcaSlicer on your computer, while your FilamentHub account keeps profiles, spool history, calculations, and production records together.
 
 ![FilamentHub spool inventory with a Happy Hare gate assignment](https://api.orcaslicer.com/api/v1/bundles/media/30be9acd-e848-4da5-a03d-80217a49f564/content)
 
-## Two settings panels, two purposes
-
-**FilamentHub (Pages)** controls the embedded catalog and preset synchronization. Choose `filamenthub.ru` or `filamenthub.club` — both access the same account and data. You may need to sign in again after switching. Enable automatic synchronization or sync manually, and choose whether successful automatic syncs show a notification. Select which profiles to synchronize in your FilamentHub profile.
-
-**filamenthub-slice-reporter (Slicing Pipeline)** is an optional connection between slicing and FilamentHub calculations. It is disabled by default. Enable **Save sliced files and send their details to FilamentHub** in this panel if you want to reuse recent slices.
-
-## What the permission prompt is for
-
-When sliced-file reporting is enabled:
-
-- **File access** lets the plugin read the G-code produced by OrcaSlicer, add comments identifying FilamentHub profiles, and keep a small local cache of recent files for calculations. Print movement commands are unchanged. OrcaSlicer's permission dialog may show a temporary file path because slicing uses temporary files.
-- **The signed-in FilamentHub page** sends slice details through its normal authenticated API connection: the filename, printer model, printer and print-profile names and identifiers, slicer version, export destination type, and identifiers linking the slice to this computer. The report goes to `https://filamenthub.ru/api/v1/orcaslicer/slices` or the equivalent address on `filamenthub.club`.
-- **The full G-code is uploaded only when you explicitly request a calculation.** Enabling slice reports does not automatically upload the full file after each slice.
-
-The Python slicing worker does not make the report HTTP request or call the FilamentHub window. It only stores metadata in a durable local queue. The signed-in FilamentHub page polls that queue later and sends it through the same web API connection used by the catalog. Plugin activation, slicing, G-code export and printer upload therefore do not wait for the page or open a native HTTP permission dialog for this endpoint. If the page is signed out, closed, or temporarily offline, reports remain queued and are retried when the page is available. You can disable the slice reporter in its settings.
-
-Local printer connections may separately need network permission. **Search local network** starts discovery only when you choose it. Merely opening the FilamentHub page does not scan your network.
-
 ## Your local setup stays yours
 
-- FilamentHub updates or removes only its own managed preset copies. Unmanaged OrcaSlicer profiles are left untouched.
-- Printer-profile restoration and material-system changes require an explicit action.
-- Printer connection credentials are stored locally. FilamentHub receives the account, preset, slice, and material-system data used by the features you enable.
+- FilamentHub manages only the preset copies it creates. System, project, third-party, and other user presets are left untouched.
+- Printer access codes and API keys stay on your computer. Connection addresses can be synchronized to your FilamentHub account when you enable **Store printer addresses in FilamentHub**, and may then appear on the site.
+- Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations; the full G-code is uploaded only when you request a calculation.
+- Network discovery, profile recovery, and changes to printer material systems start only from an explicit action.
+- Bambu usage calculated from G-code is marked as an estimate, so it is never presented as a scale measurement.
 
-## Requirements and current limitation
+## Requirements
 
-- A free FilamentHub account for the catalog, spool inventory, and preset synchronization. Production costing and quote features may require Calculator Pro access.
+- A FilamentHub account for the catalog, preset synchronization, spool inventory, and slice history.
 - An OrcaSlicer build with Python plugin support.
-- Internet access to FilamentHub for account and server features, even when the printer itself uses LAN mode.
-- For Bambu accounting: a reachable printer with LAN access enabled, an assigned FilamentHub spool, usable job or remaining-filament data, and a FilamentHub server supporting estimated usage.
+- Local-network access to the printer for optional Bambu or Happy Hare integration.
 
-The plugin is in active testing while OrcaSlicer's plugin API continues to evolve. On current builds, OrcaSlicer must be restarted before a newly imported or updated preset appears because the host cannot yet reload user presets on request.
-
-When reporting a problem, include the OrcaSlicer build hash and FilamentHub plugin version. Developer mode in the FilamentHub settings enables **Report a problem**, which attaches the plugin log to your report.
+On current OrcaSlicer builds, a restart is required before a newly imported or updated preset appears in the slicer's preset selectors.

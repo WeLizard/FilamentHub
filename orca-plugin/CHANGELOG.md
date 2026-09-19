@@ -5,32 +5,15 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.2.0
-- Bambu LAN consumption now follows the actual per-layer extrusion curve from the print G-code instead of assuming that every percent of progress uses the same amount of filament. The total remains the slicer's declared weight, and older files fall back to an explicitly labelled progress estimate.
-- A temporary FilamentHub snapshot outage no longer drops a Bambu observation or resets its durable accounting baseline. The observation stays queued and is checked against the current spool assignment when the connection recovers.
-- Slice reports now use the signed-in FilamentHub page's normal authenticated API connection. The slicing worker only saves metadata to a durable local queue and never calls the host UI; the page polls that queue later on its own UI callback. Activation, slicing, export and printer upload therefore cannot be blocked by the report transport or its audited HTTP permission dialog. Failed and signed-out deliveries remain queued for retry.
-- Bambu cancellation keeps the estimated material used before stopping. Rapid transitions to idle remain in order until saved, so the end of a job is not lost between updates.
-- Bambu LAN connections can record estimated filament consumption without a Bambu cloud account. Available print files and identified spool balance changes feed the same print history, with explicit estimate labels. A local journal preserves pending reports and observed spool bindings across restarts; repeated delivery does not debit a spool twice.
-- Bambu 3MF jobs now use their small slice metadata even when the compressed archive contains G-code larger than the fallback extraction limit. Large normal prints no longer remain at zero consumption when the metadata already contains a safe per-filament weight.
-- Consumption starts from the observed spool assignment, including a spool added during a print. File-based progress estimates remain separate from measured consumption, and unavailable evidence is not reported as zero usage.
-- Saving sliced files and reporting their details now requires explicit opt-in in the slicing plugin's settings. The settings explain local G-code comments and caching, exactly which details go to the selected server, and that uploading the full G-code requires a calculation request.
-- Export no longer probes the system's temporary directory, avoiding a permission request for an unrelated random file. The plugin keeps its own limited copy of enabled slice reports so a calculation remains possible after OrcaSlicer removes its working file.
-- **Check materials** for Bambu and **Check printer** for Happy Hare work again in the current OrcaSlicer, and a saved slot assignment is sent to the printer right away again. The plugin used to drop these commands before contacting the printer, so the page waited and then reported a printer timeout.
-- Opening OrcaSlicer after a break no longer shows a red "sync settings temporarily unavailable" message. The plugin waits for the sign-in the page renews and then runs the start-up sync that used to be skipped.
-- Sync results are worded plainly and colored by meaning: green when done, yellow only when something did not sync, red when something failed. Failed presets are named instead of counted, and technical codes stay in the log.
-- Automatic syncs stay quiet when nothing changed and do not repeat a warning already shown. **Sync** always reports the full result.
-- Printer connections waiting for confirmation are a calm note with an **Open My Printers** button instead of a warning.
-- Recovery reports how many selected items actually reached FilamentHub.
-- Plugin settings in OrcaSlicer's Plugins dialog: choose the server (filamenthub.ru or filamenthub.club, applied after a restart), turn automatic sync off, keep successful automatic syncs silent, and turn on developer mode.
-- In developer mode, a bug button in the toolbar and the icon on error messages open a problem report with the plugin log attached. Passwords, access codes and tokens are removed from the log first, and the report can be sent without it.
-- Removed the unused single-preset import with its native dialogs and the developer-only log button.
-- The Bambu network setup window and the printer profile install message are translated into every OrcaSlicer language instead of falling back to English.
-- Connecting a Bambu printer over the local network again needs only its address and LAN access code. The serial number is read from the printer's own reply, so setup never asks for it and never scans the network to obtain it.
-- The Bambu setup window reacts to **Search local network** and **Connect** again. Since 0.1.10 its script stopped at the first message it tried to show in the window, so neither button ever reached the plugin.
-- Search and Connect now end in a clear result instead of staying busy indefinitely, and a setup request that cannot be paired reports the pairing failure instead of being ignored without an answer.
-- Explicit Bambu LAN search no longer depends on a FilamentHub pairing code.
-- Bambu setup accepts both native object payloads and JSON-string messages from host windows, and binds them through the setup window's own callback, so Search and Connect keep working on older compatible OrcaSlicer builds.
-- Bambu LAN discovery accepts compatible printer announcement versions, and the plugin log records only safe message-boundary diagnostics, never credentials.
-
+- Track estimated Bambu filament use over LAN without a Bambu Cloud account. Usage follows the completed G-code layers, updates the assigned spool automatically, and remains clearly labelled as an estimate.
+- Keep partial Bambu usage when a print is cancelled, start from a spool assigned during an active print, and preserve pending accounting across restarts or temporary FilamentHub outages without charging the same material twice.
+- Optionally send completed OrcaSlicer slices to FilamentHub for production calculations, quotes, and orders. Reports wait safely when signed out or offline and no longer block plugin activation, slicing, export, or sending a job to the printer.
+- Explain the slice reporter before it is enabled: what stays on the computer, which slice details are sent, and that the full G-code is uploaded only after an explicit calculation request.
+- Restore **Check materials** for Bambu, **Check printer** for Happy Hare, and immediate delivery of a saved slot assignment to a supported printer.
+- Fix Bambu LAN setup on current OrcaSlicer builds. Connecting again needs only the printer address and LAN access code; search runs only when requested and always ends with a clear result.
+- Make synchronization quieter and easier to understand: automatic sync stays silent when nothing changed, warnings identify the affected presets, and pending printer connections use a calm action instead of an error.
+- Add plugin settings for server choice, automatic synchronization, success notifications, and developer mode. Problem reports can include a redacted plugin log.
+- Translate Bambu setup, connection results, synchronization messages, and other native plugin screens across OrcaSlicer's supported languages.
 ## 0.1.10
 - Opening the FilamentHub tab no longer creates a local Python socket. The familiar plugin toolbar and embedded catalog remain intact, including navigation, sign-in, sync and recovery. An unavailable site gets a localized retry screen instead of a raw browser error. Local printer credentials use a separate host-owned dialog, while external sign-in uses a short-lived server handoff; neither path starts a local HTTP server.
 - Opening Bambu setup no longer searches the local network automatically. Saved and current-profile addresses remain available, while network discovery starts only when you choose **Search local network**.
