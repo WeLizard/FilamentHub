@@ -20,6 +20,7 @@ from app.core.errors import (
     ERR_SPOOL_EMPTY_ON_CREATE,
     ERR_SPOOL_LOCATION_CONFLICT,
     ERR_SPOOL_USED_EXCEEDS_INITIAL,
+    ERR_SPOOL_WEIGHT_CONFLICT,
     raise_error,
 )
 from app.models.filament import Filament
@@ -631,6 +632,19 @@ async def create_spool(
         comment=payload.comment,
     )
     db.add(spool)
+    if payload.used_weight_g > 0:
+        await db.flush()
+        await record_spool_usage(
+            db,
+            spool=spool,
+            event_type=PresetUsageEventType.reconcile_adjust,
+            delta_weight_g=payload.used_weight_g,
+            meta={
+                "reason": "opening_balance",
+                "balance_observed_at": datetime.now(timezone.utc).isoformat(),
+                "measured_remaining_g": spool.remaining_weight_g,
+            },
+        )
     await db.commit()
     await db.refresh(spool)
     return _build_response(spool, filament)
@@ -642,10 +656,22 @@ async def update_spool(
     spool_id: int,
     payload: SpoolUpdateRequest,
 ) -> SpoolResponse:
-    result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
+    result = await db.execute(
+        select(UserSpool).where(UserSpool.id == spool_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
+
+    if (
+        payload.expected_initial_weight_g is not None
+        and payload.expected_initial_weight_g != spool.initial_weight_g
+    ) or (
+        payload.expected_used_weight_g is not None
+        and payload.expected_used_weight_g != spool.used_weight_g
+    ):
+        raise_error(409, ERR_SPOOL_WEIGHT_CONFLICT)
 
     if "filament_id" in payload.model_fields_set:
         if payload.filament_id is not None:
@@ -699,6 +725,7 @@ async def update_spool(
     if (
         spool.initial_weight_g != previous_initial_weight
         or spool.used_weight_g != previous_used_weight
+        or payload.used_weight_g is not None
     ):
         await record_spool_usage(
             db,
@@ -709,6 +736,7 @@ async def update_spool(
                 "reason": "spool_edit",
                 "previous_initial_weight_g": previous_initial_weight,
                 "previous_remaining_weight_g": previous_remaining_weight,
+                "balance_observed_at": datetime.now(timezone.utc).isoformat(),
             },
         )
 
@@ -731,7 +759,10 @@ async def use_spool(
     spool_id: int,
     delta_weight_g: float,
 ) -> SpoolResponse:
-    result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
+    result = await db.execute(
+        select(UserSpool).where(UserSpool.id == spool_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)

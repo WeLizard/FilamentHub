@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 
 from app.core.printer_capabilities import (
     ADAPTER_CAPABILITY_MANIFESTS,
@@ -74,25 +73,18 @@ def test_unknown_adapter_keeps_forward_compatible_known_vocabulary() -> None:
     ) == ["read"]
 
 
-def test_operation_guard_rejects_pre_manifest_persisted_overclaim() -> None:
+def test_operation_guard_accepts_declared_bambu_orca_consumption() -> None:
     connector = SimpleNamespace(
         provider="bambu",
         transport="orca_plugin_lan",
         capabilities=["read", "consumption"],
     )
 
-    with pytest.raises(HTTPException) as error:
-        require_printer_bridge_capability(connector, "consumption")
-
-    assert error.value.status_code == 409
-    assert error.value.detail == {
-        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
-        "params": {"capability": "consumption"},
-    }
+    require_printer_bridge_capability(connector, "consumption")
 
 
-def test_route_proof_gate_rejects_pre_manifest_persisted_overclaim() -> None:
-    assert not has_capability(
+def test_route_proof_gate_accepts_declared_bambu_orca_consumption() -> None:
+    assert has_capability(
         ["read", "consumption"],
         "consumption",
         provider="bambu",

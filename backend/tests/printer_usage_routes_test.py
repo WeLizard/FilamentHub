@@ -3,7 +3,7 @@
 import hashlib
 import json
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +22,146 @@ from app.models.user_spool import UserSpool
 from app.schemas.printer_bridge import PrinterBridgeUsageBatchRequest
 from app.schemas.printer_usage import PrinterUsageEvent
 from app.services.printer_usage_service import _terminal_payload_hash, usage_payload_hash
+
+
+@pytest.mark.parametrize("timing", ["before", "across", "after", "missing"])
+async def test_manual_balance_covers_delayed_usage_without_erasing_job_consumption(
+    route_bridge, auth_client, db_session, monkeypatch, timing
+):
+    from app.services import printer_usage_service, spool_service
+
+    bridge = route_bridge
+    base = datetime.now(timezone.utc) + timedelta(seconds=1)
+    checkpoint = base + timedelta(seconds=10)
+
+    class MeasurementClock:
+        @staticmethod
+        def now(tz):
+            return checkpoint
+
+    monkeypatch.setattr(spool_service, "datetime", MeasurementClock)
+    monkeypatch.setattr(printer_usage_service, "_now", lambda: base + timedelta(seconds=40))
+    response = await auth_client.patch(
+        f"/api/v1/spools/{bridge.spool_a_id}", json={"used_weight_g": 5}
+    )
+    assert response.status_code == 200, response.text
+    event = _event(bridge.spool_a_id, bridge.proof, segment_sequence=1)
+    event["items"][0].pop("used_length_mm")
+    event["items"][0]["used_weight_g"] = 5
+    if timing != "missing":
+        event["started_at"] = (
+            base + timedelta(seconds=11 if timing == "after" else 1)
+        ).isoformat()
+        event["observed_at"] = (
+            base + timedelta(seconds=5 if timing == "before" else 15)
+        ).isoformat()
+    first = await _send(auth_client, bridge, event)
+    assert first.status_code == 200, first.text
+    replay = await _send(auth_client, bridge, event)
+    assert replay.status_code == 200 and replay.json()["deduplicated"]
+    await db_session.refresh(bridge.spool_a)
+    assert bridge.spool_a.remaining_weight_g == (990 if timing == "after" else 995)
+    usage = await db_session.scalar(select(PresetUsageEvent).where(
+        PresetUsageEvent.spool_id == bridge.spool_a_id,
+        PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+    ))
+    assert usage.meta.get("balance_accounting") == {
+        "before": "already_in_balance",
+        "across": "needs_reconciliation",
+        "missing": "needs_reconciliation",
+        "after": None,
+    }[timing]
+    job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
+    assert job.status_code == 200
+    unresolved = timing in {"across", "missing"}
+    assert job.json()["confirmed_consumption_g"] == (0 if unresolved else 5)
+    assert job.json()["unreconciled_consumption_g"] == (5 if unresolved else 0)
+    assert job.json()["usage_segments"][0]["items"][0]["confirmed_weight_g"] == (
+        0 if unresolved else 5
+    )
+
+    if timing in {"across", "after"}:
+        next_event = _event(bridge.spool_a_id, bridge.proof, "next", segment_sequence=2)
+        next_event["items"][0].pop("used_length_mm")
+        next_event["items"][0]["used_weight_g"] = 3
+        next_event["started_at"] = base.isoformat()
+        next_event["observed_at"] = (base + timedelta(seconds=30)).isoformat()
+        accepted = await _send(auth_client, bridge, next_event, 2)
+        assert accepted.status_code == 200, accepted.text
+        await db_session.refresh(bridge.spool_a)
+        assert bridge.spool_a.remaining_weight_g == (987 if timing == "after" else 992)
+
+    if unresolved:
+        # An explicit fresh balance reading also resolves a report when the
+        # measured number happens to equal the currently stored number.
+        checkpoint = base + timedelta(seconds=45)
+        current_used = bridge.spool_a.used_weight_g
+        reconciled = await auth_client.patch(
+            f"/api/v1/spools/{bridge.spool_a_id}", json={"used_weight_g": current_used}
+        )
+        assert reconciled.status_code == 200, reconciled.text
+        await db_session.refresh(bridge.spool_a)
+        assert bridge.spool_a.used_weight_g == current_used
+        job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
+        assert job.json()["unreconciled_consumption_g"] == 0
+        assert job.json()["confirmed_consumption_g"] == (8 if timing == "across" else 5)
+        await db_session.refresh(usage)
+        assert usage.meta["balance_accounting"] == "reconciled_by_measurement"
+
+
+async def test_estimated_usage_is_deduplicated_and_keeps_source_after_balance_boundary(
+    route_bridge, auth_client, db_session, monkeypatch
+):
+    """A slicer estimate remains visible while confirmed consumption stays zero."""
+    from app.services import printer_usage_service, spool_service
+
+    bridge = route_bridge
+    base = datetime.now(timezone.utc) + timedelta(seconds=1)
+    checkpoint = base + timedelta(seconds=10)
+
+    class MeasurementClock:
+        @staticmethod
+        def now(tz):
+            return checkpoint
+
+    monkeypatch.setattr(spool_service, "datetime", MeasurementClock)
+    monkeypatch.setattr(printer_usage_service, "_now", lambda: base + timedelta(seconds=40))
+    measured = await auth_client.patch(
+        f"/api/v1/spools/{bridge.spool_a_id}", json={"used_weight_g": 5}
+    )
+    assert measured.status_code == 200, measured.text
+
+    event = _event(bridge.spool_a_id, bridge.proof, event_id="estimated-10", segment_sequence=1)
+    event["items"][0].pop("used_length_mm")
+    event["items"][0].update(
+        used_weight_g=10,
+        consumption_kind="estimated",
+        estimate_source="slicer_gcode",
+    )
+    event["started_at"] = (base + timedelta(seconds=11)).isoformat()
+    event["observed_at"] = (base + timedelta(seconds=15)).isoformat()
+    first = await _send(auth_client, bridge, event)
+    assert first.status_code == 200, first.text
+    replay = await _send(auth_client, bridge, event)
+    assert replay.status_code == 200 and replay.json()["deduplicated"] is True
+
+    await db_session.refresh(bridge.spool_a)
+    assert bridge.spool_a.remaining_weight_g == 985
+    usage = await db_session.scalar(
+        select(PresetUsageEvent).where(
+            PresetUsageEvent.spool_id == bridge.spool_a_id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+        )
+    )
+    assert usage.meta["consumption_kind"] == "estimated"
+    assert usage.meta["estimate_source"] == "slicer_gcode"
+    job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
+    assert job.status_code == 200
+    payload = job.json()
+    assert payload["confirmed_consumption_g"] == 0
+    assert payload["estimated_consumption_g"] == 10
+    assert payload["usage_segments"][0]["items"][0]["confirmed_weight_g"] == 0
+    assert payload["usage_segments"][0]["items"][0]["estimated_weight_g"] == 10
 
 
 async def _system(client):
@@ -485,6 +625,9 @@ def test_pre_upgrade_event_and_terminal_receipt_hashes_are_unchanged():
     old["items"][0].pop("usage_route_proof")
     old["items"][0].pop("tool_index")
     old["items"][0].pop("evidence")
+    old["items"][0].pop("consumption_kind")
+    old["items"][0].pop("estimate_source")
+    old["items"][0].pop("usage_started_at")
     old.pop("contract_version")
     old.pop("segment_sequence")
     old.pop("event_type")
@@ -549,6 +692,9 @@ async def test_pre_upgrade_batch_receipt_replays_without_new_optional_field(
     event_payload["items"][0].pop("usage_route_proof")
     event_payload["items"][0].pop("tool_index")
     event_payload["items"][0].pop("evidence")
+    event_payload["items"][0].pop("consumption_kind")
+    event_payload["items"][0].pop("estimate_source")
+    event_payload["items"][0].pop("usage_started_at")
     connector = await db_session.scalar(
         select(PhysicalPrinterConnector).where(
             PhysicalPrinterConnector.physical_printer_id == bridge.printer_id

@@ -101,11 +101,56 @@ async def test_update_spool_should_keep_nullable_fields_when_not_provided(
     assert event is not None
     assert event.event_type == PresetUsageEventType.manual_adjust
     assert event.remaining_weight_g == pytest.approx(1190.0)
-    assert event.meta == {
-        "reason": "spool_edit",
-        "previous_initial_weight_g": 1000.0,
-        "previous_remaining_weight_g": 990.0,
-    }
+    assert event.meta is not None
+    assert event.meta["reason"] == "spool_edit"
+    assert event.meta["previous_initial_weight_g"] == 1000.0
+    assert event.meta["previous_remaining_weight_g"] == 990.0
+    assert "balance_observed_at" in event.meta
+
+
+@pytest.mark.asyncio
+async def test_sparse_comment_patch_keeps_weights_and_does_not_create_usage_event(
+    db_session: AsyncSession,
+):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+
+    result = await update_spool(
+        db_session,
+        user,
+        spool.id,
+        SpoolUpdateRequest(comment="new-comment"),
+    )
+
+    assert result.initial_weight_g == pytest.approx(1000.0)
+    assert result.used_weight_g == pytest.approx(10.0)
+    assert result.comment == "new-comment"
+    assert await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_stale_expected_weight_rejects_patch_without_mutating_comment(
+    db_session: AsyncSession,
+):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await update_spool(
+            db_session,
+            user,
+            spool.id,
+            SpoolUpdateRequest(
+                comment="must-not-save",
+                expected_initial_weight_g=999.0,
+                expected_used_weight_g=10.0,
+            ),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "ERR_SPOOL_WEIGHT_CONFLICT"
+    await db_session.refresh(spool)
+    assert spool.comment == "seed-comment"
 
 
 @pytest.mark.asyncio

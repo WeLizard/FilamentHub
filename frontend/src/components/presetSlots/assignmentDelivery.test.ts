@@ -87,7 +87,7 @@ describe('assignment delivery coordinator', () => {
     });
     expect(assignmentDeliveryNotice(outcome)).toEqual({
       tone: 'info',
-      key: 'presetSlots.delivery.savedOnly',
+      key: 'presetSlots.delivery.savedOnlyHostUnavailable',
     });
   });
 
@@ -105,5 +105,21 @@ describe('assignment delivery coordinator', () => {
       tone: 'error',
       key: 'presetSlots.delivery.observationUploadFailed',
     });
+  });
+
+  it.each([
+    ['host_unavailable', 'presetSlots.delivery.savedOnlyHostUnavailable'],
+    ['preset_not_loaded', 'presetSlots.delivery.savedOnlyPresetNotLoaded'],
+    ['printer_busy', 'presetSlots.delivery.savedOnlyPrinterBusy'],
+    ['rfid_managed', 'presetSlots.delivery.savedOnlyRfidManaged'],
+    ['pull_required', 'presetSlots.delivery.savedOnlyPullRequired'],
+    ['spool_ids_unavailable', 'presetSlots.delivery.savedOnlySpoolIdsUnavailable'],
+  ])('explains saved-only delivery for %s', (code, key) => {
+    expect(assignmentDeliveryNotice({
+      printer: committedPrinter,
+      system: committedPrinter.material_systems[0],
+      slot: committedPrinter.material_systems[0].slots[0],
+      delivery: { status: 'saved_only', code },
+    })).toEqual({ tone: 'info', key });
   });
 });

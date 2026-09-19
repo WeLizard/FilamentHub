@@ -33,7 +33,7 @@ CAPABILITY_NAMES: frozenset[str] = frozenset(
 # configuration can actually provide.
 ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("bambu", "orca_plugin_lan"): frozenset(
-        {"read", "write", "presence", "tag_read"}
+        {"read", "write", "presence", "tag_read", "consumption"}
     ),
     # The current Edge runtime has no Bambu provider. Pairing can preserve an
     # existing connector identity, but it must not turn that placeholder into

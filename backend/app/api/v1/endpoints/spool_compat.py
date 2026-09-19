@@ -776,6 +776,8 @@ async def _get_user_spool(
         )
         .where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
     )
+    if for_update:
+        query = query.execution_options(populate_existing=True)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 
@@ -1371,6 +1373,18 @@ async def create_spool(
     )
     db.add(spool)
     await db.flush()
+    if spool.used_weight_g > 0:
+        await record_spool_usage(
+            db,
+            spool=spool,
+            event_type=PresetUsageEventType.reconcile_adjust,
+            delta_weight_g=spool.used_weight_g,
+            meta={
+                "reason": "opening_balance",
+                "balance_observed_at": datetime.now(timezone.utc).isoformat(),
+                "measured_remaining_g": spool.remaining_weight_g,
+            },
+        )
     try:
         await replace_spool_tags(
             db,
@@ -1415,7 +1429,7 @@ async def patch_spool(
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
-    spool = await _get_user_spool(db, user.id, spool_id)
+    spool = await _get_user_spool(db, user.id, spool_id, for_update=True)
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
@@ -1449,13 +1463,19 @@ async def patch_spool(
     if body.remaining_weight is not None:
         computed_used = max(spool.initial_weight_g - body.remaining_weight, 0.0)
         spool.used_weight_g = float(min(max(computed_used, 0.0), spool.initial_weight_g))
-    if spool.used_weight_g != before_used:
+    if (
+        spool.used_weight_g != before_used
+        or body.used_weight is not None
+        or body.remaining_weight is not None
+        or body.initial_weight is not None
+    ):
         await record_spool_usage(
             db,
             spool=spool,
             event_type=PresetUsageEventType.manual_adjust,
             delta_weight_g=spool.used_weight_g - before_used,
             device_id=_device.id if _device is not None else None,
+            meta={"balance_observed_at": datetime.now(timezone.utc).isoformat()},
         )
     if "lot_nr" in fields_set:
         spool.lot_nr = body.lot_nr
@@ -1749,7 +1769,7 @@ async def measure_spool(
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
-    spool = await _get_user_spool(db, user.id, spool_id)
+    spool = await _get_user_spool(db, user.id, spool_id, for_update=True)
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
@@ -1769,6 +1789,7 @@ async def measure_spool(
         meta={
             "measured_remaining_g": remaining_weight,
             "our_remaining_g": spool.initial_weight_g - before_used,
+            "balance_observed_at": datetime.now(timezone.utc).isoformat(),
         },
     )
     now = datetime.now(timezone.utc)

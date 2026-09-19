@@ -21,12 +21,32 @@ interface SpoolUsageModalProps {
  *  the reading instead of correcting a mistake. */
 const MEASUREMENT = 'reconcile_adjust';
 
+const ESTIMATE_SOURCE_KEYS: Record<string, string> = {
+  slicer_gcode: 'spoolUsage.source.estimateSlicerGcode',
+  slicer_3mf: 'spoolUsage.source.estimateSlicer3mf',
+  slicer_progress: 'spoolUsage.source.estimateSlicerProgress',
+  ams_remaining: 'spoolUsage.source.estimateAmsRemaining',
+};
+
 function warningFor(event: SpoolUsageEvent, t: TFunction): string | null {
   const meta = event.meta ?? {};
+  if (meta.balance_accounting === 'already_in_balance') {
+    return t('spoolUsage.alreadyInBalance', { reported: meta.reported_weight_g });
+  }
+  if (meta.balance_accounting === 'reconciled_by_measurement') {
+    return t('spoolUsage.reconciledByMeasurement', { reported: meta.reported_weight_g });
+  }
+  if (meta.balance_accounting === 'needs_reconciliation') {
+    return t('spoolUsage.needsReconciliation', { reported: meta.reported_weight_g });
+  }
   if (meta.possible_repeat) {
     return t('spoolUsage.warnRepeat');
   }
-  if (typeof meta.reported_weight_g === 'number') {
+  if (
+    typeof meta.reported_weight_g === 'number'
+    && typeof event.delta_weight_g === 'number'
+    && meta.reported_weight_g > event.delta_weight_g
+  ) {
     return t('spoolUsage.warnReported', { reported: meta.reported_weight_g.toFixed(0) });
   }
   return null;
@@ -49,6 +69,7 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
       setConfirming(null);
       queryClient.invalidateQueries({ queryKey: ['spool-usage', spool.id] });
       queryClient.invalidateQueries({ queryKey: ['spools'] });
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] });
     },
     onError: (error: any) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('common.error')));
@@ -57,7 +78,9 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
 
   if (!isOpen) return null;
 
-  const measurement = events.find((event) => event.event_type === MEASUREMENT);
+  const measurement = events.find(
+    (event) => event.event_type === MEASUREMENT && event.meta?.reason !== 'opening_balance',
+  );
   const drift = measurement?.delta_weight_g ?? 0;
 
   return (
@@ -108,8 +131,21 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
               const delta = event.delta_weight_g ?? 0;
               const reverted = Boolean(event.meta?.reverted);
               const isReversal = typeof event.meta?.reverts_event_id === 'number';
+              const unappliedEstimate =
+                event.event_type === 'print_estimate' && event.remaining_weight_g == null;
+              const isEstimatedConsumption = event.meta?.consumption_kind === 'estimated';
+              const balanceAccounting = event.meta?.balance_accounting;
+              const isAppliedEstimatedConsumption =
+                isEstimatedConsumption
+                && delta > 0
+                && event.remaining_weight_g != null
+                && !reverted
+                && !unappliedEstimate
+                && balanceAccounting !== 'needs_reconciliation'
+                && balanceAccounting !== 'reconciled_by_measurement'
+                && !(balanceAccounting === 'already_in_balance' && delta === 0);
               const canRevert =
-                !reverted && !isReversal && event.event_type !== MEASUREMENT && delta > 0;
+                !reverted && !isReversal && !unappliedEstimate && event.event_type !== MEASUREMENT && delta > 0;
               const warning = warningFor(event, t);
 
               return (
@@ -128,12 +164,22 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
                         delta > 0 ? 'text-gray-200' : 'text-emerald-300'
                       }`}
                     >
-                      {delta > 0 ? '−' : '+'}
+                      {unappliedEstimate || isEstimatedConsumption ? '≈' : delta > 0 ? '−' : '+'}
+                      {isEstimatedConsumption && delta > 0 ? '−' : ''}
                       {Math.abs(delta).toFixed(0)} {t('spoolUsage.grams')}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-gray-400">
                       {isReversal
                         ? t('spoolUsage.source.reversal')
+                        : event.meta?.reason === 'opening_balance'
+                          ? t('spoolUsage.source.opening_balance')
+                        : event.event_type === 'print_estimate'
+                          ? t('spoolUsage.source.print_estimate')
+                        : isEstimatedConsumption
+                          ? `${event.device_name ? `${event.device_name} · ` : ''}${t(
+                              ESTIMATE_SOURCE_KEYS[String(event.meta?.estimate_source)]
+                                ?? 'spoolUsage.source.estimated',
+                            )}`
                         : event.device_name ?? t(`spoolUsage.source.${event.event_type}`)}
                       {reverted && ` · ${t('spoolUsage.reverted')}`}
                     </span>
@@ -153,6 +199,12 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
                       </button>
                     )}
                   </div>
+
+                  {isAppliedEstimatedConsumption && (
+                    <p className="mt-1 text-[11px] text-emerald-300/90">
+                      {t('spoolUsage.estimatedApplied')}
+                    </p>
+                  )}
 
                   {warning && (
                     <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-300/80">

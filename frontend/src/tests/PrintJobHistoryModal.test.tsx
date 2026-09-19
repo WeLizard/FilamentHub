@@ -20,6 +20,7 @@ const job = {
   estimated_duration_s: null,
   actual_duration_s: 120,
   confirmed_consumption_g: 8.75,
+  estimated_consumption_g: 10.5,
   created_at: '2026-09-08T12:00:00Z',
   updated_at: '2026-09-08T12:02:00Z',
   materials: [],
@@ -40,6 +41,7 @@ const job = {
           spool_id: 101,
           evidence: 'route_proof',
           confirmed_weight_g: 5.25,
+          estimated_weight_g: 6,
         },
         {
           slot_index: 1,
@@ -47,6 +49,7 @@ const job = {
           spool_id: 102,
           evidence: 'current_assignment',
           confirmed_weight_g: 3.5,
+          estimated_weight_g: 4.5,
         },
       ],
     },
@@ -108,6 +111,19 @@ beforeEach(() => {
 });
 
 describe('PrintJobHistoryModal usage segments', () => {
+  it('shows unresolved reports separately from confirmed consumption', async () => {
+    apiMocks.listJobs.mockResolvedValue({
+      items: [{ ...job, confirmed_consumption_g: 0, unreconciled_consumption_g: 5,
+        usage_segments: [{ ...job.usage_segments[0], items: [{
+          ...job.usage_segments[0].items[0], confirmed_weight_g: 0, unreconciled_weight_g: 5,
+        }] }],
+      }], total: 1,
+    });
+    await renderModal();
+    fireEvent.click(await screen.findByRole('button', { name: 'printJobs.expand' }));
+    expect(screen.getAllByText('printJobs.needsReconciliation:value=5')).toHaveLength(2);
+    expect(screen.queryByText('printJobs.confirmedConsumption:value=5')).not.toBeInTheDocument();
+  });
   it('keeps physical spools separate and states the evidence for each debit', async () => {
     await renderModal();
 
@@ -118,6 +134,8 @@ describe('PrintJobHistoryModal usage segments', () => {
     expect(screen.getByText('printJobs.usageSegments.spool:id=102')).toBeInTheDocument();
     expect(screen.getByText('printJobs.usageSegments.evidence.route_proof')).toBeInTheDocument();
     expect(screen.getByText('printJobs.usageSegments.evidence.current_assignment')).toBeInTheDocument();
+    expect(screen.getByText('printJobs.estimatedConsumption:value=11')).toBeInTheDocument();
+    expect(screen.getByText('printJobs.usageSegments.estimatedWeight:value=6')).toBeInTheDocument();
   });
 
   it('retains three query pages, reaches the terminal cursor, and hydrates a page-three item', async () => {

@@ -1401,6 +1401,8 @@ export interface PrintJobUsageSegmentItem {
   spool_id: number | null;
   evidence: PrintJobUsageEvidence;
   confirmed_weight_g: number;
+  estimated_weight_g: number;
+  unreconciled_weight_g?: number;
 }
 
 export interface PrintJobUsageSegment {
@@ -1430,6 +1432,8 @@ export interface PrintJob {
   estimated_duration_s: number | null;
   actual_duration_s: number | null;
   confirmed_consumption_g: number;
+  estimated_consumption_g: number;
+  unreconciled_consumption_g?: number;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;

@@ -39,6 +39,7 @@ from app.services.print_job_service import (
 from app.services.printer_usage_route_service import identity_timestamp, resolve_usage_routes
 from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
 from app.services.spool_usage_service import (
+    latest_spool_balance_observation,
     record_spool_usage,
     resolve_assigned_preset_id,
 )
@@ -76,6 +77,9 @@ def usage_payload_data(payload: PrinterUsageEvent) -> dict:
             item.pop("tool_index", None)
         if item.get("evidence") is None:
             item.pop("evidence", None)
+        for field in ("consumption_kind", "estimate_source", "usage_started_at"):
+            if item.get(field) is None:
+                item.pop(field, None)
     return payload_data
 
 
@@ -253,7 +257,7 @@ async def process_printer_usage_event(
             )
             .with_for_update()
         )
-        previous_meta = (
+        previous_meta = list(
             await db.scalars(
                 select(PresetUsageEvent.meta)
                 .where(
@@ -279,6 +283,24 @@ async def process_printer_usage_event(
                 ERR_PRINT_JOB_REPLAY_CONFLICT,
                 {"expected_sequence": expected_sequence},
             )
+
+        if previous_sequences:
+            previous_segment = next(
+                meta for meta in previous_meta
+                if isinstance(meta, dict)
+                and meta.get("segment_sequence") == max(previous_sequences)
+            )
+            previous_observed = previous_segment.get("observed_at")
+            segment_started_at = (
+                _as_utc(datetime.fromisoformat(previous_observed))
+                if isinstance(previous_observed, str)
+                and previous_segment.get("source_time_known") is True
+                else started_at
+            )
+        else:
+            segment_started_at = started_at
+    else:
+        segment_started_at = started_at
 
     print_job, should_record_usage = await ensure_provider_job_event(
         db,
@@ -340,7 +362,21 @@ async def process_printer_usage_event(
             else _weight_from_length(item.used_length_mm or 0.0, density, diameter)
         )
         before = spool.used_weight_g
-        spool.used_weight_g = min(spool.initial_weight_g, before + reported_weight)
+        balance_observed_at = await latest_spool_balance_observation(db, spool.id)
+        balance_accounting = None
+        item_started_at = (
+            min(_as_utc(item.usage_started_at), occurred_at)
+            if item.usage_started_at is not None else segment_started_at
+        )
+        if balance_observed_at is not None:
+            if payload.observed_at is None:
+                balance_accounting = "needs_reconciliation"
+            elif occurred_at <= balance_observed_at:
+                balance_accounting = "already_in_balance"
+            elif item_started_at is None or item_started_at < balance_observed_at:
+                balance_accounting = "needs_reconciliation"
+        if balance_accounting is None:
+            spool.used_weight_g = min(spool.initial_weight_g, before + reported_weight)
         consumed = spool.used_weight_g - before
         total_consumed += consumed
         spool.last_used_at = received_at
@@ -380,6 +416,7 @@ async def process_printer_usage_event(
                 "event_type": payload.event_type,
                 "reasons": payload.reasons,
                 "observed_at": occurred_at.isoformat(),
+                "source_time_known": payload.observed_at is not None,
                 "slot_index": item.slot_index,
                 "tool_index": item.tool_index,
                 "spool_id": item.spool_id,
@@ -387,7 +424,14 @@ async def process_printer_usage_event(
                 "file_name": payload.file_name,
                 "duration_s": payload.duration_s,
                 "used_length_mm": item.used_length_mm,
+                "consumption_kind": item.consumption_kind,
+                "estimate_source": item.estimate_source,
+                "usage_started_at": item_started_at.isoformat() if item_started_at else None,
                 "source_instance_id": source_instance_id,
+                **({
+                    "balance_accounting": balance_accounting,
+                    "balance_observed_at": balance_observed_at.isoformat(),
+                } if balance_accounting is not None else {}),
                 **({"usage_route": route} if route is not None else {}),
             },
         )

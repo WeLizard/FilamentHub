@@ -4,10 +4,14 @@ from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.user_spool import UserSpool
 
 _GENERIC_SNAPSHOT_CAPABILITIES = (
     ("happy_hare", "edge_agent", {"read", "presence", "spool_identity", "tag_read"}),
-    ("bambu", "orca_plugin_lan", {"read", "presence", "tag_read"}),
+    ("bambu", "orca_plugin_lan", {"read", "presence", "consumption", "tag_read"}),
 )
 _GENERIC_OPERATION_CASES = (
     ("desired", [], "read", None),
@@ -62,7 +66,7 @@ async def _paired_bridge(
     printer_id = printer.json()["id"]
     system = await auth_client.post(
         f"/api/v1/physical-printers/{printer_id}/material-systems",
-        json={"name": "Capability feed", "provider": provider},
+        json={"name": "Capability feed", "provider": provider, "slot_count": 1},
     )
     assert system.status_code == 201
     system_id = system.json()["material_systems"][0]["id"]
@@ -220,7 +224,7 @@ async def test_generic_bridge_allows_status_and_heartbeat_without_material_capab
 @pytest.mark.parametrize(
     ("provider", "transport", "allowed"),
     [
-        ("bambu", "orca_plugin_lan", {"read", "write", "presence", "tag_read"}),
+        ("bambu", "orca_plugin_lan", {"read", "write", "presence", "consumption", "tag_read"}),
         ("moonraker", "edge_agent", {"read", "presence", "consumption"}),
         (
             "happy_hare",
@@ -357,3 +361,76 @@ async def test_unimplemented_bambu_edge_keeps_identity_without_capabilities(
         "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
         "params": {"capability": "presence"},
     }
+
+
+@pytest.mark.asyncio
+async def test_bambu_orca_consumption_snapshot_route_and_estimate_are_idempotent(
+    auth_client: AsyncClient, db_session
+) -> None:
+    printer_id, system_id, source, headers = await _paired_bridge(
+        auth_client, ["read", "presence", "consumption"],
+    )
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    slot = printer["material_systems"][0]["slots"][0]
+    created = await auth_client.post("/api/v1/spools", json={"initial_weight_g": 1000})
+    assert created.status_code == 201, created.text
+    spool_id = created.json()["id"]
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot['id']}",
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool_id,
+        },
+    )
+    assert assigned.status_code == 200, assigned.text
+    desired = await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)
+    assert desired.status_code == 200, desired.text
+    route = desired.json()["slots"][0]
+    assert route["usage_route_proof"]
+    event = {
+        "contract_version": 2,
+        "event_id": "bambu-estimate-1",
+        "job_id": "bambu-job-1",
+        "event_type": "terminal",
+        "segment_sequence": 1,
+        "outcome": "completed",
+        "items": [{
+            "slot_index": route["index"],
+            "spool_id": spool_id,
+            "used_weight_g": 10,
+            "usage_route_proof": route["usage_route_proof"],
+            "evidence": "route_proof",
+            "consumption_kind": "estimated",
+            "estimate_source": "slicer_gcode",
+        }],
+    }
+    payload = {
+        "material_system_id": system_id,
+        "provider": "bambu",
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source,
+        "sequence": 1,
+        "events": [event],
+    }
+    accepted = await auth_client.post(
+        "/api/v1/printer-bridge/usage-batches", headers=headers, json=payload
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["deduplicated"] is False
+    replay = await auth_client.post(
+        "/api/v1/printer-bridge/usage-batches", headers=headers, json=payload
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["deduplicated"] is True
+    spool = await db_session.scalar(select(UserSpool).where(UserSpool.id == spool_id))
+    assert spool.remaining_weight_g == 990
+    usage = await db_session.scalar(select(PresetUsageEvent).where(
+        PresetUsageEvent.spool_id == spool_id,
+        PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+    ))
+    assert usage is not None
+    job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
+    assert job.status_code == 200
+    assert job.json()["confirmed_consumption_g"] == 0
+    assert job.json()["estimated_consumption_g"] == 10

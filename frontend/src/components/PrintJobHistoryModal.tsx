@@ -596,6 +596,16 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                               {t('printJobs.confirmedConsumption', { value: Math.round(job.confirmed_consumption_g) })}
                             </p>
                           )}
+                          {job.estimated_consumption_g > 0 && (
+                            <p className="mt-3 text-xs text-sky-200/80">
+                              {t('printJobs.estimatedConsumption', { value: Math.round(job.estimated_consumption_g) })}
+                            </p>
+                          )}
+                          {(job.unreconciled_consumption_g ?? 0) > 0 && (
+                            <p className="mt-3 text-xs text-amber-200">
+                              {t('printJobs.needsReconciliation', { value: Math.round(job.unreconciled_consumption_g!) })}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t('printJobs.timeline')}</h4>
@@ -660,6 +670,18 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                                               ),
                                             })}
                                           </span>
+                                          {item.estimated_weight_g > 0 && (
+                                            <span className="text-sky-200">
+                                              {t('printJobs.usageSegments.estimatedWeight', {
+                                                value: weightLabel(item.estimated_weight_g, i18n.language),
+                                              })}
+                                            </span>
+                                          )}
+                                          {(item.unreconciled_weight_g ?? 0) > 0 && (
+                                            <span className="text-amber-200">
+                                              {t('printJobs.needsReconciliation', { value: weightLabel(item.unreconciled_weight_g!, i18n.language) })}
+                                            </span>
+                                          )}
                                           {item.spool_id != null && (
                                             <span className="break-words text-slate-300">
                                               {t('printJobs.usageSegments.spool', {

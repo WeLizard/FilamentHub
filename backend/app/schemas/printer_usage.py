@@ -12,13 +12,20 @@ class PrinterUsageItem(BaseModel):
     spool_id: int = Field(ge=1)
     usage_route_proof: str | None = Field(default=None, min_length=1, max_length=128)
     evidence: Literal["route_proof", "current_assignment"] | None = None
-    used_length_mm: float | None = Field(default=None, gt=0)
-    used_weight_g: float | None = Field(default=None, gt=0)
+    used_length_mm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    used_weight_g: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    usage_started_at: datetime | None = None
+    consumption_kind: Literal["measured", "estimated"] | None = None
+    estimate_source: Literal[
+        "slicer_gcode", "slicer_3mf", "slicer_progress", "ams_remaining"
+    ] | None = None
 
     @model_validator(mode="after")
     def exactly_one_amount(self) -> "PrinterUsageItem":
         if (self.used_length_mm is None) == (self.used_weight_g is None):
             raise ValueError("exactly one usage amount is required")
+        if (self.consumption_kind == "estimated") != (self.estimate_source is not None):
+            raise ValueError("estimated consumption requires its source")
         return self
 
 

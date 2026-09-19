@@ -132,6 +132,8 @@ class SpoolUpdateRequest(BaseModel):
     filament_id: int | None = Field(default=None, ge=1)
     initial_weight_g: float | None = Field(default=None, gt=0, le=10_000)
     used_weight_g: float | None = Field(default=None, ge=0)
+    expected_initial_weight_g: float | None = Field(default=None, gt=0, le=10_000)
+    expected_used_weight_g: float | None = Field(default=None, ge=0)
     price: float | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     state: SpoolState | None = None

@@ -76,6 +76,8 @@ class PrintJobUsageSegmentItemResponse(BaseModel):
     spool_id: int | None
     evidence: Literal["route_proof", "current_assignment"]
     confirmed_weight_g: float
+    estimated_weight_g: float = 0.0
+    unreconciled_weight_g: float = 0.0
 
 
 class PrintJobUsageSegmentResponse(BaseModel):
@@ -105,6 +107,8 @@ class PrintJobResponse(BaseModel):
     estimated_duration_s: float | None
     actual_duration_s: float | None
     confirmed_consumption_g: float
+    estimated_consumption_g: float = 0.0
+    unreconciled_consumption_g: float = 0.0
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime

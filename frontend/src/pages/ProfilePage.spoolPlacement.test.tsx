@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMocks = vi.hoisted(() => ({
   assignMaterialSlot: vi.fn(),
   createSpool: vi.fn(),
+  updateSpool: vi.fn(),
   listPresets: vi.fn(),
   listPrinters: vi.fn(),
   toastSuccess: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../api/client', async (importOriginal) => {
     spoolsAPI: {
       ...original.spoolsAPI,
       create: apiMocks.createSpool,
+      update: apiMocks.updateSpool,
     },
   };
 });
@@ -139,6 +141,7 @@ describe('SpoolForm printer placement', () => {
       last_used_at: null,
       extra: null,
     });
+    apiMocks.updateSpool.mockResolvedValue({});
     apiMocks.assignMaterialSlot.mockResolvedValue({ status: 'delivered' });
   });
 
@@ -198,5 +201,67 @@ describe('SpoolForm printer placement', () => {
       undefined,
       'preset-slot-assignment-delivery',
     );
+  });
+
+  it('edits only changed fields and guards an intentional weight edit', async () => {
+    const spool = {
+      id: 1270,
+      user_id: 1,
+      filament_id: 44,
+      filament: null,
+      initial_weight_g: 1000,
+      used_weight_g: 5,
+      remaining_weight_g: 995,
+      remaining_pct: 99.5,
+      price: 20,
+      currency: 'RUB',
+      state: 'active' as const,
+      source: 'manual',
+      lot_nr: 'LOT-1',
+      comment: 'old comment',
+      created_at: '2026-09-05T12:00:00Z',
+      updated_at: '2026-09-05T12:00:00Z',
+      last_used_at: null,
+      extra: null,
+    };
+
+    const view = render(
+      <QueryClientProvider client={new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })}>
+        <SpoolForm mode="edit" spool={spool} onSaved={vi.fn()} onCancel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByDisplayValue('old comment'), {
+      target: { value: 'new comment' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolEditModal.submit' }));
+
+    await waitFor(() => expect(apiMocks.updateSpool).toHaveBeenCalledWith(1270, {
+      comment: 'new comment',
+    }));
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })}>
+        <SpoolForm
+          mode="edit"
+          spool={{ ...spool, comment: 'new comment' }}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByDisplayValue('1000'), { target: { value: '900' } });
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolEditModal.submit' }));
+
+    await waitFor(() => expect(apiMocks.updateSpool).toHaveBeenLastCalledWith(1270, {
+      initial_weight_g: 900,
+      used_weight_g: 5,
+      expected_initial_weight_g: 1000,
+      expected_used_weight_g: 5,
+    }));
   });
 });

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,50 @@ _OCTOPRINT_IDEMPOTENCY_PREFIX = "octoprint:"
 _RETRY_REPLAY_WINDOW = timedelta(seconds=15)
 _SPOOLMAN_CHECKPOINT_WINDOW = timedelta(seconds=60)
 _SPOOLMAN_CHECKPOINT_AGGREGATION = "spoolman_delta_window"
+
+
+async def latest_spool_balance_observation(
+    db: AsyncSession, spool_id: int
+) -> datetime | None:
+    """Read the authoritative balance boundary from the existing audit ledger."""
+    events = await db.scalars(
+        select(PresetUsageEvent)
+        .where(
+            PresetUsageEvent.spool_id == spool_id,
+            or_(
+                PresetUsageEvent.event_type == PresetUsageEventType.reconcile_adjust,
+                and_(
+                    PresetUsageEvent.event_type == PresetUsageEventType.manual_adjust,
+                    PresetUsageEvent.meta["balance_observed_at"].as_string().is_not(None),
+                ),
+            ),
+        )
+    )
+    boundaries = []
+    for event in events:
+        observed = (event.meta or {}).get("balance_observed_at")
+        value = datetime.fromisoformat(observed) if isinstance(observed, str) else event.created_at
+        boundaries.append(value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc))
+    # PostgreSQL created_at defaults to transaction start, which can precede a
+    # measurement committed by another writer while this transaction waited.
+    return max(boundaries, default=None)
+
+
+def confirmed_event_weight(event: PresetUsageEvent) -> float:
+    """A prior balance measurement can cover consumption without erasing the job fact."""
+    meta = event.meta or {}
+    if meta.get("consumption_kind") == "estimated":
+        return 0.0
+    if meta.get("balance_accounting") in {"already_in_balance", "reconciled_by_measurement"}:
+        return float(meta.get("reported_weight_g") or 0.0)
+    return event.delta_weight_g or 0.0
+
+
+def estimated_event_weight(event: PresetUsageEvent) -> float:
+    meta = event.meta or {}
+    if meta.get("consumption_kind") != "estimated" or meta.get("reverted"):
+        return 0.0
+    return float(meta.get("reported_weight_g") or 0.0)
 
 
 def octoprint_job_ref(idempotency_key: str) -> str:
@@ -248,6 +292,24 @@ async def record_spool_usage(
     this function creates an event.
     """
     notes = dict(meta or {})
+    balance_observed_at = notes.get("balance_observed_at")
+    if (
+        event_type in {PresetUsageEventType.manual_adjust, PresetUsageEventType.reconcile_adjust}
+        and isinstance(balance_observed_at, str)
+    ):
+        pending = await db.scalars(
+            select(PresetUsageEvent).where(
+                PresetUsageEvent.spool_id == spool.id,
+                PresetUsageEvent.meta["balance_accounting"].as_string()
+                == "needs_reconciliation",
+            ).with_for_update().execution_options(populate_existing=True)
+        )
+        for previous in pending:
+            previous.meta = {
+                **(previous.meta or {}),
+                "balance_accounting": "reconciled_by_measurement",
+                "reconciled_balance_observed_at": balance_observed_at,
+            }
     if reported_weight_g is not None:
         notes["reported_weight_g"] = reported_weight_g
 
@@ -325,14 +387,25 @@ async def revert_spool_usage(
     reverted — it states what was actually on the spool, and pretending otherwise
     would fake the reading rather than correct a mistake.
     """
-    spool = await db.get(UserSpool, spool_id)
+    spool = await db.scalar(
+        select(UserSpool).where(UserSpool.id == spool_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
     if spool is None or spool.user_id != user_id:
         raise_error(404, ERR_ACCESS_DENIED)
 
-    event = await db.get(PresetUsageEvent, event_id)
+    event = await db.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.id == event_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
     if event is None or event.spool_id != spool_id or event.user_id != user_id:
         raise_error(404, ERR_USAGE_EVENT_NOT_FOUND)
     if event.event_type == PresetUsageEventType.reconcile_adjust:
+        raise_error(409, ERR_USAGE_EVENT_NOT_REVERTIBLE)
+    if (
+        event.event_type == PresetUsageEventType.print_estimate
+        and event.remaining_weight_g is None
+    ):
         raise_error(409, ERR_USAGE_EVENT_NOT_REVERTIBLE)
 
     notes = dict(event.meta or {})
@@ -360,7 +433,11 @@ async def revert_spool_usage(
         delta_weight_g=-delta,
         device_id=event.device_id,
         print_job_id=event.print_job_id,
-        meta={"reverts_event_id": event.id},
+        meta={
+            "reverts_event_id": event.id,
+            **({"balance_observed_at": datetime.now(timezone.utc).isoformat()}
+               if notes.get("balance_observed_at") else {}),
+        },
     )
     await db.commit()
     await db.refresh(reversal)

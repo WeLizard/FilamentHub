@@ -48,7 +48,14 @@ import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
-import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot, QrScanResponse } from '../api/client';
+import type {
+  UserSpool,
+  SpoolState,
+  PhysicalPrinter,
+  MaterialSlot,
+  QrScanResponse,
+  SpoolUpdatePayload,
+} from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { translateApiError } from '../utils/translateApiError';
@@ -2814,22 +2821,44 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     try {
       const parsedPrice = price !== '' ? parseFloat(price) : null;
       const savedPrice = parsedPrice != null && Number.isFinite(parsedPrice) ? parsedPrice : null;
-      const payload = {
-        filament_id: filamentId ? Number(filamentId) : null,
-        initial_weight_g: parsedInitial,
-        used_weight_g: parsedUsed,
-        price: savedPrice,
-        currency: savedPrice == null ? null : priceCurrencyCode,
-        state: mode === 'create' && initialPlacement !== 'ask' ? 'shelf' : state,
-        ...(mode === 'create' ? { source } : {}),
-        lot_nr: lotNr || null,
-        comment: comment || null,
-      };
       if (mode === 'edit' && spool) {
+        const payload: SpoolUpdatePayload = {
+          ...(Number(filamentId) || null) !== spool.filament_id
+            ? { filament_id: Number(filamentId) || null }
+            : {},
+          ...(initialWeightEditedRef.current || usedWeightEditedRef.current
+            ? {
+              initial_weight_g: parsedInitial,
+              used_weight_g: parsedUsed,
+              expected_initial_weight_g: spool.initial_weight_g,
+              expected_used_weight_g: spool.used_weight_g,
+            }
+            : {}),
+          ...(savedPrice !== spool.price
+            ? {
+              price: savedPrice,
+              currency: savedPrice == null ? null : priceCurrencyCode,
+            }
+            : {}),
+          ...(state !== spool.state ? { state } : {}),
+          ...(lotNr || null) !== spool.lot_nr ? { lot_nr: lotNr || null } : {},
+          ...(comment || null) !== spool.comment ? { comment: comment || null } : {},
+        };
         await spoolsAPI.update(spool.id, payload);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
         onSaved();
       } else {
+        const payload = {
+          filament_id: filamentId ? Number(filamentId) : null,
+          initial_weight_g: parsedInitial,
+          used_weight_g: parsedUsed,
+          price: savedPrice,
+          currency: savedPrice == null ? null : priceCurrencyCode,
+          state: initialPlacement !== 'ask' ? 'shelf' : state,
+          source,
+          lot_nr: lotNr || null,
+          comment: comment || null,
+        };
         const newSpool = await spoolsAPI.create(payload);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
         if (initialPlacement === 'shelf') {
@@ -3169,6 +3198,10 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             }} className={inputCls} />
         </div>
       </div>
+
+      <p className="text-xs text-gray-400">
+        {t('profilePage.spoolAddModal.balanceHint')}
+      </p>
 
       <div className={`grid grid-cols-1 gap-3 ${mode === 'edit' ? 'md:grid-cols-2' : ''}`}>
         {mode === 'edit' && (

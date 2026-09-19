@@ -36,6 +36,7 @@ from app.schemas.print_job import (
     PrintJobUsageSegmentItemResponse,
     PrintJobUsageSegmentResponse,
 )
+from app.services.spool_usage_service import confirmed_event_weight, estimated_event_weight
 
 TERMINAL_STATUSES = {
     PrintJobStatus.completed,
@@ -186,7 +187,12 @@ def _response(job: PrintJob) -> PrintJobResponse:
                 evidence=(
                     "route_proof" if meta.get("evidence") == "route_proof" else "current_assignment"
                 ),
-                confirmed_weight_g=round(usage_event.delta_weight_g or 0.0, 4),
+                confirmed_weight_g=round(confirmed_event_weight(usage_event), 4),
+                estimated_weight_g=round(estimated_event_weight(usage_event), 4),
+                unreconciled_weight_g=(
+                    float(meta.get("reported_weight_g") or 0.0)
+                    if meta.get("balance_accounting") == "needs_reconciliation" else 0.0
+                ),
             )
         )
     usage_segments = list(grouped_usage_segments.values())
@@ -230,8 +236,16 @@ def _response(job: PrintJob) -> PrintJobResponse:
         estimated_duration_s=job.estimated_duration_s,
         actual_duration_s=job.actual_duration_s,
         confirmed_consumption_g=round(
-            sum(event.delta_weight_g or 0.0 for event in job.usage_events), 4
+            sum(confirmed_event_weight(event) for event in job.usage_events), 4
         ),
+        estimated_consumption_g=round(
+            sum(estimated_event_weight(event) for event in job.usage_events), 4
+        ),
+        unreconciled_consumption_g=round(sum(
+            float((event.meta or {}).get("reported_weight_g") or 0.0)
+            for event in job.usage_events
+            if (event.meta or {}).get("balance_accounting") == "needs_reconciliation"
+        ), 4),
         started_at=job.started_at,
         finished_at=job.finished_at,
         created_at=job.created_at,
@@ -628,9 +642,9 @@ async def ensure_provider_job_event(
 
 
 async def confirmed_consumption_for_job(db: AsyncSession, job_id: int) -> float:
-    value = await db.scalar(
-        select(func.coalesce(func.sum(PresetUsageEvent.delta_weight_g), 0.0)).where(
+    events = await db.scalars(
+        select(PresetUsageEvent).where(
             PresetUsageEvent.print_job_id == job_id
         )
     )
-    return float(value or 0.0)
+    return sum(confirmed_event_weight(event) for event in events)

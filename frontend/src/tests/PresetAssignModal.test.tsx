@@ -225,7 +225,7 @@ describe('PresetAssignModal', () => {
     await waitFor(() => expect(onAssigned).toHaveBeenCalledTimes(2));
     expect(toast.info).toHaveBeenCalledTimes(2);
     expect(toast.info).toHaveBeenLastCalledWith(
-      'presetSlots.delivery.savedOnly',
+      'presetSlots.delivery.savedOnlyHostUnavailable',
       undefined,
       'preset-slot-assignment-delivery',
     );

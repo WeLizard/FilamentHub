@@ -3990,6 +3990,8 @@ export interface SpoolUpdatePayload {
   filament_id?: number | null;
   initial_weight_g?: number;
   used_weight_g?: number;
+  expected_initial_weight_g?: number;
+  expected_used_weight_g?: number;
   price?: number | null;
   currency?: string | null;
   state?: SpoolState;

@@ -22,6 +22,30 @@ export interface AssignmentDeliveryNotice {
   key: string;
 }
 
+// These codes come from the provider adapters' immediate write paths. Keep the
+// saved assignment explicit while telling the person why local delivery did
+// not happen or could not be verified.
+const SAVED_ONLY_REASON_KEYS: Record<string, string> = {
+  host_unavailable: 'presetSlots.delivery.savedOnlyHostUnavailable',
+  preset_not_loaded: 'presetSlots.delivery.savedOnlyPresetNotLoaded',
+  printer_busy: 'presetSlots.delivery.savedOnlyPrinterBusy',
+  rfid_managed: 'presetSlots.delivery.savedOnlyRfidManaged',
+  pull_required: 'presetSlots.delivery.savedOnlyPullRequired',
+  spool_ids_unavailable: 'presetSlots.delivery.savedOnlySpoolIdsUnavailable',
+  slot_empty: 'presetSlots.delivery.savedOnlySlotEmpty',
+  material_mismatch: 'presetSlots.delivery.savedOnlyMaterialMismatch',
+  spool_facts_unavailable: 'presetSlots.delivery.savedOnlySpoolFactsUnavailable',
+  snapshot_failed: 'presetSlots.delivery.savedOnlySnapshotFailed',
+  unreachable: 'presetSlots.delivery.savedOnlyUnreachable',
+  verification_failed: 'presetSlots.delivery.savedOnlyVerificationFailed',
+  not_applied: 'presetSlots.delivery.savedOnlyNotApplied',
+  command_failed: 'presetSlots.delivery.savedOnlyCommandFailed',
+  connection_not_found: 'presetSlots.delivery.savedOnlyConnectionNotFound',
+  stale_assignment: 'presetSlots.delivery.savedOnlyStaleAssignment',
+  expired: 'presetSlots.delivery.savedOnlyExpired',
+  assignment_incomplete: 'presetSlots.delivery.savedOnlyAssignmentIncomplete',
+};
+
 export function assignmentDeliveryNotice(
   outcome: AssignmentDeliveryOutcome,
 ): AssignmentDeliveryNotice | null {
@@ -35,7 +59,10 @@ export function assignmentDeliveryNotice(
     return { tone: 'info', key: 'presetSlots.delivery.clearUnsupported' };
   }
   if (outcome.delivery?.status === 'saved_only') {
-    return { tone: 'info', key: 'presetSlots.delivery.savedOnly' };
+    const reason = outcome.delivery.code
+      ? SAVED_ONLY_REASON_KEYS[outcome.delivery.code]
+      : undefined;
+    return { tone: 'info', key: reason ?? 'presetSlots.delivery.savedOnly' };
   }
   return null;
 }

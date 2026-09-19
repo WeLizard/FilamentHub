@@ -6,8 +6,49 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
+
+
+async def test_estimate_that_did_not_debit_cannot_return_material(
+    auth_client, auth_user, db_session
+):
+    spool = await _spool(db_session, auth_user.id)
+    spool.used_weight_g = 100
+    estimate = PresetUsageEvent(
+        user_id=auth_user.id, spool_id=spool.id,
+        event_type=PresetUsageEventType.print_estimate,
+        delta_weight_g=20, remaining_weight_g=None,
+    )
+    db_session.add(estimate)
+    await db_session.commit()
+    from fastapi import HTTPException
+
+    from app.services.spool_usage_service import revert_spool_usage
+
+    with pytest.raises(HTTPException) as error:
+        await revert_spool_usage(
+            db_session, user_id=auth_user.id, spool_id=spool.id, event_id=estimate.id
+        )
+    assert error.value.detail["code"] == "ERR_USAGE_EVENT_NOT_REVERTIBLE"
+    assert spool.used_weight_g == 100
+
+
+async def test_opening_balance_is_recorded_without_claiming_a_print(
+    auth_client, auth_user, db_session
+):
+    created = await auth_client.post(
+        "/api/v1/spools", json={"initial_weight_g": 1000, "used_weight_g": 5}
+    )
+    assert created.status_code == 201, created.text
+    history = await auth_client.get(f"/api/v1/spools/{created.json()['id']}/usage")
+    assert history.status_code == 200
+    event, = history.json()
+    assert event["event_type"] == "reconcile_adjust"
+    assert event["remaining_weight_g"] == 995
+    assert event["meta"]["reason"] == "opening_balance"
+    assert event["job_ref"] is None
 
 
 async def _spool(db: AsyncSession, user_id: int) -> UserSpool:
