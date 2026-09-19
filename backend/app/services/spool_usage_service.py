@@ -23,7 +23,7 @@ from app.schemas.spool import SpoolUsageEventResponse
 
 _OCTOPRINT_IDEMPOTENCY_PREFIX = "octoprint:"
 _RETRY_REPLAY_WINDOW = timedelta(seconds=15)
-_SPOOLMAN_CHECKPOINT_WINDOW = timedelta(seconds=60)
+_SPOOLMAN_CHECKPOINT_WINDOW = timedelta(minutes=5)
 _SPOOLMAN_CHECKPOINT_AGGREGATION = "spoolman_delta_window"
 
 
@@ -157,8 +157,8 @@ async def find_spoolman_usage_checkpoint(
 ) -> PresetUsageEvent | None:
     """Find the current bounded checkpoint for unkeyed Spoolman deltas.
 
-    Moonraker already accumulates extrusion locally, but its default transport
-    interval is five seconds.  One mutable checkpoint per minute keeps the
+    Moonraker already accumulates extrusion locally, but its transport
+    interval is short. One bounded five-minute checkpoint keeps the
     exact applied total without turning every transport packet into a separate
     history row.  Only rows created for this aggregation contract are reused.
     """
@@ -208,12 +208,15 @@ def append_spoolman_usage_checkpoint(
     spool: UserSpool,
     applied_weight_g: float,
     reported_weight_g: float,
+    used_length_mm: float | None,
     reported_at: datetime,
 ) -> None:
     """Merge one accepted transport delta into its current history checkpoint."""
     notes = dict(event.meta or {})
     previous_reported = _reported_weight(event) or 0.0
     notes["reported_weight_g"] = previous_reported + reported_weight_g
+    if used_length_mm is not None:
+        notes["used_length_mm"] = float(notes.get("used_length_mm") or 0.0) + used_length_mm
     notes["report_count"] = int(notes.get("report_count", 1)) + 1
     notes["checkpoint_last_reported_at"] = reported_at.isoformat()
     event.delta_weight_g = float(event.delta_weight_g or 0.0) + applied_weight_g

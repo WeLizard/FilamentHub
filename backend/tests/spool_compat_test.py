@@ -592,6 +592,28 @@ async def test_a_printer_cannot_report_away_more_than_the_spool_holds(
 
 
 @pytest.mark.asyncio
+async def test_moonraker_fractional_extrusion_keeps_exact_weight_and_source(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "moonraker")
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    response = await client.put(endpoint, json={"use_length": 100})
+    assert response.status_code == 200, response.text
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+
+    assert event.delta_weight_g == event.meta["reported_weight_g"]
+    assert 0 < event.delta_weight_g < 1
+    assert event.meta["consumption_source"] == "extruder_counter"
+    assert event.meta["used_length_mm"] == 100
+    assert event.meta["adapter"] == "moonraker"
+
+
+@pytest.mark.asyncio
 async def test_octoprint_idempotency_key_is_durable_and_rejects_conflicts(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -680,13 +702,15 @@ async def test_same_usage_after_retry_window_is_a_new_report(
 
 
 @pytest.mark.asyncio
-async def test_happy_hare_usage_storm_is_summed_into_a_bounded_checkpoint(
+@pytest.mark.parametrize("provider", ["happy_hare", "moonraker"])
+async def test_spoolman_usage_storm_is_summed_into_a_bounded_checkpoint(
     client: AsyncClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
+    provider: str,
 ):
     user, spool, device = await _seed_spool_context(db_session)
-    await _set_material_system_provider(db_session, user, device, "happy_hare")
+    await _set_material_system_provider(db_session, user, device, provider)
     endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
     broadcasts: list[tuple[int, str, dict]] = []
 
@@ -731,7 +755,7 @@ async def test_happy_hare_usage_storm_is_summed_into_a_bounded_checkpoint(
     assert events[0].meta["aggregation"] == "spoolman_delta_window"
     assert len(broadcasts) == 1
 
-    events[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+    events[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=6)
     await db_session.commit()
     next_window = await client.put(endpoint, json={"use_weight": 3})
 

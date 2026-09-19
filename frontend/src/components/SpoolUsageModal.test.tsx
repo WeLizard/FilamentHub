@@ -108,6 +108,56 @@ describe('SpoolUsageModal warnings', () => {
     expect(screen.getByText('spoolUsage.estimatedApplied')).toBeInTheDocument();
   });
 
+  it('shows fractional estimated usage without treating float noise as a shortfall', async () => {
+    api.usage.mockResolvedValue([{
+      id: 7, event_type: 'printer_report', delta_weight_g: 1.3153999999999968,
+      remaining_weight_g: 893.6846, device_name: 'Bambu Lab P2S', job_ref: 'job-7',
+      created_at: '2026-09-19T17:12:00Z',
+      meta: {
+        reported_weight_g: 1.3154,
+        consumption_kind: 'estimated',
+        estimate_source: 'slicer_progress',
+      },
+    }]);
+    renderModal({});
+
+    expect(await screen.findByText('≈−1.3 spoolUsage.grams')).toBeInTheDocument();
+    expect(screen.getByText('→ 893.7 spoolUsage.grams')).toBeInTheDocument();
+    expect(screen.queryByText('spoolUsage.warnEstimatedShortfall')).not.toBeInTheDocument();
+    expect(screen.queryByText('spoolUsage.warnReported')).not.toBeInTheDocument();
+  });
+
+  it('shows small printer-reported usage instead of rounding it to zero', async () => {
+    api.usage.mockResolvedValue([{
+      id: 9, event_type: 'printer_report', delta_weight_g: 0.284,
+      remaining_weight_g: 799.716, device_name: 'Voron 2.4 350', job_ref: 'job-9',
+      created_at: '2026-09-19T17:37:00Z',
+      meta: { reported_weight_g: 0.284, consumption_source: 'extruder_counter' },
+    }]);
+    renderModal({});
+
+    expect(await screen.findByText('−0.28 spoolUsage.grams')).toBeInTheDocument();
+    expect(screen.getByText('→ 799.7 spoolUsage.grams')).toBeInTheDocument();
+    expect(screen.queryByText('spoolUsage.warnReported')).not.toBeInTheDocument();
+  });
+
+  it('describes a real estimated shortfall as an estimate', async () => {
+    api.usage.mockResolvedValue([{
+      id: 8, event_type: 'printer_report', delta_weight_g: 4,
+      remaining_weight_g: 0, device_name: 'Bambu Lab P2S', job_ref: 'job-8',
+      created_at: '2026-09-19T17:12:00Z',
+      meta: {
+        reported_weight_g: 10.5,
+        consumption_kind: 'estimated',
+        estimate_source: 'slicer_progress',
+      },
+    }]);
+    renderModal({});
+
+    expect(await screen.findByText('spoolUsage.warnEstimatedShortfall')).toBeInTheDocument();
+    expect(screen.queryByText('spoolUsage.warnReported')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['reverted', 10, { consumption_kind: 'estimated', estimate_source: 'slicer_gcode', reverted: true }],
     ['reconciliation', 10, {

@@ -1626,7 +1626,9 @@ async def _use_spool_impl(
 
     now = datetime.now(timezone.utc)
     before_used = spool.used_weight_g
-    spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
+    available_weight = max(0.0, spool.initial_weight_g - before_used)
+    applied_weight = min(delta_weight, available_weight)
+    spool.used_weight_g = before_used + applied_weight
     preset_id = (
         await resolve_assigned_preset_id(
             db,
@@ -1637,13 +1639,13 @@ async def _use_spool_impl(
         if _device is not None
         else None
     )
-    applied_weight = spool.used_weight_g - before_used
-    checkpoint = None
-    if (
+    aggregate_spoolman_deltas = (
         _device is not None
         and normalized_idempotency_key is None
-        and provider == "happy_hare"
-    ):
+        and provider in {"happy_hare", "moonraker"}
+    )
+    checkpoint = None
+    if aggregate_spoolman_deltas:
         checkpoint = await find_spoolman_usage_checkpoint(
             db,
             spool_id=spool.id,
@@ -1656,9 +1658,19 @@ async def _use_spool_impl(
             spool=spool,
             applied_weight_g=applied_weight,
             reported_weight_g=delta_weight,
+            used_length_mm=body.use_length,
             reported_at=now,
         )
     else:
+        usage_meta = {
+            "consumption_source": (
+                "extruder_counter" if body.use_length is not None else "reported_weight"
+            ),
+            **({"used_length_mm": body.use_length} if body.use_length is not None else {}),
+            **({"adapter": provider} if provider is not None else {}),
+        }
+        if aggregate_spoolman_deltas:
+            usage_meta.update(spoolman_usage_checkpoint_meta(reported_at=now))
         await record_spool_usage(
             db,
             spool=spool,
@@ -1671,13 +1683,7 @@ async def _use_spool_impl(
                 if normalized_idempotency_key is not None
                 else None
             ),
-            meta=(
-                spoolman_usage_checkpoint_meta(reported_at=now)
-                if _device is not None
-                and normalized_idempotency_key is None
-                and provider == "happy_hare"
-                else None
-            ),
+            meta=usage_meta,
             reported_weight_g=delta_weight,
         )
     if spool.first_used_at is None:

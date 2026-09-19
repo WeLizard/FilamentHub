@@ -164,6 +164,36 @@ async def test_estimated_usage_is_deduplicated_and_keeps_source_after_balance_bo
     assert payload["usage_segments"][0]["items"][0]["estimated_weight_g"] == 10
 
 
+async def test_fractional_usage_does_not_create_a_false_application_shortfall(
+    route_bridge, auth_client, db_session
+):
+    bridge = route_bridge
+    reported_weight = 1.3154
+    event = _event(
+        bridge.spool_a_id,
+        bridge.proof,
+        event_id="fractional-estimate",
+        segment_sequence=1,
+    )
+    event["items"][0].pop("used_length_mm")
+    event["items"][0].update(
+        used_weight_g=reported_weight,
+        consumption_kind="estimated",
+        estimate_source="slicer_progress",
+    )
+
+    response = await _send(auth_client, bridge, event)
+    assert response.status_code == 200, response.text
+    usage = await db_session.scalar(
+        select(PresetUsageEvent).where(
+            PresetUsageEvent.spool_id == bridge.spool_a_id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+        )
+    )
+
+    assert usage.delta_weight_g == usage.meta["reported_weight_g"] == reported_weight
+
+
 async def _system(client):
     response = await client.post("/api/v1/physical-printers", json={"name": "Route printer"})
     assert response.status_code == 201

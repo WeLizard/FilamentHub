@@ -375,9 +375,11 @@ async def process_printer_usage_event(
                 balance_accounting = "already_in_balance"
             elif item_started_at is None or item_started_at < balance_observed_at:
                 balance_accounting = "needs_reconciliation"
+        consumed = 0.0
         if balance_accounting is None:
-            spool.used_weight_g = min(spool.initial_weight_g, before + reported_weight)
-        consumed = spool.used_weight_g - before
+            available = max(0.0, spool.initial_weight_g - before)
+            consumed = min(reported_weight, available)
+            spool.used_weight_g = before + consumed
         total_consumed += consumed
         spool.last_used_at = received_at
         if spool.first_used_at is None:

@@ -28,6 +28,11 @@ const ESTIMATE_SOURCE_KEYS: Record<string, string> = {
   ams_remaining: 'spoolUsage.source.estimateAmsRemaining',
 };
 
+const formatWeight = (weight: number, locale: string, precise = false) =>
+  new Intl.NumberFormat(locale, {
+    maximumFractionDigits: precise ? (Math.abs(weight) < 1 ? 2 : 1) : 0,
+  }).format(Math.abs(weight));
+
 function warningFor(event: SpoolUsageEvent, t: TFunction): string | null {
   const meta = event.meta ?? {};
   if (meta.balance_accounting === 'already_in_balance') {
@@ -45,9 +50,14 @@ function warningFor(event: SpoolUsageEvent, t: TFunction): string | null {
   if (
     typeof meta.reported_weight_g === 'number'
     && typeof event.delta_weight_g === 'number'
-    && meta.reported_weight_g > event.delta_weight_g
+    && meta.reported_weight_g - event.delta_weight_g > 0.01
   ) {
-    return t('spoolUsage.warnReported', { reported: meta.reported_weight_g.toFixed(0) });
+    return t(
+      meta.consumption_kind === 'estimated'
+        ? 'spoolUsage.warnEstimatedShortfall'
+        : 'spoolUsage.warnReported',
+      { reported: meta.reported_weight_g.toFixed(1) },
+    );
   }
   return null;
 }
@@ -134,6 +144,7 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
               const unappliedEstimate =
                 event.event_type === 'print_estimate' && event.remaining_weight_g == null;
               const isEstimatedConsumption = event.meta?.consumption_kind === 'estimated';
+              const isPrinterConsumption = event.event_type === 'printer_report';
               const balanceAccounting = event.meta?.balance_accounting;
               const isAppliedEstimatedConsumption =
                 isEstimatedConsumption
@@ -166,7 +177,11 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
                     >
                       {unappliedEstimate || isEstimatedConsumption ? '≈' : delta > 0 ? '−' : '+'}
                       {isEstimatedConsumption && delta > 0 ? '−' : ''}
-                      {Math.abs(delta).toFixed(0)} {t('spoolUsage.grams')}
+                      {formatWeight(
+                        delta,
+                        i18n.language,
+                        isEstimatedConsumption || isPrinterConsumption,
+                      )} {t('spoolUsage.grams')}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-gray-400">
                       {isReversal
@@ -185,7 +200,11 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
                     </span>
                     {event.remaining_weight_g != null && (
                       <span className="shrink-0 text-gray-500">
-                        → {event.remaining_weight_g.toFixed(0)} {t('spoolUsage.grams')}
+                        → {formatWeight(
+                          event.remaining_weight_g,
+                          i18n.language,
+                          isEstimatedConsumption || isPrinterConsumption,
+                        )} {t('spoolUsage.grams')}
                       </span>
                     )}
                     {canRevert && (
