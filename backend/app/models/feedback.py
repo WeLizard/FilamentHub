@@ -4,7 +4,16 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -37,7 +46,13 @@ class Feedback(Base):
     """Модель обратной связи от пользователей."""
 
     __tablename__ = "feedback"
-    __table_args__ = (Index("ix_feedback_updated_at", "updated_at"),)
+    __table_args__ = (
+        Index("ix_feedback_updated_at", "updated_at"),
+        CheckConstraint(
+            "plugin_log_size IS NULL OR (plugin_log_size > 0 AND plugin_log_size <= 65536)",
+            name="ck_feedback_plugin_log_size",
+        ),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -66,6 +81,12 @@ class Feedback(Base):
     # source_url: URL страницы откуда отправили отзыв
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # source_id: ID связанного объекта (article_id, preset_id и т.д.)
+
+    # OrcaSlicer plugin log attached to a problem report. Kept encrypted and
+    # deferred so thread and list queries never load it; it is only ever served
+    # back as a downloaded file.
+    plugin_log: Mapped[str | None] = mapped_column(Text, nullable=True, deferred=True)
+    plugin_log_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Status
     status: Mapped[FeedbackStatus] = mapped_column(

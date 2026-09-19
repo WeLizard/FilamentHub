@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -21,6 +21,7 @@ from app.core.errors import (
     ERR_INVALID_FEEDBACK_TYPE,
     raise_error,
 )
+from app.core.field_encryption import decrypt_field, encrypt_field
 from app.db.session import get_db
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackStatus, FeedbackType
 from app.models.user import User, UserRole
@@ -113,6 +114,9 @@ async def create_feedback(
         source_url=feedback_data.source_url,
         source_id=feedback_data.source_id,
     )
+    if feedback_data.plugin_log:
+        feedback.plugin_log = encrypt_field(feedback_data.plugin_log)
+        feedback.plugin_log_size = len(feedback_data.plugin_log.encode("utf-8"))
 
     db.add(feedback)
     await db.flush()
@@ -200,6 +204,30 @@ async def get_feedback(
     if not _can_read_feedback(feedback, current_user):
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
     return _feedback_detail_response(feedback)
+
+
+@router.get("/{feedback_id}/plugin-log")
+async def download_feedback_plugin_log(
+    feedback_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Return the attached plugin log as a download-only plain-text file."""
+    del admin
+    result = await db.execute(select(Feedback.plugin_log).where(Feedback.id == feedback_id))
+    stored = result.scalar_one_or_none()
+    if not stored:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
+    return Response(
+        content=decrypt_field(stored).encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="feedback-{feedback_id}-plugin.log"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/{feedback_id}/read", response_model=FeedbackDetailResponse)

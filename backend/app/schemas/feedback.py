@@ -1,10 +1,26 @@
 """Feedback schemas."""
 
+import re
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+PLUGIN_LOG_MAX_BYTES = 64 * 1024
+
+# Characters a terminal or editor may act on instead of printing: C0/C1 controls
+# (ANSI escapes start with ESC) and bidirectional overrides that make a line read
+# differently from its bytes. Newline and tab are kept.
+_PLUGIN_LOG_UNSAFE_CHARACTERS = re.compile(
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]"
+)
+
+
+def sanitize_plugin_log(value: str) -> str:
+    """Reduce an attached plugin log to inert plain text."""
+    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    return _PLUGIN_LOG_UNSAFE_CHARACTERS.sub("", text).strip()
 
 
 class FeedbackType(str, Enum):
@@ -30,14 +46,29 @@ class FeedbackBase(BaseModel):
 
     type: str = Field(..., description="Тип обратной связи")
     subject: str = Field(..., max_length=200, description="Тема сообщения")
-    message: str = Field(..., description="Текст сообщения")
+    message: str = Field(..., max_length=10_000, description="Текст сообщения")
     email: str | None = Field(None, description="Email для ответа (для анонимных сообщений)")
     # Source context
-    source: str | None = Field(None, description="Источник: wiki_article, preset, catalog, general")
+    source: str | None = Field(
+        None, max_length=50, description="Источник: wiki_article, preset, catalog, general"
+    )
     source_url: str | None = Field(
         None, max_length=500, description="URL страницы откуда отправили"
     )
     source_id: int | None = Field(None, description="ID связанного объекта")
+    plugin_log: str | None = Field(None, max_length=PLUGIN_LOG_MAX_BYTES)
+
+    @field_validator("plugin_log")
+    @classmethod
+    def validate_plugin_log(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = sanitize_plugin_log(value)
+        if not text:
+            return None
+        if len(text.encode("utf-8")) > PLUGIN_LOG_MAX_BYTES:
+            raise ValueError("Plugin log is too large")
+        return text
 
     @field_validator("email")
     @classmethod
@@ -121,6 +152,7 @@ class FeedbackResponse(BaseModel):
     source: str | None = None
     source_url: str | None = None
     source_id: int | None = None
+    plugin_log_size: int | None = None
     # Status
     status: str
     admin_unread_count: int = 0
