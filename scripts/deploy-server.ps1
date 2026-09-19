@@ -398,14 +398,63 @@ function Get-DeploymentCandidate {
     }
 }
 
+function Assert-PublicationPaths {
+    param(
+        [Parameter(Mandatory)][string]$Directory,
+        [Parameter(Mandatory)][string]$BaseRevision,
+        [Parameter(Mandatory)][string]$TargetRevision,
+        [Parameter(Mandatory)][string[]]$AllowedPaths
+    )
+
+    $git = @('-C', $Directory)
+    $commits = Invoke-Checked git ($git + @(
+        'rev-list', '--reverse', "$BaseRevision..$TargetRevision"
+    )) -Capture
+    $violations = [System.Collections.Generic.List[string]]::new()
+    foreach ($commit in @($commits -split "`r?`n" | Where-Object { $_ })) {
+        # Inspect history, including every merge parent and reverted changes.
+        # Disabling rename detection preserves both sides of a moved path.
+        $changed = Invoke-Checked git ($git + @(
+            'diff-tree', '--root', '-m', '-r', '--no-renames', '--no-commit-id',
+            '--name-only', '-z', $commit
+        )) -Capture
+        $outside = @($changed -split "`0" | Where-Object { $_ } | Where-Object {
+            $path = $_
+            $allowed = $false
+            foreach ($entry in $AllowedPaths) {
+                if ($path.Equals($entry, [StringComparison]::Ordinal) -or
+                    ($entry.EndsWith('/') -and $path.StartsWith($entry, [StringComparison]::Ordinal))) {
+                    $allowed = $true
+                    break
+                }
+            }
+            -not $allowed
+        } | Sort-Object -Unique)
+        if ($outside.Count -gt 0) {
+            $summary = Invoke-Checked git ($git + @('show', '-s', '--format=%h %s', $commit)) -Capture
+            $violations.Add("  $summary")
+            foreach ($path in $outside) {
+                $violations.Add("    $path")
+            }
+        }
+    }
+    if ($violations.Count -gt 0) {
+        throw ("Публикация плагинов остановлена: в историю выбранного коммита входят посторонние изменения:`n" +
+            ($violations -join "`n") + "`nВыбери более ранний готовый коммит или подготовь изменения плагина отдельно от опубликованной origin/main. " +
+            'Для намеренной публикации общей истории используй раздел GitHub.')
+    }
+}
+
 function Publish-RepositoryCommits {
     param(
         [Parameter(Mandatory)][string]$Directory,
-        [Parameter(Mandatory)][string]$Title
+        [Parameter(Mandatory)][string]$Title,
+        [string[]]$AllowedPaths = @()
     )
 
     $git = @('-C', $Directory)
     Invoke-Checked git ($git + @('fetch', '--no-recurse-submodules', 'origin', 'main')) | Out-Null
+    $baseRevision = Invoke-Checked git ($git + @('rev-parse', 'origin/main')) -Capture
 
     $branch = Invoke-Checked git ($git + @('branch', '--show-current')) -Capture
     if ($branch -ne 'main') {
@@ -415,7 +464,7 @@ function Publish-RepositoryCommits {
 
     $candidateLines = Invoke-Checked git ($git + @(
         'log', '--first-parent', '--reverse', '--format=%H%x09%h%x09%s',
-        'origin/main..HEAD'
+        "$baseRevision..HEAD"
     )) -Capture
     if (-not $candidateLines) {
         Write-Host "$Title`: публиковать нечего." -ForegroundColor DarkGray
@@ -454,11 +503,16 @@ function Publish-RepositoryCommits {
     }
 
     $selected = $candidates[$selection - 1]
-    Invoke-Checked git ($git + @('merge-base', '--is-ancestor', 'origin/main', $selected.Sha)) | Out-Null
+    Invoke-Checked git ($git + @('merge-base', '--is-ancestor', $baseRevision, $selected.Sha)) | Out-Null
     Invoke-Checked git ($git + @('merge-base', '--is-ancestor', $selected.Sha, 'HEAD')) | Out-Null
 
+    if ($AllowedPaths.Count -gt 0) {
+        Assert-PublicationPaths -Directory $Directory -BaseRevision $baseRevision `
+            -TargetRevision $selected.Sha -AllowedPaths $AllowedPaths
+    }
+
     $publishLines = Invoke-Checked git ($git + @(
-        'log', '--reverse', '--format=%h %s', "origin/main..$($selected.Sha)"
+        'log', '--reverse', '--format=%h %s', "$baseRevision..$($selected.Sha)"
     )) -Capture
     $commitsToPublish = @($publishLines -split "`r?`n" | Where-Object { $_ })
     $remainingCount = [int](Invoke-Checked git ($git + @('rev-list', '--count', "$($selected.Sha)..HEAD")) -Capture)
@@ -512,18 +566,25 @@ function Publish-PluginCommits {
     Write-Host ''
     Write-Host 'Отправка подготовленных коммитов плагинов' -ForegroundColor Cyan
     Write-Host 'Сначала будет обновлено состояние origin/main, затем ты выберешь готовый коммит.' -ForegroundColor DarkGray
+    Write-Host 'Коммиты с изменениями вне плагинов и их релизных файлов будут заблокированы.' -ForegroundColor DarkGray
     Write-Host 'Релиз, тег и production этим действием не создаются.' -ForegroundColor DarkGray
-    Publish-RepositoryCommits -Directory $repositoryRoot -Title 'FilamentHub и OctoPrint Bridge'
+    Publish-RepositoryCommits -Directory $repositoryRoot -Title 'FilamentHub и OctoPrint Bridge' -AllowedPaths @(
+        'orca-plugin/', 'octoprint-plugin/', 'scripts/render_plugin_release_notes.py',
+        '.github/workflows/release-filamenthub.yml', '.github/workflows/release-octoprint.yml',
+        '.github/workflows/publish-orcacloud.yml'
+    )
 
     $printFarmCandidate = Join-Path (Split-Path $repositoryRoot -Parent) 'orca-plugins'
     if (Test-Path -LiteralPath (Join-Path $printFarmCandidate '.git')) {
-        Publish-RepositoryCommits -Directory $printFarmCandidate -Title 'Print Farm'
+        Publish-RepositoryCommits -Directory $printFarmCandidate -Title 'Print Farm' -AllowedPaths @(
+            'plugins/printers/', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml'
+        )
     } else {
         Write-Host 'Print Farm: локальный репозиторий рядом с FilamentHub не найден; этот шаг пропущен.' -ForegroundColor DarkGray
     }
 
     Write-Host ''
-    Write-Host 'GitHub CI запущен для отправленных коммитов. Перед релизом выбери «Проверить готовность релизов».' -ForegroundColor Green
+    Write-Host 'Перед релизом выбери «Проверить готовность релизов»: она проверит опубликованный код и CI.' -ForegroundColor DarkGray
 }
 
 function Test-PluginReleaseReadiness {
@@ -598,7 +659,7 @@ function Start-BuildCacheCleanup {
         '336h' { '14 дней' }
         default { throw "Неизвестный срок очистки: $cleanupMode" }
     }
-    if (-not (Confirm-Action "Удалить build-cache Docker старше $retentionLabel?")) {
+    if (-not (Confirm-Action "Удалить build-cache Docker старше ${retentionLabel}?")) {
         Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
         return
     }
@@ -941,7 +1002,7 @@ function Show-PluginMenu {
         Write-Host '  2. Скачать с сайта и проверить все три пакета'
         Write-Host '  3. Проверить все три плагина на странице Download'
         Write-Host '  4. Отправить подготовленные коммиты плагинов в GitHub'
-        Write-Host '     Обновит origin/main, предложит выбрать коммит и выполнит push. Релизы не создаёт.' -ForegroundColor DarkGray
+        Write-Host '     Проверит всех неопубликованных предков; посторонние изменения заблокируют push.' -ForegroundColor DarkGray
         Write-Host '  5. Проверить готовность релизов'
         Write-Host '     Проверит GitHub Releases, версии, пакеты, опубликованный commit и CI. Ничего не публикует.' -ForegroundColor DarkGray
         Write-Host '  6. Опубликовать все готовые плагины отдельными releases'

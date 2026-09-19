@@ -187,6 +187,7 @@ jobs:
       - name: Test OrcaSlicer plugin
         run: >-
           python -m pytest
+          scripts/tests/test_owner_console_safety.py
           scripts/tests/test_release_workflow_contract.py
           scripts/tests/test_render_plugin_release_notes.py
           orca-plugin/tests
