@@ -377,17 +377,19 @@ def test_opted_in_report_queues_metadata_without_local_path_or_gcode(
     ))
 
     assert result[0] == "success"
-    assert len(delivered) == 1
-    message_type, payload = delivered[0]
-    assert message_type == "slice-report-batch"
-    assert payload["requestId"].startswith("slice-report-")
-    identity = payload["slices"][0]
+    # Orca runs this capability on its slicing worker while the GUI waits for
+    # completion. Calling window.post here marshals to that waiting UI thread
+    # and deadlocks export/upload. The page pulls this durable queue later.
+    assert delivered == []
+    queued = module._load_slice_report_outbox()
+    assert len(queued) == 1
+    identity = queued[0]
     assert identity["file_name"] == "Cube_PETG.gcode"
     assert identity["source_instance_id"] == "source-instance"
     assert identity["target_host"] == "File"
     assert "source_key" in identity
-    assert str(gcode) not in json.dumps(payload)
-    assert "G1 X1 Y1 E1" not in json.dumps(payload)
+    assert str(gcode) not in json.dumps(identity)
+    assert "G1 X1 Y1 E1" not in json.dumps(identity)
     assert gcode.exists()
     assert module._load_slice_report_outbox() == [identity]
 

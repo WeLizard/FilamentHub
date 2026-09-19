@@ -122,40 +122,38 @@ function AppContent() {
 
   useEffect(() => {
     if (!isPluginEmbed()) return;
-    let retryTimer: number | undefined;
-    const retryPending = () => {
-      if (retryTimer !== undefined) return;
-      retryTimer = window.setTimeout(() => {
-        retryTimer = undefined;
+    let deliveryInFlight = false;
+    const requestPending = () => {
+      if (!deliveryInFlight) {
         requestPendingPluginSliceReports();
-      }, 30_000);
+      }
     };
     const unsubscribe = subscribeToPluginSliceReports((batch) => {
-      if (!user) return;
+      if (!user || deliveryInFlight) return;
+      deliveryInFlight = true;
       const sourceKeys = batch.slices
         .map((item) => item.source_key)
         .filter((key): key is string => typeof key === 'string');
       void orcaSlicesAPI.report(batch.slices).then((result) => {
+        deliveryInFlight = false;
         if (result.accepted + result.duplicates !== batch.slices.length) {
           sendPluginSliceReportResult(batch.requestId, sourceKeys, false);
-          retryPending();
           return;
-        }
-        if (retryTimer !== undefined) {
-          window.clearTimeout(retryTimer);
-          retryTimer = undefined;
         }
         sendPluginSliceReportResult(batch.requestId, sourceKeys, true);
         void queryClient.invalidateQueries({ queryKey: ['orca-slices'] });
       }).catch(() => {
+        deliveryInFlight = false;
         sendPluginSliceReportResult(batch.requestId, sourceKeys, false);
-        retryPending();
       });
     });
-    if (user) requestPendingPluginSliceReports();
+    const pollTimer = user
+      ? window.setInterval(requestPending, 10_000)
+      : undefined;
+    if (user) requestPending();
     return () => {
       unsubscribe();
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (pollTimer !== undefined) window.clearInterval(pollTimer);
     };
   }, [user, queryClient]);
 

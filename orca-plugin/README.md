@@ -21,8 +21,11 @@ not select a supported model list or require a Bambu cloud account. While Orca
 is running, a local MQTT connection retains job and AMS mapping updates.
 Available current-job G-code/3MF files are read through local FTPS. The adapter
 requires an unambiguous matching filename and plate; it never picks the newest
-file on the printer. File transfers are bounded to 64 MiB and metadata to 1 MiB.
-Storage availability and LAN permissions depend on the printer firmware.
+file on the printer. Archive transfers are bounded to 64 MiB and metadata to
+1 MiB. A large G-code entry is not extracted when the bounded slice metadata
+already provides the per-filament weights; fallback G-code extraction remains
+bounded to 64 MiB. Storage availability and LAN permissions depend on the
+printer firmware.
 
 Slicer weights scaled by reported print progress are explicitly approximate,
 especially for partial or multi-material jobs. If file evidence is unavailable,
@@ -230,8 +233,10 @@ slicer version, export destination type, and identifiers linking the slice to
 this plugin installation to a durable local queue. It never sends that queue
 through Python HTTP.
 
-The signed-in FilamentHub page requests pending entries through the bound Pages
-bridge and submits them through its normal authenticated API client. Python
+The signed-in FilamentHub page periodically requests pending entries through the
+bound Pages bridge and submits them through its normal authenticated API client. The
+slicing worker never pushes to the Pages window: Orca runs it off the UI thread
+while the UI may be waiting for export, so a host UI call there can deadlock. Python
 removes only entries acknowledged after a successful response. If the page is
 signed out, closed, or temporarily offline, the queue survives and is retried
 when the page becomes available. This keeps the audited report endpoint out of

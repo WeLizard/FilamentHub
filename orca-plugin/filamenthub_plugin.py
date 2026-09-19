@@ -7940,7 +7940,7 @@ def parse_bambu_consumption_file(data: bytes, plate_path: str | None = None) -> 
                 (item for item in plates if _normal_name(item.filename) == requested),
                 plates[0] if requested is None else None,
             )
-            if selected is None or not _safe_zip_info(selected, _MAX_GCODE):
+            if selected is None:
                 return None
             metadata = next(
                 (item for item in infos if _normal_name(item.filename).lower() == "metadata/slice_info.config"),
@@ -7956,6 +7956,8 @@ def parse_bambu_consumption_file(data: bytes, plate_path: str | None = None) -> 
                 return None
             weights = _weights_from_slice_info(metadata_bytes, plate_index)
             if weights is None:
+                if not _safe_zip_info(selected, _MAX_GCODE):
+                    return None
                 weights = _weights_from_gcode(archive.read(selected))
             if not weights:
                 return None
@@ -9240,7 +9242,7 @@ def _deliver_pending_slice_reports(target=None):
 
 
 def report_slice(gcode_path, output_name="", host=""):
-    """Queue one slice for the signed-in FilamentHub page to report."""
+    """Queue one slice without crossing from Orca's slicing worker into UI."""
     identity = _read_slice_identity(gcode_path)
     if identity is None:
         return False, ui_text("sliceUnreadable")
@@ -9252,7 +9254,6 @@ def report_slice(gcode_path, output_name="", host=""):
     if host:
         identity["target_host"] = host[:50]
     _queue_slice_report(identity)
-    _deliver_pending_slice_reports()
     return True, identity["file_name"]
 
 

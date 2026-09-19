@@ -44,5 +44,19 @@ def test_3mf_reads_slice_info_and_rejects_xml_entities(plugin_module):
     assert plugin_module.parse_bambu_consumption_file(output.getvalue(), "Metadata/plate_1.gcode") is None
 
 
+def test_3mf_uses_small_slice_info_without_extracting_oversized_gcode(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(plugin_module, "_MAX_GCODE", 16)
+    data = _archive((2, "; this plate exceeds the fallback extraction limit\n", 131.54))
+
+    result = plugin_module.parse_bambu_consumption_file(
+        data, "Metadata/plate_2.gcode"
+    )
+
+    assert result["source"] == "slicer_3mf"
+    assert result["weights"] == {0: 131.54}
+
+
 def test_oversized_input_is_rejected(plugin_module):
     assert plugin_module.parse_bambu_consumption_file(b"x" * (64 * 1024 * 1024 + 1)) is None
