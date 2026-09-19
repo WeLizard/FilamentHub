@@ -102,7 +102,7 @@ def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypat
 
     assert messages == [(
         "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
-        {"operation_id": "", "scope": "all", "status": "error"},
+        {"operation_id": "", "scope": "all", "status": "warning"},
     )]
 
 def test_catalog_sync_collects_every_profile_contour_in_dependency_order(
@@ -229,10 +229,10 @@ def test_disabled_filament_directions_never_remove_managed_files(
     )
 
     assert managed.exists()
-    assert delivered[0][2]["status"] == "warning"
+    assert delivered[0][2]["status"] == "success"
     assert delivered[0][2]["contours"] == [{
         "kind": "filament",
-        "status": "warning",
+        "status": "success",
         "summary": plugin_module.ui_text("summaryDisabled"),
     }]
 
@@ -290,7 +290,7 @@ def test_incomplete_host_scan_is_uploaded_non_authoritatively(
     )
 
     assert calls == [("machine", [{"name": "Recovered"}], False)]
-    assert delivered[0]["status"] == "error"
+    assert delivered[0]["status"] == "warning"
     assert plugin_module.ui_text("summaryScanIncomplete") in delivered[0]["contours"][0][
         "summary"
     ]

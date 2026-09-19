@@ -233,74 +233,6 @@ def test_threadpool_probe_inherits_retired_worker_generation(
     assert requests == []
     worker.stop()
 
-def test_import_finishes_authorized_artifact_but_skips_stale_host_effects(
-    plugin_module, monkeypatch, tmp_path
-):
-    entered = threading.Event()
-    release = threading.Event()
-    mutations = []
-    reloads = []
-    messages = []
-    target = tmp_path / "PLA Brand Fixture.json"
-
-    monkeypatch.setattr(
-        plugin_module,
-        "http_get",
-        lambda *_args, **_kwargs: (200, b'{"name":"Fixture"}'),
-    )
-    monkeypatch.setattr(plugin_module, "validate_filament_profile", lambda value: value)
-    monkeypatch.setattr(plugin_module, "ensure_parent_exists", lambda *_args: None)
-    monkeypatch.setattr(plugin_module, "ensure_filament_colour", lambda *_args: None)
-    monkeypatch.setattr(plugin_module, "filament_display_name", lambda *_args: "PLA Brand Fixture")
-    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
-    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(plugin_module, "preset_file_path", lambda *_args: str(target))
-
-    def write_info(*_args, **_kwargs):
-        plugin_module.ensure_side_effect_allowed()
-        mutations.append("info")
-        entered.set()
-        assert release.wait(2)
-
-    def write_json(*_args, **_kwargs):
-        plugin_module.ensure_side_effect_allowed()
-        mutations.append("json")
-
-    def cleanup(*_args, **_kwargs):
-        plugin_module.ensure_side_effect_allowed()
-        mutations.append("cleanup")
-        return 0
-
-    monkeypatch.setattr(plugin_module, "write_managed_info", write_info)
-    monkeypatch.setattr(plugin_module, "write_json_atomic", write_json)
-    monkeypatch.setattr(plugin_module, "remove_stale_preset_files", cleanup)
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "reload_local_bundle",
-        lambda *_args: reloads.append(True),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        plugin_module.orca.host.ui,
-        "message",
-        lambda *_args, **_kwargs: messages.append(True),
-        raising=False,
-    )
-    catalog = plugin_module.FilamentHubCatalog()
-
-    errors = _retire_running_job_during_action(
-        plugin_module,
-        monkeypatch,
-        lambda: catalog._do_import(7, "token", set()),
-        entered,
-        release,
-    )
-
-    assert errors == []
-    assert mutations == ["info", "json", "cleanup"]
-    assert reloads == []
-    assert messages == []
-
 def test_display_name_migration_keeps_one_authorized_mutation_transaction(
     plugin_module, monkeypatch, tmp_path
 ):
@@ -554,20 +486,17 @@ def test_blocked_host_callback_does_not_block_worker_stop(
     late_callbacks = []
     late_errors = []
 
-    def message(*_args, **_kwargs):
-        callback_started.set()
-        assert callback_release.wait(2)
+    class BlockingWindow:
+        def is_open(self):
+            return True
 
-    monkeypatch.setattr(
-        plugin_module.orca.host.ui,
-        "message",
-        message,
-        raising=False,
-    )
+        def post(self, _payload):
+            callback_started.set()
+            assert callback_release.wait(2)
 
     def job():
         try:
-            plugin_module.show_host_message("fixture")
+            plugin_module.post_window(BlockingWindow(), {"type": "fixture"})
             try:
                 worker.run_if_current(lambda: late_callbacks.append(True))
             except Exception as exc:  # noqa: BLE001 - assert exact lifecycle error below

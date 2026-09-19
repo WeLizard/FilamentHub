@@ -12,7 +12,7 @@
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
 # # keys, so declaring this today is harmless and documents intent.
-# network = ["filamenthub.ru", "*.filamenthub.ru"]
+# network = ["filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club"]
 # ///
 """FilamentHub plugin for OrcaSlicer's Python plugin system.
 
@@ -23,9 +23,8 @@ compact plugin toolbar and talks to Python through OrcaSlicer's official injecte
 plugin never starts a local HTTP server. LAN addresses and credentials are
 collected in a separate host-owned window with its own binding, so they never
 enter the remote document. Older hosts use the same direct page in a managed
-plugin window. Python downloads the authenticated export,
-writes it into the user preset folder, then shows a native "restart required"
-dialog. A separate explicit
+plugin window. Python syncs the authenticated exports into the user preset
+folder and reports the result back to the page. A separate explicit
 Recovery Center can restore selected managed machine and process profile copies;
 they are never pulled automatically and never overwrite unmanaged or differently
 scoped Orca profiles.
@@ -46,13 +45,13 @@ endpoint. No local listener or browser callback to localhost is involved.
           Python on_message
           --GET /presets/{id}/export/orcaslicer.json (Bearer token from the page)-->
               write {data_dir}/user/<active>/_local/filamenthub/filament/<name>.json
-                  --> host restart dialog
+                  --> sync-result message shown by the page
 
 Runtime surface used (confirmed against the current upstream plugin API):
   * orca.pages.PagesPluginCapabilityBase                    — native page
   * orca.script.ScriptPluginCapabilityBase.execute()        — old-host fallback
   * capability on_load/on_cancelled/on_unload hooks         — runtime lifecycle
-  * orca.host.ui.create_window(...), message(...)           — fallback UI/notices
+  * orca.host.ui.create_window(...)                         — fallback UI/local dialogs
   * orca.host.plugin.storage(), app_language()              — private state/locale
   * the injected window.orca bridge (PluginWebDialog.cpp:ORCA_BRIDGE_JS)
 
@@ -70,6 +69,7 @@ import hmac
 import ipaddress
 import json
 import os
+import platform
 import queue
 import random
 import re
@@ -406,24 +406,6 @@ def post_window(window, payload):
         return False
 
 
-def show_host_message(*args, **kwargs):
-    """Show a native notice only from the lifecycle that requested it."""
-    message = getattr(getattr(getattr(orca, "host", None), "ui", None), "message", None)
-    if not callable(message):
-        return False
-    worker = globals().get("BACKGROUND_WORKER")
-    run_if_current = getattr(worker, "run_if_current", None)
-    try:
-        if callable(run_if_current):
-            run_if_current(message, *args, **kwargs)
-        else:
-            ensure_worker_generation_active()
-            message(*args, **kwargs)
-        return True
-    except PluginLifecycleStopped:
-        return False
-
-
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
@@ -445,17 +427,18 @@ PLUGIN_CAPABILITIES = (
     "open-external",
 )
 PROD_SITE_URL = "https://filamenthub.ru"
+PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
-_SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
-SITE_ORIGIN = urllib.parse.urlunsplit(
-    (_SITE_PARTS.scheme, _SITE_PARTS.netloc, "", "", "")
-)
-DEV_CONTOUR = SITE_URL != PROD_SITE_URL
-SHOW_DIAGNOSTICS = DEV_CONTOUR and os.environ.get(
-    "FILAMENTHUB_SHOW_LOG", ""
-).strip().lower() in {"1", "true", "yes", "on"}
+DEV_CONTOUR = SITE_URL not in PROD_SITE_URLS.values()
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
+PLUGIN_SETTINGS_DEFAULTS = {
+    "server": "ru",
+    "auto_sync": True,
+    "sync_success_notice": True,
+    "developer_mode": False,
+}
+_PLUGIN_SETTINGS = dict(PLUGIN_SETTINGS_DEFAULTS)
 HTTP_TIMEOUT = 20
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_TOKEN_LENGTH = 8192
@@ -471,6 +454,49 @@ BAMBU_REVOKE_MAX_PENDING = 16
 BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS = 60
 BAMBU_REVOKE_BACKOFF_MAX_SECONDS = 6 * 60 * 60
 _SSL_CTX = ssl.create_default_context()
+
+
+def normalize_plugin_settings(raw):
+    settings = dict(PLUGIN_SETTINGS_DEFAULTS)
+    if not isinstance(raw, dict):
+        return settings
+    if raw.get("server") in PROD_SITE_URLS:
+        settings["server"] = raw["server"]
+    for key in ("auto_sync", "sync_success_notice", "developer_mode"):
+        if isinstance(raw.get(key), bool):
+            settings[key] = raw[key]
+    return settings
+
+
+def read_capability_settings(capability):
+    """Read the settings Orca keeps for this capability; hosts without them get defaults."""
+    get_config = getattr(capability, "get_config", None)
+    if not callable(get_config):
+        return dict(PLUGIN_SETTINGS_DEFAULTS)
+    try:
+        return normalize_plugin_settings(json.loads(get_config()))
+    except Exception as exc:
+        fh_log("plugin settings unreadable: %s" % exc)
+        return dict(PLUGIN_SETTINGS_DEFAULTS)
+
+
+def apply_plugin_settings(settings, apply_server=False):
+    """Adopt new settings; the server switches only at load, before any page or request uses it."""
+    global _PLUGIN_SETTINGS, SITE_URL, EMBED_URL, API_BASE
+    _PLUGIN_SETTINGS = dict(settings)
+    if apply_server and not DEV_CONTOUR and "FILAMENTHUB_SITE_URL" not in os.environ:
+        SITE_URL = PROD_SITE_URLS[settings["server"]]
+        EMBED_URL = SITE_URL + "/embed/catalog"
+        API_BASE = SITE_URL + "/api/v1"
+
+
+def plugin_setting(key):
+    return _PLUGIN_SETTINGS.get(key, PLUGIN_SETTINGS_DEFAULTS[key])
+
+
+def account_origin():
+    """Both production domains front one service, so account-scoped state keeps one origin."""
+    return PROD_SITE_URL if SITE_URL in PROD_SITE_URLS.values() else SITE_URL
 
 
 def host_ui_language():
@@ -1009,6 +1035,46 @@ def read_sync_log():
         return ""
 
 
+DIAGNOSTIC_REPORT_MAX_BYTES = 64 * 1024
+# The log is written without credentials; these are a second line of defence
+# for anything an exception message might have carried into it.
+_DIAGNOSTIC_SECRET_PATTERNS = (
+    (re.compile(r"(?i)\bbearer\s+\S+"), "Bearer [redacted]"),
+    (re.compile(r"\bfhpb_[A-Za-z0-9_-]+"), "fhpb_[redacted]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"), "[redacted]"),
+    (
+        re.compile(
+            r"(?i)\b(access[_ -]?code|api[_-]?key|password|passwd|secret|token)"
+            r"(\s*[=:]\s*)[^\s,;]+"
+        ),
+        r"\1\2[redacted]",
+    ),
+)
+_DIAGNOSTIC_UNSAFE_CHARACTERS = re.compile(
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]"
+)
+
+
+def diagnostic_report_text():
+    """The newest part of the log, prepared for a user-sent problem report."""
+    header = "FilamentHub plugin %s\nPython %s\nOS %s\nLanguage %s\n\n" % (
+        PLUGIN_VERSION,
+        platform.python_version(),
+        platform.platform(terse=True),
+        _CACHED_UI_LANGUAGE or "en",
+    )
+    text = redact_home(read_sync_log()).replace("\r\n", "\n")
+    for pattern, replacement in _DIAGNOSTIC_SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    text = _DIAGNOSTIC_UNSAFE_CHARACTERS.sub("", text)
+    budget = DIAGNOSTIC_REPORT_MAX_BYTES - len(header.encode("utf-8"))
+    encoded = text.encode("utf-8")
+    if len(encoded) > budget:
+        tail = encoded[-budget:].decode("utf-8", errors="ignore")
+        text = tail.split("\n", 1)[1] if "\n" in tail else tail
+    return header + text
+
+
 # These are import-time legacy locations. configure_plugin_storage() redirects
 # them to durable private storage during capability registration. The page's
 # own storage is partitioned and dies with the window.
@@ -1047,6 +1113,13 @@ def clear_auth():
             os.remove(AUTH_FILE)
         except OSError:
             pass
+
+
+def clear_auth_if_current(rejected_token):
+    """Forget a rejected capability unless the page has already saved a newer one."""
+    saved = (load_saved_auth() or {}).get("accessToken") or ""
+    if saved and rejected_token and secrets.compare_digest(saved, rejected_token):
+        clear_auth()
 
 
 def safe_filename(name):
@@ -2547,7 +2620,7 @@ def _recovery_scope_from_bundle(bundle):
     ):
         raise ValueError("Invalid printer recovery scope")
     return {
-        "server_origin": SITE_URL.rstrip("/"),
+        "server_origin": account_origin(),
         "owner_user_id": owner_user_id,
         "source_instance_id": source_instance_id,
         "account_id": account_id,
@@ -2726,7 +2799,7 @@ def current_printer_recovery_state(owner_user_id, original_observations=None):
     registry = load_profile_identity_registry()
     save_profile_identity_registry(registry)
     scope = {
-        "server_origin": SITE_URL.rstrip("/"),
+        "server_origin": account_origin(),
         "owner_user_id": int(owner_user_id),
         "source_instance_id": plugin_source_instance_id(),
         "account_id": registry["account_id"],
@@ -4151,7 +4224,7 @@ def printer_setup_context(token):
         value.get("bindings"), list,
     ):
         raise ValueError("setup_context")
-    value["account_scope"] = hashlib.sha256((SITE_URL + "\0" + key).encode()).hexdigest()
+    value["account_scope"] = hashlib.sha256((account_origin() + "\0" + key).encode()).hexdigest()
     return value
 
 
@@ -4367,8 +4440,13 @@ def _happy_hare_inventory_digest(connection):
         parsed = urllib.parse.urlsplit(server)
     except ValueError:
         return None
-    cloud = urllib.parse.urlsplit(SITE_URL)
-    if (parsed.scheme, parsed.netloc) != (cloud.scheme, cloud.netloc):
+    own_sites = {SITE_URL}
+    if account_origin() == PROD_SITE_URL:
+        own_sites.update(PROD_SITE_URLS.values())
+    if not any(
+        (parsed.scheme, parsed.netloc) == (site.scheme, site.netloc)
+        for site in map(urllib.parse.urlsplit, own_sites)
+    ):
         return None
     match = re.fullmatch(r"/api/v1/spool_compat/([A-Za-z0-9_-]+)/*", parsed.path)
     if not match or parsed.query or parsed.fragment:
@@ -5380,6 +5458,7 @@ def _sync_preferences(token):
         "allow_print_profiles_export": False,
     }
     status, body = http_get("/orcaslicer/sync-prefs", token=token)
+    defaults["status"] = status
     if status != 200:
         fh_log("sync-prefs HTTP %s -> privacy-safe defaults" % status)
         return defaults
@@ -5660,6 +5739,9 @@ def preset_content_hash(profile):
     reduced = {k: v for k, v in profile.items() if k not in _HASH_IGNORE}
     blob = json.dumps(reduced, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(blob.encode("utf-8")).hexdigest()
+
+
+ANNOUNCED_WARNINGS_KEY = "_announced_warnings"
 
 
 def load_sync_state():
@@ -6475,6 +6557,105 @@ def render_direct_page(bridge_session):
         json.dumps(direct_embed_url(bridge_session, language)).replace("</", "<\\/"),
     ).replace(
         "__COPY__", json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
+    )
+
+
+SETTINGS_PAGE = r"""<style>
+*{box-sizing:border-box}
+body{margin:0;padding:14px 16px;background:var(--orca-bg);color:var(--orca-fg);font:13px var(--orca-font,system-ui,sans-serif)}
+fieldset{margin:0 0 14px;padding:0;border:0}
+legend{margin-bottom:6px;font-weight:600}
+.row{display:flex;gap:8px;align-items:flex-start;margin:0 0 12px;cursor:pointer}
+.row input{margin:2px 0 0;accent-color:var(--orca-accent)}
+.servers{display:flex;gap:16px}
+.servers .row{margin:0}
+.hint{display:block;margin-top:2px;color:var(--orca-muted);font-size:12px;line-height:1.4}
+.note{margin:6px 0 0;color:var(--orca-muted);font-size:12px;line-height:1.4}
+.restart{color:var(--orca-accent)}
+</style>
+<fieldset><legend id="server-label"></legend>
+<div class="servers">
+<label class="row"><input type="radio" name="server" value="ru"><span>filamenthub.ru</span></label>
+<label class="row"><input type="radio" name="server" value="club"><span>filamenthub.club</span></label>
+</div>
+<p class="note" id="server-note"></p>
+<p class="note restart" id="server-restart" hidden></p>
+</fieldset>
+<label class="row"><input type="checkbox" data-key="auto_sync"><span><span data-copy="settingsAutoSync"></span><span class="hint" data-copy="settingsAutoSyncHint"></span></span></label>
+<label class="row"><input type="checkbox" data-key="sync_success_notice"><span><span data-copy="settingsSuccessNotice"></span><span class="hint" data-copy="settingsSuccessNoticeHint"></span></span></label>
+<label class="row"><input type="checkbox" data-key="developer_mode"><span><span data-copy="settingsDeveloperMode"></span><span class="hint" data-copy="settingsDeveloperModeHint"></span></span></label>
+<p class="note" data-copy="settingsAccountHint"></p>
+<script>
+(function () {
+  var copy = __COPY__;
+  var defaults = __DEFAULTS__;
+  var activeServer = __ACTIVE_SERVER__;
+  var settings = Object.assign({}, defaults);
+  document.getElementById("server-label").textContent = copy.settingsServer;
+  document.getElementById("server-note").textContent = copy.settingsServerNote;
+  document.getElementById("server-restart").textContent = copy.settingsServerRestart;
+  document.querySelectorAll("[data-copy]").forEach(function (node) {
+    node.textContent = copy[node.getAttribute("data-copy")];
+  });
+  function render(config) {
+    settings = Object.assign({}, defaults);
+    Object.keys(defaults).forEach(function (key) {
+      if (config && typeof config[key] === typeof defaults[key]) settings[key] = config[key];
+    });
+    if (settings.server !== "ru" && settings.server !== "club") settings.server = defaults.server;
+    var readOnly = !!(window.orca.getContext() || {}).readOnly;
+    document.querySelectorAll("input[name=server]").forEach(function (input) {
+      input.checked = input.value === settings.server;
+      input.disabled = readOnly;
+    });
+    document.querySelectorAll("input[data-key]").forEach(function (input) {
+      input.checked = settings[input.getAttribute("data-key")] === true;
+      input.disabled = readOnly;
+    });
+    document.getElementById("server-restart").hidden = !activeServer || settings.server === activeServer;
+  }
+  function save() {
+    window.orca.saveConfig(settings);
+    render(settings);
+  }
+  document.querySelectorAll("input[name=server]").forEach(function (input) {
+    input.addEventListener("change", function () { settings.server = input.value; save(); });
+  });
+  document.querySelectorAll("input[data-key]").forEach(function (input) {
+    input.addEventListener("change", function () { settings[input.getAttribute("data-key")] = input.checked; save(); });
+  });
+  window.orca.onConfig(render);
+})();
+</script>"""
+
+SETTINGS_COPY_KEYS = (
+    "settingsServer",
+    "settingsServerNote",
+    "settingsServerRestart",
+    "settingsAutoSync",
+    "settingsAutoSyncHint",
+    "settingsSuccessNotice",
+    "settingsSuccessNoticeHint",
+    "settingsDeveloperMode",
+    "settingsDeveloperModeHint",
+    "settingsAccountHint",
+)
+
+
+def render_settings_page():
+    language = refresh_ui_language()
+    catalog = resolved_ui_catalog(language)
+    active_server = next(
+        (key for key, url in PROD_SITE_URLS.items() if url == SITE_URL), None
+    )
+
+    def inline(value):
+        return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
+
+    return (
+        SETTINGS_PAGE.replace("__COPY__", inline({key: catalog.get(key, key) for key in SETTINGS_COPY_KEYS}))
+        .replace("__DEFAULTS__", inline(PLUGIN_SETTINGS_DEFAULTS))
+        .replace("__ACTIVE_SERVER__", inline(active_server))
     )
 
 
@@ -8468,12 +8649,14 @@ class FilamentHubCatalog(
         saved = load_saved_auth() or {}
         token = saved.get("accessToken") or ""
         if not token:
-            if announce or operation_id:
+            # An automatic run without a capability simply waits for the page
+            # to hand one over after sign-in; only an explicit Sync explains it.
+            if operation_id or trigger == "manual":
                 self._deliver_sync_result(
                     ui_text("syncSignIn"),
                     operation_id=operation_id,
                     scope=scope,
-                    status="error",
+                    status="warning",
                 )
             return False
         operation_id = operation_id or ("sync-" + secrets.token_hex(8))
@@ -8568,7 +8751,8 @@ class FilamentHubCatalog(
         return post_window(self._local_window, payload)
 
     def _deliver_sync_result(self, text, draft_count=0, operation_id="", scope="all",
-                             status="success", contours=None):
+                             status="success", contours=None, notify=True,
+                             connection_review=False):
         draft_count = max(0, int(draft_count or 0))
         payload = {
             "text": text,
@@ -8577,6 +8761,8 @@ class FilamentHubCatalog(
             "scope": scope,
             "status": status,
             "contours": list(contours or []),
+            "notify": bool(notify),
+            "connectionReview": bool(connection_review),
         }
         self._deliver("sync-result", **payload)
 
@@ -9973,22 +10159,15 @@ class FilamentHubCatalog(
             self._close_local_dialog(str(msg.get("outcome") or "cancelled"))
             return
         if msg_type == "host-ready":
-            self._deliver(
-                "transport",
-                push=True,
-                showDiagnostics=SHOW_DIAGNOSTICS,
-            )
-            if not getattr(self, "_session_sync_started", False):
-                self._session_sync_started = self._auto_sync(
-                    announce=True,
-                    scope="all",
-                    trigger="session-start",
-                )
+            # The session sync waits for the capability the signed-in page mints
+            # right after this: a saved one is usually already expired.
+            self._deliver("transport", push=True)
         elif msg_type == "plugin-capabilities-request":
             self._deliver(
                 "plugin-capabilities",
                 pluginVersion=PLUGIN_VERSION,
                 capabilities=list(PLUGIN_CAPABILITIES),
+                developerMode=plugin_setting("developer_mode"),
             )
         elif msg_type in {"printer-setup", "printer-setup-local"}:
             request_id = msg.get("requestId")
@@ -10000,25 +10179,10 @@ class FilamentHubCatalog(
             msg["labels"] = {item.get("connection_ref"): item.get("preset_name") for item in observations}
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
-        elif msg_type == "read-diagnostics":
-            if not SHOW_DIAGNOSTICS:
-                return
+        elif msg_type == "read-diagnostics" and plugin_setting("developer_mode"):
             BACKGROUND_WORKER.submit(
-                lambda: self._deliver("diagnostics", text=read_sync_log())
+                lambda: self._deliver("diagnostics", text=diagnostic_report_text())
             )
-        elif msg_type == "import-preset":
-            preset_id = msg.get("presetId")
-            token = msg.get("token") or ""
-            if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
-                return
-            # The catalog only carries a token when it minted a fresh plugin
-            # session this window; a session restored from .auth.json leaves it
-            # empty. Fall back to the persisted token — the same source Sync uses.
-            if not token:
-                token = (load_saved_auth() or {}).get("accessToken") or ""
-            known = self._known_filament_preset_names()  # host read on the UI thread
-            refresh_user_preset_folder()
-            BACKGROUND_WORKER.submit(self._do_import, preset_id, token, known)
         elif msg_type == "printer-recovery-state":
             request_id = msg.get("requestId")
             owner_user_id = msg.get("ownerUserId")
@@ -10242,9 +10406,11 @@ class FilamentHubCatalog(
             material_system_id = msg.get("materialSystemId")
             operation = "assign" if msg_type.endswith("-assign") else "refresh"
             provider = "bambu" if msg_type.startswith("bambu-") else "happy-hare"
+            # bridgeSession is the tab binding every direct page command carries;
+            # it was already verified above.
             allowed_keys = {
                 "source", "type", "requestId", "physicalPrinterId",
-                "materialSystemId",
+                "materialSystemId", "bridgeSession",
             }
             if operation == "assign":
                 allowed_keys.add("commit")
@@ -10447,13 +10613,15 @@ class FilamentHubCatalog(
             if isinstance(access, str) and 0 < len(access) <= MAX_TOKEN_LENGTH:
                 save_auth(access)
                 wake_bambu_bridge_runtime()
-                if not getattr(self, "_session_sync_started", False):
+                if plugin_setting("auto_sync") and not getattr(
+                    self, "_session_sync_started", False
+                ):
                     self._session_sync_started = self._auto_sync(
                         announce=True,
                         scope="all",
                         trigger="session-auth",
                     )
-        elif msg_type == "profile-changed":
+        elif msg_type == "profile-changed" and plugin_setting("auto_sync"):
             # This event belongs to the filament library. Printer and process
             # profiles have their own explicit entry points.
             self._auto_sync(
@@ -10471,6 +10639,7 @@ class FilamentHubCatalog(
             self._open_site_path(msg.get("path"))
         elif msg_type == "auth-logout":
             clear_auth()
+            self._session_sync_started = False
         elif msg_type == "recover":
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_recover_scan, token)
@@ -10507,7 +10676,10 @@ class FilamentHubCatalog(
         # Push only the checked presets. Filaments remain drafts; machine/process
         # files reuse the normal delta contract. A connection-only machine is
         # recovered as physical-printer evidence rather than a duplicate profile.
-        if not token or not isinstance(keys, list) or not keys:
+        if not token:
+            self._deliver_notice(ui_text("sessionExpired"), "warning")
+            return
+        if not isinstance(keys, list) or not keys:
             self._deliver_notice(ui_text("recoveryNone"), "warning")
             return
         wanted = {str(key) for key in keys}
@@ -10516,8 +10688,12 @@ class FilamentHubCatalog(
         )
         imported = load_imported_draft_ids()
         recovered_keys = set()
+        # A machine file identical to its parent and without a connection has
+        # nothing to send, so it counts neither as recovered nor as failed.
+        attempted_keys = set()
 
         filament_candidates = [c for c in candidates if c["kind"] == "filament"]
+        attempted_keys.update(candidate["key"] for candidate in filament_candidates)
         sent_filaments = set(
             push_filament_drafts(token, filament_candidates, authoritative=False)
         )
@@ -10541,9 +10717,11 @@ class FilamentHubCatalog(
                             observation_keys.setdefault(candidate["name"], []).append(
                                 candidate["key"]
                             )
+                            attempted_keys.add(candidate["key"])
                     continue
                 sync_items.append(item)
                 keys_by_name.setdefault(candidate["name"], []).append(candidate["key"])
+                attempted_keys.add(candidate["key"])
             if sync_items:
                 sent, failed = push_user_profiles(
                     kind, token, sync_items, {}, authoritative=False
@@ -10578,9 +10756,16 @@ class FilamentHubCatalog(
                 imported[stable_id] = 1
         if recovered_keys:
             save_imported_draft_ids(imported)
-        self._deliver_notice(
-            ui_text("recoveryDone", count=len(recovered_keys)), "success"
-        )
+        recovered = len(recovered_keys)
+        attempted = len(attempted_keys)
+        if attempted and not recovered:
+            self._deliver_notice(ui_text("recoveryFailed"), "error")
+        elif recovered < attempted:
+            self._deliver_notice(
+                ui_text("recoveryPartial", count=recovered, total=attempted), "warning"
+            )
+        else:
+            self._deliver_notice(ui_text("recoveryDone", count=recovered), "success")
 
     def _do_printer_recovery_state(
         self, request_id, owner_user_id, original_observations
@@ -10790,65 +10975,6 @@ class FilamentHubCatalog(
             return
         open_in_system_browser(SITE_URL + path)
 
-    def _do_import(self, preset_id, token, known_presets):
-        try:
-            preset_id = int(preset_id)
-        except (TypeError, ValueError):
-            return
-        if not token:
-            show_host_message(
-                ui_text("importSignIn"),
-                title="FilamentHub", icon="warning")
-            return
-        try:
-            status, body = http_get("/presets/%d/export/orcaslicer.json" % preset_id, token=token)
-            if status == 401:
-                clear_auth()
-                show_host_message(
-                    ui_text("sessionExpired"),
-                    title="FilamentHub", icon="warning")
-                return
-            if status != 200:
-                show_host_message(
-                    ui_text("exportFailed", status=status),
-                    title="FilamentHub", icon="error",
-                )
-                return
-
-            profile = validate_filament_profile(json.loads(body.decode("utf-8")))
-            ensure_parent_exists(profile, known_presets)
-            ensure_filament_colour(profile)
-            # Namespace the managed preset with the same provider identity used by
-            # the sync API; a plain user preset has no FilamentHub bundle_id.
-            profile["bundle_id"] = "filamenthub:%d" % preset_id
-            source_name = profile.get("name") or ("FilamentHub preset %d" % preset_id)
-            name = filament_display_name(profile, source_name)
-            ensure_bundle_metadata()
-            target_dir = user_filament_dir()
-            profile_path = preset_file_path(target_dir, name, preset_id)
-            name = apply_managed_filename_identity(profile, profile_path)
-            base = profile_path[:-len(".json")]
-            validate_filament_profile(profile)
-            with side_effect_transaction():
-                write_managed_info(base, preset_id, token)
-                write_json_atomic(profile_path, profile)
-                remove_stale_preset_files(target_dir, preset_id, profile_path)
-            if reload_managed_local_bundle_if_available():
-                fh_log("import %d written and reloaded: %s" % (preset_id, name))
-                message_key = "importedLive"
-            else:
-                fh_log("import %d written, pending restart: %s" % (preset_id, name))
-                message_key = "importedRestart"
-            show_host_message(
-                ui_text(message_key, name=name),
-                title="FilamentHub", icon="info",
-            )
-        except PluginLifecycleStopped:
-            return
-        except Exception as exc:
-            show_host_message(
-                ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
-
     def _log_managed_preset_state(self, folder, remote_ids, loaded_preset_ids, failed_ids):
         """Record desired, on-disk and host-loaded counts as three separate facts.
 
@@ -11047,40 +11173,30 @@ class FilamentHubCatalog(
                  host_profiles=None, observations=None, source_instance_id="",
                  moonraker_connections=None, loaded_preset_ids=None, scope="all",
                  operation_id="", trigger="manual"):
+        manual = trigger == "manual" or bool(operation_id)
         if not token or scope not in SYNC_SCOPES:
-            if announce or operation_id:
+            if manual:
                 self._deliver_sync_result(
                     ui_text("syncSignIn"), operation_id=operation_id,
-                    scope=scope, status="error",
+                    scope=scope, status="warning",
                 )
             return
 
         preferences = _sync_preferences(token)
         if not preferences["available"]:
-            contours = [
-                {
-                    "kind": kind,
-                    "status": "error",
-                    "summary": ui_text("summaryPreferencesUnavailable"),
-                }
-                for kind in ("filament", "machine", "process")
-                if sync_scope_includes(scope, kind)
-            ]
-            text = ui_text("syncCompleteTitle") + "\n" + "\n".join(
-                "%s: %s" % (
-                    ui_text(
-                        "profileFilament" if item["kind"] == "filament"
-                        else "profileMachine" if item["kind"] == "machine"
-                        else "profileProcess"
-                    ),
-                    item["summary"],
+            if preferences.get("status") == 401:
+                # A rejected capability is not a sync failure: the signed-in page
+                # mints a new one, and its arrival starts the session sync again.
+                clear_auth_if_current(token)
+                self._session_sync_started = False
+                message_key = "sessionExpired"
+            else:
+                message_key = "syncUnreachable"
+            if manual:
+                self._deliver_sync_result(
+                    ui_text(message_key), operation_id=operation_id,
+                    scope=scope, status="warning",
                 )
-                for item in contours
-            )
-            self._deliver_sync_result(
-                text, operation_id=operation_id, scope=scope,
-                status="error", contours=contours,
-            )
             return
 
         state = load_sync_state()
@@ -11088,6 +11204,10 @@ class FilamentHubCatalog(
         overall_status = "success"
         new_draft_count = 0
         restart_required = False
+        changed = False
+        connection_review = False
+        # "kind:detail" keys of the attention-worthy conditions found in this run.
+        warning_keys = set()
         filament_report = None
         filament_report_results = None
         filament_report_requested = False
@@ -11105,7 +11225,9 @@ class FilamentHubCatalog(
             filament_parts = []
             filament_status = "success"
             pulled = updated = pushed = skipped = failed = renamed = removed = conflicts = 0
+            unsent = 0
             failed_ids = []
+            remote_names = {}
             remote_ids = set()
             changed_file_ids = set()
             folder = user_filament_dir()
@@ -11124,13 +11246,20 @@ class FilamentHubCatalog(
                     )
                 remote_status, remote_body = http_get("/auth/my-presets", token=token)
                 if remote_status == 401:
-                    clear_auth()
+                    clear_auth_if_current(token)
+                    self._session_sync_started = False
                     filament_parts.append(ui_text("sessionExpired"))
-                    filament_status = "error"
+                    filament_status = "warning"
+                    warning_keys.add("filament:session")
                     remote_items = None
                 elif remote_status != 200:
-                    filament_parts.append(ui_text("syncFailed", status=remote_status))
-                    filament_status = "error"
+                    fh_log("my-presets HTTP %s" % remote_status)
+                    filament_parts.append(ui_text("summaryListFailed"))
+                    if remote_status == 0:
+                        filament_status = "warning"
+                        warning_keys.add("filament:preset-list")
+                    else:
+                        filament_status = "error"
                     remote_items = None
                 else:
                     try:
@@ -11138,11 +11267,17 @@ class FilamentHubCatalog(
                             json.loads(remote_body.decode("utf-8")) or {}
                         ).get("items") or []
                     except (AttributeError, UnicodeDecodeError, ValueError):
+                        fh_log("my-presets response could not be read")
                         remote_items = None
-                        filament_parts.append(ui_text("syncUnexpected"))
+                        filament_parts.append(ui_text("summaryListFailed"))
                         filament_status = "error"
 
                 if remote_items is not None:
+                    remote_names = {
+                        item.get("id"): str(item.get("name") or "").strip()
+                        for item in remote_items
+                        if isinstance(item, dict) and isinstance(item.get("id"), int)
+                    }
                     local = scan_local_fh_presets(folder)
                     previous_managed_ids = set(local)
                     previous_managed_ids.update(
@@ -11213,8 +11348,7 @@ class FilamentHubCatalog(
                                 continue
                             if recovered is False:
                                 if not allow_push:
-                                    skipped += 1
-                                    filament_status = "warning"
+                                    unsent += 1
                                     continue
                                 result = self._push_one(
                                     preset_id, token, local_entry, remote
@@ -11264,6 +11398,7 @@ class FilamentHubCatalog(
                         if local_changed and remote_newer:
                             conflicts += 1
                             filament_status = "warning"
+                            warning_keys.add("filament:conflict:%d" % preset_id)
                             fh_log(
                                 "preset %d conflict: local and FilamentHub changed since the last sync"
                                 % preset_id
@@ -11271,8 +11406,7 @@ class FilamentHubCatalog(
                             continue
                         if local_changed:
                             if not allow_push:
-                                skipped += 1
-                                filament_status = "warning"
+                                unsent += 1
                                 continue
                             result = self._push_one(
                                 preset_id, token, local_entry, remote
@@ -11407,7 +11541,6 @@ class FilamentHubCatalog(
                         filament_report_results = report_results
             elif not allow_push:
                 filament_parts.append(ui_text("summaryDisabled"))
-                filament_status = "warning"
 
             if (
                 active_filaments
@@ -11436,11 +11569,28 @@ class FilamentHubCatalog(
                 filament_parts.append(ui_text("summaryRenamed", count=renamed))
             if conflicts:
                 filament_parts.append(ui_text("summaryConflict", count=conflicts))
+            if unsent:
+                filament_parts.append(ui_text("summaryUnsentDisabled", count=unsent))
             if skipped:
                 filament_parts.append(ui_text("summaryCurrent", count=skipped))
             if failed:
-                filament_parts.append(ui_text("summaryFailed", count=failed))
+                failed_names = [
+                    remote_names.get(preset_id) or "FH-%d" % preset_id
+                    for preset_id in dict.fromkeys(failed_ids)
+                ]
+                shown = ", ".join(failed_names[:3])
+                if len(failed_names) > 3:
+                    filament_parts.append(ui_text(
+                        "summaryFailedNamesMore",
+                        names=shown,
+                        count=len(failed_names) - 3,
+                    ))
+                else:
+                    filament_parts.append(ui_text("summaryFailedNames", names=shown))
                 filament_status = "error"
+            changed = changed or bool(
+                pulled or updated or pushed or removed or renamed or new_draft_count
+            )
             add_contour("filament", filament_parts, filament_status)
 
         for kind in ("machine", "process"):
@@ -11452,7 +11602,7 @@ class FilamentHubCatalog(
                 else "allow_print_profiles_import"
             )
             if not preferences[permission_key]:
-                add_contour(kind, [ui_text("summaryDisabled")], "warning")
+                add_contour(kind, [ui_text("summaryDisabled")])
                 continue
             scan = (host_profiles or {}).get(kind) or {}
             items = scan.get("items") or []
@@ -11460,6 +11610,7 @@ class FilamentHubCatalog(
             sent, failed = push_user_profiles(
                 kind, token, items, state, authoritative=complete
             )
+            changed = changed or bool(sent)
             parts = []
             if sent:
                 parts.append(ui_text("summarySent", count=sent))
@@ -11468,7 +11619,9 @@ class FilamentHubCatalog(
             status = "error" if failed else "success"
             if not complete:
                 parts.append(ui_text("summaryScanIncomplete"))
-                status = "error"
+                warning_keys.add("%s:scan" % kind)
+                if status == "success":
+                    status = "warning"
             add_contour(kind, parts, status)
 
         if sync_scope_includes(scope, "machine") and preferences[
@@ -11495,13 +11648,15 @@ class FilamentHubCatalog(
                         )
                         break
             elif _observation_result.get("pending"):
-                if overall_status != "error":
-                    overall_status = "warning"
+                # Connections waiting for the person's confirmation are a to-do,
+                # not a failed sync: the page offers the way there, calmly.
+                connection_review = True
                 for item in contours:
                     if item["kind"] == "machine":
-                        if item["status"] != "error":
-                            item["status"] = "warning"
-                        item["summary"] += ", " + ui_text("summaryConnectionReview")
+                        item["summary"] += ", " + ui_text(
+                            "summaryConnectionReview",
+                            count=int(_observation_result.get("pending") or 0),
+                        )
                         break
             sync_happy_hare_topologies(token, moonraker_connections)
 
@@ -11512,6 +11667,20 @@ class FilamentHubCatalog(
             except (ValueError, OSError):
                 fh_log("Local printer connection sync unavailable")
 
+        # An automatic run reports a lasting condition once; repeating the same
+        # warning at every start teaches people to stop reading it.
+        announced = {
+            key for key in state.get(ANNOUNCED_WARNINGS_KEY) or []
+            if isinstance(key, str)
+        }
+        new_warning = bool(warning_keys - announced)
+        state[ANNOUNCED_WARNINGS_KEY] = sorted(
+            {
+                key for key in announced
+                if not sync_scope_includes(scope, key.split(":", 1)[0])
+            }
+            | warning_keys
+        )
         save_sync_state(state)
         if filament_report_requested:
             report_ok = False
@@ -11530,7 +11699,12 @@ class FilamentHubCatalog(
             "machine": ui_text("profileMachine"),
             "process": ui_text("profileProcess"),
         }
-        text = ui_text("syncCompleteTitle") + "\n" + "\n".join(
+        title_key = {
+            "success": "syncCompleteTitle",
+            "warning": "syncAttentionTitle",
+            "error": "syncPartialTitle",
+        }[overall_status]
+        text = ui_text(title_key) + "\n" + "\n".join(
             "%s: %s" % (labels[item["kind"]], item["summary"])
             for item in contours
         )
@@ -11541,6 +11715,8 @@ class FilamentHubCatalog(
             % (scope, trigger, overall_status)
         )
         if announce or operation_id:
+            # An explicit Sync always reports. An automatic run speaks only about
+            # a change, a failure or a warning it has not shown before.
             self._deliver_sync_result(
                 text,
                 new_draft_count,
@@ -11548,6 +11724,13 @@ class FilamentHubCatalog(
                 scope=scope,
                 status=overall_status,
                 contours=contours,
+                notify=(
+                    manual
+                    or overall_status == "error"
+                    or new_warning
+                    or (changed and plugin_setting("sync_success_notice"))
+                ),
+                connection_review=connection_review,
             )
 
 
@@ -11586,7 +11769,21 @@ if _PAGE_CAPABILITY_BASE is not None:
         def get_icon(self):
             return ensure_icon()
 
+        def on_load(self):
+            apply_plugin_settings(read_capability_settings(self), apply_server=True)
+            super().on_load()
+
+        def has_config_ui(self):
+            return True
+
+        def get_config_ui(self):
+            return render_settings_page()
+
+        def get_default_config(self):
+            return dict(PLUGIN_SETTINGS_DEFAULTS)
+
         def get_ui(self):
+            apply_plugin_settings(read_capability_settings(self))
             self._catalog._direct_bridge_session = secrets.token_urlsafe(32)
             return render_direct_page(self._catalog._direct_bridge_session)
 
@@ -11596,6 +11793,7 @@ if _PAGE_CAPABILITY_BASE is not None:
                     message = json.loads(message)
                 except ValueError:
                     return
+            apply_plugin_settings(read_capability_settings(self))
             self._catalog.on_message(message)
 
         def on_unload(self):

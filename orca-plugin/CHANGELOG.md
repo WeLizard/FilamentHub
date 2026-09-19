@@ -5,6 +5,15 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.2.0
+- **Check materials** for Bambu and **Check printer** for Happy Hare work again in the current OrcaSlicer, and a saved slot assignment is sent to the printer right away again. The plugin used to drop these commands before contacting the printer, so the page waited and then reported a printer timeout.
+- Opening OrcaSlicer after a break no longer shows a red "sync settings temporarily unavailable" message. The plugin waits for the sign-in the page renews and then runs the start-up sync that used to be skipped.
+- Sync results are worded plainly and colored by meaning: green when done, yellow only when something did not sync, red when something failed. Failed presets are named instead of counted, and technical codes stay in the log.
+- Automatic syncs stay quiet when nothing changed and do not repeat a warning already shown. **Sync** always reports the full result.
+- Printer connections waiting for confirmation are a calm note with an **Open My Printers** button instead of a warning.
+- Recovery reports how many selected items actually reached FilamentHub.
+- Plugin settings in OrcaSlicer's Plugins dialog: choose the server (filamenthub.ru or filamenthub.club, applied after a restart), turn automatic sync off, keep successful automatic syncs silent, and turn on developer mode.
+- In developer mode, a bug button in the toolbar and the icon on error messages open a problem report with the plugin log attached. Passwords, access codes and tokens are removed from the log first, and the report can be sent without it.
+- Removed the unused single-preset import with its native dialogs and the developer-only log button.
 - Connecting a Bambu printer over the local network again needs only its address and LAN access code. The serial number is read from the printer's own reply, so setup never asks for it and never scans the network to obtain it.
 - The Bambu setup window reacts to **Search local network** and **Connect** again. Since 0.1.10 its script stopped at the first message it tried to show in the window, so neither button ever reached the plugin.
 - Search and Connect now end in a clear result instead of staying busy indefinitely, and a setup request that cannot be paired reports the pairing failure instead of being ignored without an answer.

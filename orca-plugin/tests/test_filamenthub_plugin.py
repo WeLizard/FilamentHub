@@ -24,6 +24,8 @@ def test_pep723_and_runtime_versions_match(plugin_module):
     assert metadata["tool"]["orcaslicer"]["plugin"]["network"] == [
         "filamenthub.ru",
         "*.filamenthub.ru",
+        "filamenthub.club",
+        "*.filamenthub.club",
     ]
     assert metadata["dependencies"] == []
     project = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8"))

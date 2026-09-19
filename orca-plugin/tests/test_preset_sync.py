@@ -237,11 +237,15 @@ def test_sync_keeps_both_versions_when_local_and_remote_changed(
         lambda *_args, **kwargs: delivered.append(kwargs),
     )
 
-    catalog._do_sync("token", set(), announce=True, scope="filament")
+    for trigger in ("session-auth", "session-auth", "manual"):
+        catalog._do_sync("token", set(), announce=True, scope="filament", trigger=trigger)
 
     assert local_path.read_bytes() == before
     assert delivered[0]["status"] == "warning"
     assert plugin_module.ui_text("summaryConflict", count=1) in delivered[0]["contours"][0]["summary"]
+    # The same lasting conflict is announced once per appearance, yet a
+    # deliberate Sync always shows it.
+    assert [item["notify"] for item in delivered] == [True, False, True]
 
 def test_push_of_foreign_managed_preset_reidentifies_saved_edit_as_personal_fork(
     plugin_module, monkeypatch, tmp_path
@@ -1519,7 +1523,7 @@ def test_profile_change_reports_automatic_sync_result(plugin_module):
 def test_plugin_load_never_opens_a_window_automatically(plugin_module):
     assert "on_load" not in plugin_module.FilamentHubCatalog.__dict__
 
-def test_host_ready_starts_sync_once(plugin_module):
+def test_host_ready_waits_for_the_page_capability_before_syncing(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
     capability._direct_bridge_session = "test-session"
     calls = []
@@ -1534,20 +1538,9 @@ def test_host_ready_starts_sync_once(plugin_module):
         "bridgeSession": "test-session",
         "type": "host-ready",
     })
-    capability.on_message({
-        "source": "filamenthub-plugin",
-        "bridgeSession": "test-session",
-        "type": "host-ready",
-    })
-    assert calls == [{
-        "announce": True,
-        "scope": "all",
-        "trigger": "session-start",
-    }]
-    assert delivered == [
-        ("transport", {"push": True, "showDiagnostics": plugin_module.SHOW_DIAGNOSTICS}),
-        ("transport", {"push": True, "showDiagnostics": plugin_module.SHOW_DIAGNOSTICS}),
-    ]
+
+    assert calls == []
+    assert delivered == [("transport", {"push": True})]
 
 def test_token_refresh_does_not_start_a_second_session_sync(plugin_module, monkeypatch):
     capability = plugin_module.FilamentHubCatalog()
@@ -1577,6 +1570,165 @@ def test_token_refresh_does_not_start_a_second_session_sync(plugin_module, monke
         "scope": "all",
         "trigger": "session-auth",
     }]
+
+def test_sign_out_lets_the_next_sign_in_sync_again(plugin_module, monkeypatch):
+    capability = plugin_module.FilamentHubCatalog()
+    capability._direct_bridge_session = "test-session"
+    calls = []
+    monkeypatch.setattr(plugin_module, "save_auth", lambda _token: True)
+    monkeypatch.setattr(plugin_module, "clear_auth", lambda: None)
+    monkeypatch.setattr(plugin_module.BAMBU_BRIDGE_RUNTIME, "wake", lambda: None)
+    capability._auto_sync = lambda **kwargs: calls.append(kwargs["trigger"]) or True
+
+    for message in (
+        {"type": "auth-token", "accessToken": "first-account"},
+        {"type": "auth-logout"},
+        {"type": "auth-token", "accessToken": "second-account"},
+    ):
+        capability.on_message(
+            {"source": "filamenthub-plugin", "bridgeSession": "test-session", **message}
+        )
+
+    assert calls == ["session-auth", "session-auth"]
+
+def test_rejected_capability_retries_quietly_with_the_next_one(
+    plugin_module, monkeypatch, tmp_path
+):
+    auth_path = tmp_path / ".auth.json"
+    monkeypatch.setattr(plugin_module, "AUTH_FILE", str(auth_path))
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, token=None, **_kwargs: (
+            (401, b"{}") if path == "/orcaslicer/sync-prefs" else pytest.fail(path)
+        ),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    catalog._session_sync_started = True
+    catalog._deliver_sync_result = lambda *args, **kwargs: delivered.append(kwargs)
+
+    assert plugin_module.save_auth("expired-token")
+    catalog._do_sync("expired-token", set(), trigger="session-auth")
+
+    assert delivered == []
+    assert not auth_path.exists()
+    assert catalog._session_sync_started is False
+
+    catalog._session_sync_started = True
+    assert plugin_module.save_auth("fresh-token")
+    catalog._do_sync("expired-token", set(), trigger="session-auth")
+
+    assert plugin_module.load_saved_auth()["accessToken"] == "fresh-token"
+    assert catalog._session_sync_started is False
+
+    catalog._do_sync("expired-token", set(), operation_id="sync-manual")
+
+    assert [item["status"] for item in delivered] == ["warning"]
+
+def test_recovery_reports_what_actually_reached_filamenthub(plugin_module, monkeypatch):
+    candidates = [
+        {"key": "filament:A", "kind": "filament", "name": "A", "_draft_sync_id": "a"},
+        {"key": "filament:B", "kind": "filament", "name": "B", "_draft_sync_id": "b"},
+    ]
+    accepted = []
+    monkeypatch.setattr(plugin_module, "scan_recovery_presets", lambda: candidates)
+    monkeypatch.setattr(plugin_module, "disambiguate_recovery_candidates", lambda items: items)
+    monkeypatch.setattr(plugin_module, "load_imported_draft_ids", dict)
+    monkeypatch.setattr(plugin_module, "save_imported_draft_ids", lambda _ids: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "push_filament_drafts",
+        lambda _token, _items, authoritative=True: list(accepted),
+    )
+    notices = []
+    catalog = plugin_module.FilamentHubCatalog()
+    catalog._deliver_notice = lambda text, status="info": notices.append((status, text))
+
+    for sent in ([], ["a"], ["a", "b"]):
+        accepted[:] = sent
+        catalog._do_recover_import("token", ["filament:A", "filament:B"])
+
+    assert notices == [
+        ("error", plugin_module.ui_text("recoveryFailed")),
+        ("warning", plugin_module.ui_text("recoveryPartial", count=1, total=2)),
+        ("success", plugin_module.ui_text("recoveryDone", count=2)),
+    ]
+
+def test_unconfirmed_printer_connections_are_a_calm_to_do(plugin_module, monkeypatch):
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: {})
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _state: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": False,
+            "allow_filament_presets_export": False,
+            "allow_printer_profiles_import": True,
+            "allow_printer_profiles_export": True,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *_args, **_kwargs: (0, 0))
+    monkeypatch.setattr(
+        plugin_module,
+        "send_printer_observations",
+        lambda *_args, **_kwargs: (200, {"pending": 3}),
+    )
+    monkeypatch.setattr(plugin_module, "sync_happy_hare_topologies", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "verified_local_setup_connections", lambda _token: [])
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    catalog._deliver_sync_result = lambda *args, **kwargs: delivered.append(kwargs)
+    host_profiles = {"machine": {"items": [], "complete": True}}
+
+    catalog._do_sync(
+        "token", set(), scope="machine", host_profiles=host_profiles, trigger="session-auth"
+    )
+    catalog._do_sync(
+        "token", set(), scope="machine", host_profiles=host_profiles, operation_id="sync-manual"
+    )
+
+    assert [
+        (item["status"], item["notify"], item["connection_review"]) for item in delivered
+    ] == [("success", False, True), ("success", True, True)]
+    assert plugin_module.ui_text("summaryConnectionReview", count=3) in (
+        delivered[1]["contours"][0]["summary"]
+    )
+
+def test_automatic_sync_without_changes_stays_silent(plugin_module, monkeypatch):
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: {})
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _state: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": True,
+            "allow_filament_presets_export": False,
+            "allow_printer_profiles_import": False,
+            "allow_printer_profiles_export": False,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    catalog._deliver_sync_result = lambda *args, **kwargs: delivered.append(kwargs)
+
+    catalog._do_sync("token", set(), scope="filament", trigger="profile-change")
+    catalog._do_sync("token", set(), scope="filament", operation_id="sync-manual")
+
+    assert [(item["status"], item["notify"]) for item in delivered] == [
+        ("success", False),
+        ("success", True),
+    ]
 
 def test_active_filaments_use_only_saved_user_files(plugin_module, monkeypatch, tmp_path):
     saved_path = tmp_path / "user" / "default" / "filament" / "Local PETG.json"

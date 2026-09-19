@@ -35,7 +35,9 @@ def test_build_packages_locale_catalogs_and_checksums(
     metadata = json.loads((package_dir / "package-metadata.json").read_text(encoding="utf-8"))
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     assert metadata["version"] == plugin_module.PLUGIN_VERSION
-    assert metadata["network"] == ["filamenthub.ru", "*.filamenthub.ru"]
+    assert metadata["network"] == [
+        "filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club",
+    ]
     assert metadata["sha256"] == digest
     expected_locales = sorted(plugin_module.ORCA_UI_LOCALES)
     assert metadata["locales"] == expected_locales
@@ -78,7 +80,7 @@ def test_build_packages_locale_catalogs_and_checksums(
     assert b"_EMBEDDED_UI_COPY = {}" not in wheel_source
     assert b'os.environ.get("FILAMENTHUB_SITE_URL", "https://filamenthub.ru")' in wheel_source
     assert b"http://localhost:3000" not in wheel_source
-    assert b"filamenthub.club" not in wheel_source
+    assert b'"server": "ru",' in wheel_source
     assert b"\r" not in metadata_bytes
     metadata_row = next(row for row in record_rows if row[0] == metadata_path)
     expected_metadata_digest = base64.urlsafe_b64encode(

@@ -275,7 +275,69 @@ def test_pages_host_delivers_plugin_messages_through_post_message():
         "scope": "all",
         "status": "success",
         "contours": [],
+        "notify": True,
+        "connectionReview": False,
     }]
+
+
+def test_plugin_settings_switch_the_server_at_load_but_keep_one_account_origin(monkeypatch):
+    module, _ = _module_with_pages(native_lifecycle=True)
+    monkeypatch.delenv("FILAMENTHUB_SITE_URL", raising=False)
+    monkeypatch.setattr(module, "SITE_URL", module.PROD_SITE_URL)
+    monkeypatch.setattr(module, "DEV_CONTOUR", False)
+    monkeypatch.setattr(module, "configure_plugin_storage", lambda: None)
+    monkeypatch.setattr(module, "start_plugin_runtime", lambda **_kwargs: None)
+    page = module.FilamentHubPage()
+    page.get_config = lambda: json.dumps({"server": "club", "developer_mode": "yes"})
+
+    page.on_load()
+
+    assert module.API_BASE == "https://filamenthub.club/api/v1"
+    assert module.EMBED_URL == "https://filamenthub.club/embed/catalog"
+    assert module.account_origin() == module.PROD_SITE_URL
+    assert module.plugin_setting("developer_mode") is False
+    settings_page = page.get_config_ui()
+    assert "__" not in settings_page
+    assert '"club"' in settings_page
+    assert module.ui_text("settingsDeveloperModeHint") in settings_page
+
+
+def test_plugin_settings_gate_automatic_sync_and_the_problem_log(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    session = page._catalog._direct_bridge_session
+    config = {"auto_sync": False, "developer_mode": False}
+    page.get_config = lambda: json.dumps(config)
+    started, submitted = [], []
+    monkeypatch.setattr(module, "save_auth", lambda _token: True)
+    monkeypatch.setattr(module.BAMBU_BRIDGE_RUNTIME, "wake", lambda: None)
+    monkeypatch.setattr(
+        module, "BACKGROUND_WORKER", SimpleNamespace(submit=lambda job, *_args: submitted.append(job))
+    )
+    page._catalog._auto_sync = lambda **kwargs: started.append(kwargs["trigger"]) or True
+
+    def send(message_type, **extra):
+        page.on_message(json.dumps({
+            "source": "filamenthub-plugin",
+            "type": message_type,
+            "bridgeSession": session,
+            **extra,
+        }))
+
+    send("auth-token", accessToken="first-token")
+    send("profile-changed")
+    send("read-diagnostics")
+    send("plugin-capabilities-request")
+    assert started == []
+    assert submitted == []
+    assert page.posted_messages[-1]["developerMode"] is False
+
+    config.update(auto_sync=True, developer_mode=True)
+    send("auth-token", accessToken="first-token")
+    send("read-diagnostics")
+    assert started == ["session-auth"]
+    assert len(submitted) == 1
 
 
 def test_pages_host_opens_https_without_creating_a_loopback_socket(monkeypatch):
@@ -361,12 +423,6 @@ def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypat
         "type": "read-diagnostics",
         "bridgeSession": "wrong-session-token-1234567890",
     }))
-    monkeypatch.setattr(module, "SHOW_DIAGNOSTICS", False)
-    page.on_message(json.dumps({
-        "source": "filamenthub-plugin",
-        "type": "read-diagnostics",
-        "bridgeSession": page._catalog._direct_bridge_session,
-    }))
     page.on_message(json.dumps({
         "source": "filamenthub-plugin",
         "type": "configure-bambu-local",
@@ -377,6 +433,67 @@ def test_pages_host_rejects_unbound_and_secret_bearing_remote_commands(monkeypat
 
     assert submitted == []
     assert page.posted_messages == []
+
+
+def test_pages_host_runs_material_commands_sent_with_the_tab_binding(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    submitted = []
+    monkeypatch.setattr(
+        module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda job, *_args: submitted.append(job.__name__)),
+    )
+    monkeypatch.setattr(module, "observe_printer_presets", lambda: [])
+    monkeypatch.setattr(module, "observe_local_moonraker_connections", lambda _observations: [])
+
+    for index, message_type in enumerate(
+        ("bambu-material-refresh", "happy-hare-material-refresh")
+    ):
+        page.on_message(json.dumps({
+            "source": "filamenthub-plugin",
+            "type": message_type,
+            "bridgeSession": page._catalog._direct_bridge_session,
+            "requestId": "material-check-%d" % index,
+            "physicalPrinterId": 11,
+            "materialSystemId": 21,
+        }))
+
+    assert submitted == [
+        "_do_bambu_material_immediate",
+        "_do_happy_hare_material_immediate",
+    ]
+
+
+def test_problem_report_log_carries_no_secrets_or_terminal_controls(
+    plugin_module, monkeypatch, tmp_path
+):
+    log = tmp_path / ".fh_sync.log"
+    log.write_text(
+        "\n".join([
+            "2026-09-18 09:55:21 Authorization: Bearer abc.def.ghi",
+            "2026-09-18 09:55:22 bridge fhpb_secretvalue123 access_code=12345678",
+            "2026-09-18 09:55:22 token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl",
+            "2026-09-18 09:55:23 \x1b[31mred\x1b[0m ‮evil",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_module, "SYNC_LOG_FILE", str(log))
+
+    report = plugin_module.diagnostic_report_text()
+
+    assert report.startswith("FilamentHub plugin %s\n" % plugin_module.PLUGIN_VERSION)
+    for leaked in ("abc.def.ghi", "secretvalue123", "12345678", "eyJhbGci", "\x1b", "‮"):
+        assert leaked not in report
+    assert "[31mred[0m evil" in report
+
+    log.write_text("oldest line\n" + "line\n" * 20000, encoding="utf-8")
+    bounded = plugin_module.diagnostic_report_text()
+
+    assert len(bounded.encode("utf-8")) <= plugin_module.DIAGNOSTIC_REPORT_MAX_BYTES
+    assert "oldest line" not in bounded
+    assert bounded.endswith("line\n")
 
 
 def test_local_credential_submission_requires_the_separate_dialog_binding(monkeypatch):
@@ -685,6 +802,7 @@ def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch)
         "type": "plugin-capabilities",
         "pluginVersion": module.PLUGIN_VERSION,
         "capabilities": list(module.PLUGIN_CAPABILITIES),
+        "developerMode": False,
     }]
 
 def test_page_icon_materializes_for_a_single_file_install(
