@@ -808,6 +808,25 @@
       ]
     },
     "roadmapNote": "In progress describes ongoing development, not features already available to every user. No dates promised: things ship when they are ready.",
+    "brand": {
+      "title": "Brand resources",
+      "description": "Official FilamentHub logos, brand colors and basic usage guidelines for partners, integrations and media.",
+      "logoTitle": "Logo",
+      "logoNote": "The FilamentHub mark is available in white and brand purple. SVG is the recommended format; PNG files have transparent backgrounds.",
+      "lightLabel": "For light backgrounds",
+      "darkLabel": "Primary · for dark backgrounds",
+      "lightAlt": "Purple FilamentHub mark",
+      "darkAlt": "White FilamentHub mark",
+      "iconNote": "Square icon:",
+      "colorsTitle": "Brand colors",
+      "colors": { "purple": "Purple", "deepPurple": "Deep purple", "white": "White" },
+      "guidelinesTitle": "Usage guidelines",
+      "pleaseTitle": "Please",
+      "pleaseItems": ["Use the provided official files.", "Keep the mark in proportion and leave space around it.", "Choose the version with good contrast on its background."],
+      "dontTitle": "Please don’t",
+      "dontItems": ["Stretch or distort the mark.", "Recolor or modify its elements.", "Add effects, outlines or shadows that change its appearance."],
+      "downloadPack": "Download Brand Pack"
+    },
     "support": {
       "title": "Support the project",
       "text": "Servers, domains and mail cost money. If the project is useful to you, you can support it.",

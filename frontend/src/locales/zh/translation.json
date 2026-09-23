@@ -808,6 +808,25 @@
       ]
     },
     "roadmapNote": "“进行中”描述的是正在开发的方向，并不表示这些功能已向所有用户开放。不承诺具体日期：准备好了才发布。",
+    "brand": {
+      "title": "品牌资源",
+      "description": "面向合作伙伴、集成项目和媒体的 FilamentHub 官方标志、品牌颜色及简要使用指南。",
+      "logoTitle": "标志",
+      "logoNote": "FilamentHub 标志提供白色和品牌紫色版本。推荐使用 SVG；PNG 文件为透明背景。",
+      "lightLabel": "适用于浅色背景",
+      "darkLabel": "主标志 · 适用于深色背景",
+      "lightAlt": "紫色 FilamentHub 标志",
+      "darkAlt": "白色 FilamentHub 标志",
+      "iconNote": "方形图标：",
+      "colorsTitle": "品牌颜色",
+      "colors": { "purple": "紫色", "deepPurple": "深紫色", "white": "白色" },
+      "guidelinesTitle": "使用指南",
+      "pleaseTitle": "请",
+      "pleaseItems": ["使用提供的官方文件。", "保持标志比例，并在周围留出足够空间。", "根据背景选择对比度良好的版本。"],
+      "dontTitle": "请勿",
+      "dontItems": ["拉伸或扭曲标志。", "随意更改颜色或修改标志元素。", "添加会改变其外观的效果、描边或阴影。"],
+      "downloadPack": "下载品牌资料包"
+    },
     "support": {
       "title": "支持本项目",
       "text": "服务器、域名和邮件都需要费用。如果这个项目对您有用，可以支持一下。",
