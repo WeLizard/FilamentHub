@@ -1,5 +1,6 @@
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -121,7 +122,11 @@ describe("LabelStudioModal", () => {
     );
     mocks.printPdfBlob.mockResolvedValue(undefined);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    // Unmount while Image.decode is still available to pending React effects.
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   function open() {
     const client = new QueryClient({
