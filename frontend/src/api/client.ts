@@ -3589,10 +3589,11 @@ export const adminCommunicationsAPI = {
     threadId: number,
     messageId: number,
     attachmentIndex: number,
+    preview = false,
   ): Promise<Blob> => {
     const response = await api.get(
       `/admin/communications/email-threads/${threadId}/messages/${messageId}/attachments/${attachmentIndex}`,
-      { responseType: 'blob' },
+      { responseType: 'blob', params: preview ? { preview: true } : undefined },
     );
     return response.data;
   },

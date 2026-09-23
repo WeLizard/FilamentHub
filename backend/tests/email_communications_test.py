@@ -1058,6 +1058,30 @@ async def test_admin_downloads_inbound_attachment_through_backend(
     assert response.headers["cache-control"] == "private, no-store"
     assert "price%20list.pdf" in response.headers["content-disposition"]
 
+    preview_url = (
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+        f"/messages/{message.id}/attachments/0?preview=true"
+    )
+    assert (await admin_client.get(preview_url)).status_code == 404
+    from io import BytesIO
+
+    from PIL import Image
+
+    source = BytesIO()
+    Image.new("RGB", (32, 24), "red").save(source, format="TIFF")
+    monkeypatch.setattr(
+        inbound_mail_service,
+        "read_stored_attachment",
+        lambda event_id, index: (source.getvalue(), "image/tiff", "scan.tiff"),
+    )
+    preview = await admin_client.get(preview_url)
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/png"
+    assert preview.headers["cache-control"] == "private, no-store"
+    with Image.open(BytesIO(preview.content)) as image:
+        assert image.size == (32, 24)
+
+
 
 @pytest.mark.asyncio
 async def test_a_web_page_reaches_the_provider_and_the_recipient_is_named(

@@ -24,6 +24,13 @@ const MAX_ATTACHMENTS = 10;
 const MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024;
 
 const ACCEPTED_ATTACHMENTS = {
+  'application/zip': ['.zip'],
+  'application/json': ['.json'],
+  'image/gif': ['.gif'],
+  'image/bmp': ['.bmp'],
+  'image/tiff': ['.tif', '.tiff'],
+  'image/avif': ['.avif'],
+  'image/x-icon': ['.ico'],
   'application/msword': ['.doc'],
   'application/pdf': ['.pdf'],
   'application/vnd.ms-excel': ['.xls'],

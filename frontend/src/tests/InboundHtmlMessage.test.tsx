@@ -1,5 +1,5 @@
 import { render, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InboundHtmlMessage } from '../components/admin/AdminCommunications';
 import { adminCommunicationsAPI } from '../api/client';
@@ -18,6 +18,23 @@ const inlineImage: EmailAttachment = {
 };
 
 describe('InboundHtmlMessage', () => {
+  const decodeImage = vi.fn<() => Promise<void>>();
+
+  beforeEach(() => {
+    decodeImage.mockReset().mockResolvedValue(undefined);
+    vi.stubGlobal('Image', class {
+      src = '';
+      naturalWidth = 32;
+      naturalHeight = 24;
+      decode = decodeImage;
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it('renders the letter inside a frame', async () => {
     const { container } = render(<InboundHtmlMessage html={LETTER} />);
     const frame = container.querySelector('iframe');
@@ -59,7 +76,7 @@ describe('InboundHtmlMessage', () => {
         'src="data:image/png;base64,',
       );
     });
-    expect(download).toHaveBeenCalledWith(7, 11, 0);
+    expect(download).toHaveBeenCalledWith(7, 11, 0, true);
     download.mockRestore();
   });
 
@@ -117,10 +134,11 @@ describe('InboundHtmlMessage', () => {
     download.mockRestore();
   });
 
-  it('does not embed a downloaded inline file that is not a safe raster image', async () => {
+  it('does not embed an inline file rejected by the image decoder', async () => {
+    decodeImage.mockRejectedValue(new Error('Invalid image'));
     const download = vi
       .spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
-      .mockResolvedValue(new Blob(['<svg></svg>'], { type: 'image/svg+xml' }));
+      .mockResolvedValue(new Blob(['invalid image'], { type: 'image/png' }));
 
     const { container } = render(
       <InboundHtmlMessage
@@ -131,7 +149,7 @@ describe('InboundHtmlMessage', () => {
       />,
     );
 
-    await waitFor(() => expect(download).toHaveBeenCalled());
+    await waitFor(() => expect(decodeImage).toHaveBeenCalled());
     expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
       'src="cid:img001"',
     );

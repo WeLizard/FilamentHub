@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import en from '../../locales/en/translation.json';
 import ru from '../../locales/ru/translation.json';
 import zh from '../../locales/zh/translation.json';
-import { splitQuotedText } from './AdminCommunications';
+import { createElement } from 'react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { adminCommunicationsAPI } from '../../api/client';
+import type { EmailAttachment } from '../../types/api';
+import { EmailImagePreviews, splitQuotedText } from './AdminCommunications';
 
 describe('admin email delivery truthfulness', () => {
   it('labels relay acceptance and uncertain non-retryable outcomes in every locale', () => {
@@ -61,5 +65,57 @@ describe('splitQuotedText', () => {
     const blocks = splitQuotedText('First.\n\nSecond.');
 
     expect(blocks).toEqual([{ quoted: false, depth: 0, lines: ['First.', '', 'Second.'] }]);
+  });
+});
+
+
+describe('email attachment previews', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  const attachment: EmailAttachment = {
+    index: 0, filename: 'scan.tiff', content_type: 'image/tiff', size: 10,
+    downloadable: true, content_id: null, inline: false,
+  };
+
+  function mockImage(valid = true) {
+    vi.stubGlobal('Image', class {
+      src = '';
+      naturalWidth = 32;
+      naturalHeight = 24;
+      decode = () => valid ? Promise.resolve() : Promise.reject(new Error('Invalid image'));
+    });
+  }
+
+  it('automatically shows a regular image attachment in a plain text letter', async () => {
+    mockImage();
+    const download = vi.spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
+      .mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
+    render(createElement(EmailImagePreviews, {
+      threadId: 1, messageId: 2, attachments: [attachment], html: null,
+    }));
+    expect(await screen.findByAltText('scan.tiff')).toBeTruthy();
+    expect(download).toHaveBeenCalledWith(1, 2, 0, true);
+  });
+
+  it('does not fetch documents or duplicate a CID image already inside the letter', () => {
+    const download = vi.spyOn(adminCommunicationsAPI, 'downloadEmailAttachment');
+    render(createElement(EmailImagePreviews, {
+      threadId: 1, messageId: 2, html: '<img src="cid:photo">', attachments: [
+        { ...attachment, content_id: 'photo' },
+        { ...attachment, index: 1, filename: 'file.zip', content_type: 'application/zip' },
+      ],
+    }));
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('does not render a file the image decoder rejects', async () => {
+    mockImage(false);
+    const download = vi.spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
+      .mockResolvedValue(new Blob(['invalid'], { type: 'image/png' }));
+    render(createElement(EmailImagePreviews, {
+      threadId: 1, messageId: 2, attachments: [attachment], html: null,
+    }));
+    await waitFor(() => expect(download).toHaveBeenCalled());
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });

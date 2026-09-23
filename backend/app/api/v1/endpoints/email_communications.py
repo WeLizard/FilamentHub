@@ -49,7 +49,10 @@ from app.schemas.email_communication import (
     EmailThreadStatusUpdate,
     EmailThreadSummaryResponse,
 )
-from app.services.email_attachment_service import prepare_email_attachments
+from app.services.email_attachment_service import (
+    email_image_preview,
+    prepare_email_attachments,
+)
 from app.services.email_service import (
     create_internet_message_id,
     get_email_sender,
@@ -827,7 +830,7 @@ async def delete_email_thread(
 @admin_router.get(
     "/email-threads/{thread_id}/messages/{message_id}/attachments/{attachment_index}"
 )
-@limiter.limit("60/hour")
+@limiter.limit("120/minute")
 async def download_email_attachment(
     request: Request,
     thread_id: int,
@@ -835,6 +838,7 @@ async def download_email_attachment(
     attachment_index: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
+    preview: bool = False,
 ) -> Response:
     """Proxy one inbound attachment through the authenticated backend."""
     del admin
@@ -861,6 +865,11 @@ async def download_email_attachment(
     )
     if local is not None:
         content, content_type, local_name = local
+        if preview:
+            converted = await run_in_threadpool(email_image_preview, content)
+            if converted is None:
+                raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+            content, content_type = converted, "image/png"
         encoded_local_name = quote(local_name, safe="")
         return Response(
             content=content,

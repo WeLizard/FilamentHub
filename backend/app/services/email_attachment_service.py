@@ -9,6 +9,8 @@ from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 from fastapi import status
+from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from app.core.errors import (
@@ -23,6 +25,14 @@ MAX_EMAIL_ATTACHMENTS = 10
 MAX_EMAIL_ATTACHMENTS_BYTES = 15 * 1024 * 1024
 
 _ALLOWED_CONTENT_TYPES = {
+    ".zip": "application/zip",
+    ".json": "application/json",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".avif": "image/avif",
+    ".ico": "image/x-icon",
     ".csv": "text/csv",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -86,12 +96,33 @@ def _valid_office_zip(content: bytes, expected_folder: str) -> bool:
 def _content_matches(extension: str, content: bytes) -> bool:
     if extension == ".pdf":
         return content.startswith(b"%PDF-")
-    if extension == ".png":
-        return content.startswith(b"\x89PNG\r\n\x1a\n")
-    if extension in {".jpg", ".jpeg"}:
-        return content.startswith(b"\xff\xd8\xff")
-    if extension == ".webp":
-        return len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+    if _ALLOWED_CONTENT_TYPES.get(extension, "").startswith("image/"):
+        try:
+            with Image.open(BytesIO(content)) as image:
+                if image.width * image.height > 40_000_000:
+                    return False
+                actual_type = Image.MIME.get(image.format)
+                if actual_type != _ALLOWED_CONTENT_TYPES[extension]:
+                    return False
+                image.verify()
+            with Image.open(BytesIO(content)) as image:
+                image.load()
+            return True
+        except (
+            UnidentifiedImageError,
+            OSError,
+            ValueError,
+            SyntaxError,
+            Image.DecompressionBombError,
+        ):
+            return False
+    if extension == ".zip":
+        try:
+            with ZipFile(BytesIO(content)) as archive:
+                archive.infolist()
+            return True
+        except (BadZipFile, OSError, ValueError):
+            return False
     if extension in {".doc", ".xls"}:
         return content.startswith(_OLE_SIGNATURE)
     if extension == ".docx":
@@ -100,7 +131,7 @@ def _content_matches(extension: str, content: bytes) -> bool:
         return _valid_office_zip(content, "xl")
     if extension == ".pptx":
         return _valid_office_zip(content, "ppt")
-    if extension in {".htm", ".html", ".txt", ".csv"}:
+    if extension in {".htm", ".html", ".txt", ".csv", ".json"}:
         if b"\x00" in content:
             return False
         try:
@@ -109,6 +140,25 @@ def _content_matches(extension: str, content: bytes) -> bool:
             return False
         return True
     return False
+
+
+def email_image_preview(content: bytes) -> bytes | None:
+    """Decode bounded raster input and return a browser-compatible thumbnail."""
+    if len(content) > MAX_EMAIL_ATTACHMENTS_BYTES:
+        return None
+    try:
+        with Image.open(
+            BytesIO(content),
+            formats=["PNG", "JPEG", "GIF", "WEBP", "BMP", "TIFF", "AVIF", "ICO", "JPEG2000"],
+        ) as image:
+            if image.width * image.height > 40_000_000:
+                return None
+            image.thumbnail((1600, 1600))
+            output = BytesIO()
+            image.convert("RGBA").save(output, format="PNG")
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        return None
 
 
 async def prepare_email_attachments(
@@ -142,7 +192,7 @@ async def prepare_email_attachments(
                 ERR_EMAIL_ATTACHMENTS_TOO_LARGE,
                 {"max_mb": MAX_EMAIL_ATTACHMENTS_BYTES // (1024 * 1024)},
             )
-        if not _content_matches(extension, content):
+        if not await run_in_threadpool(_content_matches, extension, content):
             raise_error(400, ERR_EMAIL_ATTACHMENT_TYPE, {"filename": filename})
         prepared.append(
             PreparedEmailAttachment(

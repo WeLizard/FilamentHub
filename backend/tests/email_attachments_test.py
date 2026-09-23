@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 
 from app.services.email_attachment_service import prepare_email_attachments
 from app.services.email_service import ADMIN_REPLY_TEMPLATES, format_recipient
@@ -88,3 +91,65 @@ def test_both_templates_render_the_letter() -> None:
         )
         assert "Please find our application attached." in html
         assert "hello@filamenthub.ru" in html
+
+
+@pytest.mark.asyncio
+async def test_zip_is_preserved_without_extracting_its_contents() -> None:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr("../example.txt", "attached document")
+    content = output.getvalue()
+    prepared = await prepare_email_attachments([_Upload("bundle.ZIP", content)])
+    assert prepared[0].content_type == "application/zip"
+    assert base64.b64decode(prepared[0].provider_payload()["content"]) == content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "filename,content",
+    [
+        ("broken.zip", b"PK\x03\x04broken"),
+        ("broken.png", b"\x89PNG\r\n\x1a\nnot an image"),
+        ("broken.jpg", b"\xff\xd8\xffnot an image"),
+    ],
+)
+async def test_signatures_alone_do_not_make_valid_attachments(filename, content) -> None:
+    with pytest.raises(HTTPException):
+        await prepare_email_attachments([_Upload(filename, content)])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "extension,format",
+    [
+        ("png", "PNG"),
+        ("jpg", "JPEG"),
+        ("gif", "GIF"),
+        ("bmp", "BMP"),
+        ("tiff", "TIFF"),
+        ("webp", "WEBP"),
+        ("avif", "AVIF"),
+    ],
+)
+async def test_valid_images_can_be_sent_and_previewed(extension, format) -> None:
+    from app.services.email_attachment_service import email_image_preview
+
+    output = BytesIO()
+    Image.new("RGB", (32, 24), "red").save(output, format=format)
+    content = output.getvalue()
+    prepared = await prepare_email_attachments([_Upload(f"picture.{extension}", content)])
+    assert prepared[0].content == content
+    preview = email_image_preview(content)
+    with Image.open(BytesIO(preview)) as image:
+        assert image.format == "PNG"
+        assert image.size == (32, 24)
+
+
+def test_preview_rejects_invalid_images_and_bounds_dimensions() -> None:
+    from app.services.email_attachment_service import email_image_preview
+
+    assert email_image_preview(b"not an image") is None
+    output = BytesIO()
+    Image.new("RGB", (2000, 1000)).save(output, format="PNG")
+    with Image.open(BytesIO(email_image_preview(output.getvalue()))) as image:
+        assert image.size == (1600, 800)

@@ -95,8 +95,14 @@ a{color:#0369a1}
 </style></head><body>${html}</body></html>`;
 
 const MAX_INLINE_IMAGES = 10;
-const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
-const SAFE_INLINE_IMAGE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp']);
+const MAX_INLINE_IMAGE_BYTES = 15 * 1024 * 1024;
+const IMAGE_EXTENSION = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/i;
+
+const isEmailImage = (attachment: EmailAttachment): boolean =>
+  Boolean(attachment.downloadable && (
+    attachment.content_type?.toLowerCase().startsWith('image/')
+    || IMAGE_EXTENSION.test(attachment.filename)
+  ));
 
 const CID_REFERENCE = /(["'(])cid:([^"')\s]+)(["')])/gi;
 
@@ -114,13 +120,91 @@ const withInlineImages = (html: string, images: Map<string, string>): string =>
     return source ? `${open}${source}${close}` : match;
   });
 
-const asDataUrl = (blob: Blob): Promise<string> =>
+const readDataUrl = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+
+const asDataUrl = async (blob: Blob): Promise<string> => {
+  const source = await readDataUrl(blob);
+  const image = new Image();
+  image.src = source;
+  await image.decode();
+  if (!image.naturalWidth || image.naturalWidth * image.naturalHeight > 40_000_000) {
+    throw new Error('Invalid or oversized email image');
+  }
+  return source;
+};
+
+const downloadEmailImage = async (
+  threadId: number, messageId: number, attachment: EmailAttachment,
+): Promise<Blob> => {
+  const svg = attachment.content_type?.toLowerCase() === 'image/svg+xml'
+    || /\.svg$/i.test(attachment.filename);
+  const blob = await adminCommunicationsAPI.downloadEmailAttachment(
+    threadId, messageId, attachment.index, !svg,
+  );
+  return svg ? new Blob([blob], { type: 'image/svg+xml' }) : blob;
+};
+
+export function EmailImagePreviews({
+  threadId, messageId, attachments, html,
+}: {
+  threadId: number;
+  messageId: number;
+  attachments: EmailAttachment[];
+  html: string | null;
+}) {
+  const [previews, setPreviews] = useState<{
+    attachments: EmailAttachment[];
+    messageId: number;
+    threadId: number;
+    images: { filename: string; source: string; index: number }[];
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const referenced = new Set(Array.from((html ?? '').matchAll(CID_REFERENCE),
+      (match) => decodeCid(match[2])));
+    const candidates = attachments.filter((attachment) => isEmailImage(attachment)
+      && !(attachment.content_id && referenced.has(attachment.content_id)));
+    void (async () => {
+      const images: { filename: string; source: string; index: number }[] = [];
+      let budget = MAX_INLINE_IMAGE_BYTES;
+      for (const attachment of candidates.slice(0, MAX_INLINE_IMAGES)) {
+        if (cancelled) return;
+        if (attachment.size !== null && attachment.size > budget) continue;
+        try {
+          const blob = await downloadEmailImage(threadId, messageId, attachment);
+          budget -= blob.size;
+          if (budget < 0) break;
+          const source = await asDataUrl(blob);
+          images.push({ filename: attachment.filename, index: attachment.index, source });
+          if (!cancelled) setPreviews({ attachments, messageId, threadId, images: [...images] });
+        } catch {
+          // Invalid images retain their ordinary download link.
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [attachments, html, messageId, threadId]);
+
+  if (!previews || previews.attachments !== attachments
+    || previews.messageId !== messageId || previews.threadId !== threadId) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-3">
+      {previews.images.map(({ filename, source, index }) => (
+        <figure key={index} className="min-w-0 max-w-full">
+          <img src={source} alt={filename} className="max-h-96 max-w-full rounded-lg object-contain" />
+          <figcaption className="mt-1 break-all text-xs text-gray-400">{filename}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
 
 /** A letter from a stranger is untrusted markup: it is shown inside a frame the
  * browser refuses to run scripts in, so the mail reads as a letter without
@@ -149,10 +233,12 @@ export function InboundHtmlMessage({
   useEffect(() => {
     if (threadId === undefined || messageId === undefined || !attachments?.length) return;
 
+    const referenced = new Set(Array.from(html.matchAll(CID_REFERENCE),
+      (match) => decodeCid(match[2])));
     const inlineImages = attachments.filter(
       (attachment) =>
         attachment.downloadable &&
-        attachment.content_id,
+        attachment.content_id && referenced.has(attachment.content_id) && isEmailImage(attachment),
     );
     if (!inlineImages.length || !/cid:/i.test(html)) return;
 
@@ -163,14 +249,9 @@ export function InboundHtmlMessage({
       for (const attachment of inlineImages.slice(0, MAX_INLINE_IMAGES)) {
         if (cancelled) return;
         try {
-          const blob = await adminCommunicationsAPI.downloadEmailAttachment(
-            threadId,
-            messageId,
-            attachment.index,
-          );
+          const blob = await downloadEmailImage(threadId, messageId, attachment);
           budget -= blob.size;
           if (budget < 0) break;
-          if (!SAFE_INLINE_IMAGE_TYPES.has(blob.type.toLowerCase())) continue;
           // Встроенная в письмо картинка: не ссылка, а сами данные — иначе кадр
           // письма пришлось бы пускать в сеть за нашими же вложениями.
           resolved.set(attachment.content_id as string, await asDataUrl(blob));
@@ -902,6 +983,14 @@ function AdminEmailInbox() {
                         <PlainTextMessage text={message.text_body} />
                       ) : (
                         <p className="text-sm leading-6">{t('adminCommunications.noTextBody')}</p>
+                      )}
+                      {inbound && (
+                        <EmailImagePreviews
+                          threadId={selectedThread.id}
+                          messageId={message.id}
+                          attachments={message.attachment_metadata}
+                          html={message.html_body}
+                        />
                       )}
                       {message.attachment_metadata.length > 0 && (
                         <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
