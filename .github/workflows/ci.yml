@@ -5,8 +5,42 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      coverage:
+        description: Collect backend coverage during this full verification
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Select affected components
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+      edge: ${{ steps.select.outputs.edge }}
+      plugins: ${{ steps.select.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify CI selection safety
+        run: python -m unittest scripts.tests.test_ci_selection
+      - name: Select checks since the last successful verification
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/select_ci_jobs.py
+
   operations-scripts:
     name: Operations scripts (syntax)
     runs-on: ubuntu-latest
@@ -61,6 +95,8 @@ jobs:
 
   backend:
     name: Backend (lint + tests)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.backend != 'false') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,14 +130,22 @@ jobs:
         run: python ../scripts/check_postgres_runtime.py
 
       - name: Run tests (pytest, in-memory SQLite)
-        run: pytest --no-cov-on-fail
+        run: |
+          if [ "$COLLECT_COVERAGE" = "true" ]; then
+            pytest --no-cov-on-fail --durations=15
+          else
+            pytest --no-cov --durations=15
+          fi
         env:
+          COLLECT_COVERAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.coverage }}
           SECRET_KEY: ci-secret-key-with-at-least-32-bytes
           DEBUG: "false"
           REDIS_URL: "memory://"
 
   frontend:
     name: Frontend (type-check + build + tests)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.frontend != 'false') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -127,6 +171,8 @@ jobs:
 
   edge-agent:
     name: Edge (lint + tests + image)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.edge != 'false') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -163,6 +209,8 @@ jobs:
 
   plugins:
     name: Plugins (tests + package build)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.plugins != 'false') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
