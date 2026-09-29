@@ -795,7 +795,7 @@ def test_managed_local_bundle_reload_is_feature_detected(plugin_module, monkeypa
 
     assert not plugin_module.reload_managed_local_bundle_if_available()
 
-def test_sync_reports_loaded_after_native_local_bundle_reload(
+def test_sync_reload_without_host_observation_reports_only_files_on_disk(
     plugin_module, monkeypatch, tmp_path
 ):
     live = tmp_path / "live"
@@ -870,6 +870,10 @@ def test_sync_reports_loaded_after_native_local_bundle_reload(
     )
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(catalog, "_pull_one", pull)
+    monkeypatch.setattr(
+        plugin_module, "loaded_managed_preset_ids",
+        lambda: pytest.fail("worker must not read the UI-thread host collection"),
+    )
 
     catalog._do_sync(
         "token",
@@ -886,7 +890,7 @@ def test_sync_reports_loaded_after_native_local_bundle_reload(
         "preset_id": 73,
         "preset_type": "filament",
         "operation": "download",
-        "state": "loaded",
+        "state": "on_disk",
     }]
 
 def test_loaded_managed_preset_ids_reports_unknown_without_a_host_bundle(

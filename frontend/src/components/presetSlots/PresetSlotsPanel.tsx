@@ -17,7 +17,6 @@ import { AddPhysicalPrinterModal } from '../AddPhysicalPrinterModal';
 import { PrinterSetupWizard } from '../PrinterSetupWizard';
 import { GateMapGrid } from './GateMapGrid';
 import { LinkInstructions } from './LinkInstructions';
-import { removeBambuBridgeInPlugin } from '../../utils/pluginBridge';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
@@ -224,9 +223,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     setDeleting(true);
     try {
       await physicalPrintersAPI.deleteSystem(printer.id, system.id);
-      if (adapter.id === 'bambu') {
-        removeBambuBridgeInPlugin(printer.id);
-      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),

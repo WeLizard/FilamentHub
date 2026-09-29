@@ -188,6 +188,7 @@ def test_native_bambu_setup_does_not_scan_until_the_user_requests_it(
         "serial": "",
         "source": "profile",
         "connection_ref": "",
+        "repair": "",
     }
     assert prompt["discoveryAttempted"] is False
     assert calls == []

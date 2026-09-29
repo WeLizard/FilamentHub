@@ -100,6 +100,10 @@ external OAuth ──▶ server handoff + system browser ──▶ embedded page
   account preference. Incomplete local scans never finalize a remote snapshot,
   and one rejected profile does not prevent valid profiles in the same batch
   from synchronizing.
+- File counts describe managed files on disk. A successful reload request is
+  reported separately and does not prove that Orca loaded them. Host-loaded
+  identity is observed on the UI thread; after a worker reload it remains
+  unknown until the next host observation.
 
 The direct embed renders an Orca-themed toolbar (host `--orca-*` CSS variables —
 the same role as the native Catalog/Profile/Wiki buttons of the C++ fork panel).
@@ -158,8 +162,19 @@ The Bambu adapter is a separate, narrower trust boundary from preset sync:
 
 The LAN address, Bambu serial and access code stay in `.fh_bambu.json` in the
 private plugin storage. The server receives none of them and stores only a
-SHA-256 digest of the FilamentHub bridge token. Removing the connection revokes
-the server token before the local secret is deleted. The write surface is
+SHA-256 digest of the FilamentHub bridge token. A server 401 clears only the
+rejected bridge token, using compare-and-swap so a delayed response cannot
+invalidate a newer token. LAN credentials survive server failures and inactivity.
+The local setup dialog offers **Repair FilamentHub connection** for an owned
+saved connection without asking for the LAN access code again. Repair verifies
+the account and uses only the saved address and serial; changing the endpoint
+requires entering its access code. Unreadable or malformed local storage is
+preserved and blocks mutations until recovered.
+
+Only explicit **Remove local connection** deletes the local credential. It
+attempts server revocation first, queues a retry when possible if unavailable,
+and reports unconfirmed server revocation separately from local removal.
+The write surface is
 deliberately limited to user-confirmed third-party material metadata; it does
 not expose pause, temperature, motion, AMS movement or arbitrary printer
 commands. Exact FilamentHub spool identity remains in FilamentHub and is never

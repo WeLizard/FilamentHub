@@ -912,21 +912,6 @@ export function configureBambuBridgeInPlugin(
   });
 }
 
-/**
- * Remove the matching local Bambu binding when a material system is deleted
- * from the shared web UI inside OrcaSlicer. Outside the plugin this is a no-op;
- * the running bridge will receive 401 for the deleted server credential and
- * remove the same local binding on its next contact.
- */
-export function removeBambuBridgeInPlugin(physicalPrinterId: number): void {
-  if (!isPluginEmbed()) return;
-  postToPlugin({
-    source: PLUGIN_MESSAGE_SOURCE,
-    type: 'remove-bambu-local',
-    physicalPrinterId,
-  });
-}
-
 export interface BambuMaterialChange {
   slot: number;
   presetId: number;

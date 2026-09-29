@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.0"
+# version = "0.2.1"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -415,7 +415,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.2.1"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -1789,63 +1789,102 @@ def _empty_bambu_config():
 
 def load_bambu_config():
     """Read the private local bridge file without ever logging its contents."""
+    payload, _status = load_bambu_config_diagnostic()
+    return payload
+
+
+def load_bambu_config_diagnostic():
+    """Return local config and a non-secret health code for support/UI state."""
     try:
         with open(BAMBU_CONFIG_FILE, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
-    except (OSError, ValueError):
-        return _empty_bambu_config()
-    if not isinstance(payload, dict):
-        return _empty_bambu_config()
-    instance_id = payload.get("source_instance_id")
-    if not isinstance(instance_id, str) or not (16 <= len(instance_id) <= 100):
-        instance_id = secrets.token_urlsafe(24)
-    printers = []
-    for item in payload.get("printers") or []:
+    except FileNotFoundError:
+        fh_log("bambu_local_config_missing")
+        return _empty_bambu_config(), "missing"
+    except OSError:
+        fh_log("bambu_local_config_unreadable")
+        return _empty_bambu_config(), "unreadable"
+    except ValueError:
+        fh_log("bambu_local_config_corrupt")
+        return _empty_bambu_config(), "corrupt"
+    # Never sanitize a partial/corrupt file into an apparently valid empty
+    # store: a later mutation would otherwise erase recoverable credentials.
+    valid = (
+        isinstance(payload, dict)
+        and payload.get("version") == 1
+        and isinstance(payload.get("source_instance_id"), str)
+        and 16 <= len(payload["source_instance_id"]) <= 100
+        and isinstance(payload.get("printers"), list)
+        and len(payload["printers"]) <= MAX_BAMBU_BRIDGES
+    )
+    seen = set()
+    for item in payload["printers"] if valid else []:
         if not isinstance(item, dict):
-            continue
-        physical_id = item.get("physical_printer_id")
-        system_id = item.get("material_system_id")
-        host = item.get("host")
-        access_code = item.get("access_code")
-        serial = item.get("serial") or ""
-        bridge_token = item.get("bridge_token") or ""
-        device_identity = _valid_bambu_device_identity(item.get("device_identity"))
-        if (
-            isinstance(serial, str)
-            and serial
-            and not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial)
-        ):
-            serial = ""
-        if (
-            isinstance(physical_id, int)
-            and physical_id > 0
-            and isinstance(system_id, int)
-            and system_id > 0
-            and isinstance(host, str)
-            and host
-            and isinstance(access_code, str)
-            and access_code
-            and isinstance(serial, str)
-            and isinstance(bridge_token, str)
-        ):
-            printer = {
-                "physical_printer_id": physical_id,
-                "material_system_id": system_id,
-                "host": host[:253],
-                "access_code": access_code[:128],
-                "serial": serial[:80],
-                "bridge_token": bridge_token[:256],
-            }
-            if device_identity is not None:
-                printer["device_identity"] = device_identity
-            printers.append(printer)
-        if len(printers) >= MAX_BAMBU_BRIDGES:
+            valid = False
             break
-    return {
-        "version": 1,
-        "source_instance_id": instance_id,
-        "printers": printers,
-    }
+        physical_id = item.get("physical_printer_id")
+        serial = item.get("serial", "")
+        bridge_token = item.get("bridge_token", "")
+        identity = item.get("device_identity")
+        valid = (
+            type(physical_id) is int and physical_id > 0 and physical_id not in seen
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and isinstance(item.get("host"), str) and 0 < len(item["host"]) <= 253
+            and isinstance(item.get("access_code"), str)
+            and 0 < len(item["access_code"]) <= 128
+            and isinstance(serial, str)
+            and (not serial or re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial))
+            and isinstance(bridge_token, str) and len(bridge_token) <= 256
+            and (identity is None or _valid_bambu_device_identity(identity) is not None)
+        )
+        if not valid:
+            break
+        seen.add(physical_id)
+    if not valid:
+        fh_log("bambu_local_config_corrupt")
+        return _empty_bambu_config(), "corrupt"
+    return payload, "valid"
+
+
+def _load_bambu_config_for_mutation():
+    """Load config without allowing a corrupt file to be overwritten."""
+    payload, status = load_bambu_config_diagnostic()
+    if status in {"corrupt", "unreadable"}:
+        raise ValueError("bambu_local_config_" + status)
+    return payload
+
+
+def invalidate_bambu_bridge_token(physical_printer_id, expected_bridge_token):
+    """Clear only the expected server token, preserving LAN credentials.
+
+    The compare-and-swap prevents an old observer response from clearing a
+    freshly paired token written by a later lifecycle.
+    """
+    if (
+        type(physical_printer_id) is not int
+        or physical_printer_id <= 0
+        or not isinstance(expected_bridge_token, str)
+        or not expected_bridge_token
+    ):
+        return False
+    with _BAMBU_CONFIG_LOCK:
+        payload, status = load_bambu_config_diagnostic()
+        if status != "valid":
+            return False
+        binding = next(
+            (
+                item for item in payload["printers"]
+                if item.get("physical_printer_id") == physical_printer_id
+            ),
+            None,
+        )
+        if binding is None or binding.get("bridge_token") != expected_bridge_token:
+            return False
+        binding["bridge_token"] = ""
+        save_bambu_config(payload)
+        fh_log("bambu_bridge_auth_rejected; bambu_bridge_repair_required")
+        return True
 
 
 def save_bambu_config(payload):
@@ -1860,11 +1899,14 @@ def configure_bambu_bridge(
     serial="",
     bridge_token="",
     device_identity=None,
+    *,
+    expected_binding=...,
+    expected_source_instance_id=None,
 ):
     """Create or replace one local-only Bambu LAN binding."""
-    if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
+    if type(physical_printer_id) is not int or physical_printer_id <= 0:
         raise ValueError("invalid physical printer")
-    if not isinstance(material_system_id, int) or material_system_id <= 0:
+    if type(material_system_id) is not int or material_system_id <= 0:
         raise ValueError("invalid material system")
     host = str(host or "").strip()
     access_code = str(access_code or "").strip()
@@ -1883,7 +1925,14 @@ def configure_bambu_bridge(
         raise ValueError("invalid Bambu device identity")
 
     with _BAMBU_CONFIG_LOCK:
-        payload = load_bambu_config()
+        payload = _load_bambu_config_for_mutation()
+        current = next((item for item in payload["printers"]
+                        if item["physical_printer_id"] == physical_printer_id), None)
+        if expected_binding is not ... and (
+            current != expected_binding
+            or payload["source_instance_id"] != expected_source_instance_id
+        ):
+            raise ValueError("Bambu binding changed during pairing")
         _assert_bambu_binding_available(
             payload,
             physical_printer_id,
@@ -1895,14 +1944,16 @@ def configure_bambu_bridge(
             for item in payload["printers"]
             if item["physical_printer_id"] != physical_printer_id
         ]
-        printer = {
+        printer = dict(current or {})
+        printer.update({
             "physical_printer_id": physical_printer_id,
             "material_system_id": material_system_id,
             "host": host,
             "access_code": access_code,
             "serial": serial,
             "bridge_token": bridge_token,
-        }
+        })
+        printer.pop("device_identity", None)
         if identity is not None:
             printer["device_identity"] = identity
         printers.append(printer)
@@ -1913,9 +1964,13 @@ def configure_bambu_bridge(
         return payload
 
 
-def remove_bambu_bridge(physical_printer_id):
+def remove_bambu_bridge(physical_printer_id, *, expected_binding=...):
     with _BAMBU_CONFIG_LOCK:
-        payload = load_bambu_config()
+        payload = _load_bambu_config_for_mutation()
+        current = next((item for item in payload["printers"]
+                        if item["physical_printer_id"] == physical_printer_id), None)
+        if expected_binding is not ... and current != expected_binding:
+            return False
         before = len(payload["printers"])
         payload["printers"] = [
             item
@@ -1928,14 +1983,14 @@ def remove_bambu_bridge(physical_printer_id):
         return False
 
 
-def remove_interrupted_bambu_binding(
+def invalidate_interrupted_bambu_binding(
     physical_printer_id, fresh_bridge_token, previous_payload
 ):
-    """Remove only local credentials invalidated by an interrupted server pair.
+    """Clear the revoked session after an interrupted pair, keeping LAN state.
 
     A successful pair replaces the server-side token hash, so restoring the
     previous local token would only manufacture a dead "paired" connection.
-    The lifecycle bypass removes the exact fresh binding, or the byte-for-byte
+    The lifecycle bypass clears the exact fresh token, or the byte-for-byte
     previous binding when persistence had not started yet. A later lifecycle's
     different binding is never touched.
     """
@@ -1956,7 +2011,7 @@ def remove_interrupted_bambu_binding(
         None,
     )
     with _BAMBU_CONFIG_LOCK:
-        current = load_bambu_config()
+        current = _load_bambu_config_for_mutation()
         current_binding = next(
             (
                 item
@@ -1972,11 +2027,7 @@ def remove_interrupted_bambu_binding(
             and current_binding != previous_binding
         ):
             return False
-        current["printers"] = [
-            item
-            for item in current["printers"]
-            if item.get("physical_printer_id") != physical_printer_id
-        ]
+        current_binding["bridge_token"] = ""
         encoded = json.dumps(current, ensure_ascii=False, indent=2).encode("utf-8")
         _write_bytes_atomic_unchecked(BAMBU_CONFIG_FILE, encoded, mode=0o600)
         return True
@@ -6690,7 +6741,7 @@ button:disabled{opacity:.5;cursor:wait}#status{min-height:21px;margin-top:14px;c
 </div></form></main><script>
 'use strict';
 var action=__ACTION__,copy=__COPY__,session=__SESSION__,kind=action.type==='configure-bambu'?'bambu':'moonraker',
-activeSearchRequest='',ignoredSearchRequest='',searchTimer=0,activeConnectRequest='',ignoredConnectRequest='',connectTimer=0;
+activeSearchRequest='',ignoredSearchRequest='',searchTimer=0,activeConnectRequest='',ignoredConnectRequest='',connectTimer=0,needsRepair=false;
 var form=document.getElementById('form'),host=document.getElementById('host'),secret=document.getElementById('secret'),
 serial=document.getElementById('serial'),candidate=document.getElementById('candidate'),statusLine=document.getElementById('status'),
 save=document.getElementById('save'),search=document.getElementById('search'),remove=document.getElementById('remove');
@@ -6718,7 +6769,7 @@ if(kind==='bambu'){
    connectionRef:action.connectionRef||'',pairingCode:action.pairingCode||''});}
  search.onclick=function(){prepare(true)};
  remove.onclick=function(){send({type:'remove-bambu-local',physicalPrinterId:action.physicalPrinterId});finish('removed')};
- form.onsubmit=function(event){event.preventDefault();if(!host.value.trim()||!secret.value.trim())return;
+ form.onsubmit=function(event){event.preventDefault();if(!host.value.trim()||(!secret.value.trim()&&!needsRepair))return;
   var requestId='bambu-setup-'+Date.now();activeConnectRequest=requestId;ignoredConnectRequest='';
   clearTimeout(connectTimer);setBusy(true);statusLine.textContent=copy.bambuConnecting||'Connecting…';
   connectTimer=setTimeout(function(){ignoredConnectRequest=activeConnectRequest;activeConnectRequest='';setBusy(false);
@@ -6733,9 +6784,17 @@ if(kind==='bambu'){
    document.getElementById('candidate-title').textContent=copy.bambuChoosePrinter||'Printer';
    items.forEach(function(item,index){var option=document.createElement('option');option.value=String(index);
     option.textContent=String(item.label||item.host||'')+' · '+String(item.host||'');candidate.appendChild(option)});
-   function choose(){var item=items[Number(candidate.value)]||{};host.value=item.host||'';serial.value=item.serial||'';secret.value=''}
+   function choose(){var item=items[Number(candidate.value)]||{};host.value=item.host||'';serial.value=item.serial||'';secret.value='';
+    needsRepair=item.repair===true;secret.required=!needsRepair;host.readOnly=needsRepair;serial.readOnly=needsRepair;
+    save.textContent=needsRepair?copy.bambuRepair:copy.bambuSave;
+    statusLine.textContent=needsRepair?copy.bambuRepairRequired:copy.bambuFound;}
    candidate.onchange=choose;choose();statusLine.textContent=copy.bambuFound||'';
   }else{statusLine.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):''}
+  if(!items.length){needsRepair=false;secret.required=true;host.readOnly=false;serial.readOnly=false;}
+  if(needsRepair&&!secret.value)statusLine.textContent=copy.bambuRepairRequired||'Repairing the saved local connection…';
+  if(data.localConfigStatus==='corrupt'||data.localConfigStatus==='unreadable'){
+   setBusy(true);statusLine.textContent=copy.bambuLocalConfigCorrupt;
+  }else if(data.localConfigStatus==='missing'&&!items.length){statusLine.textContent=copy.bambuLocalConfigMissing;}
   remove.style.display=data.hasSavedConnection?'':'none';search.textContent=data.discoveryAttempted?(copy.bambuSearchAgain||copy.bambuSearch):copy.bambuSearch;}
  orca.onMessage(function(data){if(!data||data.source!=='filamenthub-host')return;
   if(data.type==='bambu-setup-candidates')candidates(data);
@@ -7136,6 +7195,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
             sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
         header, connack = _mqtt_read_packet(sock, deadline)
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+            fh_log("bambu_lan_auth_rejected")
             raise PermissionError("Bambu MQTT authentication rejected")
 
         report_topic = (
@@ -7308,6 +7368,7 @@ def _publish_bambu_json(
                 ) from exc
             raise
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+            fh_log("bambu_lan_auth_rejected")
             raise PermissionError("Bambu MQTT authentication rejected")
         topic = ("device/%s/request" % serial).encode("utf-8")
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -7367,8 +7428,13 @@ def _bambu_material_target(preset_id, profile):
 
 def _bambu_committed_spool_target(binding, commit, host_profiles):
     """Build a target from canonical spool facts and one loaded host preset."""
+    if not binding.get("bridge_token"):
+        return None, "auth"
     status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
     if status == 401:
+        invalidate_bambu_bridge_token(
+            binding.get("physical_printer_id"), binding.get("bridge_token")
+        )
         return None, "auth"
     if status == 403:
         return None, "access"
@@ -7646,8 +7712,12 @@ def build_bambu_bridge_snapshot(config, source_instance_id, report):
     return snapshot
 
 
-def _fetch_bambu_device_identity(bridge_token, serial):
+def _fetch_bambu_device_identity(bridge_token, serial, physical_printer_id=None):
+    if not bridge_token:
+        return None
     status, body = http_get_bridge_json("/printer-bridge/identity-context", bridge_token)
+    if status == 401 and isinstance(physical_printer_id, int):
+        invalidate_bambu_bridge_token(physical_printer_id, bridge_token)
     if status != 200:
         return None
     try:
@@ -7661,6 +7731,8 @@ def _fetch_bambu_device_identity(bridge_token, serial):
 
 def _prepare_bambu_observation(config, observed_serial):
     """Pin an observation to its local printer before any cloud request."""
+    if not config.get("bridge_token"):
+        raise ValueError("bambu_bridge_repair_required")
     canonical_observed = _normalized_bambu_serial(observed_serial)
     if not canonical_observed:
         raise ValueError("invalid observed Bambu serial")
@@ -7673,10 +7745,11 @@ def _prepare_bambu_observation(config, observed_serial):
         identity = _fetch_bambu_device_identity(
             config.get("bridge_token") or "",
             observed_serial,
+            config.get("physical_printer_id"),
         )
 
     with _BAMBU_CONFIG_LOCK:
-        payload = load_bambu_config()
+        payload = _load_bambu_config_for_mutation()
         current = next(
             (
                 item
@@ -7727,6 +7800,18 @@ def _bambu_local_binding(physical_printer_id, material_system_id):
         None,
     )
     return local, binding
+
+
+def _owned_bambu_connection(local, context, physical_printer_id, material_system_id):
+    """Prove account ownership before reusing a saved local credential."""
+    if not context:
+        return None
+    return next((item for item in local["printers"]
+                 if item.get("physical_printer_id") == physical_printer_id
+                 and item.get("material_system_id") == material_system_id
+                 and _valid_bambu_device_identity(item.get("device_identity")) is not None
+                 and item["device_identity"] == _bambu_device_identity(
+                     context.get("discovery_key"), item.get("serial"))), None)
 
 
 def _bambu_server_assignments(device, material_system_id):
@@ -8693,6 +8778,8 @@ class BambuBridgeRuntime:
                             if self._stop.is_set() or stream["stop"].is_set():
                                 break
                             fh_log("Bambu LAN stream reconnecting: %s" % type(exc).__name__)
+                            if isinstance(exc, PermissionError):
+                                fh_log("bambu_lan_auth_rejected")
                             self._stop.wait(5)
 
             stream["thread"] = threading.Thread(target=run, name="filamenthub-bambu-lan", daemon=True)
@@ -8730,6 +8817,8 @@ class BambuBridgeRuntime:
                     queue.pop(0)
 
     def _record_usage(self, config, source_instance_id, report, observed_at):
+        if not config.get("bridge_token"):
+            return False
         binding = hashlib.sha256(json.dumps([
             config["physical_printer_id"], config["material_system_id"],
             source_instance_id, config["bridge_token"],
@@ -8794,6 +8883,11 @@ class BambuBridgeRuntime:
                 observation_accepted = True
             else:
                 fh_log("Bambu usage queue is full; draining before resuming observations")
+        elif status == 401:
+            invalidate_bambu_bridge_token(
+                config.get("physical_printer_id"), config.get("bridge_token")
+            )
+            return False
         # An unavailable desired snapshot defers this observation. Keep the
         # last durable baseline; a changed route proof after reconnection starts
         # its own interval, while an unchanged assignment can resume accounting.
@@ -8824,6 +8918,11 @@ class BambuBridgeRuntime:
                 self._usage_states[binding] = committed
                 self._usage_retry_at.pop(binding, None)
                 return observation_accepted
+        elif status == 401:
+            invalidate_bambu_bridge_token(
+                config.get("physical_printer_id"), config.get("bridge_token")
+            )
+            return False
         self._usage_retry_at[binding] = time.monotonic() + max(60, retry_after or 0)
         fh_log("Bambu usage upload pending: HTTP %s" % status)
         return observation_accepted
@@ -9011,11 +9110,12 @@ class BambuBridgeRuntime:
                     if self._stop.is_set():
                         break
                     if status == 401:
-                        # The owner may have removed the system from the site or
-                        # replaced this binding elsewhere. The rejected token is
-                        # authoritative: drop the LAN credentials too instead of
-                        # leaving an unreachable secret behind forever.
-                        remove_bambu_bridge(config["physical_printer_id"])
+                        # A rejected server token is not a rejected LAN
+                        # credential. Keep host/access code/serial for repair;
+                        # CAS prevents an old response clearing a new token.
+                        invalidate_bambu_bridge_token(
+                            config["physical_printer_id"], config["bridge_token"]
+                        )
                         continue
                     if status == 200:
                         self._failure_count.pop(binding_key, None)
@@ -9056,6 +9156,8 @@ class BambuBridgeRuntime:
                         min(BAMBU_RETRY_MAX_SECONDS, base_delay + spread),
                     )
                     fh_log("Bambu bridge poll failed: %s" % type(exc).__name__)
+                    if isinstance(exc, PermissionError):
+                        fh_log("bambu_lan_auth_rejected")
             if self._stop.is_set():
                 break
             spread = BAMBU_POLL_SECONDS * BAMBU_INTERVAL_JITTER_RATIO
@@ -10156,30 +10258,30 @@ class FilamentHubCatalog(
             observations, context, binding["physicalPrinterId"],
         ) if item["host"].lower() not in seen)
         # Only the host-owned local dialog receives addresses/serials. The web gets opaque refs.
-        saved_connections = load_bambu_config()["printers"]
-        has_saved_connection = any(
-            item.get("physical_printer_id") == binding["physicalPrinterId"]
-            for item in saved_connections
+        local, local_status = load_bambu_config_diagnostic()
+        saved = _owned_bambu_connection(
+            local, context, binding["physicalPrinterId"], binding["materialSystemId"]
         )
-        if context:
-            has_saved_connection = any(
-                item.get("physical_printer_id") == binding["physicalPrinterId"]
-                and item.get("device_identity") == _bambu_device_identity(
-                    context["discovery_key"], item.get("serial")
-                )
-                for item in saved_connections
-            )
+        needs_repair = saved is not None and not saved.get("bridge_token")
+        if needs_repair:
+            fh_log("bambu_bridge_repair_required")
+            candidates = [{"host": saved["host"], "serial": saved["serial"],
+                           "source": "saved", "repair": True}] + [
+                item for item in candidates if item.get("host") != saved["host"]
+            ]
         self._deliver_native_setup(
             "bambu-setup-candidates",
             requestId=binding.get("requestId", ""),
             physicalPrinterId=binding["physicalPrinterId"],
             materialSystemId=binding["materialSystemId"],
             pairingCode=binding["pairingCode"],
-            candidates=[{key: item.get(key, "") for key in ("host", "label", "serial", "source", "connection_ref")}
+            candidates=[{key: item.get(key, "") for key in ("host", "label", "serial", "source", "connection_ref", "repair")}
                         for item in candidates[:_DISCOVERY_LIMIT]],
             discoveryComplete=discovery_complete,
             discoveryAttempted=discovery_attempted,
-            hasSavedConnection=has_saved_connection,
+            hasSavedConnection=saved is not None,
+            needsRepair=needs_repair,
+            localConfigStatus=local_status,
         )
 
     def _deliver_native_setup(self, message_type, **payload):
@@ -10189,8 +10291,9 @@ class FilamentHubCatalog(
             self._open_local_dialog(action)
             return
         if message_type in {"bambu-setup-candidates", "bambu-setup-result"}:
-            if self._deliver_local(message_type, **payload):
-                return
+            # Local addresses and serials must never fall back to the remote
+            # page if the credential dialog closed while a worker was running.
+            return self._deliver_local(message_type, **payload)
         self._deliver(message_type, **payload)
 
     def _do_check_slices(self, wanted, hook):
@@ -10206,6 +10309,7 @@ class FilamentHubCatalog(
         serial,
         pairing_code,
         request_id="",
+        token="",
     ):
         def finish(key, status):
             if request_id:
@@ -10216,6 +10320,41 @@ class FilamentHubCatalog(
         bridge_token = ""
         previous_local = None
         try:
+            with _BAMBU_CONFIG_LOCK:
+                local, local_status = load_bambu_config_diagnostic()
+                if local_status in {"corrupt", "unreadable"}:
+                    finish("bambuLocalConfigCorrupt", "error")
+                    return
+                if local_status == "missing":
+                    # Commit the source identity before consuming a pairing code.
+                    save_bambu_config(local)
+            previous_local = json.loads(json.dumps(local))
+            saved_binding = next(
+                (
+                    item for item in local["printers"]
+                    if item.get("physical_printer_id") == physical_printer_id
+                ),
+                None,
+            )
+            repairing = not access_code
+            if repairing:
+                if saved_binding is None:
+                    finish("bambuCodeRequired", "error")
+                    return
+                try:
+                    context = printer_setup_context(token) if token else {}
+                except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                    finish("bambuRepairUnavailable", "error")
+                    return
+                saved = _owned_bambu_connection(
+                    local, context, physical_printer_id, material_system_id
+                )
+                if (saved is None or saved.get("bridge_token")
+                        or host != saved["host"]
+                        or _normalized_bambu_serial(serial) != _normalized_bambu_serial(saved["serial"])):
+                    finish("bambuRepairUnavailable", "error")
+                    return
+                host, access_code, serial = saved["host"], saved["access_code"], saved["serial"]
             _resolved_bambu_address(host)
             # An empty serial is the normal case: the wildcard report topic
             # carries it, so the address and the access code are enough.
@@ -10228,26 +10367,26 @@ class FilamentHubCatalog(
                 "serial": serial,
             }
             fh_log("Bambu setup: reading local MQTT snapshot")
-            discovered_serial, report = read_bambu_lan_snapshot(pending)
-            connected_serial = _normalized_bambu_serial(discovered_serial) or serial
+            try:
+                discovered_serial, report = read_bambu_lan_snapshot(pending)
+            except PermissionError:
+                fh_log("bambu_lan_auth_rejected")
+                finish("bambuLanAuthRejected", "error")
+                return
+            connected_serial = _normalized_bambu_serial(discovered_serial)
             if not connected_serial:
                 fh_log("Bambu setup: MQTT response did not contain a serial")
                 finish("bambuSerialRequired", "error")
                 return
+            if serial and connected_serial != serial:
+                finish("bambuInvalid", "error")
+                return
             fh_log("Bambu setup: local MQTT snapshot received")
-            local = load_bambu_config()
             _assert_bambu_binding_available(
                 local,
                 physical_printer_id,
                 connected_serial,
             )
-            # A missing config produces a fresh source id. Persist it before
-            # pairing so configure_bambu_bridge() cannot generate a second id
-            # and make the immediately following snapshot fail its binding.
-            # This also proves local durability before the one-time code is
-            # consumed on the server.
-            save_bambu_config(local)
-            previous_local = json.loads(json.dumps(local))
             # Pairing rotates the server credential immediately. Reserve one
             # durable compensation slot before consuming the one-time code so
             # a later network failure can never evict an older pending token.
@@ -10287,7 +10426,11 @@ class FilamentHubCatalog(
                 paired.get("printer_discovery_key"),
                 connected_serial,
             )
-            configure_bambu_bridge(
+            if repairing and device_identity != saved_binding.get("device_identity"):
+                revoke_fresh_bridge_token(bridge_token)
+                finish("bambuRepairUnavailable", "error")
+                return
+            configured = configure_bambu_bridge(
                 physical_printer_id,
                 material_system_id,
                 host,
@@ -10295,8 +10438,9 @@ class FilamentHubCatalog(
                 connected_serial,
                 bridge_token,
                 device_identity,
+                expected_binding=saved_binding,
+                expected_source_instance_id=local["source_instance_id"],
             )
-            configured = load_bambu_config()
             stored = next(
                 (
                     item
@@ -10316,10 +10460,14 @@ class FilamentHubCatalog(
                 "/printer-bridge/snapshot", bridge_token, snapshot
             )
             if snapshot_status in {401, 409}:
-                if snapshot_status == 409:
+                if snapshot_status == 401:
+                    invalidate_bambu_bridge_token(physical_printer_id, bridge_token)
+                else:
                     revoke_fresh_bridge_token(bridge_token)
-                remove_bambu_bridge(physical_printer_id)
-                finish("bambuPairingFailed", "error")
+                    invalidate_interrupted_bambu_binding(
+                        physical_printer_id, bridge_token, previous_local
+                    )
+                finish("bambuRepairRequired" if snapshot_status == 401 else "bambuPairingFailed", "error")
                 return
             if snapshot_status != 200:
                 # The durable local binding is valid and the background
@@ -10343,18 +10491,24 @@ class FilamentHubCatalog(
                 except (OSError, TypeError, ValueError):
                     pass
                 if previous_local is not None:
-                    remove_interrupted_bambu_binding(
-                        physical_printer_id,
-                        bridge_token,
-                        previous_local,
-                    )
+                    try:
+                        invalidate_interrupted_bambu_binding(
+                            physical_printer_id,
+                            bridge_token,
+                            previous_local,
+                        )
+                    except (OSError, ValueError):
+                        fh_log("bambu_local_config_repair_deferred")
             finish("bambuInvalid", "error")
             return
         wake_bambu_bridge_runtime()
         finish("bambuSaved", "success")
 
     def _do_remove_bambu(self, physical_printer_id):
-        local = load_bambu_config()
+        local, local_status = load_bambu_config_diagnostic()
+        if local_status in {"corrupt", "unreadable"}:
+            self._deliver_notice(ui_text("bambuLocalConfigCorrupt"), "error")
+            return
         configured = next(
             (
                 item
@@ -10364,14 +10518,26 @@ class FilamentHubCatalog(
             None,
         )
         bridge_token = configured.get("bridge_token") if configured else ""
+        revoke_status = 204
         if bridge_token:
+            # User-selected removal obeys the active lifecycle, unlike the
+            # compensation path for a just-issued token after plugin unload.
             revoke_status = http_delete_bridge("/printer-bridge/connection", bridge_token)
             if revoke_status not in {204, 401}:
-                self._deliver_notice(ui_text("bambuRemoveFailed"), "error")
-                return
-        remove_bambu_bridge(physical_printer_id)
+                queue_fresh_bambu_revoke(bridge_token)
+        try:
+            removed = remove_bambu_bridge(physical_printer_id, expected_binding=configured)
+        except (OSError, ValueError):
+            self._deliver_notice(ui_text("bambuRemoveFailed"), "error")
+            return
+        if configured is not None and not removed:
+            self._deliver_notice(ui_text("bambuRemoveFailed"), "error")
+            return
         wake_bambu_bridge_runtime()
-        self._deliver_notice(ui_text("bambuRemoved"), "success")
+        self._deliver_notice(
+            ui_text("bambuRemoved" if revoke_status in {204, 401} else "bambuRemovedServerPending"),
+            "success" if revoke_status in {204, 401} else "warning",
+        )
 
     def _do_bambu_material_action(
         self,
@@ -10470,7 +10636,9 @@ class FilamentHubCatalog(
                 "/printer-bridge/snapshot", binding["bridge_token"], snapshot
             )
             if status == 401:
-                remove_bambu_bridge(physical_printer_id)
+                invalidate_bambu_bridge_token(
+                    physical_printer_id, binding.get("bridge_token")
+                )
             elif status != 200:
                 fh_log("Bambu post-apply snapshot upload failed: HTTP %s" % status)
         if not applied.get("ok"):
@@ -10540,7 +10708,9 @@ class FilamentHubCatalog(
                 "/printer-bridge/snapshot", current["bridge_token"], snapshot
             )
             if status == 401:
-                remove_bambu_bridge(physical_printer_id)
+                invalidate_bambu_bridge_token(
+                    physical_printer_id, current.get("bridge_token")
+                )
             finish(
                 ok=status == 200,
                 code=None if status == 200 else "snapshot_failed",
@@ -10627,7 +10797,9 @@ class FilamentHubCatalog(
             except (KeyError, TypeError, ValueError):
                 upload_status = 0
             if upload_status == 401:
-                remove_bambu_bridge(physical_printer_id)
+                invalidate_bambu_bridge_token(
+                    physical_printer_id, binding.get("bridge_token")
+                )
         write_ok = bool(isinstance(applied, dict) and applied.get("ok"))
         if not write_ok:
             finish(
@@ -11312,9 +11484,10 @@ class FilamentHubCatalog(
             "printer-setup-local",
             "prepare-bambu-local",
             "configure-bambu-local",
+            "remove-bambu-local",
             "local-dialog-close",
         }
-        if local_message and msg_type not in local_only | {"remove-bambu-local"}:
+        if local_message and msg_type not in local_only:
             return
         if direct_message and msg_type in local_only:
             # A remote page may request a local dialog, but can never submit the
@@ -11535,6 +11708,7 @@ class FilamentHubCatalog(
                     discoveryComplete=False,
                     discoveryAttempted=msg.get("refresh") is True,
                     hasSavedConnection=False,
+                    needsRepair=False,
                 )
         elif msg_type == "configure-bambu-local":
             physical_printer_id = msg.get("physicalPrinterId")
@@ -11571,6 +11745,7 @@ class FilamentHubCatalog(
                 serial,
                 pairing_code,
                 request_id,
+                (load_saved_auth() or {}).get("accessToken") or "",
             )
             if submitted is False:
                 fh_log("Bambu setup worker unavailable")
@@ -12678,7 +12853,11 @@ class FilamentHubCatalog(
                         if file_changes else False
                     )
                     if bundle_reloaded:
-                        loaded_preset_ids = set(scan_local_fh_presets(folder))
+                        # This worker cannot read the live host collection.
+                        # The next UI-thread sync snapshot may confirm loading;
+                        # neither reload success nor file presence proves it.
+                        loaded_preset_ids = None
+                        filament_parts.append(ui_text("summaryReloadUnconfirmed"))
                     self._log_managed_preset_state(
                         folder, remote_ids, loaded_preset_ids, failed_ids
                     )
@@ -12695,12 +12874,10 @@ class FilamentHubCatalog(
                             elif preset_id not in on_disk_ids:
                                 observed_state = "error"
                                 error_code = "managed_file_missing"
-                            elif bundle_reloaded:
-                                observed_state = "loaded"
+                            elif preset_id in changed_file_ids and not bundle_reloaded:
+                                observed_state = "pending_restart"
                             elif loaded_preset_ids is None:
                                 observed_state = "on_disk"
-                            elif preset_id in changed_file_ids:
-                                observed_state = "pending_restart"
                             elif preset_id in loaded_preset_ids:
                                 observed_state = "loaded"
                             else:

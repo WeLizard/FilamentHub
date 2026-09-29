@@ -85,6 +85,7 @@ const createSystem = vi.fn();
 const setupConnection = vi.fn();
 const regenerateKey = vi.fn();
 const updateOctoPrintRouting = vi.fn();
+const deleteSystem = vi.fn();
 
 vi.mock('../hooks/usePrinterContactEvents', () => ({ usePrinterContactEvents: vi.fn() }));
 
@@ -153,7 +154,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('../api/client', () => ({
   devicesAPI: { regenerateKey },
-  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem,
+  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem, deleteSystem,
     setupConnection, listBindings: vi.fn(), listInstalledCandidates: vi.fn() },
   printersAPI: { list: vi.fn() },
   octoprintBridgeAPI: {
@@ -232,6 +233,8 @@ describe('PresetSlotsPanel', () => {
     };
     createSystem.mockReset();
     createSystem.mockResolvedValue({});
+    deleteSystem.mockReset();
+    deleteSystem.mockResolvedValue({});
     regenerateKey.mockReset();
     regenerateKey.mockResolvedValue({ api_key: 'fresh-printer-key' });
     updateOctoPrintRouting.mockReset();
@@ -242,6 +245,32 @@ describe('PresetSlotsPanel', () => {
       applied_revision: 3,
     });
     window.localStorage.clear();
+  });
+
+  it('deletes the server feed system without forgetting saved local LAN credentials', async () => {
+    const { PresetSlotsPanel } = await import('../components/presetSlots/PresetSlotsPanel');
+    const previousParent = window.parent;
+    const postMessage = vi.fn();
+    Object.defineProperty(window, 'parent', { configurable: true, value: { postMessage } });
+    sessionStorage.setItem('fh_plugin_embed', '1');
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      material_systems: [{ ...physicalPrinter.material_systems[0], provider: 'bambu' }],
+    }];
+    const view = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    try {
+      fireEvent.click(screen.getByTitle('presetSlots.deleteSystem'));
+      fireEvent.click(screen.getByText('presetSlots.deleteSystem', { selector: 'button' }));
+      await waitFor(() => expect(deleteSystem).toHaveBeenCalledWith(11, 21));
+      await waitFor(() => expect(screen.queryByText(
+        'presetSlots.deleteSystem', { selector: 'button' },
+      )).not.toBeInTheDocument());
+      expect(postMessage.mock.calls.some(([message]) => message.type === 'remove-bambu-local')).toBe(false);
+    } finally {
+      view.unmount();
+      Object.defineProperty(window, 'parent', { configurable: true, value: previousParent });
+      sessionStorage.removeItem('fh_plugin_embed');
+    }
   });
 
   it('declares only the capabilities supported by each feed adapter', async () => {

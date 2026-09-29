@@ -324,6 +324,41 @@ def test_runtime_retries_identical_outbox_after_lost_ack(plugin_module, tmp_path
     assert posts[0]["sequence"] == 1
 
 
+@pytest.mark.parametrize("rejected", ["snapshot", "usage-batches"])
+def test_usage_auth_rejection_preserves_pending_outbox_and_stops_cloud_calls(
+    plugin_module, tmp_path, monkeypatch, rejected
+):
+    plugin = plugin_module
+    monkeypatch.setattr(plugin, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    local = plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old")
+    config = local["printers"][0]
+    source = local["source_instance_id"]
+    monkeypatch.setattr(plugin, "read_bambu_consumption_file", lambda *_args: None)
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (200, json.dumps(_desired()).encode()))
+    monkeypatch.setattr(plugin, "http_post_bridge_json", lambda *_args: (503, b"", 0))
+    runtime = plugin.BambuBridgeRuntime()
+    runtime._record_usage(config, source, _report("RUNNING", remaining=1000), "2026-09-19T09:59:00+00:00")
+    runtime._record_usage(config, source, _report("FINISH", remaining=990), "2026-09-19T10:00:00+00:00")
+    journal = next((tmp_path / "bambu_usage").glob("*.json"))
+    pending = json.loads(journal.read_text())["outbox"]
+    assert pending is not None
+    calls = []
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda path, _token: (
+        calls.append(path) or (401 if rejected == "snapshot" else 200, json.dumps(_desired()).encode())))
+    monkeypatch.setattr(plugin, "http_post_bridge_json", lambda path, *_args: (
+        calls.append(path) or (401, b"", None)))
+    restarted = plugin.BambuBridgeRuntime()
+    assert restarted._record_usage(config, source, _report("FINISH", remaining=990), "2026-09-19T10:00:00+00:00") is False
+    assert json.loads(journal.read_text())["outbox"] == pending
+    assert calls == (["/printer-bridge/snapshot"] if rejected == "snapshot" else
+                     ["/printer-bridge/snapshot", "/printer-bridge/usage-batches"])
+    stored = plugin.load_bambu_config()["printers"][0]
+    assert stored == dict(config, bridge_token="")
+    calls.clear()
+    assert restarted._record_usage(stored, source, _report(), "unused") is False
+    assert calls == []
+
+
 def test_remaining_rebound_does_not_charge_the_same_material_twice(plugin_module):
     state = {}
     for minute, remaining in enumerate([1000, 990, 995, 990]):

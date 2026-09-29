@@ -4,6 +4,11 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.2.1
+- Keep saved Bambu LAN credentials when the FilamentHub connection needs repair. Reconnect verified same-account bindings without re-entering the access code.
+- Preserve damaged connection files and distinguish LAN access errors from FilamentHub connection errors.
+- Report synchronized files separately from presets actually loaded by OrcaSlicer.
+
 ## 0.2.0
 - Track estimated Bambu filament use over LAN without a Bambu Cloud account. Usage follows the completed G-code layers, updates the assigned spool automatically, and remains clearly labelled as an estimate.
 - Keep partial Bambu usage when a print is cancelled, start from a spool assigned during an active print, and preserve pending accounting across restarts or temporary FilamentHub outages without charging the same material twice.

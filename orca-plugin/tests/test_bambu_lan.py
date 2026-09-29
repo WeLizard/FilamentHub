@@ -19,6 +19,13 @@ from .filamenthub_plugin_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_bambu_storage(plugin_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(tmp_path / "revoke.json"))
+    monkeypatch.setattr(plugin_module, "AUTH_FILE", str(tmp_path / "auth.json"))
+
+
 def test_bambu_bridge_declares_exact_runtime_capabilities(plugin_module):
     assert plugin_module._bambu_capabilities({}) == ["read", "write", "presence", "consumption"]
     assert plugin_module._bambu_capabilities(_bambu_report()) == [
@@ -1202,13 +1209,15 @@ def test_bambu_local_binding_is_private_and_replaceable(plugin_module, tmp_path,
     assert plugin_module.remove_bambu_bridge(3)
     assert plugin_module.load_bambu_config()["printers"] == []
 
-def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
-    plugin_module, tmp_path, monkeypatch
+@pytest.mark.parametrize("rejected_path", ["/printer-bridge/snapshot", "/printer-bridge/heartbeat"])
+def test_bambu_runtime_invalidates_only_server_token_after_rejection(
+    plugin_module, tmp_path, monkeypatch, rejected_path
 ):
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
     plugin_module.configure_bambu_bridge(
-        3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_revoked"
+        3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_revoked",
+        plugin_module._bambu_device_identity("a" * 64, "SERIAL-2"),
     )
     runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(
@@ -1220,14 +1229,54 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     monkeypatch.setattr(
         plugin_module,
         "http_post_bridge_json",
-        lambda _path, _token, _payload: (401, b"", None),
+        lambda path, _token, _payload: (401 if path == rejected_path else 200, b"", None),
     )
     monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (404, b""))
 
     monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
+    clock = iter(range(0, 10000, 1000))
+    monkeypatch.setattr(plugin_module.time, "monotonic", lambda: next(clock))
     runtime._run()
 
-    assert plugin_module.load_bambu_config()["printers"] == []
+    stored = plugin_module.load_bambu_config()["printers"]
+    assert len(stored) == 1
+    assert stored[0]["bridge_token"] == ""
+    assert stored[0]["host"] == "192.168.1.43"
+    assert stored[0]["access_code"] == "local-secret"
+    assert stored[0]["serial"] == "SERIAL-2"
+    assert stored[0]["device_identity"] == plugin_module._bambu_device_identity("a" * 64, "SERIAL-2")
+
+
+def test_bambu_token_invalidation_is_compare_and_swap(plugin_module, tmp_path, monkeypatch):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_current"
+    )
+
+    assert not plugin_module.invalidate_bambu_bridge_token(3, "fhpb_stale")
+    assert plugin_module.load_bambu_config()["printers"][0]["bridge_token"] == "fhpb_current"
+    assert plugin_module.invalidate_bambu_bridge_token(3, "fhpb_current")
+    stored = plugin_module.load_bambu_config()["printers"][0]
+    assert stored["bridge_token"] == ""
+    assert stored["access_code"] == "local-secret"
+
+
+def test_bambu_config_diagnostic_does_not_overwrite_corrupt_file(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    target.write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+
+    payload, status = plugin_module.load_bambu_config_diagnostic()
+    assert status == "corrupt"
+    assert payload["printers"] == []
+    with pytest.raises(ValueError, match="bambu_local_config_corrupt"):
+        plugin_module.configure_bambu_bridge(
+            3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_new"
+        )
+    assert target.read_text(encoding="utf-8") == "{broken"
 
 def test_bambu_runtime_deduplicates_stable_snapshots_and_uses_heartbeat(
     plugin_module, monkeypatch
@@ -2163,7 +2212,7 @@ def test_bambu_pair_is_revoked_after_unload_before_local_persist(
     assert plugin_module.load_bambu_config()["printers"] == existing
     worker.stop()
 
-def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write(
+def test_bambu_pair_preserves_lan_when_unload_follows_atomic_write(
     plugin_module, tmp_path, monkeypatch
 ):
     target = tmp_path / ".fh_bambu.json"
@@ -2176,7 +2225,6 @@ def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write
         "OLD-SERIAL",
         "fhpb_old",
     )
-    previous = plugin_module.load_bambu_config()["printers"]
     monkeypatch.setattr(
         plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42"
     )
@@ -2250,7 +2298,7 @@ def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write
     def configure_job():
         try:
             catalog._do_configure_bambu(
-                3, 5, "new.local", "new-secret", "SERIAL-2", "pair-code"
+                3, 5, "new.local", "new-secret", "NEW-SERIAL", "pair-code"
             )
         finally:
             finished.set()
@@ -2269,8 +2317,11 @@ def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write
             "DELETE",
         )
     ]
-    assert previous[0]["bridge_token"] == "fhpb_old"
-    assert plugin_module.load_bambu_config()["printers"] == []
+    stored = plugin_module.load_bambu_config()["printers"][0]
+    assert stored["host"] == "new.local"
+    assert stored["access_code"] == "new-secret"
+    assert stored["serial"] == "NEW-SERIAL"
+    assert stored["bridge_token"] == ""
     worker.stop()
 
 def test_bambu_pair_response_after_unload_cannot_restart_observer(
@@ -2437,8 +2488,9 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
     )
     assert delivered == [("bambuSaved", "success")]
 
-def test_bambu_pair_identity_conflict_revokes_the_new_connection(
-    plugin_module, tmp_path, monkeypatch
+@pytest.mark.parametrize("snapshot_status", [401, 409])
+def test_bambu_initial_snapshot_rejection_keeps_lan_credentials(
+    plugin_module, tmp_path, monkeypatch, snapshot_status
 ):
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
@@ -2466,7 +2518,7 @@ def test_bambu_pair_identity_conflict_revokes_the_new_connection(
     monkeypatch.setattr(
         plugin_module,
         "http_post_bridge_json",
-        lambda *_args: (409, b"{}", None),
+        lambda *_args: (snapshot_status, b"{}", None),
     )
     revoked = []
     monkeypatch.setattr(
@@ -2485,9 +2537,228 @@ def test_bambu_pair_identity_conflict_revokes_the_new_connection(
 
     catalog._do_configure_bambu(3, 5, "printer.local", "secret", "SERIAL-2", "pair-code")
 
-    assert revoked == [("/printer-bridge/connection", "fhpb_conflict")]
-    assert plugin_module.load_bambu_config()["printers"] == []
-    assert delivered == [("bambuPairingFailed", "error")]
+    assert revoked == ([("/printer-bridge/connection", "fhpb_conflict")] if snapshot_status == 409 else [])
+    stored = plugin_module.load_bambu_config()["printers"][0]
+    assert stored["access_code"] == "secret"
+    assert stored["serial"] == "SERIAL-2"
+    assert stored["bridge_token"] == ""
+    assert delivered == [("bambuRepairRequired" if snapshot_status == 401 else "bambuPairingFailed", "error")]
+
+@pytest.mark.parametrize("fault", ["syntax", "shape", "entry", "identity", "unreadable"])
+def test_bambu_storage_failure_blocks_every_mutation_without_data_loss(
+    plugin_module, monkeypatch, fault
+):
+    plugin = plugin_module
+    config = plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old")
+    path = Path(plugin.BAMBU_CONFIG_FILE)
+    if fault == "syntax":
+        path.write_bytes(b'{"printers": [')
+    elif fault == "shape":
+        config["printers"] = 42
+        path.write_text(json.dumps(config), encoding="utf-8")
+    elif fault == "entry":
+        config["printers"].append({"host": "recoverable.local", "access_code": "keep-me"})
+        path.write_text(json.dumps(config), encoding="utf-8")
+    elif fault == "identity":
+        config["source_instance_id"] = "invalid"
+        path.write_text(json.dumps(config), encoding="utf-8")
+    original = path.read_bytes()
+    if fault == "unreadable":
+        monkeypatch.setattr(plugin, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            PermissionError("private-address-and-secret")), raising=False)
+    messages = []
+    monkeypatch.setattr(plugin, "fh_log", messages.append)
+    with pytest.raises(ValueError):
+        plugin.configure_bambu_bridge(4, 6, "new.local", "new-secret", "SERIAL-3", "fhpb_new")
+    with pytest.raises(ValueError):
+        plugin.remove_bambu_bridge(3)
+    assert not plugin.invalidate_bambu_bridge_token(3, "fhpb_old")
+    assert path.read_bytes() == original
+    assert all("private-address" not in message and "secret" not in message for message in messages)
+    assert "bambu_local_config_" + ("unreadable" if fault == "unreadable" else "corrupt") in messages
+
+
+@pytest.mark.parametrize("change", [None, "host", "account", "system", "serial", "signed_out", "auth_rejected"])
+def test_bambu_repair_reuses_secret_only_for_the_saved_owner_and_endpoint(
+    plugin_module, monkeypatch, change
+):
+    plugin = plugin_module
+    identity = plugin._bambu_device_identity("a" * 64, "SERIAL-2")
+    initial = plugin.configure_bambu_bridge(
+        3, 5, "printer.local", "secret", "SERIAL-2", "", identity
+    )
+    before = Path(plugin.BAMBU_CONFIG_FILE).read_bytes()
+    context = {"discovery_key": ("b" if change == "account" else "a") * 64}
+    monkeypatch.setattr(plugin, "printer_setup_context", lambda _token: context)
+    if change == "auth_rejected":
+        monkeypatch.setattr(plugin, "printer_setup_context", lambda _token: (_ for _ in ()).throw(ValueError("auth")))
+    monkeypatch.setattr(plugin, "_resolved_bambu_address", lambda _host: None)
+    lan, requests, messages = [], [], []
+    monkeypatch.setattr(plugin, "read_bambu_lan_snapshot", lambda config: (
+        lan.append(dict(config)) or ("SERIAL-2", _bambu_report())
+    ))
+    def pair(path, token, payload):
+        requests.append((path, token, payload))
+        return 200, json.dumps({"physical_printer_id": 3, "material_system_id": 5,
+                               "bridge_token": "fhpb_new", "printer_discovery_key": "a" * 64}).encode()
+    monkeypatch.setattr(plugin, "http_post_json", pair)
+    monkeypatch.setattr(plugin, "http_post_bridge_json", lambda path, token, payload: (
+        requests.append((path, token, payload)) or (200, b"{}", None)))
+    monkeypatch.setattr(plugin, "wake_bambu_bridge_runtime", lambda: None)
+    catalog = plugin.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_native_setup", lambda kind, **data: messages.append(data))
+    catalog._do_configure_bambu(
+        3, 6 if change == "system" else 5,
+        "other.local" if change == "host" else "printer.local", "",
+        "OTHER-SERIAL" if change == "serial" else "SERIAL-2", "pair-code", "repair-1",
+        token="" if change == "signed_out" else "owner-token",
+    )
+    if change is not None:
+        assert not lan and not requests
+        assert Path(plugin.BAMBU_CONFIG_FILE).read_bytes() == before
+        assert messages[-1]["code"] == "bambuRepairUnavailable"
+    else:
+        assert len(lan) == 1 and lan[0]["access_code"] == "secret"
+        stored = plugin.load_bambu_config()
+        assert stored["source_instance_id"] == initial["source_instance_id"]
+        assert stored["printers"][0] == dict(initial["printers"][0], bridge_token="fhpb_new")
+        assert messages[-1]["ok"]
+        assert "secret" not in json.dumps(requests + messages)
+        assert "printer.local" not in json.dumps(requests + messages)
+
+
+def test_bambu_repair_ui_is_account_scoped_and_native_only(setup_flow, monkeypatch):
+    plugin, catalog, context, _results, _uploads = setup_flow
+    plugin.configure_bambu_bridge(7, 8, "private.local", "secret", "SERIAL-2", "",
+                                  plugin._bambu_device_identity(context["discovery_key"], "SERIAL-2"))
+    native, remote = [], []
+    monkeypatch.setattr(catalog, "_deliver_local", lambda kind, **data: native.append(data) or False)
+    monkeypatch.setattr(catalog, "_deliver", lambda *args, **data: remote.append(data))
+    request = {"physicalPrinterId": 7, "materialSystemId": 8, "pairingCode": "pair-code"}
+    catalog._do_prepare_bambu(request, [], "token")
+    assert native[-1]["needsRepair"] and native[-1]["hasSavedConnection"]
+    assert native[-1]["candidates"][0]["repair"] is True
+    assert "secret" not in json.dumps(native)
+    assert remote == []  # Closing the native window must not redirect its result.
+    context["discovery_key"] = "b" * 64
+    context["account_scope"] = "owner-2"
+    catalog._do_prepare_bambu(request, [], "other-account-token")
+    assert not native[-1]["needsRepair"] and not native[-1]["hasSavedConnection"]
+    assert "private.local" not in json.dumps(native[-1])
+
+
+def test_bambu_old_request_rejection_cannot_invalidate_repaired_token(plugin_module, monkeypatch):
+    plugin = plugin_module
+    config = plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old")
+    def rejected(_path, old_token):
+        assert old_token == "fhpb_old"
+        plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_new")
+        return 401, b""
+    monkeypatch.setattr(plugin, "http_get_bridge_json", rejected)
+    assert plugin._bambu_committed_spool_target(config["printers"][0], {}, {}) == (None, "auth")
+    assert plugin.load_bambu_config()["printers"][0]["bridge_token"] == "fhpb_new"
+
+
+@pytest.mark.parametrize("operation", ["identity", "target", "refresh", "post_apply"])
+def test_bambu_cloud_rejection_preserves_local_connection_on_each_action(
+    plugin_module, monkeypatch, operation
+):
+    plugin = plugin_module
+    identity = plugin._bambu_device_identity("a" * 64, "SERIAL-2")
+    local = plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old", identity)
+    binding = local["printers"][0]
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (401, b""))
+    monkeypatch.setattr(plugin, "http_post_bridge_json", lambda *_args: (401, b"", None))
+    if operation == "identity":
+        assert plugin._fetch_bambu_device_identity("fhpb_old", "SERIAL-2", 3) is None
+    elif operation == "target":
+        assert plugin._bambu_committed_spool_target(binding, {}, {}) == (None, "auth")
+    else:
+        monkeypatch.setattr(plugin, "read_bambu_lan_snapshot", lambda _config: ("SERIAL-2", _bambu_report()))
+        monkeypatch.setattr(plugin, "apply_bambu_material_targets", lambda *_args, **_kwargs: {
+            "ok": True, "report": _bambu_report()})
+        monkeypatch.setattr(plugin, "_material_commit_context", lambda *_args: (None, None, None, None))
+        monkeypatch.setattr(plugin, "_bambu_committed_spool_target", lambda *_args: ({}, None))
+        results = []
+        catalog = plugin.FilamentHubCatalog()
+        monkeypatch.setattr(catalog, "_finish_immediate_material_request", lambda *args: results.append(args[-1]))
+        catalog._do_bambu_material_immediate("action-1", "refresh" if operation == "refresh" else "assign",
+            3, 5, "account-token", {}, {"desired": {"presetId": 2, "spoolId": 4}, "providerIndex": 0},
+            time.monotonic() + 60)
+        assert not results[-1]["observationUploaded"]
+    assert plugin.load_bambu_config()["printers"][0] == dict(binding, bridge_token="")
+
+
+def test_bambu_restart_after_inactivity_resumes_and_lan_auth_does_not_erase_credentials(
+    plugin_module, monkeypatch
+):
+    plugin = plugin_module
+    identity = plugin._bambu_device_identity("a" * 64, "SERIAL-2")
+    plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old", identity)
+    path = Path(plugin.BAMBU_CONFIG_FILE)
+    before = path.read_bytes()
+    old = time.time() - 90 * 86400
+    plugin.os.utime(path, (old, old))
+    uploads, messages = [], []
+    monkeypatch.setattr(plugin, "fh_log", messages.append)
+    for lan_error in (False, True):
+        runtime = plugin.BambuBridgeRuntime()
+        monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
+        monkeypatch.setattr(runtime, "_record_usage", lambda *_args: None)
+        def read(_config):
+            if lan_error:
+                runtime._stop.set()
+                raise PermissionError("private.local secret")
+            return "SERIAL-2", _bambu_report()
+        monkeypatch.setattr(runtime, "_stream_observation", read)
+        def upload(path, token, _payload):
+            uploads.append((path, token))
+            runtime._stop.set()
+            return 200, b"{}", None
+        monkeypatch.setattr(plugin, "http_post_bridge_json", upload)
+        runtime._run()
+        assert path.read_bytes() == before
+    assert uploads == [("/printer-bridge/snapshot", "fhpb_old")]
+    # Setup provides the user-visible distinction as well as the runtime log.
+    monkeypatch.setattr(plugin, "_resolved_bambu_address", lambda _host: None)
+    monkeypatch.setattr(plugin, "read_bambu_lan_snapshot", lambda _config: (_ for _ in ()).throw(PermissionError("secret")))
+    results = []
+    catalog = plugin.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_native_setup", lambda _kind, **data: results.append(data))
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "SERIAL-2", "pair-code", "setup-1")
+    assert results[-1]["code"] == "bambuLanAuthRejected"
+    assert "bambu_lan_auth_rejected" in messages
+    assert path.read_bytes() == before
+    assert "secret" not in json.dumps(messages)
+
+
+@pytest.mark.parametrize("status", [204, 401, 503])
+def test_bambu_explicit_remove_revokes_and_stops_local_connection(plugin_module, monkeypatch, status):
+    plugin = plugin_module
+    plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "fhpb_old")
+    revoked = []
+    pending = []
+    monkeypatch.setattr(plugin, "http_delete_bridge", lambda _path, token: revoked.append(token) or status)
+    monkeypatch.setattr(plugin, "queue_fresh_bambu_revoke", lambda token: pending.append(token) or True)
+    monkeypatch.setattr(plugin, "wake_bambu_bridge_runtime", lambda: None)
+    catalog = plugin.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_notice", lambda *_args: None)
+    catalog._do_remove_bambu(3)
+    assert revoked == ["fhpb_old"]
+    assert pending == (["fhpb_old"] if status == 503 else [])
+    assert plugin.load_bambu_config()["printers"] == []
+
+
+def test_bambu_empty_server_token_stops_runtime_without_forgetting_local_connection(plugin_module, monkeypatch):
+    plugin = plugin_module
+    plugin.configure_bambu_bridge(3, 5, "printer.local", "secret", "SERIAL-2", "")
+    before = Path(plugin.BAMBU_CONFIG_FILE).read_bytes()
+    runtime = plugin.BambuBridgeRuntime()
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
+    monkeypatch.setattr(runtime, "_stream_observation", lambda *_args: pytest.fail("repair needed; runtime must stay idle"))
+    runtime._run()
+    assert Path(plugin.BAMBU_CONFIG_FILE).read_bytes() == before
+
 
 def test_bambu_address_must_resolve_to_the_lan(plugin_module, monkeypatch):
     def public(*_args, **_kwargs):
