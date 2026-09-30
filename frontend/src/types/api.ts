@@ -1832,6 +1832,7 @@ export type EconomicsMissingReason =
 
 export type EconomicsReadinessReason =
   | EconomicsMissingReason
+  | 'incomplete_power_parts'
   | 'provenance_unknown'
   | 'platform_default_used'
   | 'catalog_estimate_used';

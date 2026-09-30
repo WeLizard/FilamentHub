@@ -5,7 +5,14 @@ import { Check, Loader2 } from 'lucide-react';
 import type { PhysicalPrinter } from '../../api/client';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
 import { currencySymbol } from '../../utils/currency';
-import { EconomicsFields, type EconomicsField, type EconomicsValues } from './EconomicsFields';
+import {
+  EconomicsFields,
+  USAGE_HOURS,
+  USAGE_OPTIONS,
+  usageForLifeHours,
+  type EconomicsField,
+  type EconomicsValues,
+} from './EconomicsFields';
 import { PrinterCostForm } from './PrinterCostForm';
 
 interface PrinterEconomicsColumnProps {
@@ -30,14 +37,6 @@ const UPKEEP_OPTIONS = [
 
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
-const USAGE_OPTIONS = ['occasional', 'regular', 'intensive'] as const;
-type Usage = (typeof USAGE_OPTIONS)[number];
-const USAGE_HOURS: Record<Usage, number> = {
-  occasional: 3000,
-  regular: 7000,
-  intensive: 12000,
-};
-
 export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
   printers,
   editedPrinterId,
@@ -50,7 +49,7 @@ export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
 }) => {
   const { t } = useTranslation();
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [usage, setUsage] = useState<Usage>('regular');
+  const usage = usageForLifeHours(averaged.lifeHours);
   const [status, setStatus] = useState<'saving' | 'saved' | null>(null);
   const editedPrinter = printers.find((printer) => printer.id === editedPrinterId) ?? null;
 
@@ -177,10 +176,7 @@ export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
                     <button
                       key={option}
                       type="button"
-                      onClick={() => {
-                        setUsage(option);
-                        onAveragedChange('lifeHours', USAGE_HOURS[option]);
-                      }}
+                      onClick={() => onAveragedChange('lifeHours', USAGE_HOURS[option])}
                       className={`rounded-full border px-3 py-1.5 text-xs transition ${
                         usage === option
                           ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'

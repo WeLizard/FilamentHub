@@ -30,7 +30,7 @@ const readiness = (
     missing_reason: status === 'incomplete' ? 'missing' : null,
   }],
   reasons: status === 'configured' ? [] : [
-    status === 'partial' ? 'catalog_estimate_used' : 'missing',
+    status === 'partial' ? 'incomplete_pair' : 'missing',
   ],
 });
 
@@ -55,29 +55,29 @@ describe('PrinterCostRow economics readiness', () => {
     expect(screen.queryByRole('button', { name: 'printerCost.readiness.configure' })).not.toBeInTheDocument();
   });
 
-  it('uses the exhaustive source label in readiness details', () => {
-    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: readiness('partial', 'catalog_estimate') }]);
+  it('never presents a filled catalog estimate as a problem', () => {
+    const contract = readiness('configured', 'catalog_estimate');
+    contract.reasons = ['catalog_estimate_used', 'platform_default_used', 'provenance_unknown'];
+    const view = renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
 
-    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
-    expect(screen.getByText('printerCost.readiness.sources.catalog_estimate')).toBeInTheDocument();
-    expect(screen.getByText('printerCost.readiness.reasons.catalog_estimate_used')).toBeInTheDocument();
+    expect(screen.getByText('printerCost.readiness.status.configured.title')).toBeInTheDocument();
+    expect(view.container.textContent).not.toContain('catalog_estimate');
   });
 
-  it('shows mixed resolved sources without assigning them to individual editor inputs', () => {
-    const contract = readiness('partial', 'account_explicit');
-    contract.required_fields.push({
-      key: 'printer_power_w',
-      value: 320,
-      source: 'catalog_estimate',
-      source_currency: null,
-      usable: true,
-      missing_reason: null,
-    });
-    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
+  it('lists a real problem but drops provenance notes beside it', () => {
+    const contract = readiness('partial');
+    contract.reasons = ['catalog_estimate_used', 'incomplete_pair'];
+    const view = renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
 
-    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
-    expect(screen.getByText('printerCost.readiness.sources.account_explicit')).toBeInTheDocument();
-    expect(screen.getByText('printerCost.readiness.sources.catalog_estimate')).toBeInTheDocument();
+    expect(screen.getByText('printerCost.readiness.reasons.incomplete_pair')).toBeInTheDocument();
+    expect(view.container.textContent).not.toContain('catalog_estimate_used');
+  });
+
+  it('names the missing field once, without a separate reason line', () => {
+    const view = renderRow([{ id: 'printer-1', label: 'Workshop', readiness: readiness('incomplete') }]);
+
+    expect(screen.getByText('printerCost.readiness.fields.machine_hour_rate')).toBeInTheDocument();
+    expect(view.container.textContent).not.toContain('printerCost.readiness.reasons.missing');
   });
 
   it('offers one natural-width action for incomplete economics', () => {
@@ -90,36 +90,15 @@ describe('PrinterCostRow economics readiness', () => {
     expect(onFixRate).toHaveBeenCalledOnce();
   });
 
-  it('explains a contract-level incomplete pair', () => {
-    const contract = readiness('partial');
-    contract.reasons = ['incomplete_pair'];
-    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
-
-    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
-    expect(screen.getByText('printerCost.readiness.reasons.incomplete_pair')).toBeInTheDocument();
-  });
-
-  it('does not repeat a contract reason already shown on its field', () => {
-    const view = renderRow([{
-      id: 'printer-1',
-      label: 'Workshop',
-      readiness: readiness('incomplete'),
-    }]);
-
-    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
-    const text = view.container.textContent ?? '';
-    expect(text.split('printerCost.readiness.reasons.missing')).toHaveLength(2);
-    expect(screen.queryByText('printerCost.readiness.reasonsTitle')).not.toBeInTheDocument();
-  });
-
-  it('names every affected printer in a mixed batch and uses the worst state', () => {
+  it('names each affected printer in a mixed batch and uses the worst state', () => {
     renderRow([
       { id: 'printer-1', label: 'Workshop', readiness: readiness('partial') },
       { id: 'printer-2', label: 'Backup', readiness: readiness('incomplete') },
     ]);
 
     expect(screen.getByText('printerCost.readiness.status.incomplete.title')).toBeInTheDocument();
-    expect(screen.getByText(/Workshop, Backup/)).toBeInTheDocument();
+    expect(screen.getByText(/Workshop:/)).toBeInTheDocument();
+    expect(screen.getByText(/Backup:/)).toBeInTheDocument();
   });
 
   it('keeps a load failure visible', () => {

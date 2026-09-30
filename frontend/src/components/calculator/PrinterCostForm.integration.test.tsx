@@ -59,9 +59,10 @@ const economics = (powerSource: 'platform_default' | 'catalog_estimate'): Printe
     depreciation_per_hour: 'none',
     maintenance_per_hour: 'platform_default',
   },
+  field_sources: powerSource === 'catalog_estimate' ? { useful_life_hours: 'catalog_estimate' } : {},
   readiness: {
     version: 1,
-    status: 'partial',
+    status: 'configured',
     money_currency: 'RUB',
     required_fields: [{
       key: 'printer_power_w',
@@ -94,7 +95,7 @@ describe('PrinterCostForm suggestion provenance', () => {
     apiMocks.applyEconomicsSuggestion.mockResolvedValue(economics('catalog_estimate'));
   });
 
-  it('renders the server-returned catalog source after applying a suggestion', async () => {
+  it('marks the fields the server reports as catalog estimates', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>
@@ -120,6 +121,26 @@ describe('PrinterCostForm suggestion provenance', () => {
         'useful_life_hours',
       ],
     }));
-    expect(await screen.findByText('printerCost.readiness.sources.catalog_estimate')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('printerCost.estimateBadge')).toHaveLength(2));
+  });
+
+  it('saves nothing when focus only passes through a field', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PrinterCostForm
+          printerId={7}
+          printerName="P2S"
+          currency="RUB"
+          fallback={{ purchaseCost: 0, lifeHours: 0, powerWatts: 0, maintenance: 0, rate: 100 }}
+        />
+      </QueryClientProvider>,
+    );
+
+    const power = await screen.findByDisplayValue('320');
+    fireEvent.focus(power);
+    fireEvent.blur(power);
+
+    expect(apiMocks.updateEconomics).not.toHaveBeenCalled();
   });
 });

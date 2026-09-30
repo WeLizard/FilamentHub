@@ -73,7 +73,7 @@ async def test_fresh_and_existing_account_profiles_expose_seeded_readiness(
     for response in (created, existing):
         readiness = response.json()["economics_readiness"]
         assert readiness["version"] == 1
-        assert readiness["status"] == "partial"
+        assert readiness["status"] == "configured"
         assert readiness["money_currency"] == response.json()["currency"]
         assert "platform_default_used" in readiness["reasons"]
         assert {item["source"] for item in readiness["required_fields"]} == {
@@ -110,7 +110,7 @@ async def test_account_profile_partial_update_marks_only_supplied_fields_explici
     }
     assert readiness_fields["machine_hour_rate"]["source"] == "account_explicit"
     assert readiness_fields["electricity_cost_per_kwh"]["source"] == "platform_default"
-    assert updated.json()["economics_readiness"]["status"] == "partial"
+    assert updated.json()["economics_readiness"]["status"] == "configured"
 
 
 @pytest.mark.asyncio
@@ -285,7 +285,8 @@ async def test_residual_value_participates_in_depreciation_provenance(
     assert resolved.applied_sources["depreciation_per_hour"] == "catalog_estimate"
     assert resolved.applied_sources["machine_wear_per_hour"] == "catalog_estimate"
     assert resolved.readiness is not None
-    assert resolved.readiness.status == "partial"
+    assert resolved.readiness.status == "configured"
+    assert "catalog_estimate_used" in resolved.readiness.reasons
 
 
 @pytest.mark.asyncio
@@ -345,7 +346,7 @@ async def test_one_power_component_cannot_replace_a_complete_account_total(
     assert resolved.applied_sources["printer_power_w"] == "account_explicit"
     assert resolved.readiness is not None
     assert resolved.readiness.status == "partial"
-    assert "incomplete_pair" in resolved.readiness.reasons
+    assert "incomplete_power_parts" in resolved.readiness.reasons
 
 
 @pytest.mark.asyncio

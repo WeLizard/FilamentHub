@@ -59,6 +59,12 @@ PROFILE_ECONOMICS_FIELDS = frozenset(
     }
 )
 
+# Where a filled value came from is reference, not a defect: a catalog estimate
+# prices a job exactly like a typed number, so it must not hold readiness back.
+INFORMATIONAL_READINESS_REASONS = frozenset(
+    {"provenance_unknown", "platform_default_used", "catalog_estimate_used"}
+)
+
 USAGE_LIFE_HOURS = {
     "occasional": 3000,
     "regular": 7000,
@@ -306,7 +312,7 @@ def _readiness(
 
     if any(not item.usable for item in fields):
         readiness_status = "incomplete"
-    elif reasons:
+    elif any(reason not in INFORMATIONAL_READINESS_REASONS for reason in reasons):
         readiness_status = "partial"
     else:
         readiness_status = "configured"
@@ -602,7 +608,7 @@ async def resolve_economics(
     ]
     complete_power_parts = len(provided_power_parts) == len(component_fields)
     if provided_power_parts and not complete_power_parts:
-        extra_reasons.append("incomplete_pair")
+        extra_reasons.append("incomplete_power_parts")
 
     power = None
     power_source = "none"

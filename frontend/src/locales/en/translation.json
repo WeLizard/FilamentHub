@@ -3576,15 +3576,17 @@
       "quoteCurrency": "Currency",
       "quoteNumberPrefix": "Quote number prefix",
       "quoteNumberPrefixHint": "Used in numbering: QT-20260316-01",
-      "cloudSave": "Save to cloud",
-      "cloudLoad": "Load from cloud",
-      "platformDefaultsReset": "Apply platform values",
+      "cloudSave": "Save details to account",
+      "cloudLoad": "Load details from account",
+      "platformDefaultsReset": "Reset to standard values",
       "platformDefaultsApplied": "Platform starting values applied. Quote details were not changed.",
       "platformDefaultsError": "Could not apply platform starting values",
-      "cloudSaveSuccess": "Settings saved to cloud",
-      "cloudSaveError": "Failed to save settings to cloud",
-      "cloudLoadSuccess": "Settings loaded from cloud",
-      "cloudLoadError": "Failed to load settings from cloud",
+      "cloudSaveSuccess": "Quote details saved to your account",
+      "cloudSaveError": "Could not save quote details to your account",
+      "cloudLoadSuccess": "Quote details loaded from your account",
+      "cloudLoadError": "Could not load quote details from your account",
+      "quoteCloudHint": "Quote details are kept only in this browser. To use them on another computer, save them to your account and press “Load” there. On the server they are stored encrypted.",
+      "economicsAutosaveHint": "Economics are saved to your account automatically.",
       "quoteBuyerSection": "Customer",
       "quoteCustomerSelect": "Customer record",
       "quoteCustomerSelectHint": "Select an existing customer or save the details below as a new record.",
@@ -3671,7 +3673,6 @@
       "markupCaption": "budget 20–30, standard 35–45, premium 50–70%",
       "taxCaption": "the rate you pay",
       "roundCaption": "what to round the price to",
-      "cloudStorageTooltip": "The economics live in your account and follow you to any computer. The quote details stay on this computer by default — these buttons send them to your account and bring them back. On the server they are stored encrypted, so a leaked copy of the database cannot be read.",
       "quoteGroupSupplier": "Supplier",
       "quoteGroupDocument": "Document",
       "quoteGroupMoney": "Money",
@@ -8596,7 +8597,8 @@
     "powerBed": "Bed",
     "powerSteppers": "Steppers",
     "powerElectronics": "Electronics",
-    "powerSum": "Total: {{value}} W",
+    "powerSum": "Rated total: {{value}} W — the average over a print is lower",
+    "powerPartsHint": "Fill in any part and the others take the suggested values.",
     "lifeHoursTip": "How many printing hours the machine will do before a major repair or replacement. Used to spread its price over hours.",
     "maintenanceTip": "What nozzles, belts, lubricant and servicing cost on average, per hour of printing.",
     "purchaseCostTip": "What the machine cost you. Together with the expected life it gives the wear per hour.",
@@ -8611,41 +8613,29 @@
     "upkeepHigh": "Demanding",
     "upkeepHint": "Easy — the odd nozzle and some lubricant. Demanding — abrasives, frequent nozzle changes, regular servicing.",
     "applySuggested": "Apply platform values",
+    "estimateBadge": "estimate",
+    "estimateHint": "Filled in from the catalog. Keep it or enter your own value.",
     "machineSelectedHint": "The calculation uses the selected printer's economics.",
     "readiness": {
       "loading": "Checking economics readiness…",
       "unavailable": "Economics could not be checked. You can continue, but review the result.",
       "configure": "Configure economics",
-      "sourcesTitle": "Values and sources",
-      "reasonsTitle": "Why this needs attention",
-      "affectedMachines": "Needs attention: {{names}}",
       "saveError": "Could not save economics settings",
       "loadError": "Could not load this printer's economics settings.",
       "retry": "Try again",
-      "resultPartial": "some economics values use estimates or standard settings",
+      "resultPartial": "some entered values are not applied",
       "resultIncomplete": "required economics values are incomplete",
       "resultUnavailable": "economics readiness could not be checked",
       "status": {
         "configured": {
-          "title": "Economics configured",
-          "description": "Required values are set and usable for the calculation."
+          "title": "Economics configured"
         },
         "partial": {
-          "title": "Economics needs review",
-          "description": "The calculation can run, but some values use estimates or standard settings."
+          "title": "Some values are not applied"
         },
         "incomplete": {
-          "title": "Economics incomplete",
-          "description": "Required values are missing for a reliable calculation."
+          "title": "Missing data for the calculation"
         }
-      },
-      "sources": {
-        "printer_explicit": "set for this printer",
-        "account_explicit": "set in the account",
-        "orca_import": "imported from OrcaSlicer",
-        "platform_default": "standard value",
-        "catalog_estimate": "catalog estimate",
-        "none": "not set"
       },
       "fields": {
         "currency": "Currency",
@@ -8659,10 +8649,8 @@
         "non_positive": "must be greater than zero",
         "missing_currency": "currency missing",
         "currency_mismatch": "currencies do not match",
-        "incomplete_pair": "price and service life are required",
-        "provenance_unknown": "the value's source is unconfirmed",
-        "platform_default_used": "standard values are in use",
-        "catalog_estimate_used": "a catalog estimate is in use"
+        "incomplete_pair": "wear needs the machine price, service life and upkeep — standard values are used for now",
+        "incomplete_power_parts": "the per-part power breakdown is incomplete — the total figure is used"
       }
     }
   },

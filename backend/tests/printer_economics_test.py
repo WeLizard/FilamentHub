@@ -240,6 +240,38 @@ async def test_a_value_can_be_cleared_back_to_the_account(
 
 
 @pytest.mark.asyncio
+async def test_a_typed_total_replaces_catalog_power_parts(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    await _profile(db_session, auth_user)
+    printer = await _printer(db_session, auth_user)
+    applied = await auth_client.post(
+        f"/api/v1/physical-printers/{printer.id}/economics/apply-suggestion",
+        json={
+            "fields": [
+                "power_hotend_w",
+                "power_bed_w",
+                "power_steppers_w",
+                "power_electronics_w",
+            ]
+        },
+    )
+    assert applied.json()["applied_sources"]["printer_power_w"] == "catalog_estimate"
+
+    typed = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/economics",
+        json={"average_power_watts": 180},
+    )
+
+    assert typed.status_code == 200
+    body = typed.json()
+    assert body["calculator_printer_power_w"] == 180.0
+    assert body["applied_sources"]["printer_power_w"] == "printer_explicit"
+    assert body["power_bed_w"] is None
+    assert "power_bed_w" not in body["field_sources"]
+
+
+@pytest.mark.asyncio
 async def test_what_a_person_entered_outranks_what_orcaslicer_carried_in(
     db_session: AsyncSession, auth_user: User
 ) -> None:

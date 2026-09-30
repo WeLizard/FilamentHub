@@ -12,11 +12,23 @@ export interface EconomicsValues {
 
 export type EconomicsField = keyof EconomicsValues;
 
+export const USAGE_OPTIONS = ['occasional', 'regular', 'intensive'] as const;
+export type Usage = (typeof USAGE_OPTIONS)[number];
+export const USAGE_HOURS: Record<Usage, number> = {
+  occasional: 3000,
+  regular: 7000,
+  intensive: 12000,
+};
+
+export const usageForLifeHours = (lifeHours: number): Usage | null =>
+  USAGE_OPTIONS.find((option) => USAGE_HOURS[option] === lifeHours) ?? null;
+
 interface EconomicsFieldsProps {
   values: EconomicsValues;
   symbol: string;
   onChange: (field: EconomicsField, value: number) => void;
   onCommit?: (field: EconomicsField, value: number | null) => void;
+  estimated?: Partial<Record<EconomicsField, boolean>>;
   breakdown: { depreciation: number; electricity: number; maintenance: number; cost: number };
   detailsOpen: boolean;
   onToggleDetails: () => void;
@@ -35,6 +47,7 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
   symbol,
   onChange,
   onCommit,
+  estimated = {},
   breakdown,
   detailsOpen,
   onToggleDetails,
@@ -62,6 +75,8 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
   };
 
   const commitInput = (name: EconomicsField, rawValue: string) => {
+    // Focus passing through a field is not an edit; only typed values are saved.
+    if (drafts[name] === undefined) return;
     setDrafts((current) => {
       const next = { ...current };
       delete next[name];
@@ -84,6 +99,17 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
     </span>
   );
 
+  const estimateBadge = (name: EconomicsField) => (
+    estimated[name] ? (
+      <span
+        className="rounded-full border border-white/10 px-1.5 text-[10px] font-normal leading-4 text-slate-400"
+        title={t('printerCost.estimateHint')}
+      >
+        {t('printerCost.estimateBadge')}
+      </span>
+    ) : null
+  );
+
   const field = (
     name: EconomicsField,
     label: string,
@@ -92,9 +118,10 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
     extra?: ReactNode,
   ) => (
     <label className="block">
-      <span className="mb-1 flex items-center gap-1.5 text-xs font-medium leading-4 text-slate-300">
+      <span className="mb-1 flex flex-wrap items-center gap-1.5 text-xs font-medium leading-4 text-slate-300">
         {label}
         {tipText ? tip(tipText) : null}
+        {estimateBadge(name)}
       </span>
       <div className="flex items-center gap-2">
         <input
@@ -180,9 +207,10 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
       </div>
 
       <div>
-        <span className="mb-1 flex items-center gap-1.5 text-xs font-medium leading-4 text-slate-300">
+        <span className="mb-1 flex flex-wrap items-center gap-1.5 text-xs font-medium leading-4 text-slate-300">
           {t('printerCost.rateLabel')}
           {tip(t('printerCost.rateTip'))}
+          {estimateBadge('rate')}
         </span>
         <div className="flex items-center gap-2">
           <input

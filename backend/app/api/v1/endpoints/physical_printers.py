@@ -54,6 +54,8 @@ from app.schemas.material_contract import (
 )
 from app.schemas.orca_sync import OrcaPrinterRecoveryPlanRequest
 from app.schemas.printer_economics import (
+    POWER_PART_FIELDS,
+    PRINTER_ECONOMICS_FIELDS,
     EconomicsReadinessContract,
     PrinterEconomicsResponse,
     PrinterEconomicsSuggestion,
@@ -92,6 +94,7 @@ from app.services.printer_contact_events import (
 )
 from app.services.printer_economics_service import (
     DEFAULT_USAGE,
+    ECONOMICS_SOURCES,
     USAGE_LIFE_HOURS,
     resolve_economics,
     suggest_economics,
@@ -612,6 +615,11 @@ async def _economics_response(
         calculator_electricity_cost_per_kwh=round(resolved.electricity_cost_per_kwh, 2),
         sources=resolved.sources,
         applied_sources=resolved.applied_sources,
+        field_sources={
+            field_name: source
+            for field_name, source in (printer.economics_field_sources or {}).items()
+            if field_name in PRINTER_ECONOMICS_FIELDS and source in ECONOMICS_SOURCES
+        },
         readiness=EconomicsReadinessContract.model_validate(asdict(resolved.readiness)),
     )
 
@@ -676,6 +684,15 @@ async def update_economics(
             field_sources.pop(field_name, None)
         else:
             field_sources[field_name] = "printer_explicit"
+    # A complete part breakdown outranks the total when resolving power, so a
+    # typed total would otherwise be stored and silently ignored.
+    if (
+        payload.average_power_watts is not None
+        and not payload.model_fields_set & POWER_PART_FIELDS
+    ):
+        for field_name in POWER_PART_FIELDS:
+            setattr(printer, field_name, None)
+            field_sources.pop(field_name, None)
     printer.economics_field_sources = field_sources
     await db.commit()
     await db.refresh(printer)

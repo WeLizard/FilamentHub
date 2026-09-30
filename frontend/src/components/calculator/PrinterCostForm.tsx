@@ -11,10 +11,21 @@ import {
 import { toast } from '../Toast';
 import { currencySymbol } from '../../utils/currency';
 import { translateApiError } from '../../utils/translateApiError';
-import { EconomicsFields, type EconomicsField, type EconomicsValues } from './EconomicsFields';
-import { PowerPartsBreakdown } from './PowerPartsBreakdown';
+import {
+  EconomicsFields,
+  USAGE_HOURS,
+  USAGE_OPTIONS,
+  usageForLifeHours,
+  type EconomicsField,
+  type EconomicsValues,
+} from './EconomicsFields';
+import { PowerPartsBreakdown, type PowerPart } from './PowerPartsBreakdown';
 import { EconomicsReadinessPanel } from './EconomicsReadinessPanel';
-import { enqueueEconomicsSave } from '../../utils/economicsReadiness';
+import {
+  ESTIMATED_ECONOMICS_SOURCES,
+  enqueueEconomicsSave,
+} from '../../utils/economicsReadiness';
+import type { EconomicsSource } from '../../types/api';
 
 interface PrinterCostFormProps {
   printerId: number;
@@ -24,9 +35,6 @@ interface PrinterCostFormProps {
   onSaved?: (economics: PrinterEconomics) => void;
   onStatusChange?: (status: 'saving' | 'saved' | null) => void;
 }
-
-const USAGE_OPTIONS = ['occasional', 'regular', 'intensive'] as const;
-type Usage = (typeof USAGE_OPTIONS)[number];
 
 const UPKEEP_OPTIONS = [
   { key: 'upkeepLow', value: 2 },
@@ -129,14 +137,25 @@ const POWER_PART_API_FIELDS = {
   bed: 'power_bed_w',
   steppers: 'power_steppers_w',
   electronics: 'power_electronics_w',
-} as const;
+} as const satisfies Record<PowerPart, keyof PrinterEconomicsUpdate>;
 
-type PowerPart = keyof typeof POWER_PART_API_FIELDS;
+/**
+ * The server only uses a complete breakdown, so editing one part saves all four:
+ * parts nobody typed keep what the form showed for them.
+ */
+export const printerPowerPartsPatch = (
+  parts: Record<PowerPart, number | null>,
+  fallback: Partial<Record<PowerPart, number>>,
+): PrinterEconomicsUpdate => {
+  const patch: PrinterEconomicsUpdate = {};
+  for (const part of Object.keys(POWER_PART_API_FIELDS) as PowerPart[]) {
+    patch[POWER_PART_API_FIELDS[part]] = parts[part] ?? fallback[part] ?? 0;
+  }
+  return patch;
+};
 
-export const printerPowerPartPatch = (
-  part: PowerPart,
-  value: number | null,
-): PrinterEconomicsUpdate => ({ [POWER_PART_API_FIELDS[part]]: value });
+const isEstimated = (source: EconomicsSource | undefined): boolean =>
+  source != null && ESTIMATED_ECONOMICS_SOURCES.has(source);
 
 export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   printerId,
@@ -149,7 +168,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  const [usage, setUsage] = useState<Usage>('regular');
   const [values, setValues] = useState<EconomicsValues>({
     purchaseCost: 0,
     lifeHours: 0,
@@ -158,7 +176,14 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     rate: 0,
   });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [parts, setParts] = useState({ hotend: 0, bed: 0, steppers: 0, electronics: 0 });
+  const [parts, setParts] = useState<Record<PowerPart, number | null>>({
+    hotend: null,
+    bed: null,
+    steppers: null,
+    electronics: null,
+  });
+  const selectedUsage = usageForLifeHours(values.lifeHours);
+  const usage = selectedUsage ?? 'regular';
   const [saveError, setSaveError] = useState(false);
   const savedTimerRef = useRef<number | undefined>(undefined);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -199,8 +224,9 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
         economicsCurrency,
       ),
       lifeHours: saved.useful_life_hours ?? fallback.lifeHours ?? suggestion?.useful_life_hours ?? 0,
-      powerWatts:
-        saved.average_power_watts ?? fallback.powerWatts ?? suggestion?.average_power_watts ?? 0,
+      // The draw the calculator will charge, whichever of total, parts, account or
+      // catalog it came from; a stored total can be outranked by a part breakdown.
+      powerWatts: Math.round(saved.calculator_printer_power_w),
       maintenance: resolveEditableMoneyValue(
         saved.maintenance_cost_per_hour,
         saved.economics_currency,
@@ -211,15 +237,37 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       ),
       rate: resolveEditableMachineRate(saved, economicsCurrency),
     });
-    // Offer what we worked out for this machine instead of four zeroes: the bed comes
-    // from its own size, and a person is free to write over any of it.
     setParts({
-      hotend: saved.power_hotend_w ?? suggestion?.power_hotend_w ?? 0,
-      bed: saved.power_bed_w ?? suggestion?.power_bed_w ?? 0,
-      steppers: saved.power_steppers_w ?? suggestion?.power_steppers_w ?? 0,
-      electronics: saved.power_electronics_w ?? suggestion?.power_electronics_w ?? 0,
+      hotend: saved.power_hotend_w,
+      bed: saved.power_bed_w,
+      steppers: saved.power_steppers_w,
+      electronics: saved.power_electronics_w,
     });
   }, [saved, suggestion, fallback, economicsCurrency]);
+
+  // Unsaved parts show what we worked out for this machine as placeholders: the bed
+  // comes from its own size, and nothing counts until a part is actually entered.
+  const partPlaceholders = useMemo<Partial<Record<PowerPart, number>>>(() => (
+    suggestion
+      ? {
+          hotend: suggestion.power_hotend_w,
+          bed: Math.round(suggestion.power_bed_w),
+          steppers: suggestion.power_steppers_w,
+          electronics: suggestion.power_electronics_w,
+        }
+      : {}
+  ), [suggestion]);
+
+  const estimated = useMemo<Partial<Record<EconomicsField, boolean>>>(() => {
+    const fieldSources = saved?.field_sources ?? {};
+    return {
+      purchaseCost: isEstimated(fieldSources.purchase_cost),
+      lifeHours: isEstimated(fieldSources.useful_life_hours),
+      powerWatts: isEstimated(saved?.applied_sources.printer_power_w),
+      maintenance: isEstimated(fieldSources.maintenance_cost_per_hour),
+      rate: isEstimated(saved?.applied_sources.machine_hour_rate),
+    };
+  }, [saved]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -346,6 +394,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       symbol={symbol}
       onChange={change}
       onCommit={commit}
+      estimated={estimated}
       breakdown={breakdown}
       detailsOpen={detailsOpen}
       onToggleDetails={() => setDetailsOpen((open) => !open)}
@@ -381,22 +430,14 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
           bed={parts.bed}
           steppers={parts.steppers}
           electronics={parts.electronics}
-          onChange={(part, value) => {
-            const nextParts = { ...parts, [part]: value };
-            setParts(nextParts);
-            const total =
-              nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
-            setValues((current) => ({ ...current, powerWatts: total }));
-          }}
+          placeholders={partPlaceholders}
+          onChange={(part, value) => setParts((current) => ({ ...current, [part]: value }))}
           onCommit={(part, value) => {
             const nextParts = { ...parts, [part]: value ?? 0 };
             setParts(nextParts);
-            const total =
-              nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
-            setValues((current) => ({ ...current, powerWatts: total }));
             enqueueSave(() => physicalPrintersAPI.updateEconomics(
               printerId,
-              printerPowerPartPatch(part, value),
+              printerPowerPartsPatch(nextParts, partPlaceholders),
             ));
           }}
         />
@@ -443,11 +484,9 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
               <button
                 key={option}
                 type="button"
-                onClick={() => {
-                  setUsage(option);
-                }}
+                onClick={() => commit('lifeHours', USAGE_HOURS[option])}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                  usage === option
+                  selectedUsage === option
                     ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'
                     : 'border-white/10 bg-slate-950/40 text-slate-300 hover:border-white/20'
                 }`}

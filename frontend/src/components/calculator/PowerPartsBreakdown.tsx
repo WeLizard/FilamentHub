@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 
-type Part = 'hotend' | 'bed' | 'steppers' | 'electronics';
+export type PowerPart = 'hotend' | 'bed' | 'steppers' | 'electronics';
 
 interface PowerPartsBreakdownProps {
-  hotend: number;
-  bed: number;
-  steppers: number;
-  electronics: number;
-  onChange: (part: Part, value: number) => void;
-  onCommit?: (part: Part, value: number | null) => void;
+  hotend: number | null;
+  bed: number | null;
+  steppers: number | null;
+  electronics: number | null;
+  placeholders?: Partial<Record<PowerPart, number>>;
+  onChange: (part: PowerPart, value: number) => void;
+  onCommit?: (part: PowerPart, value: number | null) => void;
 }
 
 const inputClass =
@@ -21,15 +22,19 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
   bed,
   steppers,
   electronics,
+  placeholders = {},
   onChange,
   onCommit,
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Partial<Record<Part, string>>>({});
-  const total = hotend + bed + steppers + electronics;
+  const [drafts, setDrafts] = useState<Partial<Record<PowerPart, string>>>({});
+  const parts = [hotend, bed, steppers, electronics];
+  const total = parts.every((value) => value != null)
+    ? parts.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    : 0;
 
-  const part = (name: Part, label: string, value: number) => (
+  const part = (name: PowerPart, label: string, value: number | null) => (
     <label className="block">
       <span className="mb-1 block text-[11px] leading-4 text-slate-400">{label}</span>
       <input
@@ -37,8 +42,8 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
         min="0"
         inputMode="decimal"
         className={inputClass}
-        value={drafts[name] ?? String(value)}
-        placeholder="0"
+        value={drafts[name] ?? (value == null ? '' : String(value))}
+        placeholder={placeholders[name] != null ? String(placeholders[name]) : '0'}
         onChange={(event) => {
           const rawValue = event.target.value;
           setDrafts((current) => ({ ...current, [name]: rawValue }));
@@ -46,6 +51,7 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
           else if (!onCommit) onChange(name, 0);
         }}
         onBlur={(event) => {
+          if (drafts[name] === undefined) return;
           const rawValue = event.target.value;
           setDrafts((current) => {
             const next = { ...current };
@@ -74,11 +80,9 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
           {part('bed', t('printerCost.powerBed'), bed)}
           {part('steppers', t('printerCost.powerSteppers'), steppers)}
           {part('electronics', t('printerCost.powerElectronics'), electronics)}
-          {total > 0 ? (
-            <p className="col-span-2 text-[11px] text-slate-500">
-              {t('printerCost.powerSum', { value: total })}
-            </p>
-          ) : null}
+          <p className="col-span-2 text-[11px] leading-4 text-slate-500">
+            {total > 0 ? t('printerCost.powerSum', { value: total }) : t('printerCost.powerPartsHint')}
+          </p>
         </div>
       ) : null}
     </div>

@@ -3571,15 +3571,17 @@
       "quoteCurrency": "货币",
       "quoteNumberPrefix": "报价单编号前缀",
       "quoteNumberPrefixHint": "用于编号：QT-20260316-01",
-      "cloudSave": "保存到云",
-      "cloudLoad": "从云加载",
-      "platformDefaultsReset": "应用平台初始值",
+      "cloudSave": "将报价信息保存到账户",
+      "cloudLoad": "从账户加载报价信息",
+      "platformDefaultsReset": "恢复为标准数值",
       "platformDefaultsApplied": "已应用平台初始值。报价信息未更改。",
       "platformDefaultsError": "无法应用平台初始值",
-      "cloudSaveSuccess": "设置已保存到云",
-      "cloudSaveError": "未能保存设置到云",
-      "cloudLoadSuccess": "设置已从云加载",
-      "cloudLoadError": "未能从云加载设置",
+      "cloudSaveSuccess": "报价信息已保存到账户",
+      "cloudSaveError": "无法将报价信息保存到账户",
+      "cloudLoadSuccess": "已从账户加载报价信息",
+      "cloudLoadError": "无法从账户加载报价信息",
+      "quoteCloudHint": "报价信息仅保存在此浏览器中。如需在其他电脑上使用，请先保存到账户，然后在那台电脑上点击“加载”。服务器上以加密方式存储。",
+      "economicsAutosaveHint": "经济参数会自动保存到账户。",
       "quoteBuyerSection": "客户",
       "quoteCustomerSelect": "客户记录",
       "quoteCustomerSelectHint": "选择现有客户，或将下方信息保存为新客户。",
@@ -3666,7 +3668,6 @@
       "markupCaption": "经济 20–30，标准 35–45，高端 50–70%",
       "taxCaption": "您适用的税率",
       "roundCaption": "价格取整到多少",
-      "cloudStorageTooltip": "经济参数保存在您的账户中，任何电脑都可使用。报价单信息默认留在本机 — 这两个按钮将其上传到账户或取回。服务器上以加密方式存储，即使数据库副本泄露也无法读取。",
       "quoteGroupSupplier": "供方",
       "quoteGroupDocument": "单据",
       "quoteGroupMoney": "款项",
@@ -8585,7 +8586,8 @@
     "powerBed": "热床",
     "powerSteppers": "步进电机",
     "powerElectronics": "电子件",
-    "powerSum": "合计：{{value}} W",
+    "powerSum": "额定合计：{{value}} W — 打印平均功耗更低",
+    "powerPartsHint": "填写任一部件，其余部件将采用建议数值。",
     "lifeHoursTip": "这台机器在大修或更换前还能打印多少小时。用于把购机价格摊到每小时。",
     "maintenanceTip": "喷嘴、皮带、润滑和保养平均每打印小时的花费。",
     "purchaseCostTip": "这台机器花了您多少钱。与预计寿命一起得出每小时磨损。",
@@ -8600,41 +8602,29 @@
     "upkeepHigh": "较重",
     "upkeepHint": "简单 — 偶尔换喷嘴和润滑。较重 — 打印磨料、频繁更换喷嘴、定期保养。",
     "applySuggested": "应用平台数值",
+    "estimateBadge": "估算",
+    "estimateHint": "按目录填入。可以保留，也可以输入您自己的数值。",
     "machineSelectedHint": "计算将使用所选打印机的经济参数。",
     "readiness": {
       "loading": "正在检查经济参数…",
       "unavailable": "无法检查经济参数。可以继续计算，但请核对结果。",
       "configure": "设置经济参数",
-      "sourcesTitle": "数值与来源",
-      "reasonsTitle": "需要处理的原因",
-      "affectedMachines": "需要处理：{{names}}",
       "saveError": "无法保存经济参数",
       "loadError": "无法加载这台打印机的经济参数。",
       "retry": "重试",
-      "resultPartial": "部分经济参数采用估算或标准设置",
+      "resultPartial": "部分已填写的数值未被采用",
       "resultIncomplete": "必需的经济参数尚未完整填写",
       "resultUnavailable": "无法检查经济参数是否就绪",
       "status": {
         "configured": {
-          "title": "经济参数已配置",
-          "description": "必需数值已填写，可用于计算。"
+          "title": "经济参数已配置"
         },
         "partial": {
-          "title": "经济参数需要核对",
-          "description": "可以计算，但部分数值采用估算或标准设置。"
+          "title": "部分数值未被采用"
         },
         "incomplete": {
-          "title": "经济参数不完整",
-          "description": "可靠计算所需的必填数值尚未完整填写。"
+          "title": "计算所需数据不足"
         }
-      },
-      "sources": {
-        "printer_explicit": "为此打印机设置",
-        "account_explicit": "在账户中设置",
-        "orca_import": "从 OrcaSlicer 导入",
-        "platform_default": "标准数值",
-        "catalog_estimate": "目录估算",
-        "none": "未设置"
       },
       "fields": {
         "currency": "币种",
@@ -8648,10 +8638,8 @@
         "non_positive": "必须大于零",
         "missing_currency": "缺少币种",
         "currency_mismatch": "币种不一致",
-        "incomplete_pair": "需要价格和使用寿命",
-        "provenance_unknown": "数值来源尚未确认",
-        "platform_default_used": "正在使用标准数值",
-        "catalog_estimate_used": "正在使用目录估算"
+        "incomplete_pair": "计算磨损需要机器价格、使用寿命和维护费用 — 目前使用通用数值",
+        "incomplete_power_parts": "按部件的功率未填写完整 — 按总功率计算"
       }
     }
   },

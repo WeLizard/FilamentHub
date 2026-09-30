@@ -1,18 +1,23 @@
 import type {
   EconomicsReadiness,
   EconomicsReadinessFieldKey,
+  EconomicsReadinessReason,
   EconomicsReadinessStatus,
   EconomicsSource,
 } from '../types/api';
 
-export const ECONOMICS_SOURCE_I18N_KEYS: Record<EconomicsSource, string> = {
-  printer_explicit: 'printerCost.readiness.sources.printer_explicit',
-  account_explicit: 'printerCost.readiness.sources.account_explicit',
-  orca_import: 'printerCost.readiness.sources.orca_import',
-  platform_default: 'printerCost.readiness.sources.platform_default',
-  catalog_estimate: 'printerCost.readiness.sources.catalog_estimate',
-  none: 'printerCost.readiness.sources.none',
-};
+/** Provenance notes the backend reports without holding readiness back. */
+export const INFORMATIONAL_ECONOMICS_REASONS: ReadonlySet<EconomicsReadinessReason> = new Set([
+  'provenance_unknown',
+  'platform_default_used',
+  'catalog_estimate_used',
+]);
+
+/** Values the platform filled in rather than the person; shown as a hint beside the field. */
+export const ESTIMATED_ECONOMICS_SOURCES: ReadonlySet<EconomicsSource> = new Set([
+  'catalog_estimate',
+  'platform_default',
+]);
 
 export const ECONOMICS_FIELD_I18N_KEYS: Record<EconomicsReadinessFieldKey, string> = {
   currency: 'printerCost.readiness.fields.currency',

@@ -3756,12 +3756,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
         currency: normalizeCurrency(profile.currency),
       });
-      setHistoryFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });
+      toast.success(tc('cloudSaveSuccess'));
     } catch (error) {
-      setHistoryFeedback({
-        kind: 'error',
-        message: translateApiError(t, error, tc('cloudSaveError')),
-      });
+      toast.error(translateApiError(t, error, tc('cloudSaveError')));
     } finally {
       setIsCloudBusy(false);
     }
@@ -3771,9 +3768,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setIsCloudBusy(true);
     try {
       const profile = await calculatorAPI.getProfile();
-      const staticSettings = profileToStaticSettings(profile);
-      setForm((prev) => ({ ...prev, ...staticSettings }));
-      saveStoredCalculatorDefaults(staticSettings);
       setQuoteProfile((prev) => ({
         ...prev,
         sellerName: profile.seller_name,
@@ -3805,12 +3799,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         currency: normalizeCurrency(profile.currency),
         quoteNumberPrefix: profile.quote_number_prefix,
       });
-      setHistoryFeedback({ kind: 'success', message: tc('cloudLoadSuccess') });
+      toast.success(tc('cloudLoadSuccess'));
     } catch (error) {
-      setHistoryFeedback({
-        kind: 'error',
-        message: translateApiError(t, error, tc('cloudLoadError')),
-      });
+      toast.error(translateApiError(t, error, tc('cloudLoadError')));
     } finally {
       setIsCloudBusy(false);
     }
@@ -3823,12 +3814,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const staticSettings = profileToStaticSettings(profile);
       setForm((prev) => ({ ...prev, ...staticSettings }));
       saveStoredCalculatorDefaults(staticSettings);
-      setHistoryFeedback({ kind: 'success', message: tc('platformDefaultsApplied') });
+      toast.success(tc('platformDefaultsApplied'));
     } catch (error) {
-      setHistoryFeedback({
-        kind: 'error',
-        message: translateApiError(t, error, tc('platformDefaultsError')),
-      });
+      toast.error(translateApiError(t, error, tc('platformDefaultsError')));
     } finally {
       setIsCloudBusy(false);
     }
@@ -5478,6 +5466,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
               ) : null}
 
+              {staticSettingsOpen ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <button
+                    type="button"
+                    onClick={onPlatformDefaultsReset}
+                    disabled={isCloudBusy}
+                    className={ghostButtonClass}
+                  >
+                    {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {tc('platformDefaultsReset')}
+                  </button>
+                  <p className="text-[11px] leading-4 text-slate-500">{tc('economicsAutosaveHint')}</p>
+                </div>
+              ) : null}
+
               {quoteProfileOpen ? (
                 <div className={staticSettingsOpen ? 'border-t border-white/10 pt-4' : ''}>
                   <p className="text-sm font-semibold text-white">{tc('quoteProfileTitle')}</p>
@@ -5649,41 +5652,31 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </div>
                   </div>
                 </div>
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-xs leading-5 text-slate-400">{tc('quoteCloudHint')}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={onCloudSave}
+                      disabled={isCloudBusy}
+                      className={ghostButtonClass}
+                    >
+                      {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
+                      {tc('cloudSave')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCloudLoad}
+                      disabled={isCloudBusy}
+                      className={ghostButtonClass}
+                    >
+                      {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
+                      {tc('cloudLoad')}
+                    </button>
+                  </div>
+                </div>
                 </div>
               ) : null}
-
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-                <button
-                  type="button"
-                  onClick={onCloudSave}
-                  disabled={isCloudBusy}
-                  className={ghostButtonClass}
-                >
-                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
-                  {tc('cloudSave')}
-                </button>
-                <button
-                  type="button"
-                  onClick={onCloudLoad}
-                  disabled={isCloudBusy}
-                  className={ghostButtonClass}
-                >
-                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
-                  {tc('cloudLoad')}
-                </button>
-                <button
-                  type="button"
-                  onClick={onPlatformDefaultsReset}
-                  disabled={isCloudBusy}
-                  className={ghostButtonClass}
-                >
-                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {tc('platformDefaultsReset')}
-                </button>
-                <span className="flex items-center">
-                  <HelpTooltip text={tc('cloudStorageTooltip')} />
-                </span>
-              </div>
             </div>
           ) : null}
         </SurfaceCard>}

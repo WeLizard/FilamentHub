@@ -4604,6 +4604,7 @@ export interface PrinterEconomics {
   calculator_electricity_cost_per_kwh: number;
   sources: Record<string, string>;
   applied_sources: Record<string, import('../types/api').EconomicsSource>;
+  field_sources?: Record<string, import('../types/api').EconomicsSource>;
   readiness: import('../types/api').EconomicsReadiness;
 }
 

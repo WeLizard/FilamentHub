@@ -4,7 +4,7 @@ import type { PrinterEconomics } from '../../api/client';
 import {
   calculateDepreciationPerHour,
   printerEconomicsPatchForField,
-  printerPowerPartPatch,
+  printerPowerPartsPatch,
   resolveEditableMoneyValue,
   resolveEditableMachineRate,
 } from './PrinterCostForm';
@@ -180,8 +180,15 @@ describe('printer economics sparse patches', () => {
     expect(printerEconomicsPatchForField('lifeHours', 0)).toEqual({ useful_life_hours: null });
   });
 
-  it('saves one edited power component without inventing an explicit total', () => {
-    expect(printerPowerPartPatch('hotend', 40)).toEqual({ power_hotend_w: 40 });
-    expect(printerPowerPartPatch('bed', null)).toEqual({ power_bed_w: null });
+  it('saves a complete power breakdown so one edited part is not ignored', () => {
+    expect(printerPowerPartsPatch(
+      { hotend: 40, bed: null, steppers: null, electronics: 20 },
+      { hotend: 50, bed: 183, steppers: 30 },
+    )).toEqual({
+      power_hotend_w: 40,
+      power_bed_w: 183,
+      power_steppers_w: 30,
+      power_electronics_w: 20,
+    });
   });
 });

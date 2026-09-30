@@ -28,6 +28,7 @@ EconomicsReadinessReason = Literal[
     "missing_currency",
     "currency_mismatch",
     "incomplete_pair",
+    "incomplete_power_parts",
     "provenance_unknown",
     "platform_default_used",
     "catalog_estimate_used",
@@ -47,6 +48,11 @@ PRINTER_ECONOMICS_FIELDS = frozenset(
         "machine_hour_rate",
         "economics_currency",
     }
+)
+
+
+POWER_PART_FIELDS = frozenset(
+    {"power_hotend_w", "power_bed_w", "power_steppers_w", "power_electronics_w"}
 )
 
 
@@ -165,6 +171,7 @@ class PrinterEconomicsResponse(BaseModel):
 
     sources: dict[str, str]
     applied_sources: dict[str, EconomicsSource]
+    field_sources: dict[str, EconomicsSource] = Field(default_factory=dict)
     readiness: EconomicsReadinessContract
 
 
