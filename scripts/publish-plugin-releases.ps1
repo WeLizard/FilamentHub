@@ -986,6 +986,7 @@ if ($printFarmRepositoryRoot) {
     )
 }
 
+$orcaSourcePaths = @('orca-plugin', ':(exclude)orca-plugin/description.md')
 $plans = @()
 if ($selected -contains 'orcaslicer') {
     $version = Get-OrcaVersion
@@ -995,7 +996,7 @@ if ($selected -contains 'orcaslicer') {
         -TagPatterns @('^v\d+\.\d+\.\d+$', '^plugins-v\d+\.\d+\.\d+$')
     $needed = Test-ComponentNeedsRelease `
         -Name 'FilamentHub for OrcaSlicer' -CurrentVersion $version -Published $published `
-        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('orca-plugin') `
+        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths $orcaSourcePaths `
         -IgnoredPaths @('orca-plugin/build_package.py') `
         -CheckVersions:$CheckVersions
     $repair = if (-not $CheckVersions -and -not $needed -and $published) {
@@ -1012,7 +1013,7 @@ if ($selected -contains 'orcaslicer') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         RequiredCiWorkflow = 'ci.yml'
-        ReleasePaths = @('orca-plugin', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
+        ReleasePaths = $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
@@ -1117,7 +1118,7 @@ $mainReleasePaths = @(
     'scripts/render_plugin_release_notes.py'
 )
 if ($selected -contains 'orcaslicer') {
-    $mainReleasePaths += @('orca-plugin', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
+    $mainReleasePaths += $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
 }
 if ($selected -contains 'octoprint') {
     $mainReleasePaths += @('octoprint-plugin', '.github/workflows/release-octoprint.yml')

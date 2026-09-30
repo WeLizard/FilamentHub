@@ -429,6 +429,44 @@ def test_owner_script_requires_published_commit_and_exact_owner_tested_wheel() -
     assert "отличается от локального wheel, проверенного владельцем" in script
 
 
+def test_orca_release_paths_ignore_listing_description_only(tmp_path: Path) -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "$orcaSourcePaths = @('orca-plugin', ':(exclude)orca-plugin/description.md')" in script
+    assert "-SourcePaths $orcaSourcePaths" in script
+    assert "ReleasePaths = $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1'" in script
+    assert "$mainReleasePaths += $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1'" in script
+
+    repository = tmp_path / "repository"
+    plugin = repository / "orca-plugin"
+    plugin.mkdir(parents=True)
+    (plugin / "description.md").write_text("listing", encoding="utf-8")
+    (plugin / "filamenthub_plugin.py").write_text("plugin", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    subprocess.run(["git", "-C", str(repository), "add", "--", "orca-plugin"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "commit", "-qm", "baseline"],
+        check=True,
+    )
+
+    paths = ["orca-plugin", ":(exclude)orca-plugin/description.md"]
+    (plugin / "description.md").write_text("edited listing", encoding="utf-8")
+    status = subprocess.run(
+        ["git", "-C", str(repository), "status", "--porcelain", "--", *paths],
+        check=True, capture_output=True, text=True,
+    )
+    assert status.stdout == ""
+
+    (plugin / "filamenthub_plugin.py").write_text("edited plugin", encoding="utf-8")
+    status = subprocess.run(
+        ["git", "-C", str(repository), "status", "--porcelain", "--", *paths],
+        check=True, capture_output=True, text=True,
+    )
+    assert "filamenthub_plugin.py" in status.stdout
+    assert "description.md" not in status.stdout
+
+
 def test_owner_script_repairs_only_tags_with_a_safe_trusted_workflow() -> None:
     script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
         encoding="utf-8"
