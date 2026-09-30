@@ -31,8 +31,13 @@ logger = logging.getLogger(__name__)
 # Identity / profile-header fields set authoritatively or deliberately reserved
 # by FilamentHub (name, type, ids…). They must never be re-processed by the generic
 # orcaslicer_settings loop below.
+#
+# The parent is part of that identity. A stored parent is the vendor profile the
+# author happened to copy in their own slicer (Bambu X1, Creality K2 Pro...):
+# a receiver without that vendor cannot resolve it, and one with it inherits
+# that vendor's printer restriction. The catalogue material decides instead.
 IDENTITY_KEYS = frozenset({
-    "name", "type", "version", "from", "instantiation",
+    "name", "type", "version", "from", "instantiation", "inherits",
     "filament_settings_id", "setting_id", "filament_id",
 })
 
@@ -368,6 +373,13 @@ async def preset_to_orcaslicer_json(
             # Any unresolved/custom model makes the exact selected machine
             # names authoritative for the whole set; never AND two filters.
             profile["compatible_printers"] = [p.name for p in target_profiles]
+            profile["compatible_printers_condition"] = ""
+    else:
+        # Both keys are always written: a key left out keeps whatever the
+        # parent declares in force, and Orca replaces a parent value only with
+        # the preset's own one.
+        profile["compatible_printers"] = []
+        profile["compatible_printers_condition"] = ""
 
     # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
     # Формат `"filamenthub:<id>"` соответствует Orca Cloud convention `"<provider>:<uuid>"`.

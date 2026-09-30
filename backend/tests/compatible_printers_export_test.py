@@ -81,8 +81,8 @@ async def test_tested_on_links_remain_in_catalog_but_do_not_restrict_export(
     assert {printer["id"] for printer in detail.json()["printers"]} == {p1.id, p2.id}
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
     profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
-    assert "compatible_printers" not in profile
-    assert "compatible_printers_condition" not in profile
+    assert profile["compatible_printers"] == []
+    assert profile["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
@@ -95,8 +95,8 @@ async def test_unscoped_without_system_links_is_universal(db_session: AsyncSessi
     await db_session.commit()
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
     profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
-    assert "compatible_printers" not in profile
-    assert "compatible_printers_condition" not in profile
+    assert profile["compatible_printers"] == []
+    assert profile["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
@@ -118,8 +118,8 @@ async def test_legacy_restrictions_stay_in_source_evidence_but_never_in_managed_
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
     profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
 
-    assert "compatible_printers" not in profile
-    assert "compatible_printers_condition" not in profile
+    assert profile["compatible_printers"] == []
+    assert profile["compatible_printers_condition"] == ""
     assert profile["filament_max_volumetric_speed"] == ["15"]
     assert preset.orcaslicer_settings == original
     assert preset.import_evidence == evidence
@@ -128,8 +128,8 @@ async def test_legacy_restrictions_stay_in_source_evidence_but_never_in_managed_
     overridden = await preset_to_orcaslicer_json(
         preset, export_filament, db=db_session, settings_override=original,
     )
-    assert "compatible_printers" not in overridden
-    assert "compatible_printers_condition" not in overridden
+    assert overridden["compatible_printers"] == []
+    assert overridden["compatible_printers_condition"] == ""
     returned = merge_orca_roundtrip_settings(original, profile, "filament")
     for key in ("compatible_printers", "compatible_printers_condition"):
         assert returned[key] == original[key]

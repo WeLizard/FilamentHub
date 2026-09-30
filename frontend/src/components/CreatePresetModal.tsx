@@ -68,6 +68,7 @@ import {
 } from './FilamentHandlingEditor';
 import { DensityField } from './DensityField';
 import { toast } from './Toast';
+import { notifyProfileChanged } from '../utils/pluginBridge';
 import { ACHIEVEMENT_CONFIG } from './Badge';
 import type { AxiosError } from 'axios';
 
@@ -1531,6 +1532,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
       queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
       void refreshAchievements();
+      // A new preset is saved with sync on; the plugin must fetch it now.
+      notifyProfileChanged();
       // Инвалидируем кэш пресетов бренда (если создавался из профиля бренда)
       if (brandId) {
         queryClient.invalidateQueries({ queryKey: ['brand-presets'] });
@@ -1578,6 +1581,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
       queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
       void refreshAchievements();
+      // Publishing a draft turns its sync on and an edit is a new version;
+      // either way the plugin must fetch it now.
+      notifyProfileChanged();
       // Инвалидируем кэш пресетов бренда (если редактировался из профиля бренда)
       if (brandId) {
         queryClient.invalidateQueries({ queryKey: ['brand-presets'] });

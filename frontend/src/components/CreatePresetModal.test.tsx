@@ -8,12 +8,19 @@ const {
   getDraftAnalysisMock,
   getFilamentMock,
   listFilamentsMock,
+  notifyProfileChangedMock,
   updatePresetMock,
 } = vi.hoisted(() => ({
   getDraftAnalysisMock: vi.fn(),
   getFilamentMock: vi.fn(),
   listFilamentsMock: vi.fn(),
+  notifyProfileChangedMock: vi.fn(),
   updatePresetMock: vi.fn(),
+}));
+
+vi.mock('../utils/pluginBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/pluginBridge')>()),
+  notifyProfileChanged: notifyProfileChangedMock,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -292,5 +299,6 @@ describe('CreatePresetModal imported draft review', () => {
     expect(payload.orcaslicer_settings).not.toHaveProperty('compatible_printers_condition');
     expect(payload.orcaslicer_settings.future_filament_option).toEqual(['kept']);
     expect(sourceSettings).toEqual(original);
+    await waitFor(() => expect(notifyProfileChangedMock).toHaveBeenCalledOnce());
   });
 });

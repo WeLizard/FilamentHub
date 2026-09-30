@@ -315,6 +315,24 @@ async def _sync_imported_print_profile_links(
     await infer_and_replace_configuration_links(db, profile=profile)
 
 
+def _declared_material_type(payload) -> str:
+    """The material the author set, before any guess from the parent's name.
+
+    Orca writes ``filament_type`` into a saved preset only when it differs from
+    the parent, so a present value is the author's own choice: a copy of
+    "Bambu PLA Basic" switched to PETG is PETG. The parent name decides only
+    when the preset does not say.
+    """
+    declared = (payload.orcaslicer_settings or {}).get("filament_type")
+    if isinstance(declared, list):
+        declared = declared[0] if declared else None
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    if payload.inherits:
+        return _extract_material_type_from_inherits(payload.inherits)
+    return payload.material_type or "PLA"
+
+
 def _extract_material_type_from_inherits(inherits: str | None) -> str:
     """
     Извлечь тип материала из inherits (родительский пресет OrcaSlicer).
@@ -2360,11 +2378,7 @@ async def _upsert_filament_preset(
                     message="Filament not found in FilamentHub",
                 )
         elif payload.filament_name:
-            # Определяем material_type: inherits приоритетнее payload (OrcaSlicer часто шлёт неточный тип)
-            if payload.inherits:
-                material_type = _extract_material_type_from_inherits(payload.inherits)
-            else:
-                material_type = payload.material_type or "PLA"
+            material_type = _declared_material_type(payload)
 
             if is_our_preset:
                 clean_filament_name = payload.filament_name.replace(' [fh]', '').replace('[fh]', '').strip()
@@ -2404,10 +2418,7 @@ async def _upsert_filament_preset(
             is_our_preset = False
         else:
             filament_name = payload.filament_name or "Imported from OrcaSlicer"
-            if payload.inherits:
-                material_type = _extract_material_type_from_inherits(payload.inherits)
-            else:
-                material_type = payload.material_type or "PLA"
+            material_type = _declared_material_type(payload)
 
             # Dedup: проверяем нет ли уже такого филамента у бренда
             clean_name = filament_name.replace(' [fh]', '').replace('[fh]', '').strip()

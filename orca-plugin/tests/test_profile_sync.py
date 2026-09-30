@@ -462,6 +462,7 @@ def test_filament_sync_reports_device_scoped_partial_result(
             "updated_at": "2026-08-01",
             "hash": plugin_module.preset_content_hash(profile),
             "name": profile["name"],
+            "export_format": plugin_module.MANAGED_EXPORT_FORMAT,
         }
         for preset_id, profile in profiles.items()
     }
@@ -701,6 +702,7 @@ def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
                 "updated_at": "2026-08-01",
                 "hash": plugin_module.preset_content_hash(profile),
                 "name": "Present",
+                "export_format": plugin_module.MANAGED_EXPORT_FORMAT,
             }
         },
     )

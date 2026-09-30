@@ -1781,16 +1781,18 @@ def test_active_filaments_use_only_saved_user_files(plugin_module, monkeypatch, 
     monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(plugin_module, "_user_preset_folder", "default")
 
+    saved = {
+        "filament_type": ["PETG"],
+        "nozzle_temperature": ["245"],
+        "future_orca_object": {"mode": "adaptive", "levels": [1, 3]},
+        "future_orca_nullable": None,
+        "name": "Local PETG",
+    }
     assert plugin_module.scan_active_user_filaments() == [{
         "name": "Local PETG",
         "locator": "file:filament/local petg.json",
-        "profile": {
-            "filament_type": ["PETG"],
-            "nozzle_temperature": ["245"],
-            "future_orca_object": {"mode": "adaptive", "levels": [1, 3]},
-            "future_orca_nullable": None,
-            "name": "Local PETG",
-        },
+        "profile": saved,
+        "upload_profile": saved,
     }]
 
 def test_local_profile_locator_lowercases_independently_of_platform_normcase(
@@ -2106,3 +2108,128 @@ def test_bambu_candidates_prefer_the_exact_bound_orca_profile(plugin_module):
     assert plugin_module.bambu_host_candidates(observations, context, 7) == [
         {"host": "192.168.1.42", "label": "Workshop P2S"}
     ]
+
+
+def test_a_draft_upload_carries_the_values_its_vendor_parent_supplies(plugin_module):
+    parent_values = {
+        "name": "Bambu PLA Basic @BBL X1",
+        "setting_id": "GFSA00",
+        "inherits": "Bambu PLA Basic @base",
+        "compatible_printers": ["Bambu Lab X1 0.4 nozzle"],
+        "compatible_printers_condition": "",
+        "nozzle_temperature": ["220"],
+        "fan_max_speed": ["100"],
+    }
+    parent = SimpleNamespace(
+        config_keys=lambda: list(parent_values),
+        config_value=lambda key: parent_values[key],
+    )
+    saved = {
+        "name": "PETG Gold",
+        "inherits": "Bambu PLA Basic @BBL X1",
+        "filament_type": ["PETG"],
+        "nozzle_temperature": ["245"],
+    }
+
+    upload = plugin_module.complete_filament_draft(saved, parent)
+
+    assert upload == {
+        "name": "PETG Gold",
+        "inherits": "Bambu PLA Basic @BBL X1",
+        "filament_type": ["PETG"],
+        "nozzle_temperature": ["245"],
+        "fan_max_speed": ["100"],
+    }
+    assert plugin_module.complete_filament_draft(saved, None) is saved
+
+
+def test_a_file_from_an_older_export_is_downloaded_again_once(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "user" / "default" / "_local" / "filamenthub" / "filament"
+    live.mkdir(parents=True)
+    profile = {
+        "name": "PETG • PETG Gold",
+        "filament_settings_id": ["PETG • PETG Gold"],
+        "filament_type": ["PETG"],
+        "inherits": "Bambu PLA Basic @BBL X1",
+        "bundle_id": "filamenthub:42",
+    }
+    (live / "PETG • PETG Gold.json").write_text(json.dumps(profile), encoding="utf-8")
+    (live / "PETG • PETG Gold.info").write_text(
+        "sync_info = filamenthub:preset:42\nfhub_version_id = 100\n", encoding="utf-8"
+    )
+    stored = {"state": {"42": {
+        "updated_at": "2026-08-20T00:00:00Z",
+        "hash": plugin_module.preset_content_hash(profile),
+        "name": "PETG • PETG Gold",
+        "version_id": 100,
+    }}}
+    pulls = []
+
+    monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(plugin_module, "_user_preset_folder", "default")
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(
+        plugin_module, "reload_managed_local_bundle_if_available", lambda: False
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "managed_preset_quarantine_dir",
+        lambda: str(tmp_path / "quarantine"),
+    )
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: json.loads(json.dumps(stored["state"])))
+    monkeypatch.setattr(
+        plugin_module, "save_sync_state", lambda state: stored.update(state=state)
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": True,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": False,
+            "allow_printer_profiles_export": False,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, token=None, **_kwargs: (
+            200,
+            json.dumps({"items": [{
+                "id": 42,
+                "name": "PETG Gold",
+                "updated_at": "2026-08-20T00:00:00Z",
+                "selected_version_id": 100,
+                "latest_version_id": 100,
+            }]}).encode("utf-8"),
+        ) if path == "/auth/my-presets" else pytest.fail(path),
+    )
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_push_one", lambda *_args: pytest.fail("nothing was edited")
+    )
+
+    def pull(preset_id, *_args):
+        pulls.append(preset_id)
+        return {
+            "updated_at": "2026-08-20T00:00:00Z",
+            "version_id": 100,
+            "hash": plugin_module.preset_content_hash(profile),
+            "name": "PETG • PETG Gold",
+            "export_format": plugin_module.MANAGED_EXPORT_FORMAT,
+        }
+
+    monkeypatch.setattr(catalog, "_pull_one", pull)
+    monkeypatch.setattr(catalog, "_deliver_sync_result", lambda *_args, **_kwargs: None)
+
+    for trigger in ("session-auth", "manual"):
+        catalog._do_sync("token", set(), announce=False, scope="filament", trigger=trigger)
+
+    assert pulls == [42]

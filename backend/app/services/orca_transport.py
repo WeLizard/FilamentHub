@@ -478,9 +478,12 @@ def merge_orca_roundtrip_settings(
     if not isinstance(stored, dict):
         return merged
     if kind == "filament":
-        # Managed export deliberately omits these keys; their absence on return
-        # is not evidence that the imported source restriction was deleted.
+        # The managed export writes these keys from the saved machine scope,
+        # so a returned value is FilamentHub's own output and never an edit.
+        # The imported source restriction stays in the stored blob as evidence.
         skip_keys = skip_keys | FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS
+        for key in FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS:
+            merged.pop(key, None)
     for key, value in stored.items():
         if key in merged:
             continue

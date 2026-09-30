@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.1"
+# version = "0.2.2"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -415,7 +415,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.1"
+PLUGIN_VERSION = "0.2.2"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -5450,9 +5450,11 @@ def scan_active_user_filaments():
             profile = saved_user_filament_profile(preset, name)
             if profile is None:
                 continue
+            _, parent = _profile_parent(filaments, preset)
             candidates.append({
                 "name": name,
                 "profile": profile,
+                "upload_profile": complete_filament_draft(profile, parent),
                 "locator": _local_profile_locator(preset, "filament", name),
             })
     except Exception:
@@ -5735,7 +5737,7 @@ def push_filament_drafts(token, candidates, authoritative=True):
                 imported[did] = imported[legacy_did]
                 imported_changed = True
             continue
-        settings = dict(candidate["profile"])
+        settings = dict(candidate.get("upload_profile") or candidate["profile"])
         if authoritative:
             capture_mode = "resolved_runtime"
         else:
@@ -5781,6 +5783,10 @@ def push_filament_drafts(token, candidates, authoritative=True):
 #                                     neither side wins silently.
 # --------------------------------------------------------------------------- #
 BUNDLE_PREFIX = "filamenthub:"
+# Raised when FilamentHub changes what a managed profile contains; a file
+# written under an older format is downloaded again once. 2: universal parent
+# and explicit printer compatibility.
+MANAGED_EXPORT_FORMAT = 2
 SYNC_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_sync.json")
 # Fields that don't represent user intent (identity/bookkeeping) are excluded
 # from the content hash so re-tagging or a metadata bump doesn't read as an edit.
@@ -6033,6 +6039,34 @@ PROFILE_BOOKKEEPING_KEYS = frozenset({
 
 def strip_printhost_secrets(settings):
     return {k: v for k, v in settings.items() if k not in PRINTHOST_CONNECTION_KEYS}
+
+
+DRAFT_PARENT_OWN_KEYS = PROFILE_BOOKKEEPING_KEYS | PRINTHOST_CONNECTION_KEYS | frozenset({
+    "inherits",
+    "compatible_printers",
+    "compatible_printers_condition",
+    "compatible_prints",
+    "compatible_prints_condition",
+})
+
+
+def complete_filament_draft(saved, parent):
+    """The saved profile with every value it inherits from its loaded parent.
+
+    Orca writes only the differences from the parent into a user preset. The
+    parent is often a vendor profile (Bambu X1, Creality K2) that other users do
+    not have, so FilamentHub receives the values the author actually prints
+    with. The parent's identity and printer restriction are not the author's.
+    """
+    if parent is None:
+        return saved
+    complete = {
+        key: value
+        for key, value in preset_config_dict(parent).items()
+        if key not in DRAFT_PARENT_OWN_KEYS
+    }
+    complete.update(saved)
+    return complete
 
 
 def _profile_parent(collection, preset):
@@ -12405,7 +12439,8 @@ class FilamentHubCatalog(
             return None
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "version_id": version_id,
-                "hash": preset_content_hash(profile), "name": name}
+                "hash": preset_content_hash(profile), "name": name,
+                "export_format": MANAGED_EXPORT_FORMAT}
 
     def _push_one(self, pid, token, local_entry, remote):
         # Send a locally-edited preset back to FilamentHub. The backend updates the
@@ -12782,6 +12817,10 @@ class FilamentHubCatalog(
                                     key: value for key, value in result.items()
                                     if key not in {"preset_id", "path"}
                                 }
+                                if pushed_id == preset_id and record.get("export_format"):
+                                    # Orca saved an edit of a file this format
+                                    # already wrote; it needs no second download.
+                                    state_record["export_format"] = record["export_format"]
                                 state[str(pushed_id)] = state_record
                                 if pushed_id != preset_id:
                                     remote_ids.add(pushed_id)
@@ -12805,7 +12844,10 @@ class FilamentHubCatalog(
                             else:
                                 failed += 1
                                 failed_ids.append(preset_id)
-                        elif remote_newer:
+                        elif (
+                            remote_newer
+                            or record.get("export_format") != MANAGED_EXPORT_FORMAT
+                        ):
                             result = self._pull_one(
                                 preset_id, token, known_presets, folder, remote
                             )

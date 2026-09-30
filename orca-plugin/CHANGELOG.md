@@ -4,6 +4,11 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.2.2
+- Synchronized filament presets now appear for every printer. A preset created from a copy of a vendor profile (for example Bambu X1 only) is no longer hidden on other machines.
+- Presets sent from OrcaSlicer to FilamentHub keep every value they print with, including the ones inherited from a vendor profile other users may not have.
+- Existing FilamentHub presets are refreshed once after the update.
+
 ## 0.2.1
 - Keep saved Bambu LAN credentials when the FilamentHub connection needs repair. Reconnect verified same-account bindings without re-entering the access code.
 - Preserve damaged connection files and distinguish LAN access errors from FilamentHub connection errors.

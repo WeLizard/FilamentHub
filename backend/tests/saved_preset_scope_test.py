@@ -328,8 +328,8 @@ async def test_export_targeted_narrows_to_profile_model(
         f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers,
     )
     assert universal.status_code == 200
-    assert "compatible_printers" not in universal.json()
-    assert "compatible_printers_condition" not in universal.json()
+    assert universal.json()["compatible_printers"] == []
+    assert universal.json()["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
@@ -424,7 +424,7 @@ async def test_export_mixed_targets_pin_all_by_name(
     assert sorted(exported["compatible_printers"]) == sorted(
         ["Voron machine", "My Custom Rig 0.6"]
     )
-    assert "compatible_printers_condition" not in exported
+    assert exported["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
@@ -447,8 +447,8 @@ async def test_export_unscoped_omits_authored_tested_on_links(
             f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
         )
     ).json()
-    assert "compatible_printers" not in exported
-    assert "compatible_printers_condition" not in exported
+    assert exported["compatible_printers"] == []
+    assert exported["compatible_printers_condition"] == ""
 
     # saved with default (unscoped) scope — same result
     await _save_preset(client, headers, preset.id)
@@ -457,8 +457,8 @@ async def test_export_unscoped_omits_authored_tested_on_links(
             f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
         )
     ).json()
-    assert "compatible_printers" not in exported
-    assert "compatible_printers_condition" not in exported
+    assert exported["compatible_printers"] == []
+    assert exported["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
@@ -487,8 +487,8 @@ async def test_export_deactivated_target_falls_back(
     )
     assert exported_response.status_code == 200
     exported = exported_response.json()
-    assert "compatible_printers" not in exported
-    assert "compatible_printers_condition" not in exported
+    assert exported["compatible_printers"] == []
+    assert exported["compatible_printers_condition"] == ""
 
 
 @pytest.mark.asyncio
