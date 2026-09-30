@@ -673,6 +673,7 @@ async def list_installed_printer_candidates(db: AsyncSession, user_id: int) -> l
     six vendor profiles out of curiosity.
     """
     from app.models.printer import Printer
+    from app.services.orca_printer_identity import resolve_orca_printer_id
 
     observations = (
         (
@@ -688,6 +689,20 @@ async def list_installed_printer_candidates(db: AsyncSession, user_id: int) -> l
     )
     if not observations:
         return []
+
+    profile_ids = {
+        obs.matched_printer_profile_id
+        for obs in observations
+        if obs.matched_printer_profile_id is not None
+    }
+    profiles = {}
+    if profile_ids:
+        profiles = {
+            profile.id: profile
+            for profile in (await db.scalars(
+                select(PrinterProfile).where(PrinterProfile.id.in_(profile_ids))
+            )).all()
+        }
 
     taken_printer_ids = set(
         (
@@ -717,10 +732,14 @@ async def list_installed_printer_candidates(db: AsyncSession, user_id: int) -> l
             continue
         if model in candidates and (not is_current or candidates[model]["_is_current"]):
             continue
-        printer = (
-            await db.execute(select(Printer).where(Printer.name == model).limit(1))
-        ).scalar_one_or_none()
-        printer_id = printer.id if printer else None
+        profile = profiles.get(obs.matched_printer_profile_id)
+        printer_id = await resolve_orca_printer_id(
+            db=db,
+            known_printer_id=profile.printer_id if profile is not None else None,
+            owner_user_id=user_id,
+            profile_settings={"printer_model": model},
+        )
+        printer = await db.get(Printer, printer_id) if printer_id is not None else None
         if printer_id is not None and printer_id in taken_printer_ids:
             continue
         candidates[model] = {

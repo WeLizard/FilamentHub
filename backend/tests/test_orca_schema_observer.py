@@ -24,6 +24,28 @@ requires_bundle = pytest.mark.skipif(
     reason="Orca source archive is not versioned; fetch it with scripts/refresh_orca_catalog_source.py",
 )
 
+REVIEWED_PROCESS_FIELDS = {
+    "wipe_tower_sparse_layers_combination": "1",
+    "unsupported_wall_last": "0",
+    "toolchange_cyclic_order": "3,2,1,4",
+    "toolchange_cyclic_first_layer": "0",
+    "wipe_inward_distance": "50%",
+    "wipe_inward": "1",
+}
+
+
+def test_new_process_fields_have_scoped_registry_transport_and_history_support():
+    from app.services.orca_field_labels import ORCA_FIELD_LABELS
+    from app.services.orca_transport import ORCA_SCALAR_FIELDS, ORCA_VECTOR_FIELDS
+
+    assert detect_unknown_orca_fields(REVIEWED_PROCESS_FIELDS, "process") == []
+    for key in REVIEWED_PROCESS_FIELDS:
+        assert key in ORCA_SCALAR_FIELDS["process"]
+        assert key not in ORCA_VECTOR_FIELDS["process"]
+        assert key in ORCA_FIELD_LABELS
+        assert key not in ORCA_PRESET_FIELDS["machine"]
+        assert key not in ORCA_PRESET_FIELDS["filament"]
+
 
 @requires_bundle
 def test_every_current_bundle_field_is_accepted_by_the_registry() -> None:
@@ -280,6 +302,7 @@ async def test_print_profile_sync_records_unknown_field_without_changing_payload
                     "orcaslicer_settings": {
                         "layer_height": ["0.2"],
                         "future_orca_process_field": ["preserved"],
+                        **REVIEWED_PROCESS_FIELDS,
                     },
                 }
             ]
@@ -295,6 +318,12 @@ async def test_print_profile_sync_records_unknown_field_without_changing_payload
 
     profile = (await db_session.execute(select(PrintProfile))).scalar_one()
     assert profile.orcaslicer_settings["future_orca_process_field"] == ["preserved"]
+    from app.services.orcaslicer_machine_exporter import print_profile_to_orca_json
+
+    exported = await print_profile_to_orca_json(profile)
+    for key, value in REVIEWED_PROCESS_FIELDS.items():
+        assert profile.orcaslicer_settings[key] == value
+        assert exported[key] == value
 
 
 @pytest.mark.asyncio
@@ -364,6 +393,13 @@ async def test_admin_can_filter_and_review_observations(admin_client, db_session
 async def test_admin_list_prunes_fields_now_covered_by_registry(
     admin_client, db_session
 ) -> None:
+    db_session.add_all([
+        OrcaSchemaObservation(
+            scope="process", field_name=key, value_shape="string",
+            registry_version="old-registry", first_source="test", last_source="test",
+        )
+        for key in REVIEWED_PROCESS_FIELDS
+    ])
     db_session.add_all(
         [
             OrcaSchemaObservation(

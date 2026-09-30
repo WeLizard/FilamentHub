@@ -1725,7 +1725,7 @@ export const presetsAPI = {
     retraction_length?: number;
     retraction_speed?: number;
     orcaslicer_settings?: Record<string, any> | null; // Расширенные параметры OrcaSlicer
-    printer_ids?: number[]; // Список ID принтеров, для которых подходит этот пресет
+    printer_ids?: number[]; // Tested-on printer IDs; recommendation evidence, not restrictions.
   }) => {
     const response = await api.post<Preset>('/presets/', data);
     return response.data;
@@ -1744,7 +1744,7 @@ export const presetsAPI = {
     retraction_length?: number;
     retraction_speed?: number;
     orcaslicer_settings?: Record<string, any> | null;
-    printer_ids?: number[];
+    printer_ids?: number[]; // Tested-on printer IDs; recommendation evidence, not restrictions.
   }) => {
     const response = await api.post<Preset>('/presets/official', data);
     return response.data;

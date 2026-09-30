@@ -4,7 +4,7 @@ import type { PrinterProfile } from '../types/api';
 /** Human label for an Orca configuration: catalog model + primary nozzle. */
 export function configLabel(profile: PrinterProfile, t: TFunction): string {
   const model =
-    profile.printer_model || profile.printer_name || profile.name;
+    profile.orca_printer_model || profile.printer_name || profile.name;
   const nozzle =
     profile.nozzle_diameters && profile.nozzle_diameters.length > 0
       ? profile.nozzle_diameters[0]
@@ -49,7 +49,7 @@ export function printerConfigurationCardLabel(
 
   const candidates = Array.from(
     new Set(
-      [physicalPrinterName, profile.printer_model, profile.printer_name]
+      [physicalPrinterName, profile.orca_printer_model, profile.printer_name, profile.printer_model]
         .map((value) => value?.trim())
         .filter((value): value is string => Boolean(value)),
     ),

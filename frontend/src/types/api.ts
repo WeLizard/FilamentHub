@@ -478,7 +478,10 @@ export interface PrinterProfile {
   notes: string | null;
   printer_slug: string | null;
   printer_name: string | null;
+  /** Exact linked system Printer.name; null when no Orca system model is linked. */
+  orca_printer_model: string | null;
   printer_manufacturer: string | null;
+  /** Short catalog model label; never use as Orca printer_model identity. */
   printer_model: string | null;
   created_at: string;
   updated_at: string;
@@ -581,7 +584,7 @@ export interface Preset {
   organization_id?: number | null;
   created_by_user_id?: number | null;
   derived_from_preset_id?: number | null;
-  printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
+  printers?: Printer[]; // Tested-on evidence for discovery and recommendations, not hard compatibility.
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
 }
 

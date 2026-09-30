@@ -265,8 +265,6 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   // Совместимость
   const filamentExtruderVariant = getStringValue('filament_extruder_variant');
   const requiredNozzleHRC = getNumberValue('required_nozzle_HRC') || getNumberValue('required_nozzle_hrc');
-  const compatiblePrinters = getArrayValue('compatible_printers');
-  const compatiblePrintersCondition = getStringValue('compatible_printers_condition');
   const compatiblePrints = getArrayValue('compatible_prints');
   const compatiblePrintsCondition = getStringValue('compatible_prints_condition');
 
@@ -787,13 +785,13 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                   {/* Принтеры */}
                   {preset.printers && preset.printers.length > 0 && (
                     <div>
-                      <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.printers')}</h4>
+                      <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.testedOn')}</h4>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {preset.printers.map((printer) => (
                           <span
                             key={printer.id}
                             className="px-3 py-1.5 bg-white/10 rounded-lg text-sm text-gray-300 border border-white/20"
-                            title={`${printer.manufacturer} ${printer.model}`}
+                            title={printer.name}
                           >
                             {printer.name}
                           </span>
@@ -806,9 +804,6 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                   <div>
                     <h4 className="text-xs font-semibold text-white/70 mb-2 pb-1 border-b border-white/10">{t('viewPreset.additionalParams')}</h4>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2">
-                      <ViewField label={t('viewPreset.compatiblePrinters')} value={compatiblePrinters} />
-                      <ViewField label={t('viewPreset.printersCondition')} value={compatiblePrintersCondition} />
-                      <div></div>
                       <ViewField label={t('viewPreset.compatiblePrints')} value={compatiblePrints} />
                       <ViewField label={t('viewPreset.printsCondition')} value={compatiblePrintsCondition} />
                       <div></div>
@@ -867,4 +862,3 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
     </ModalOverlay>
   );
 };
-

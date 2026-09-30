@@ -1397,6 +1397,23 @@
     "logout": "退出登录"
   },
   "adminOrcaSchema": {
+    "fieldName": "字段 / 来源",
+    "valueShape": "JSON 类型",
+    "occurrences": "同步次数",
+    "lastSeen": "最后观测",
+    "copyList": "复制列表",
+    "copyingList": "正在整理列表…",
+    "listCopied": "列表已复制",
+    "copyListChanged": "列表已变化或过大，无法一次导出。请刷新或缩小筛选范围后重试。",
+    "copyListLoadError": "无法加载完整列表。请重试。",
+    "scopeFilter": "预设类型",
+    "statusFilter": "状态",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "manualCopyTitle": "手动复制列表",
+    "manualCopyHint": "剪贴板不可用。请选择下方文本并手动复制。",
+    "close": "关闭",
+    "copyListHint": "复制符合当前筛选条件的所有页面，不更改记录状态。",
     "title": "Orca 架构监测",
     "description": "显示 FilamentHub 已审核注册表中尚未包含的新 Orca 预设字段。不收集字段值，未知字段不会阻止同步，并会保留用于往返兼容。",
     "queueHint": "字段审核并加入注册表后，会在下次加载页面时从队列中消失。刷新按钮只会重新加载队列，不会自动接受字段。",
@@ -2573,7 +2590,7 @@
     "filamentDescriptionPlaceholder": "耗材特性、特点、应用等描述...",
     "presetName": "预设名称",
     "presetNamePlaceholder": "例如：PLA 标准",
-    "printers": "已在以下打印机上验证",
+    "printers": "已测试的打印机",
     "addPrinter": "添加打印机",
     "printerNotFound": "未找到打印机",
     "moreCount": "还有 {{count}} 个",
@@ -2788,7 +2805,7 @@
       "exampleWeight": "例如：1000"
     },
     "defaultMinusOne": "-1 = 默认",
-    "printersHint": "这是推荐：该预设同样可用于其他打印机。"
+    "printersHint": "这些打印机上的测试结果用于推荐，并不限制在其他打印机上使用。"
   },
   "dropdown": {
     "placeholder": "请选择...",
@@ -5526,6 +5543,7 @@
     "filamentChangeLength": "耗材更换长度",
     "pelletFlowCoef": "颗粒流量系数",
     "printers": "打印机",
+    "testedOn": "已测试的打印机",
     "compatiblePrinters": "兼容打印机",
     "printersCondition": "打印机条件",
     "compatiblePrints": "兼容打印",
@@ -7030,6 +7048,12 @@
       "notes": "备注"
     },
     "fieldLabels": {
+      "unsupported_wall_last": "最后打印无支撑墙",
+      "wipe_inward": "向内擦拭",
+      "wipe_inward_distance": "向内擦拭距离（毫米或 %）",
+      "wipe_tower_sparse_layers_combination": "合并擦拭塔稀疏层",
+      "toolchange_cyclic_order": "循环耗材顺序",
+      "toolchange_cyclic_first_layer": "首层也使用循环顺序",
       "brim_ears_outer_only": "仅在外角生成裙边耳",
       "enable_mixed_color_sublayer": "混色子层",
       "separated_infills": "分离填充",
@@ -7049,7 +7073,17 @@
       "zaa_min_z": "最小 Z 高度（mm）",
       "zaa_minimize_perimeter_height": "最小化墙高角度（°）"
     },
+    "fieldErrors": {
+      "distanceOrPercent": "请输入 0 到 100 的擦拭距离（毫米或百分比），例如 0.2 或 50%。",
+      "filamentOrder": "请输入以逗号分隔的正整数耗材编号，例如 3,2,1,4。"
+    },
     "fieldHints": {
+      "unsupported_wall_last": "启用悬垂检测时，先打印提供支撑的墙和桥接，再打印完全悬空的墙环。",
+      "wipe_inward": "将外墙擦拭路径移到已打印的内墙上方，以减少接缝痕迹。没有可支撑的内墙时使用常规擦拭。",
+      "wipe_inward_distance": "需要启用向内擦拭。百分比相对于实际外墙宽度；偏移受墙宽和相邻墙间距限制。0 禁用偏移。",
+      "wipe_tower_sparse_layers_combination": "需要启用擦拭塔并保留稀疏层。在喷嘴允许的层高内合并不换料的层；平滑延时摄影或分组可能阻止合并。",
+      "toolchange_cyclic_order": "需要循环换刀顺序。用逗号分隔耗材编号，例如 3,2,1,4。未列出的耗材最后按升序打印；留空则全部按升序。",
+      "toolchange_cyclic_first_layer": "需要循环顺序。首层使用相同顺序，取代有利于附着的默认排序，可能增加小部件脱落风险。",
       "brim_ears_outer_only": "仅在外角生成鼠耳，而不是在每个检测到的角上生成。",
       "enable_mixed_color_sublayer": "将使用混色耗材的层拆分为子层以实现混色。启用可变层高时，OrcaSlicer 可能会显示警告。",
       "separated_infills": "对装配体中的每个独立零件分别居中支持的填充图案。",

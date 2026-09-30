@@ -143,6 +143,14 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
         "unit": "mm",
     },
     "toolchange_ordering": {"label": "Toolchange ordering", "unit": None},
+    "toolchange_cyclic_order": {"label": "Cyclic filament order", "unit": None},
+    "toolchange_cyclic_first_layer": {"label": "Cyclic order on first layer", "unit": None},
+    "unsupported_wall_last": {"label": "Print unsupported walls last", "unit": None},
+    "wipe_inward": {"label": "Wipe inward", "unit": None},
+    "wipe_inward_distance": {"label": "Wipe inward distance", "unit": "mm or %"},
+    "wipe_tower_sparse_layers_combination": {
+        "label": "Combine sparse prime tower layers", "unit": None,
+    },
     "brim_ears_outer_only": {
         "label": "Brim ears on outer corners only",
         "unit": None,

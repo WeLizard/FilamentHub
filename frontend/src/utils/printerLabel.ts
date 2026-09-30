@@ -8,10 +8,11 @@ function comparable(value: string): string {
   return compact(value).toLocaleLowerCase();
 }
 
-/** Catalogue model first; append an alternate display name only when it adds information. */
+/** System models keep their exact catalog name; custom models may have a display alias. */
 export function printerCatalogLabel(
-  printer: Pick<Printer, 'manufacturer' | 'model' | 'name'>,
+  printer: Pick<Printer, 'manufacturer' | 'model' | 'name' | 'source'>,
 ): string {
+  if (printer.source === 'system') return printer.name;
   const manufacturer = compact(printer.manufacturer);
   const model = compact(printer.model);
   const name = compact(printer.name);

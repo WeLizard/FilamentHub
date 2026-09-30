@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.preset import Preset
 from app.services.orca_transport import (
+    FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS,
     ORCA_SCALAR_FIELDS,
     ORCA_VECTOR_FIELDS,
     project_orca_setting,
@@ -23,8 +24,6 @@ _PRIVATE_EXACT_KEYS = frozenset(
         "filament_notes",
         "notes",
         "plugins",
-        "compatible_printers",
-        "compatible_printers_condition",
         "compatible_prints",
         "compatible_prints_condition",
         "renamed_from",
@@ -36,7 +35,7 @@ _PRIVATE_EXACT_KEYS = frozenset(
         "derived_from_external_id",
         "derived_from_draft_id",
     }
-)
+) | FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS
 
 _PRIVATE_KEY_PARTS = frozenset(
     {
@@ -96,8 +95,8 @@ def public_orca_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
     Only fields already known to the Orca transport contract may become public.
     Unknown fields remain intact in private evidence until schema intake can
     classify them; silently publishing an arbitrary nested object would expose
-    workstation data under an innocent-looking parent key. FilamentHub rebuilds
-    managed identity and printer compatibility authoritatively.
+    workstation data under an innocent-looking parent key. Published filament
+    settings are universal; only a user's saved scope can restrict installation.
     """
     if not isinstance(settings, dict):
         return {}

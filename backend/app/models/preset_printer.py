@@ -21,7 +21,7 @@ class PresetPrinter(Base):
     Позволяет:
     - Одному пресету быть связанным с несколькими принтерами
     - Отмечать, на каком принтере пресет был протестирован
-    - Фильтровать пресеты по принтеру пользователя
+    - Использовать как tested-on evidence и сигнал рекомендации по принтеру
     """
 
     __tablename__ = "preset_printers"
@@ -58,4 +58,3 @@ class PresetPrinter(Base):
         """String representation."""
         primary = " (primary)" if self.is_primary else ""
         return f"<PresetPrinter(preset_id={self.preset_id}, printer_id={self.printer_id}{primary})>"
-

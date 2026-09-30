@@ -1,9 +1,9 @@
 """Tests for the filament-library scope (PROFILE-LIBRARY-1, RFC §3.3).
 
 A saved preset carries a set of target machine profiles: empty → unscoped
-(universal, compatibility from the preset's catalog PresetPrinter links),
-one → targeted, several → compatible. Export must respect the requesting
-user's target set.
+(universal), one → targeted, several → compatible. Export emits hard material
+compatibility only for that explicit saved scope; PresetPrinter links remain
+tested-on evidence.
 """
 
 import pytest
@@ -39,7 +39,7 @@ async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict[st
             "legal_language": "en",
         },
     )
-    assert register_response.status_code == 201
+    assert register_response.status_code == 201, register_response.text
     login_response = await client.post(
         "/api/v1/auth/login",
         json={"email": email, "password": password},
@@ -74,6 +74,10 @@ async def _seed_preset(db: AsyncSession, slug: str) -> Preset:
         is_official=True,
         extruder_temp=200.0,
         bed_temp=60.0,
+        orcaslicer_settings={
+            "compatible_printers": ["Legacy machine"],
+            "compatible_printers_condition": 'printer_model=="Legacy machine"',
+        },
         moderation_status=PresetModerationStatus.APPROVED,
         active=True,
     )
@@ -318,6 +322,15 @@ async def test_export_targeted_narrows_to_profile_model(
     assert exported["compatible_printers_condition"] == 'printer_model=="Voron 2.4 350"'
     assert exported["compatible_printers"] == []
 
+    cleared = await _patch_scope(client, headers, preset.id, [])
+    assert cleared.status_code == 200
+    universal = await client.get(
+        f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers,
+    )
+    assert universal.status_code == 200
+    assert "compatible_printers" not in universal.json()
+    assert "compatible_printers_condition" not in universal.json()
+
 
 @pytest.mark.asyncio
 async def test_export_compatible_ors_system_models(
@@ -327,6 +340,10 @@ async def test_export_compatible_ors_system_models(
     headers, email = await _register_and_login(client, "scope-exp-or")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "exp-or")
+    tested_printer = await _seed_system_printer(
+        db_session, name="Bambu Lab X1 Carbon", slug="scope-exp-or-tested",
+    )
+    db_session.add(PresetPrinter(preset_id=preset.id, printer_id=tested_printer.id))
     voron = await _seed_system_printer(
         db_session, name="Voron 2.4 350", slug="scope-exp-or-voron"
     )
@@ -359,9 +376,9 @@ async def test_export_compatible_ors_system_models(
         )
     ).json()
     condition = exported["compatible_printers_condition"]
-    assert 'printer_model=="Voron 2.4 350"' in condition
-    assert 'printer_model=="Bambu Lab P2S"' in condition
-    assert " or " in condition
+    assert set(condition.split(" or ")) == {
+        'printer_model=="Voron 2.4 350"', 'printer_model=="Bambu Lab P2S"',
+    }
     assert exported["compatible_printers"] == []
 
 
@@ -411,17 +428,17 @@ async def test_export_mixed_targets_pin_all_by_name(
 
 
 @pytest.mark.asyncio
-async def test_export_unscoped_keeps_authored_links(
+async def test_export_unscoped_omits_authored_tested_on_links(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Unscoped (and not saved at all) — today's behavior: condition from the
-    preset's catalog PresetPrinter links."""
+    """Unscoped material export remains universal despite tested-on links."""
     headers, _ = await _register_and_login(client, "scope-exp-unscoped")
     preset = await _seed_preset(db_session, "exp-unscoped")
-    authored = await _seed_system_printer(
-        db_session, name="Bambu Lab X1 Carbon", slug="scope-exp-unscoped-x1c"
-    )
-    db_session.add(PresetPrinter(preset_id=preset.id, printer_id=authored.id, is_primary=True))
+    for name, slug in (("Bambu Lab P2S", "p2s"), ("Voron 2.4 350", "voron")):
+        tested_printer = await _seed_system_printer(
+            db_session, name=name, slug=f"scope-exp-unscoped-{slug}",
+        )
+        db_session.add(PresetPrinter(preset_id=preset.id, printer_id=tested_printer.id))
     await db_session.commit()
 
     # not saved at all
@@ -430,7 +447,8 @@ async def test_export_unscoped_keeps_authored_links(
             f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
         )
     ).json()
-    assert exported["compatible_printers_condition"] == 'printer_model=="Bambu Lab X1 Carbon"'
+    assert "compatible_printers" not in exported
+    assert "compatible_printers_condition" not in exported
 
     # saved with default (unscoped) scope — same result
     await _save_preset(client, headers, preset.id)
@@ -439,7 +457,8 @@ async def test_export_unscoped_keeps_authored_links(
             f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=headers
         )
     ).json()
-    assert exported["compatible_printers_condition"] == 'printer_model=="Bambu Lab X1 Carbon"'
+    assert "compatible_printers" not in exported
+    assert "compatible_printers_condition" not in exported
 
 
 @pytest.mark.asyncio
@@ -447,7 +466,7 @@ async def test_export_deactivated_target_falls_back(
     client: AsyncClient, db_session: AsyncSession
 ):
     """A target whose profile was deactivated must not break export — with no
-    live targets left it falls back to the authored-links behavior."""
+    live targets left it falls back to universal export."""
     headers, email = await _register_and_login(client, "scope-exp-gone")
     user = await _get_user(db_session, email)
     preset = await _seed_preset(db_session, "exp-gone")
@@ -468,7 +487,7 @@ async def test_export_deactivated_target_falls_back(
     )
     assert exported_response.status_code == 200
     exported = exported_response.json()
-    assert exported.get("compatible_printers", []) == []
+    assert "compatible_printers" not in exported
     assert "compatible_printers_condition" not in exported
 
 

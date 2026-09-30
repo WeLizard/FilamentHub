@@ -13,6 +13,8 @@ import {
   ORCA_ADVANCED_FIELD_KEYS,
   ORCA_ADVANCED_FIELD_LABELS,
   ORCA_STRUCTURED_TAB_ORDER,
+  isOrcaStructuredFieldEnabled,
+  isOrcaStructuredFieldValueValid,
   type OrcaStructuredFieldDef,
   type OrcaStructuredFieldTab,
 } from './createPrintProfileOrcaFields';
@@ -305,16 +307,10 @@ const splitStructuredListInput = (value: string): string[] =>
     .filter((item) => item.length > 0);
 
 const buildPrinterProfileOptionLabel = (printerProfile: PrinterProfile): string => {
-  const printerDetails = [printerProfile.printer_manufacturer, printerProfile.printer_model]
-    .filter(Boolean)
-    .join(' ');
+  const printerDetails = printerProfile.orca_printer_model || printerProfile.printer_name;
 
   if (printerDetails) {
     return `${printerProfile.name} · ${printerDetails}`;
-  }
-
-  if (printerProfile.printer_name) {
-    return `${printerProfile.name} · ${printerProfile.printer_name}`;
   }
 
   return printerProfile.name;
@@ -362,7 +358,7 @@ const readStructuredAdvancedFieldValue = (
   }
 };
 
-const buildStructuredAdvancedValues = (settings: Record<string, unknown> | undefined): Record<string, string> =>
+export const buildStructuredAdvancedValues = (settings: Record<string, unknown> | undefined): Record<string, string> =>
   ORCA_ADVANCED_FIELD_DEFS.reduce<Record<string, string>>((acc, field) => {
     acc[field.key] = readStructuredAdvancedFieldValue(settings, field);
     return acc;
@@ -407,21 +403,27 @@ const normalizeStructuredAdvancedFieldValue = (field: OrcaStructuredFieldDef, ra
   }
 };
 
-const buildStructuredAdvancedSettings = (
+export const buildStructuredAdvancedSettings = (
   values: Record<string, string>,
   sourceSettings?: Record<string, unknown>,
 ): Record<string, unknown> =>
   ORCA_ADVANCED_FIELD_DEFS.reduce<Record<string, unknown>>((acc, field) => {
     const currentUiValue = values[field.key] ?? '';
     const normalized = normalizeStructuredAdvancedFieldValue(field, currentUiValue);
+    const originalUiValue = readStructuredAdvancedFieldValue(sourceSettings, field);
     applyOrcaStructuredUiSetting(
       acc,
       sourceSettings ?? {},
       field.key,
       currentUiValue,
-      readStructuredAdvancedFieldValue(sourceSettings, field),
+      originalUiValue,
       normalized,
     );
+    // Some Orca strings use an explicit empty value to override an inherited
+    // sequence. Do not turn an edited empty override into a missing option.
+    if (field.preserveEditedEmptyString && normalized === '' && currentUiValue !== originalUiValue) {
+      acc[field.key] = '';
+    }
     return acc;
   }, {});
 
@@ -914,6 +916,16 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setAdvancedSettingsError(null);
     }
 
+    const invalidField = ORCA_ADVANCED_FIELD_DEFS.find((field) => {
+      const value = structuredAdvancedValues[field.key] ?? '';
+      return value !== readStructuredAdvancedFieldValue(sourceSettings, field)
+        && !isOrcaStructuredFieldValueValid(field, value);
+    });
+    if (invalidField) {
+      alert(t(`createPrintProfile.fieldErrors.${invalidField.validation}`));
+      return;
+    }
+
     const structuredAdvancedSettingsObject = buildStructuredAdvancedSettings(
       structuredAdvancedValues,
       sourceSettings,
@@ -1175,8 +1187,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     const value = structuredAdvancedValues[field.key] ?? '';
     const enumOptions = ORCA_ADVANCED_ENUM_OPTIONS[field.key] ?? [];
     const label = getStructuredFieldLabel(field.key);
+    const enabled = isOrcaStructuredFieldEnabled(field, structuredAdvancedValues);
+    const widthClassName = field.compact === 'distance'
+      ? 'w-full sm:w-[14ch] max-w-full'
+      : field.compact === 'boolean' ? 'w-full sm:w-auto max-w-full' : 'w-full';
     const commonClassName =
-      'w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none';
+      `${widthClassName} rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none disabled:opacity-50`;
     const hintKey = `createPrintProfile.fieldHints.${field.key}`;
     const translatedHint = i18n.exists(hintKey) ? t(hintKey) : '';
     const commonHint = translatedHint || (
@@ -1278,6 +1294,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
+            placeholder={field.placeholder}
           />
         );
         break;
@@ -1321,10 +1338,12 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         key={field.key}
         label={label}
         hint={commonHint}
-        labelMinHeightClassName="min-h-0"
+        labelMinHeightClassName="min-h-0 sm:min-h-[3rem]"
         className="min-w-0"
       >
-        {control}
+        <fieldset disabled={!enabled} aria-label={label} className="min-w-0">
+          {control}
+        </fieldset>
       </FormField>
     );
   };

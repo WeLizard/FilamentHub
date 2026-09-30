@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PresetTestedOn } from '../components/PresetTestedOn';
 import { InfoHint } from '../components/InfoHint';
 import { ProductQrButton } from '../components/ProductQrButton';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
@@ -1085,19 +1086,7 @@ export const FilamentDetailPage: React.FC = () => {
                   )}
 
                   <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-3 sm:w-auto sm:flex-1 sm:flex-nowrap sm:justify-end">
-                    {primaryPreset.printers && primaryPreset.printers.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {primaryPreset.printers.map((printer) => (
-                          <span
-                            key={printer.id}
-                            className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
-                            title={`${printer.manufacturer} ${printer.model}`}
-                          >
-                            {printer.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <PresetTestedOn printers={primaryPreset.printers} />
                     {/* Только официальный пресет приходит от производителя.
                         Плашка теперь показывает и генеративный, и лучший от
                         сообщества — для них эта подпись была бы неправдой. */}
@@ -1337,19 +1326,7 @@ export const FilamentDetailPage: React.FC = () => {
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>
                               )}
-                              {preset.printers && preset.printers.length > 0 && (
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  {preset.printers.map((printer) => (
-                                    <span
-                                      key={printer.id}
-                                      className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
-                                      title={`${printer.manufacturer} ${printer.model}`}
-                                    >
-                                      {printer.name}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
+                              <PresetTestedOn printers={preset.printers} className="mt-2" />
                             </div>
                           </div>
                           <div className="ml-4 grid shrink-0 grid-cols-[auto_1.25rem] items-start gap-x-2 text-right">

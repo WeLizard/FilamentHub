@@ -292,8 +292,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   // Вкладка "Зависимости" - НЕ нужна для агрегации (не используется для расчета средних значений)
   // Но нужны для импорта из OrcaSlicer - оставляем сеттеры для загрузки данных
-  const [compatiblePrinters, setCompatiblePrinters] = useState('');
-  const [compatiblePrintersCondition, setCompatiblePrintersCondition] = useState('');
   const [compatiblePrints, setCompatiblePrints] = useState('');
   const [compatiblePrintsCondition, setCompatiblePrintsCondition] = useState('');
   
@@ -866,12 +864,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFilamentExtruderVariant(textSetting('filament_extruder_variant'));
         
         // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
-        if (settings.compatible_printers && Array.isArray(settings.compatible_printers)) {
-          setCompatiblePrinters(settings.compatible_printers.join(', '));
-        } else {
-          setCompatiblePrinters('');
-        }
-        setCompatiblePrintersCondition(textSetting('compatible_printers_condition'));
         if (settings.compatible_prints && Array.isArray(settings.compatible_prints)) {
           setCompatiblePrints(settings.compatible_prints.join(', '));
         } else {
@@ -963,8 +955,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFilamentMinimalPurgeOnWipeTower('');
         setPelletFlowCoefficient('');
         setFilamentExtruderVariant('');
-        setCompatiblePrinters('');
-        setCompatiblePrintersCondition('');
         setCompatiblePrints('');
         setCompatiblePrintsCondition('');
       }
@@ -1085,8 +1075,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentMinimalPurgeOnWipeTower('');
       setPelletFlowCoefficient('');
       setFilamentExtruderVariant('');
-      setCompatiblePrinters('');
-      setCompatiblePrintersCondition('');
       setCompatiblePrints('');
       setCompatiblePrintsCondition('');
       setPrintersCache({});
@@ -1932,13 +1920,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('filament_extruder_variant', filamentExtruderVariant);
 
     // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
-    if (compatiblePrinters.trim() !== '') {
-      settings.compatible_printers = compatiblePrinters.split(',').map(s => s.trim()).filter(s => s);
-      hasSettings = true;
-    } else {
-      delete settings.compatible_printers;
-    }
-    addParam('compatible_printers_condition', compatiblePrintersCondition);
+    // Public filament settings are universal. Installation targets belong to
+    // the saved library scope; the original import remains private evidence.
+    delete settings.compatible_printers;
+    delete settings.compatible_printers_condition;
     if (compatiblePrints.trim() !== '') {
       settings.compatible_prints = compatiblePrints.split(',').map(s => s.trim()).filter(s => s);
       hasSettings = true;

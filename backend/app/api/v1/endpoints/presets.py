@@ -519,9 +519,9 @@ async def get_preset(
     current_user: User | None = Depends(get_current_active_user_optional),
 ) -> PresetResponse:
     """Получить пресет по ID."""
-    # Загружаем пресет БЕЗ printer_links (таблица может не существовать)
     result = await db.execute(
         select(Preset).where(Preset.id == preset_id)
+        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
     )
     preset = result.scalar_one_or_none()
 
@@ -549,14 +549,16 @@ async def get_preset(
     ):
         raise_error(404, ERR_PRESET_NOT_FOUND)
 
-    # Преобразуем пресет в ответ (без printers, так как таблица может не существовать)
     response = (
         PresetResponse.model_validate(preset)
         if is_owner_or_admin
         else PresetResponse.model_validate_public(preset)
     )
     preset_dict = response.model_dump()
-    preset_dict["printers"] = []  # Пустой массив, так как printer_links не загружаем
+    preset_dict["printers"] = [
+        PrinterResponse.model_validate(link.printer).model_dump()
+        for link in preset.printer_links
+    ]
     return PresetResponse(**preset_dict)
 
 

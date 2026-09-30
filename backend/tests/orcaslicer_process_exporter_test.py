@@ -135,3 +135,25 @@ async def test_exports_never_mutate_the_stored_settings_blob():
     await printer_profile_to_orca_json(machine_profile)
 
     assert machine_profile.orcaslicer_settings == snapshot
+
+
+@pytest.mark.asyncio
+async def test_reviewed_process_scalars_preserve_strings_and_normalize_native_bools():
+    stored = {
+        "unsupported_wall_last": True,
+        "wipe_inward": False,
+        "wipe_tower_sparse_layers_combination": True,
+        "toolchange_cyclic_first_layer": False,
+        "wipe_inward_distance": "50.000%",
+        "toolchange_cyclic_order": "3, 2,1,4",
+        "future_process_setting": ["nil", "1.23456789"],
+    }
+    snapshot = deepcopy(stored)
+    result = await print_profile_to_orca_json(_profile(stored))
+    assert result["unsupported_wall_last"] == "1"
+    assert result["wipe_inward"] == "0"
+    assert result["wipe_tower_sparse_layers_combination"] == "1"
+    assert result["toolchange_cyclic_first_layer"] == "0"
+    for key in ("wipe_inward_distance", "toolchange_cyclic_order", "future_process_setting"):
+        assert result[key] == stored[key]
+    assert stored == snapshot

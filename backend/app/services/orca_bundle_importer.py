@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from pydantic import ValidationError
-from sqlalchemy import Select, delete, or_, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -32,6 +32,12 @@ from app.schemas.orca_bundle import (
     OrcaProcessPreset,
     OrcaVendorBundle,
 )
+from app.services.orca_printer_identity import (
+    find_exact_orca_printer_profile,
+    legacy_orca_printer_name,
+    resolve_orca_printer_link,
+    split_orca_printer_identity,
+)
 from app.services.slug_service import generate_unique_slug
 
 LOG = logging.getLogger(__name__)
@@ -48,7 +54,6 @@ class OrcaBundleImporter:
         self.root_path = configured_path
         self.project_root = project_root
         self._bundle_id: int | None = None
-        self._printer_cache: dict[tuple[str, str], Printer] = {}
         self._printer_profile_cache: dict[tuple[str, str], PrinterProfile] = {}
         self._filament_cache: dict[str, Filament | None] = {}
         self._current_vendor_id: str | None = None
@@ -99,6 +104,18 @@ class OrcaBundleImporter:
             summary["print_profiles"] += vendor_result["print_profiles"]
             summary["common_profiles"] += vendor_result.get("common_profiles", 0)
 
+        # All vendors' concrete machines now exist. Cross-vendor process names
+        # must resolve on the first import too, without nozzle/name guessing.
+        for profile in self._seen_print_profiles:
+            await self._sync_print_profile_links(
+                db=db, profile=profile, vendor_name=profile.vendor or "",
+                compatible_printers=profile.compatible_printers,
+                compatible_printers_condition=(profile.extra_metadata or {}).get(
+                    "compatible_printers_condition"
+                ),
+                compatible_filaments=profile.compatible_filaments,
+            )
+
         if bundle_id is not None:
             await db.flush()
             deactivated = await self._deactivate_missing_orca_records(db)
@@ -112,7 +129,7 @@ class OrcaBundleImporter:
             select(Printer).where(Printer.source == "system")
         )
         all_printers = all_system_printers.scalars().all()
-        printer_lookup_all = {printer.name: printer for printer in all_printers}
+        printer_lookup_all = {str(printer.id): printer for printer in all_printers}
         await self._sync_printer_metadata_from_profiles(db, printer_lookup_all)
         LOG.info("Синхронизация завершена для %d принтеров", len(printer_lookup_all))
 
@@ -174,7 +191,6 @@ class OrcaBundleImporter:
             machine_model = self._load_json(model_path, OrcaMachineModel)
             printer = await self._upsert_printer(db=db, vendor_name=vendor.name, machine_model=machine_model)
             result[machine_model.name] = printer
-            self._printer_cache[(vendor.name, machine_model.name)] = printer
         await db.flush()
         return result
 
@@ -280,10 +296,11 @@ class OrcaBundleImporter:
         printer = await self._find_printer(
             db=db,
             vendor_name=vendor_name,
-            model_id=machine_model.model_id,
             name=machine_model.name,
         )
-        display_name, model_name = _normalize_model_name(vendor_name, machine_model.name)
+        display_name, manufacturer_name, model_name = split_orca_printer_identity(
+            vendor_name, machine_model.name
+        )
 
         if printer is None:
             # The raw name already opens with the vendor, so pairing them again
@@ -296,7 +313,7 @@ class OrcaBundleImporter:
             )
             printer = Printer(
                 name=display_name,
-                manufacturer=vendor_name,
+                manufacturer=manufacturer_name,
                 model=model_name,
                 slug=slug,
                 source="system",
@@ -304,7 +321,7 @@ class OrcaBundleImporter:
             )
             db.add(printer)
 
-        printer.manufacturer = vendor_name
+        printer.manufacturer = manufacturer_name
         printer.name = display_name
         printer.model = model_name
         printer.model_id = machine_model.model_id
@@ -788,54 +805,19 @@ class OrcaBundleImporter:
         printer_slugs: set[str] = set()
         if compatible_printers:
             for entry in compatible_printers:
-                name = (entry or "").strip()
-                if not name:
+                name = entry or ""
+                if not name.strip():
                     continue
-
-                printer_profile = self._printer_profile_cache.get((vendor_name, name))
-                if not printer_profile:
-                    # Names repeat across vendors, and a second import reads these
-                    # from the database rather than from this run's cache.
-                    result = await db.execute(
-                        select(PrinterProfile)
-                        .where(PrinterProfile.name == name)
-                        .order_by(PrinterProfile.id)
-                    )
-                    printer_profile = result.scalars().first()
-
-                printer: Printer | None = None
-                if printer_profile is not None and printer_profile.printer_id:
-                    # Reading .printer would lazy-load a relation this row was not
-                    # loaded with, which async SQLAlchemy refuses mid-flight.
-                    printer = await db.get(Printer, printer_profile.printer_id)
-
-                if not printer:
-                    base_name = _extract_base_printer_name(name)
-                    if base_name:
-                        printer = self._printer_cache.get((vendor_name, base_name))
-                        if not printer:
-                            result = await db.execute(
-                                select(Printer)
-                                .where(Printer.name == base_name)
-                                .order_by(Printer.id)
-                            )
-                            printer = result.scalars().first()
-                        if not printer:
-                            result = await db.execute(
-                                select(Printer)
-                                .where(Printer.model == base_name)
-                                .order_by(Printer.id)
-                            )
-                            printer = result.scalars().first()
-
-                printer_slug = (printer.slug if printer else _slugify_string(name))[:200]
+                printer_id, printer_slug = await resolve_orca_printer_link(
+                    db=db, owner_user_id=None, identifier=name, profile_vendor=vendor_name,
+                )
                 if printer_slug in printer_slugs:
                     continue
                 printer_slugs.add(printer_slug)
 
                 profile.printer_links.append(
                     PrintProfilePrinter(
-                        printer_id=printer.id if printer else None,
+                        printer_id=printer_id,
                         printer_slug=printer_slug,
                         relation_type="explicit",
                     )
@@ -942,44 +924,12 @@ class OrcaBundleImporter:
             merged_settings.pop("_inherits_chain", None)
             return merged_settings
 
-        # Ищем родительский профиль в базе данных
-        # Родительский профиль может быть в том же vendor или в другом
-        # Сначала ищем в том же vendor, потом ищем без vendor (общие профили)
-        parent_profile: PrinterProfile | None = None
-
-        # Поиск 1: В том же vendor
-        result = await db.execute(
-            select(PrinterProfile)
-            .where(
-                PrinterProfile.vendor == profile.vendor,
-                PrinterProfile.name == parent_name,
-                PrinterProfile.source == "system",
-            )
-            .order_by(PrinterProfile.id)
+        parent_profile, ambiguous = await find_exact_orca_printer_profile(
+            db, parent_name, None, profile.vendor or "",
         )
-        parent_profile = result.scalars().first()
-
-        # Поиск 2: В любом vendor (общие профили типа fdm_machine_common)
-        # Может быть несколько профилей с одним именем в разных vendor'ах
-        # Предпочитаем "Custom" vendor, затем по алфавиту
-        if not parent_profile:
-            result = await db.execute(
-                select(PrinterProfile)
-                .where(
-                    PrinterProfile.name == parent_name,
-                    PrinterProfile.source == "system",
-                )
-                .order_by(
-                    (PrinterProfile.vendor == "Custom").desc(),  # Custom в первую очередь
-                    PrinterProfile.vendor.asc(),  # Затем по алфавиту
-                    PrinterProfile.id.asc(),  # Затем по ID (стабильный порядок)
-                )
-            )
-            parent_profile = result.scalars().first()  # Берем первый из отсортированных
-
-        if not parent_profile:
+        if ambiguous or parent_profile is None:
             LOG.warning(
-                "Parent profile '%s' not found for profile '%s' (vendor: '%s')",
+                "Parent profile '%s' unresolved for profile '%s' (vendor: '%s')",
                 parent_name,
                 profile.name,
                 profile.vendor,
@@ -1107,35 +1057,33 @@ class OrcaBundleImporter:
         await db.flush()
 
     async def _find_printer(
-        self, *, db: AsyncSession, vendor_name: str, model_id: str | None, name: str
+        self, *, db: AsyncSession, vendor_name: str, name: str
     ) -> Printer | None:
-        """Recognise a machine by vendor and name — the only pair Orca keeps unique.
+        """Refresh only a source-backed system row; never infer identity by model_id.
 
-        Several models of one vendor share a model_id ("MINI" for both Prusa MINI
-        and MINI IS), so searching by it alone found many rows and the whole
-        re-import failed. The id still helps when a model was renamed upstream.
+        Even a currently unique model_id can be shared by a model later in this
+        same bundle. Exact identity wins over a historical malformed alias.
+        Ambiguity stops the import rather than creating yet another duplicate.
         """
-        display_name, _ = _normalize_model_name(vendor_name, name)
-        # Records made before the bundle existed carry a manufacturer but no
-        # vendor; without matching those, the import adds a second record for a
-        # machine already in the catalog.
-        stmt: Select = (
-            select(Printer)
-            .where(
-                or_(Printer.vendor == vendor_name, Printer.manufacturer == vendor_name),
-                or_(Printer.name == name, Printer.name == display_name),
-            )
-            .order_by(Printer.id)
+        _, manufacturer, _ = split_orca_printer_identity(vendor_name, name)
+        namespace = or_(
+            Printer.vendor == vendor_name,
+            Printer.vendor.is_(None)
+            & Printer.manufacturer.in_({vendor_name, manufacturer}),
         )
-        found = (await db.execute(stmt)).scalars().first()
-        if found is not None or not model_id:
-            return found
-        stmt = (
-            select(Printer)
-            .where(Printer.vendor == vendor_name, Printer.model_id == model_id)
-            .order_by(Printer.id)
-        )
-        return (await db.execute(stmt)).scalars().first()
+        for candidate in dict.fromkeys((name, legacy_orca_printer_name(vendor_name, name))):
+            matches = list((await db.scalars(
+                select(Printer).where(
+                    Printer.source == "system",
+                    namespace,
+                    Printer.name == candidate,
+                ).limit(2)
+            )).all())
+            if len(matches) > 1:
+                raise ValueError("Ambiguous Orca catalog model identity")
+            if matches:
+                return matches[0]
+        return None
 
     async def _find_printer_profile(
         self,
@@ -1295,25 +1243,6 @@ def _normalize_gcode(value: Any) -> str | None:
         return "\n".join(filtered) or None
     text = str(value).strip()
     return text or None
-
-
-def _normalize_model_name(vendor: str | None, raw_name: str | None) -> tuple[str, str]:
-    """Вернуть пару (display_name, model_name) без дублирования производителя."""
-    vendor = (vendor or "").strip()
-    name = (raw_name or "").strip()
-    if not name:
-        return vendor or "Unknown Printer", raw_name or "Unknown"
-
-    simplified = re.sub(r"\s+", " ", name)
-    model_only = simplified
-    if vendor:
-        vendor_lower = vendor.lower()
-        simplified_lower = simplified.lower()
-        if simplified_lower.startswith(vendor_lower):
-            model_only = simplified[len(vendor):].strip()
-    model_only = re.sub(r"\s+", " ", model_only).strip()
-    display = f"{vendor} {model_only}".strip() if vendor else simplified
-    return display or simplified, model_only or simplified
 
 
 def _build_machine_settings_dict(preset: OrcaMachinePreset) -> dict[str, Any]:
@@ -1482,15 +1411,6 @@ def _merge_unique(existing: Iterable[Any] | None, new_values: Iterable[Any]) -> 
         if value not in result:
             result.append(value)
     return result
-
-
-def _extract_base_printer_name(name: str) -> str:
-    """Return base printer name without nozzle suffixes or speed qualifiers."""
-    stripped = re.sub(r"\([^)]*nozzle[^)]*\)", "", name, flags=re.IGNORECASE)
-    stripped = re.sub(r"\b\d+(\.\d+)?\s*nozzle\b", "", stripped, flags=re.IGNORECASE)
-    stripped = re.sub(r"\bdual\b", "", stripped, flags=re.IGNORECASE)
-    stripped = re.sub(r"\s+", " ", stripped).strip()
-    return stripped
 
 
 def _slugify_string(value: str, fallback: str = "item") -> str:

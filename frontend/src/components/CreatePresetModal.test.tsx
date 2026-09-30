@@ -1,17 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Preset, PresetDraftAnalysis } from '../types/api';
+import type { Preset, PresetDraftAnalysis, Printer } from '../types/api';
 import { CreatePresetModal } from './CreatePresetModal';
 
 const {
   getDraftAnalysisMock,
   getFilamentMock,
   listFilamentsMock,
+  updatePresetMock,
 } = vi.hoisted(() => ({
   getDraftAnalysisMock: vi.fn(),
   getFilamentMock: vi.fn(),
   listFilamentsMock: vi.fn(),
+  updatePresetMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -30,6 +32,7 @@ vi.mock('../api/client', () => ({
     evaluateMine: vi.fn().mockResolvedValue({ earned: [], newly_earned: [] }),
   },
   presetsAPI: {
+    update: (...args: unknown[]) => updatePresetMock(...args),
     getDraftAnalysis: (...args: unknown[]) => getDraftAnalysisMock(...args),
     recordDraftEvent: vi.fn().mockResolvedValue(undefined),
   },
@@ -185,6 +188,7 @@ const analysis = (
 describe('CreatePresetModal imported draft review', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    updatePresetMock.mockResolvedValue({ id: 3, filament_id: 77 });
     listFilamentsMock.mockResolvedValue({
       items: [], total: 0, page: 1, size: 100, pages: 0,
     });
@@ -245,5 +249,48 @@ describe('CreatePresetModal imported draft review', () => {
     await waitFor(() => expect(getDraftAnalysisMock).toHaveBeenCalled());
     expect(screen.queryByRole('checkbox', { name: 'presetModal.officialPreset' })).not.toBeInTheDocument();
     expect(screen.queryByText('presetModal.officialPresetInfo')).not.toBeInTheDocument();
+  });
+
+  it('saves tested-on links without reinjecting legacy printer restrictions', async () => {
+    const sourceSettings = {
+      compatible_printers: ['Voron 2.4 350 0.4 nozzle'],
+      compatible_printers_condition: 'printer_model=="Voron 2.4 350"',
+      future_filament_option: ['kept'],
+    };
+    const original = structuredClone(sourceSettings);
+    const published = {
+      ...preset(3, 'Community PLA'),
+      active: true,
+      filament_id: 77,
+      orcaslicer_settings: sourceSettings,
+      printers: [
+        { id: 1, name: 'Bambu Lab P2S', manufacturer: 'Bambu Lab', model: 'P2S' },
+        { id: 2, name: 'Voron 2.4 350', manufacturer: 'Voron', model: '2.4 350' },
+      ] as Printer[],
+    };
+    getFilamentMock.mockResolvedValue({
+      id: 77, name: 'PLA', material_type: 'PLA', brand_id: 7, diameter: 1.75,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CreatePresetModal isOpen onClose={vi.fn()} preset={published} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Bambu Lab P2S')).toBeInTheDocument();
+    expect(screen.getByText('Voron 2.4 350')).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'presetModal.save' });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updatePresetMock).toHaveBeenCalledOnce());
+    const [id, payload] = updatePresetMock.mock.calls[0];
+    expect(id).toBe(3);
+    expect(payload.printer_ids).toEqual([1, 2]);
+    expect(payload.orcaslicer_settings).not.toHaveProperty('compatible_printers');
+    expect(payload.orcaslicer_settings).not.toHaveProperty('compatible_printers_condition');
+    expect(payload.orcaslicer_settings.future_filament_option).toEqual(['kept']);
+    expect(sourceSettings).toEqual(original);
   });
 });

@@ -40,6 +40,13 @@ ORCA_TRANSPORT_ARTIFACT = "OrcaSlicer PR14992 5e6895dd"
 # Orca's sentinel for an unset entry inside a nullable vector option.
 ORCA_NIL = "nil"
 
+# Managed filament exports are universal unless the caller applies an explicit
+# saved machine scope after projection. Imported restrictions remain evidence.
+FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS = frozenset({
+    "compatible_printers",
+    "compatible_printers_condition",
+})
+
 # Metadata FilamentHub keeps inside the stored settings blob for its own use.
 # `enrichment` records which material defaults were filled and how confident the
 # detection was. It is not an OrcaSlicer option, and as an object value it is
@@ -244,6 +251,8 @@ ORCA_SCALAR_FIELDS: dict[str, frozenset[str]] = {
     }),
     "process": frozenset({
     "accel_to_decel", "accel_to_decel_enable", "accel_to_decel_factor",
+    "toolchange_cyclic_order", "toolchange_cyclic_first_layer", "unsupported_wall_last",
+    "wipe_inward", "wipe_inward_distance", "wipe_tower_sparse_layers_combination",
     "acceleration_limit_mess", "acceleration_limit_mess_enable", "adaptive_layer_height",
     "ai_infill", "align_infill_direction_to_model", "alternate_extra_wall",
     "apply_top_surface_compensation", "avoid_crossing_wall_includes_support",
@@ -435,6 +444,8 @@ def build_orca_transport_settings(
     transport: dict[str, Any] = {}
     if not isinstance(settings, dict):
         return transport
+    if kind == "filament":
+        skip_keys = skip_keys | FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS
     for key, value in settings.items():
         if key in skip_keys or key in FILAMENTHUB_INTERNAL_KEYS:
             continue
@@ -466,6 +477,10 @@ def merge_orca_roundtrip_settings(
     merged = deepcopy(incoming) if isinstance(incoming, dict) else {}
     if not isinstance(stored, dict):
         return merged
+    if kind == "filament":
+        # Managed export deliberately omits these keys; their absence on return
+        # is not evidence that the imported source restriction was deleted.
+        skip_keys = skip_keys | FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS
     for key, value in stored.items():
         if key in merged:
             continue

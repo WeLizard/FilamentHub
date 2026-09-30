@@ -1397,6 +1397,23 @@
     "logout": "Logout"
   },
   "adminOrcaSchema": {
+    "fieldName": "Field / source",
+    "valueShape": "JSON shape",
+    "occurrences": "Sync occurrences",
+    "lastSeen": "Last observed",
+    "copyList": "Copy list",
+    "copyingList": "Preparing list…",
+    "listCopied": "List copied",
+    "copyListChanged": "The list changed or is too large for one export. Refresh it or narrow the filter and try again.",
+    "copyListLoadError": "Could not load the full list. Try again.",
+    "scopeFilter": "Preset type",
+    "statusFilter": "Status",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "manualCopyTitle": "Copy list manually",
+    "manualCopyHint": "Clipboard unavailable. Select the text below and copy it manually.",
+    "close": "Close",
+    "copyListHint": "Copies all pages matching the current filters without changing record statuses.",
     "title": "Orca schema watch",
     "description": "New Orca preset fields not yet covered by FilamentHub's reviewed registry. Values are never collected, unknown fields do not block sync, and remain available for round trips.",
     "queueHint": "After a field is reviewed and added to the registry, it disappears from this queue on the next page load. Refresh only reloads the queue; it does not accept fields automatically.",
@@ -2578,7 +2595,7 @@
     "filamentDescriptionPlaceholder": "Description of filament features, characteristics, applications...",
     "presetName": "Preset name",
     "presetNamePlaceholder": "e.g.: PLA Standard",
-    "printers": "Verified on printers",
+    "printers": "Tested on",
     "addPrinter": "Add printer",
     "printerNotFound": "Printer not found",
     "moreCount": "{{count}} more",
@@ -2793,7 +2810,7 @@
       "exampleWeight": "E.g.: 1000"
     },
     "defaultMinusOne": "-1 = default",
-    "printersHint": "This is a recommendation: the preset still works on other printers."
+    "printersHint": "Tested printers inform recommendations; they do not exclude other printers."
   },
   "dropdown": {
     "placeholder": "Select...",
@@ -5532,6 +5549,7 @@
     "filamentChangeLength": "Filament change length",
     "pelletFlowCoef": "Pellet flow coefficient",
     "printers": "Printers",
+    "testedOn": "Tested on",
     "compatiblePrinters": "Compatible printers",
     "printersCondition": "Printers condition",
     "compatiblePrints": "Compatible prints",
@@ -7036,6 +7054,12 @@
       "notes": "Notes"
     },
     "fieldLabels": {
+      "unsupported_wall_last": "Print unsupported walls last",
+      "wipe_inward": "Wipe inward",
+      "wipe_inward_distance": "Wipe inward distance (mm or %)",
+      "wipe_tower_sparse_layers_combination": "Combine sparse prime tower layers",
+      "toolchange_cyclic_order": "Cyclic filament order",
+      "toolchange_cyclic_first_layer": "Apply cyclic order to first layer",
       "brim_ears_outer_only": "Brim ears on outer corners only",
       "enable_mixed_color_sublayer": "Mixed color sublayer",
       "separated_infills": "Separated infills",
@@ -7055,7 +7079,17 @@
       "zaa_min_z": "Minimum Z height (mm)",
       "zaa_minimize_perimeter_height": "Minimize wall height angle (°)"
     },
+    "fieldErrors": {
+      "distanceOrPercent": "Enter a wipe distance from 0 to 100 in millimeters or percent (e.g. 0.2 or 50%).",
+      "filamentOrder": "Enter positive filament numbers separated by commas (e.g. 3,2,1,4)."
+    },
     "fieldHints": {
+      "unsupported_wall_last": "With overhang detection enabled, delays fully unsupported wall loops until supporting walls and bridges are printed.",
+      "wipe_inward": "Moves the external-wall wipe over an already printed inner wall to reduce seam marks. Falls back to a normal wipe when no supporting inner wall is available.",
+      "wipe_inward_distance": "Requires inward wiping. Percentage is relative to actual outer-wall width; the offset is limited by wall width and spacing. 0 disables the offset.",
+      "wipe_tower_sparse_layers_combination": "Requires a prime tower with sparse layers retained. Combines layers without filament changes within the nozzle layer-height limit; smooth timelapse or clumping may prevent combining.",
+      "toolchange_cyclic_order": "Requires cyclic toolchange ordering. Enter filament numbers separated by commas, e.g. 3,2,1,4. Omitted filaments follow in ascending order; an empty sequence uses ascending order.",
+      "toolchange_cyclic_first_layer": "Requires cyclic ordering. Applies the same sequence on the first layer, replacing Orca’s adhesion-optimized order and potentially dislodging small features.",
       "brim_ears_outer_only": "Places mouse ears only on outside corners instead of every detected corner.",
       "enable_mixed_color_sublayer": "Splits layers that use mixed-color filaments into sublayers for color mixing. OrcaSlicer may warn when variable layer height is also enabled.",
       "separated_infills": "Centers supported infill patterns independently for each separate part in an assembly.",

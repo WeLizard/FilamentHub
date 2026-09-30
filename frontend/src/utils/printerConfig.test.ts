@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PrinterProfile } from '../types/api';
-import { printerConfigurationCardLabel } from './printerConfig';
+import { configLabel, printerConfigurationCardLabel } from './printerConfig';
 
 const t = ((key: string) => key) as never;
 
@@ -12,9 +12,29 @@ function profile(overrides: Partial<PrinterProfile>): PrinterProfile {
     nozzle_diameters: [0.4],
     printer_model: null,
     printer_name: null,
+    orca_printer_model: null,
     ...overrides,
   } as PrinterProfile;
 }
+
+describe('configLabel', () => {
+  it('uses exact system identity even when vendor and short model differ', () => {
+    expect(configLabel(profile({
+      name: 'My custom settings',
+      orca_printer_model: 'Bambu Lab P2S',
+      printer_manufacturer: 'BambuLab',
+      printer_model: 'P2S',
+      printer_name: 'Legacy display name',
+    }), t)).toBe('Bambu Lab P2S · 0.4 printerConfig.mm');
+  });
+
+  it('keeps catalog or configuration labels when no system identity is linked', () => {
+    expect(configLabel(profile({ printer_name: 'Custom rig' }), t))
+      .toBe('Custom rig · 0.4 printerConfig.mm');
+    expect(configLabel(profile({ name: 'Unresolved machine', nozzle_diameters: null }), t))
+      .toBe('Unresolved machine');
+  });
+});
 
 describe('printerConfigurationCardLabel', () => {
   it('shortens a redundant physical printer and nozzle label', () => {

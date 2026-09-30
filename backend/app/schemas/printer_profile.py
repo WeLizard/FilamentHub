@@ -69,6 +69,7 @@ class LinkedPrinter(BaseModel):
     name: str | None = None
     manufacturer: str | None = None
     model: str | None = None
+    source: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -96,12 +97,18 @@ class PrinterProfileResponse(PrinterProfileBase):
     def printer_name(self) -> str | None:
         return self.printer.name if self.printer else None
 
+    @computed_field(return_type=str | None, alias="orca_printer_model")
+    def orca_printer_model(self) -> str | None:
+        """Exact Orca machine identity; ``printer_model`` remains short model."""
+        return self.printer.name if self.printer and self.printer.source == "system" else None
+
     @computed_field(return_type=str | None, alias="printer_manufacturer")
     def printer_manufacturer(self) -> str | None:
         return self.printer.manufacturer if self.printer else None
 
     @computed_field(return_type=str | None, alias="printer_model")
     def printer_model(self) -> str | None:
+        """Short catalog display label, never an Orca machine identity."""
         return self.printer.model if self.printer else None
 
 

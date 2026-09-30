@@ -656,9 +656,11 @@ async def test_shared_orca_setting_id_does_not_merge_named_configurations(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_source", ["system", "user"])
 async def test_import_reads_compatibility_from_the_hosts_own_format(
     client: AsyncClient,
     db_session: AsyncSession,
+    catalog_source: str,
 ):
     """Orca hands out compatible_printers as one semicolon-separated string.
 
@@ -672,7 +674,7 @@ async def test_import_reads_compatibility_from_the_hosts_own_format(
         manufacturer="Voron",
         model="2.4 350",
         slug="voron-2-4-350-compat",
-        source="user",
+        source=catalog_source,
         active=True,
     )
     db_session.add(printer)
@@ -710,8 +712,12 @@ async def test_import_reads_compatibility_from_the_hosts_own_format(
     assert profile.compatible_printers == ["Voron 2.4 350", "Voron 2.4 300"]
     assert sorted(link.printer_slug for link in profile.printer_links) == [
         "voron-2-4-300",
-        "voron-2-4-350-compat",
+        "voron-2-4-350-compat" if catalog_source == "system" else "voron-2-4-350",
     ]
+    # A same-named custom catalog row is not proof of Orca machine identity.
+    assert {link.printer_id for link in profile.printer_links} == (
+        {None, printer.id} if catalog_source == "system" else {None}
+    )
 
 
 @pytest.mark.asyncio

@@ -13,8 +13,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 const profiles = [
-  { id: 10, name: 'Voron 04', printer_id: 1, printer_model: 'Voron 2.4 350', nozzle_diameters: [0.4] },
-  { id: 11, name: 'Voron 06', printer_id: 1, printer_model: 'Voron 2.4 350', nozzle_diameters: [0.6] },
+  { id: 10, name: 'Voron 04', printer_id: 1, orca_printer_model: 'Voron 2.4 350', printer_model: '2.4 350', nozzle_diameters: [0.4] },
+  { id: 11, name: 'Voron 06', printer_id: 1, orca_printer_model: 'Voron 2.4 350', printer_model: '2.4 350', nozzle_diameters: [0.6] },
 ];
 
 vi.mock('@tanstack/react-query', () => ({

@@ -40,8 +40,8 @@ class UserSavedPreset(Base):
 
     # Library scope (RFC material-systems §3.3, filament slice), derived from
     # the target set in user_saved_preset_targets:
-    #   unscoped   — universal, no targets: compatibility comes from the
-    #                preset's catalog PresetPrinter links, today's behavior;
+    #   unscoped   — universal, no hard printer restriction; catalog
+    #                PresetPrinter links remain tested-on evidence;
     #   targeted   — exactly one of the user's own Orca machine profiles;
     #   compatible — allowed for a chosen set of the user's machine profiles.
     # The scope/target-count invariant is maintained by the single writer

@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PresetTestedOn } from '../components/PresetTestedOn';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -633,22 +634,9 @@ export const ProfilePage: React.FC = () => {
       }
 
       if (!printerMap.has(profile.printer_id)) {
-        // Формируем название принтера:
-        // 1. Приоритет: printer_name (имя из OrcaSlicer профиля, например "B2Bee", "Voron 2.4 350")
-        // 2. Если printer_name пустой или выглядит как placeholder, используем manufacturer + model
-        // 3. Fallback: printer_slug или "Принтер {id}"
-        let displayName = '';
-        
-        // Сначала проверяем printer_name - это наиболее точное имя для пользовательских принтеров
-        if (profile.printer_name && !profile.printer_name.startsWith('Printer ') && !profile.printer_name.startsWith('Принтер ')) {
-          displayName = profile.printer_name;
-        } else if (profile.printer_manufacturer && profile.printer_model) {
-          // Если есть manufacturer и model, используем их (для официальных принтеров)
-          displayName = `${profile.printer_manufacturer} ${profile.printer_model}`;
-        } else {
-          // Fallback
-          displayName = profile.printer_name || profile.printer_slug || `Printer ${profile.printer_id}`;
-        }
+        // Use the exact canonical Orca identity.  printer_model is only the
+        // short catalog model and must not be combined back with manufacturer.
+        const displayName = profile.orca_printer_model || profile.printer_name || profile.name;
         
         printerMap.set(profile.printer_id, {
           id: profile.printer_id,
@@ -1520,7 +1508,7 @@ export const ProfilePage: React.FC = () => {
                             {printer.manufacturer && (
                               <p className="text-xs text-gray-400">{printer.manufacturer}</p>
                             )}
-                            <h3 className="text-lg font-semibold text-white">{printer.model || printer.name}</h3>
+                            <h3 className="text-lg font-semibold text-white">{printer.name}</h3>
                           </div>
                         </div>
                         {printer.id === 0 && (
@@ -2010,19 +1998,7 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => {
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                 <p className="text-white font-medium">{preset.name}</p>
-                {preset.printers && preset.printers.length > 0 && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {preset.printers.map((printer) => (
-                      <span
-                        key={printer.id}
-                        className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
-                        title={`${printer.manufacturer} ${printer.model}`}
-                      >
-                        {printer.name}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <PresetTestedOn printers={preset.printers} />
               </div>
               <p className="text-gray-400 text-sm">
                 {preset.extruder_temp}°C / {preset.bed_temp}°C
@@ -4148,19 +4124,7 @@ const PresetCard: React.FC<PresetCardProps> = ({
                 title={filament?.color_name ?? undefined}
               />
               <h4 className="text-xl font-bold text-white break-words">{preset.name}</h4>
-              {preset.printers && preset.printers.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {preset.printers.map((printer) => (
-                    <span
-                      key={printer.id}
-                      className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
-                      title={`${printer.manufacturer} ${printer.model}`}
-                    >
-                      {printer.name}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <PresetTestedOn printers={preset.printers} />
               {preset.source === 'saved' && (
                 <span className="px-2 py-0.5 bg-blue-600/30 rounded text-blue-300 text-xs font-medium whitespace-nowrap">
                   {t('profilePage.fromCatalog')}

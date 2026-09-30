@@ -21,6 +21,7 @@ from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
+from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.models.printer_bridge_observation import (
     MaterialSlotObservation,
     PhysicalPrinterStatusObservation,
@@ -130,6 +131,14 @@ async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
     bridge_headers = {
         "X-FilamentHub-Bridge-Token": paired.json()["bridge_token"],
     }
+    # The short pairing-code lifetime must never become an inactivity expiry
+    # for the already paired bridge credential.
+    credential = await db_session.scalar(select(PrinterBridgeCredential))
+    connector = await db_session.get(PhysicalPrinterConnector, credential.connector_id)
+    inactive_since = datetime.now(timezone.utc) - timedelta(days=90)
+    credential.paired_at = inactive_since
+    connector.last_seen_at = inactive_since
+    await db_session.commit()
     replayed_pairing = await auth_client.post(
         "/api/v1/printer-bridge/pair",
         json={

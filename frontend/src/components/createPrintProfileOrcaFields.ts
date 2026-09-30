@@ -28,7 +28,32 @@ export interface OrcaStructuredFieldDef {
   max?: number;
   step?: number | 'any';
   placeholder?: string;
+  enabledWhen?: Record<string, string>;
+  compact?: 'boolean' | 'distance';
+  validation?: 'distanceOrPercent' | 'filamentOrder';
+  preserveEditedEmptyString?: boolean;
 }
+
+export const isOrcaStructuredFieldEnabled = (
+  field: OrcaStructuredFieldDef,
+  values: Record<string, string>,
+): boolean => Object.entries(field.enabledWhen ?? {}).every(([key, expected]) => {
+  const actual = values[key];
+  // An unresolved inherited value is not evidence that the option is disabled.
+  return !actual || actual === expected;
+});
+
+export const isOrcaStructuredFieldValueValid = (field: OrcaStructuredFieldDef, raw: string): boolean => {
+  const value = raw.trim();
+  if (!value) return true;
+  if (field.validation === 'filamentOrder') return /^[1-9]\d*(\s*,\s*[1-9]\d*)*$/.test(value);
+  if (field.validation === 'distanceOrPercent') {
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)%?$/.test(value)) return false;
+    const number = Number(value.replace(/%$/, ''));
+    return Number.isFinite(number) && number >= (field.min ?? 0) && number <= (field.max ?? Infinity);
+  }
+  return true;
+};
 
 const splitLines = (value: string): string[] =>
   value
@@ -106,6 +131,8 @@ export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
   { key: 'small_support_perimeter_speed', kind: 'floatOrPercent', tab: 'speed', section: 'otherLayersSpeed', placeholder: '50%' },
   { key: 'small_support_perimeter_threshold', kind: 'float', tab: 'speed', section: 'otherLayersSpeed', min: 0, step: 0.1, placeholder: '0' },
   { key: 'toolchange_ordering', kind: 'enum', tab: 'multimaterial', section: 'advanced' },
+  { key: 'toolchange_cyclic_order', kind: 'string', tab: 'multimaterial', section: 'advanced', enabledWhen: { toolchange_ordering: 'cyclic' }, placeholder: '3,2,1,4', validation: 'filamentOrder', preserveEditedEmptyString: true },
+  { key: 'toolchange_cyclic_first_layer', kind: 'boolean', tab: 'multimaterial', section: 'advanced', enabledWhen: { toolchange_ordering: 'cyclic' }, compact: 'boolean' },
   { key: 'brim_ears_outer_only', kind: 'boolean', tab: 'others', section: 'brim' },
   { key: 'brim_flow_ratio', kind: 'float', tab: 'others', section: 'brim', min: 0, max: 2, step: 0.01, placeholder: '1' },
   { key: 'combine_brims', kind: 'boolean', tab: 'others', section: 'brim' },
@@ -129,6 +156,10 @@ detect_thin_wall
     `
 extra_perimeters_on_overhangs
 detect_overhang_wall
+`,
+  ),
+  { key: 'unsupported_wall_last', kind: 'boolean', tab: 'quality', section: 'overhangs', enabledWhen: { detect_overhang_wall: '1' }, compact: 'boolean' },
+  ...buildFieldDefs('boolean', 'quality', 'overhangs', `
 overhang_reverse
 overhang_reverse_internal_only
 make_overhang_printable
@@ -142,6 +173,11 @@ make_overhang_printable
 staggered_inner_seams
 role_based_wipe_speed
 wipe_on_loops
+`,
+  ),
+  { key: 'wipe_inward', kind: 'boolean', tab: 'quality', section: 'seam', compact: 'boolean' },
+  { key: 'wipe_inward_distance', kind: 'floatOrPercent', tab: 'quality', section: 'seam', enabledWhen: { wipe_inward: '1' }, compact: 'distance', min: 0, max: 100, placeholder: '50%', validation: 'distanceOrPercent' },
+  ...buildFieldDefs('boolean', 'quality', 'seam', `
 wipe_before_external_loop
 seam_slope_conditional
 seam_slope_entire_loop
@@ -277,6 +313,10 @@ prime_tower_flat_ironing
 enable_tower_interface_features
 enable_tower_interface_cooldown_during_tower
 wipe_tower_no_sparse_layers
+`,
+  ),
+  { key: 'wipe_tower_sparse_layers_combination', kind: 'boolean', tab: 'multimaterial', section: 'primeTower', enabledWhen: { enable_prime_tower: '1', wipe_tower_no_sparse_layers: '0' }, compact: 'boolean' },
+  ...buildFieldDefs('boolean', 'multimaterial', 'primeTower', `
 wipe_tower_fillet_wall
 single_extruder_multi_material_priming
 `,
@@ -1213,6 +1253,12 @@ wiping_volumes_extruders
 export const ORCA_ADVANCED_FIELD_KEYS = new Set(ORCA_ADVANCED_FIELD_DEFS.map((field) => field.key));
 
 export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string }> = {
+  unsupported_wall_last: { en: "Print unsupported walls last", ru: "Неподдерживаемые стенки в конце" },
+  wipe_inward: { en: "Wipe inward", ru: "Очистка внутрь" },
+  wipe_inward_distance: { en: "Wipe inward distance (mm or %)", ru: "Смещение очистки внутрь (мм или %)" },
+  wipe_tower_sparse_layers_combination: { en: "Combine sparse prime tower layers", ru: "Объединять разреженные слои башни" },
+  toolchange_cyclic_order: { en: "Cyclic filament order", ru: "Циклический порядок филаментов" },
+  toolchange_cyclic_first_layer: { en: "Apply cyclic order to first layer", ru: "Циклический порядок на первом слое" },
   bottom_layer_direction: { en: 'Bottom layer direction', ru: 'Направление нижнего слоя' },
   bottom_surface_fill_order: { en: 'Bottom surface fill order', ru: 'Порядок заполнения нижней поверхности' },
   bridge_line_width: { en: 'Bridge line width', ru: 'Ширина линии моста' },

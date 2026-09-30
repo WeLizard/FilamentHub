@@ -65,7 +65,8 @@ class PresetCreate(PresetBase):
     filament_id: int = Field(..., gt=0)
     user_id: int | None = Field(None, gt=0)  # Автоматически заполняется из токена
     printer_ids: list[int] = Field(
-        default_factory=list, description="Список ID принтеров, для которых подходит этот пресет"
+        default_factory=list,
+        description="Printer IDs tested with this preset; recommendation evidence, not compatibility restrictions",
     )
 
 
@@ -110,7 +111,8 @@ class PresetUpdate(BaseModel):
 
     # Printers
     printer_ids: list[int] | None = Field(
-        None, description="Список ID принтеров, для которых подходит этот пресет"
+        None,
+        description="Printer IDs tested with this preset; recommendation evidence, not compatibility restrictions",
     )
 
     @field_validator("name")
@@ -168,7 +170,8 @@ class PresetResponse(PresetBase):
     latest_version_number: int | None = None
     update_available: bool = False
     printers: list[PrinterResponse] = Field(
-        default_factory=list, description="Список принтеров, для которых подходит этот пресет"
+        default_factory=list,
+        description="Printers tested with this preset; recommendation evidence, not compatibility restrictions",
     )
 
     @classmethod

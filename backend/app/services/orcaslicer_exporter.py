@@ -4,13 +4,10 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
 from app.models.preset import Preset
-from app.models.preset_printer import PresetPrinter
-from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.services.material_mapping_service import get_material_preset
 from app.services.orca_printer_identity import (
@@ -68,10 +65,14 @@ def _filament_transport(settings, preset_id):
     """Export-only copy of a preset's stored settings; storage is never mutated.
 
     Identity/header fields are re-issued authoritatively by the callers below,
-    and process-scope keys do not belong to a filament at all.
+    and process-scope keys do not belong to a filament at all. The filament
+    transport policy omits imported printer restrictions without altering storage.
     """
     return build_orca_transport_settings(
-        settings, "filament", preset_id, skip_keys=IDENTITY_KEYS | PROCESS_SCOPE_KEYS
+        settings,
+        "filament",
+        preset_id,
+        skip_keys=IDENTITY_KEYS | PROCESS_SCOPE_KEYS,
     )
 
 
@@ -158,45 +159,6 @@ def _target_profiles_condition(target_profiles: list["PrinterProfile"]) -> str |
     if not models:
         return None
     return " or ".join(f'printer_model=="{_escape_condition_value(m)}"' for m in models)
-
-
-async def build_compatible_printers_condition(preset: Preset, db: AsyncSession) -> str | None:
-    """Build an Orca ``compatible_printers_condition`` from the preset's links.
-
-    Matches the preset's authored ``PresetPrinter`` printers by canonical
-    ``printer_model``. Returns None to leave the preset compatible with all
-    printers — when it has no links, or only links to non-system/custom printers
-    whose names match no Orca machine preset (self-builds, generic Klipper).
-    """
-    result = await db.execute(
-        select(Printer)
-        .join(PresetPrinter, PresetPrinter.printer_id == Printer.id)
-        .where(PresetPrinter.preset_id == preset.id)
-    )
-    printers = result.scalars().all()
-    if not printers:
-        return None
-
-    models: list[str] = []
-    skipped_non_system = False
-    for printer in printers:
-        if not is_orca_system_printer(printer):
-            skipped_non_system = True
-            continue
-        model = resolve_orca_printer_model(printer)
-        if model and model not in models:
-            models.append(model)
-
-    if not models:
-        if skipped_non_system:
-            logger.warning(
-                "Preset %s links only non-system printers; leaving compatible_printers open",
-                preset.id,
-            )
-        return None
-
-    clauses = [f'printer_model=="{_escape_condition_value(m)}"' for m in models]
-    return " or ".join(clauses)
 
 
 async def preset_to_orcaslicer_json(
@@ -395,29 +357,17 @@ async def preset_to_orcaslicer_json(
         profile["default_filament_colour"] = [filament.color_hex]
         profile["filament_colour"] = [filament.color_hex]
 
-    # Совместимые принтеры. Приоритет — явно заданный library scope пользователя:
-    # targeted/compatible пресет сужается до его собственных machine-профилей
-    # (RFC §3.3), у остальных авторитет — авторская привязка PresetPrinter:
-    # condition сужает по каноничному printer_model привязанных системных
-    # принтеров. Если FH scope не задан, исходные hard-ограничения Orca остаются
-    # нетронутыми: рекомендации FH не должны молча расширять профиль.
-    condition = None
+    # A filament's tested-on links are recommendation evidence only.  A hard
+    # Orca restriction is emitted only for an explicit saved machine scope.
     if target_profiles:
-        profile["compatible_printers"] = []
         condition = _target_profiles_condition(target_profiles)
-        if condition is None:
-            # Хотя бы один профиль без разрешимой системной модели (самосбор,
-            # generic Klipper): пиним весь набор по точным именам
-            # machine-профилей — это имена пресетов принтеров в Orca
-            # пользователя.
+        if condition:
+            profile["compatible_printers"] = []
+            profile["compatible_printers_condition"] = condition
+        else:
+            # Any unresolved/custom model makes the exact selected machine
+            # names authoritative for the whole set; never AND two filters.
             profile["compatible_printers"] = [p.name for p in target_profiles]
-    elif db is not None and preset.id is not None:
-        condition = await build_compatible_printers_condition(preset, db)
-    if condition:
-        profile["compatible_printers"] = []
-        profile["compatible_printers_condition"] = condition
-    elif target_profiles:
-        profile.pop("compatible_printers_condition", None)
 
     # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
     # Формат `"filamenthub:<id>"` соответствует Orca Cloud convention `"<provider>:<uuid>"`.
