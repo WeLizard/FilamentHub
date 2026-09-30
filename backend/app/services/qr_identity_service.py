@@ -41,6 +41,7 @@ from app.core.errors import (
 )
 from app.core.field_encryption import blind_index, decrypt_field, encrypt_field
 from app.models.filament import Filament
+from app.models.filament_qr_alias import FilamentQrAlias
 from app.models.qr_identity import (
     QrManufacturerBatch,
     QrManufacturerBatchItem,
@@ -944,6 +945,7 @@ async def _resolve_manufacturer_instance(
     db: AsyncSession,
     *,
     filament: Filament,
+    product_code: str,
     token: str,
 ) -> ResolvedManufacturerInstance | None:
     try:
@@ -962,7 +964,7 @@ async def _resolve_manufacturer_instance(
     if batch is None:
         return None
     item = _item_for_ordinal(batch.items, reference.ordinal)
-    if item is None or item.filament_id != filament.id or item.product_qr_code != filament.qr_code:
+    if item is None or item.filament_id != filament.id or item.product_qr_code != product_code:
         return None
     expected = _manufacturer_token(
         batch,
@@ -984,6 +986,22 @@ async def _resolve_manufacturer_instance(
     )
 
 
+async def _filament_for_product_code(db: AsyncSession, product_code: str) -> Filament | None:
+    filament = await db.scalar(
+        select(Filament)
+        .options(selectinload(Filament.brand))
+        .where(Filament.qr_code == product_code)
+    )
+    if filament is not None:
+        return filament
+    return await db.scalar(
+        select(Filament)
+        .options(selectinload(Filament.brand))
+        .join(FilamentQrAlias, FilamentQrAlias.filament_id == Filament.id)
+        .where(FilamentQrAlias.code == product_code)
+    )
+
+
 async def resolve_qr_identity(
     db: AsyncSession,
     short_code: str,
@@ -991,9 +1009,7 @@ async def resolve_qr_identity(
     current_user: User | None = None,
 ) -> QrResolution:
     """Resolve legacy or FHQ1 codes without letting instance failure break SKU."""
-    direct = await db.scalar(
-        select(Filament).options(selectinload(Filament.brand)).where(Filament.qr_code == short_code)
-    )
+    direct = await _filament_for_product_code(db, short_code)
     if direct is not None:
         return QrResolution(
             filament=direct,
@@ -1009,11 +1025,17 @@ async def resolve_qr_identity(
     if envelope is None:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    filament = await db.scalar(
-        select(Filament)
-        .options(selectinload(Filament.brand))
-        .where(Filament.qr_code == envelope.product_code)
-    )
+    filament = await _filament_for_product_code(db, envelope.product_code)
+    if filament is None and envelope.namespace == "U":
+        # A merged duplicate takes its product code with it, while the spool and
+        # its binding move to the kept filament. The personal token is unique,
+        # so a printed label still reaches the right spool without the old code.
+        filament = await db.scalar(
+            select(Filament)
+            .options(selectinload(Filament.brand))
+            .join(QrUserSpoolBinding, QrUserSpoolBinding.filament_id == Filament.id)
+            .where(QrUserSpoolBinding.token_digest == _user_token_digest(envelope.token))
+        )
     if filament is None:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
@@ -1045,7 +1067,9 @@ async def resolve_qr_identity(
             resolution.spool_id = binding.user_spool_id
         return resolution
 
-    manufacturer = await _resolve_manufacturer_instance(db, filament=filament, token=envelope.token)
+    manufacturer = await _resolve_manufacturer_instance(
+        db, filament=filament, product_code=envelope.product_code, token=envelope.token
+    )
     if manufacturer is None:
         return resolution
     state = manufacturer.state
@@ -1469,12 +1493,13 @@ async def claim_manufacturer_qr(
         envelope = None
     if envelope is None or envelope.namespace != "M":
         raise_error(409, ERR_QR_INSTANCE_UNAVAILABLE)
-    filament = await db.scalar(select(Filament).where(Filament.qr_code == envelope.product_code))
+    filament = await _filament_for_product_code(db, envelope.product_code)
     if filament is None:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
     resolved = await _resolve_manufacturer_instance(
         db,
         filament=filament,
+        product_code=envelope.product_code,
         token=envelope.token,
     )
     if resolved is None:

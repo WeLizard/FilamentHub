@@ -30,6 +30,7 @@ from app.models.qr_identity import (
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.catalog_merge_service import merge_filaments
 from app.services.qr_identity_service import (
     QR_MAX_SHORT_CODE_LENGTH,
     encode_qr_envelope,
@@ -1004,3 +1005,139 @@ async def test_manufacturer_batch_permissions_idempotency_and_sparse_exception(
     assert revoked_list.status_code == 200
     assert revoked_list.json()["total"] == 0
     assert revoked_list.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_personal_label_survives_merge_of_its_filament_without_leaking_the_spool(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    duplicate, spool = await _catalog_spool(db_session, user=auth_user, suffix="MERGE1")
+    kept = Filament(
+        brand_id=duplicate.brand_id,
+        name="QR Identity Kept MERGE1",
+        slug="qr-identity-kept-merge1",
+        material_type="PETG",
+        active=True,
+        qr_code="FH-KEPTMERGE1",
+    )
+    db_session.add(kept)
+    await db_session.commit()
+    kept_id, spool_id, duplicate_code = kept.id, spool.id, duplicate.qr_code
+
+    issued = await auth_client.post(f"/api/v1/spools/{spool_id}/qr/issue")
+    assert issued.status_code == 200
+    printed = issued.json()["short_code"]
+
+    await merge_filaments(db_session, source=duplicate, target=kept)
+    await db_session.commit()
+    assert await db_session.scalar(
+        select(Filament.id).where(Filament.qr_code == duplicate_code)
+    ) is None
+
+    product_scan = await auth_client.post(f"/api/v1/qr/{duplicate_code}/scan")
+    assert product_scan.status_code == 200
+    assert product_scan.json()["filament"]["id"] == kept_id
+
+    owner_scan = await auth_client.post(f"/api/v1/qr/{printed}/scan")
+    assert owner_scan.status_code == 200
+    assert owner_scan.json()["filament"]["id"] == kept_id
+    assert owner_scan.json()["qr_identity"]["resolution"] == "linked"
+    assert owner_scan.json()["qr_identity"]["spool_id"] == spool_id
+
+    _foreign, foreign_token = await _second_user(db_session, "merge-foreign")
+    foreign_scan = await auth_client.post(
+        f"/api/v1/qr/{printed}/scan",
+        headers={"Authorization": f"Bearer {foreign_token}"},
+    )
+    assert foreign_scan.status_code == 200
+    assert foreign_scan.json()["qr_identity"]["resolution"] == "product_only"
+    assert foreign_scan.json()["qr_identity"]["spool_id"] is None
+
+    forged = encode_qr_envelope(duplicate_code, "U", "A" * 22)
+    forged_scan = await auth_client.post(f"/api/v1/qr/{forged}/scan")
+    assert forged_scan.status_code == 200
+    assert forged_scan.json()["filament"]["id"] == kept_id
+    assert forged_scan.json()["qr_identity"]["resolution"] == "product_only"
+    assert forged_scan.json()["qr_identity"]["spool_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_manufacturer_labels_survive_two_filament_merges(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    brand, duplicate, _organization = await _manufacturer_workspace(
+        db_session, user=auth_user, suffix="MERGE2"
+    )
+    first_kept = Filament(
+        brand_id=brand.id,
+        name="First QR Merge Material",
+        slug="first-qr-merge-material",
+        material_type=duplicate.material_type,
+        active=True,
+        qr_code="FH-FIRSTMERGE2",
+    )
+    final_kept = Filament(
+        brand_id=brand.id,
+        name="Final QR Merge Material",
+        slug="final-qr-merge-material",
+        material_type=duplicate.material_type,
+        active=True,
+        qr_code="FH-FINALMERGE2",
+    )
+    db_session.add_all([first_kept, final_kept])
+    await db_session.commit()
+    duplicate_id, first_kept_id, final_kept_id = duplicate.id, first_kept.id, final_kept.id
+    duplicate_code, first_kept_code = duplicate.qr_code, first_kept.qr_code
+
+    created = await auth_client.post(
+        "/api/v1/manufacturer/qr-batches",
+        json={
+            "brand_id": brand.id,
+            "mode": "serialized",
+            "items": [{"filament_id": duplicate_id, "quantity": 1}],
+        },
+        headers={"Idempotency-Key": "manufacturer-merge-labels-0001"},
+    )
+    assert created.status_code == 201
+    payloads = await auth_client.get(
+        f"/api/v1/manufacturer/qr-batches/{created.json()['public_id']}/payloads"
+    )
+    printed = payloads.json()["items"][0]["short_code"]
+
+    await merge_filaments(db_session, source=duplicate, target=first_kept)
+    await db_session.commit()
+    assert (await auth_client.post(f"/api/v1/qr/{printed}/scan")).json()["filament"]["id"] == first_kept_id
+
+    await merge_filaments(db_session, source=first_kept, target=final_kept)
+    await db_session.commit()
+    for code in (duplicate_code, first_kept_code):
+        scan = await auth_client.post(f"/api/v1/qr/{code}/scan")
+        assert scan.status_code == 200
+        assert scan.json()["filament"]["id"] == final_kept_id
+
+    anonymous = await auth_client.post(f"/api/v1/qr/{printed}/scan")
+    assert anonymous.status_code == 200
+    assert anonymous.json()["filament"]["id"] == final_kept_id
+    assert anonymous.json()["qr_identity"]["resolution"] == "unbound"
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=final_kept_id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    claim = await auth_client.post(
+        f"/api/v1/qr/{printed}/claim", json={"spool_id": spool.id}
+    )
+    assert claim.status_code == 200
+    owner_scan = await auth_client.post(f"/api/v1/qr/{printed}/scan")
+    assert owner_scan.json()["qr_identity"]["resolution"] == "linked"
+    assert owner_scan.json()["qr_identity"]["spool_id"] == spool.id

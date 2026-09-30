@@ -4,7 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandDuplicatePair, BrandMergePreview, FilamentMergeCandidatesResponse, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -1043,8 +1043,13 @@ export const brandsAPI = {
     return response.data.slug;
   },
 
-  create: async (data: { name: string; slug?: string; description?: string; website?: string; logo_url?: string }) => {
-    const response = await api.post<Brand>('/brands/', data);
+  create: async (
+    data: { name: string; slug?: string; description?: string; website?: string; logo_url?: string },
+    confirmSimilar = false,
+  ) => {
+    const response = await api.post<Brand>('/brands/', data, {
+      params: confirmSimilar ? { confirm_similar: true } : undefined,
+    });
     return response.data;
   },
 
@@ -1273,6 +1278,16 @@ export const filamentsAPI = {
     line_id?: number | null;
   }>) => {
     const response = await api.patch<Filament>(`/filaments/${id}`, data);
+    return response.data;
+  },
+
+  getMergeCandidates: async (id: number): Promise<FilamentMergeCandidatesResponse> => {
+    const response = await api.get<FilamentMergeCandidatesResponse>(`/filaments/${id}/merge-candidates`);
+    return response.data;
+  },
+
+  merge: async (id: number, targetId: number): Promise<Filament> => {
+    const response = await api.post<Filament>(`/filaments/${id}/merge`, { target_id: targetId });
     return response.data;
   },
 
@@ -2608,6 +2623,29 @@ export const adminAPI = {
     data: { slug: string; expected_current_slug: string },
   ): Promise<Brand> => {
     const response = await api.post<Brand>(`/admin/brands/${id}/slug`, data);
+    return response.data;
+  },
+
+  getBrandDuplicates: async (): Promise<BrandDuplicatePair[]> => {
+    const response = await api.get<BrandDuplicatePair[]>('/admin/brands/duplicates');
+    return response.data;
+  },
+
+  getBrandMergePreview: async (sourceId: number, targetId: number): Promise<BrandMergePreview> => {
+    const response = await api.get<BrandMergePreview>(`/admin/brands/${sourceId}/merge-preview`, {
+      params: { target_id: targetId },
+    });
+    return response.data;
+  },
+
+  mergeBrand: async (
+    sourceId: number,
+    data: {
+      target_id: number;
+      filament_pairs: { source_filament_id: number; target_filament_id: number }[];
+    },
+  ): Promise<Brand> => {
+    const response = await api.post<Brand>(`/admin/brands/${sourceId}/merge`, data);
     return response.data;
   },
 

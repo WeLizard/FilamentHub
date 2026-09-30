@@ -19,10 +19,12 @@ from app.core.errors import (
     ERR_FILAMENT_ALREADY_EXISTS,
     ERR_FILAMENT_HAS_CONTRIBUTIONS,
     ERR_FILAMENT_LINE_INVALID,
+    ERR_FILAMENT_MERGE_BRAND_MISMATCH,
     ERR_FILAMENT_NOT_FOUND,
     ERR_FILAMENT_SIMILAR_EXISTS,
     ERR_NO_PERMISSION_DELETE_FILAMENT,
     ERR_NO_PERMISSION_EDIT_FILAMENT,
+    ERR_NO_PERMISSION_MERGE_FILAMENT,
     raise_error,
 )
 from app.core.limiter import limiter
@@ -43,6 +45,7 @@ from app.models.organization import (
 )
 from app.models.preset import Preset
 from app.models.user import User, UserRole
+from app.schemas.catalog_merge import FilamentMergeCandidatesResponse, FilamentMergeRequest
 from app.schemas.filament import (
     KNOWN_ADDITIVES,
     KNOWN_FILLERS,
@@ -61,7 +64,15 @@ from app.services.catalog_color_groups import (
     FilamentColorGroup,
     resolve_color_group,
 )
+from app.services.catalog_duplicates import comparable_name, same_filament_color
 from app.services.catalog_feature_search import resolve_catalog_feature_codes
+from app.services.catalog_merge_service import (
+    count_filament_contributions,
+    filament_summary,
+    lock_filaments,
+    merge_filaments,
+    rank_merge_candidates,
+)
 from app.services.catalog_url_service import (
     choose_filament_slug,
     filament_public_path,
@@ -84,6 +95,8 @@ from app.services.territorial_access import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
+
+MERGE_CANDIDATE_POOL_LIMIT = 500
 
 TECHNICAL_DATA_FACT_FIELDS = frozenset(
     {
@@ -150,20 +163,6 @@ REPRESENTATIVE_ONLY_FILAMENT_FACTS = frozenset(
     }
     | TECHNICAL_DATA_SOURCE_FIELDS
 )
-
-
-def _normalize_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    return normalized or None
-
-
-def _normalize_hex(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    return normalized or None
 
 
 async def _validate_handling_guidance(
@@ -347,39 +346,6 @@ async def _validate_material_features(
         is_valid, error_msg = await validate_text_field(value, db, field_name)
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
-
-
-def _comparable_name(value: str | None) -> str:
-    """Name reduced to letters and digits.
-
-    Catches the same product written differently: `PLA-Black`, `PLA Black` and
-    `pla  black` are one product, and a spelling difference must not be enough
-    to create a second catalog record.
-    """
-    if not value:
-        return ""
-    return "".join(char for char in value.lower() if char.isalnum())
-
-
-def _same_filament_color(
-    existing_color_name: str | None,
-    existing_color_hex: str | None,
-    new_color_name: str | None,
-    new_color_hex: str | None,
-) -> bool:
-    # Цвет — часть идентичности материала.
-    # Приоритет: текстовое имя цвета; HEX используется только когда name отсутствует с обеих сторон.
-    existing_name = _normalize_text(existing_color_name)
-    incoming_name = _normalize_text(new_color_name)
-    if existing_name or incoming_name:
-        return existing_name == incoming_name
-
-    existing_hex = _normalize_hex(existing_color_hex)
-    incoming_hex = _normalize_hex(new_color_hex)
-    if existing_hex or incoming_hex:
-        return existing_hex == incoming_hex
-
-    return True
 
 
 def _catalog_search_filter(search: str, country: str | None):
@@ -967,13 +933,13 @@ async def create_filament(
     )
     candidates = candidates_result.scalars().all()
 
-    incoming_name = _comparable_name(normalized_name)
+    incoming_name = comparable_name(normalized_name)
     duplicate_filament = next(
         (
             candidate
             for candidate in candidates
-            if _comparable_name(candidate.name) == incoming_name
-            and _same_filament_color(
+            if comparable_name(candidate.name) == incoming_name
+            and same_filament_color(
                 candidate.color_name,
                 candidate.color_hex,
                 normalized_color_name,
@@ -1395,6 +1361,78 @@ async def update_filament(
     await db.refresh(filament)
 
     return FilamentResponse.model_validate(filament)
+
+
+async def _mergeable_filament(
+    db: AsyncSession, current_user: User, filament: Filament | None
+) -> Filament:
+    if filament is None:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    if not await can_edit_filament_common(
+        db, current_user, filament.brand_id, filament.contributed_by_organization_id
+    ):
+        raise_error(403, ERR_NO_PERMISSION_MERGE_FILAMENT)
+    return filament
+
+
+@router.get("/{filament_id}/merge-candidates", response_model=FilamentMergeCandidatesResponse)
+async def get_filament_merge_candidates(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> FilamentMergeCandidatesResponse:
+    """Filaments of the same brand this duplicate could be folded into."""
+    source = await _mergeable_filament(db, current_user, await db.get(Filament, filament_id))
+    pool = list(
+        (
+            await db.scalars(
+                select(Filament)
+                .where(
+                    Filament.brand_id == source.brand_id,
+                    Filament.id != source.id,
+                    Filament.diameter == source.diameter,
+                    func.lower(func.trim(Filament.material_type))
+                    == source.material_type.strip().lower(),
+                )
+                .limit(MERGE_CANDIDATE_POOL_LIMIT)
+            )
+        ).all()
+    )
+    counts = await count_filament_contributions(db, [source.id, *(item.id for item in pool)])
+    return FilamentMergeCandidatesResponse(
+        source=filament_summary(source, counts),
+        candidates=rank_merge_candidates(source, pool, counts),
+    )
+
+
+@router.post("/{filament_id}/merge", response_model=FilamentResponse)
+async def merge_filament(
+    filament_id: int,
+    data: FilamentMergeRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> FilamentResponse:
+    """Fold a duplicate into another filament of the same brand.
+
+    Presets, spools, reviews and QR scans move to the kept filament; presets
+    stay separate records.
+    """
+    locked = await lock_filaments(db, filament_id, data.target_id)
+    source = await _mergeable_filament(db, current_user, locked.get(filament_id))
+    target = locked.get(data.target_id)
+    if target is None:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    if target.brand_id != source.brand_id:
+        raise_error(409, ERR_FILAMENT_MERGE_BRAND_MISMATCH)
+    await merge_filaments(db, source=source, target=target)
+    await db.commit()
+    result = await db.execute(
+        select(Filament)
+        .options(selectinload(Filament.brand), selectinload(Filament.line))
+        .where(Filament.id == target.id)
+        .execution_options(populate_existing=True)
+    )
+    return await _serialize_filament_detail(db, result.scalar_one(), None)
 
 
 @router.delete("/{filament_id}", status_code=204)

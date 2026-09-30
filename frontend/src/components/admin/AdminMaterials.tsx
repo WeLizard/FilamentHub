@@ -3,10 +3,11 @@
 import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Edit, Trash2, Eye, EyeOff, Layers, Loader2 } from 'lucide-react';
+import { Edit, Trash2, Eye, EyeOff, GitMerge, Layers, Loader2 } from 'lucide-react';
 import { filamentsAPI } from '../../api/client';
 import { FilamentPreview } from '../FilamentPreview';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { FilamentMergeModal } from '../FilamentMergeModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -27,6 +28,7 @@ export function AdminMaterials() {
   const [showOffShelf, setShowOffShelf] = useState(true);
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);
   const [deletingFilament, setDeletingFilament] = useState<Filament | null>(null);
+  const [mergingFilament, setMergingFilament] = useState<Filament | null>(null);
   const debouncedSearch = useDebounce(searchQuery, 300);
 
   const { data, isLoading } = useQuery({
@@ -179,6 +181,14 @@ export function AdminMaterials() {
                     )}
                   </button>
                   <button
+                    onClick={() => setMergingFilament(filament)}
+                    className="p-2 bg-white/10 hover:bg-purple-500/20 text-white rounded-lg transition-all"
+                    title={t('catalogMerge.mergeAction')}
+                    aria-label={t('catalogMerge.mergeAction')}
+                  >
+                    <GitMerge className="w-5 h-5" />
+                  </button>
+                  <button
                     onClick={() => setDeletingFilament(filament)}
                     className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all"
                     title={t('adminMaterials.delete')}
@@ -225,6 +235,10 @@ export function AdminMaterials() {
             }}
           />
         </Suspense>
+      )}
+
+      {mergingFilament && (
+        <FilamentMergeModal filament={mergingFilament} onClose={() => setMergingFilament(null)} />
       )}
 
       <ConfirmDeleteModal

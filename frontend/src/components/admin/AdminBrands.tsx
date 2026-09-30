@@ -4,9 +4,10 @@ import { useDeferredValue, useState, useEffect, useRef, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus, History, KeyRound, Globe2, MapPin } from 'lucide-react';
+import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus, History, KeyRound, Globe2, MapPin, GitMerge } from 'lucide-react';
 import { ModalOverlay } from '../ModalOverlay';
 import { BrandLogoFrame } from '../BrandLogoFrame';
+import { BrandMergeModal } from './BrandMergeModal';
 import { adminAPI, brandInvitesAPI, brandRepresentativesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { externalUrl } from '../../utils/externalUrl';
@@ -62,6 +63,16 @@ export function AdminBrands() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [showInviteHistory, setShowInviteHistory] = useState(false);
   const [rightsBrand, setRightsBrand] = useState<Brand | null>(null);
+  const [mergingBrands, setMergingBrands] = useState<{
+    duplicate: { id: number; name: string };
+    kept: { id: number; name: string } | null;
+  } | null>(null);
+
+  const duplicatesQuery = useQuery({
+    queryKey: ['admin-brand-duplicates'],
+    queryFn: () => adminAPI.getBrandDuplicates(),
+    staleTime: 60_000,
+  });
   const deferredInviteBrandSearch = useDeferredValue(inviteBrandName.trim());
   const inviteCountries = sortedCountries(i18n.language);
 
@@ -353,6 +364,43 @@ export function AdminBrands() {
         </div>
       </div>
 
+      {(duplicatesQuery.data?.length ?? 0) > 0 && (
+        <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4">
+          <h3 className="mb-1 text-sm font-semibold text-amber-100">{t('catalogMerge.duplicatesTitle')}</h3>
+          <p className="mb-3 text-xs text-amber-100/80">{t('catalogMerge.duplicatesHint')}</p>
+          <div className="space-y-2">
+            {duplicatesQuery.data!.map(({ first, second }) => {
+              // Only a starting direction for the dialog: the service cannot
+              // know which spelling is correct, so the admin confirms or swaps.
+              const firstIsKept = first.verified !== second.verified
+                ? first.verified
+                : first.filaments >= second.filaments;
+              const kept = firstIsKept ? first : second;
+              const duplicate = firstIsKept ? second : first;
+              return (
+                <div key={`${first.id}-${second.id}`} className="flex flex-wrap items-center gap-3 text-sm text-white">
+                  <span>
+                    {duplicate.name} <span className="text-gray-400">({t('catalogMerge.filamentCount', { count: duplicate.filaments })})</span>
+                  </span>
+                  <span className="text-gray-400">↔</span>
+                  <span>
+                    {kept.name} <span className="text-gray-400">({t('catalogMerge.filamentCount', { count: kept.filaments })})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMergingBrands({ duplicate, kept })}
+                    className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs text-white transition-all hover:bg-purple-700"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    {t('catalogMerge.mergeAction')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Фильтры и поиск */}
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Фильтры */}
@@ -450,6 +498,16 @@ export function AdminBrands() {
                     <KeyRound className="h-4 w-4" />
                     <span>{t('adminBrands.rights')}</span>
                   </button>
+                  {!brand.verified && (
+                    <button
+                      onClick={() => setMergingBrands({ duplicate: brand, kept: null })}
+                      className="flex items-center space-x-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-gray-200 transition-all hover:bg-white/10"
+                      title={t('catalogMerge.mergeIntoTitle')}
+                    >
+                      <GitMerge className="h-4 w-4" />
+                      <span>{t('catalogMerge.mergeAction')}</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditingBrand(brand)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
@@ -1211,6 +1269,13 @@ export function AdminBrands() {
             )}
           </div>
         </ModalOverlay>
+      )}
+      {mergingBrands && (
+        <BrandMergeModal
+          duplicate={mergingBrands.duplicate}
+          kept={mergingBrands.kept}
+          onClose={() => setMergingBrands(null)}
+        />
       )}
     </div>
   );

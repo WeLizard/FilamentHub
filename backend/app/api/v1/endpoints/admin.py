@@ -28,6 +28,7 @@ from app.core.errors import (
     ERR_BANNED_WORD_EXISTS,
     ERR_BANNED_WORD_NOT_FOUND,
     ERR_BRAND_ID_REQUIRED_JOIN,
+    ERR_BRAND_MERGE_PAIR_INVALID,
     ERR_BRAND_NAME_SLUG_REQUIRED,
     ERR_BRAND_NOT_FOUND,
     ERR_BRAND_REQUEST_NOT_FOUND,
@@ -93,6 +94,7 @@ from app.schemas.calculator import (
     CalculatorCountryDefaultsMap,
     CalculatorProfileDefaults,
 )
+from app.schemas.catalog_merge import BrandDuplicatePair, BrandMergePreview, BrandMergeRequest
 from app.schemas.database import (
     DatabaseExportRequest,
     DatabaseIntegrityResponse,
@@ -133,6 +135,13 @@ from app.services.calculator_defaults_service import (
     get_calculator_profile_defaults,
     set_calculator_country_defaults,
     set_calculator_profile_defaults,
+)
+from app.services.catalog_merge_service import (
+    brand_duplicate_pairs,
+    build_brand_merge_preview,
+    lock_brands,
+    merge_brands,
+    plan_brand_merge,
 )
 from app.services.currency_service import FALLBACK_CURRENCY, currency_for_country
 from app.services.database_service import (
@@ -483,6 +492,58 @@ async def rename_brand_slug_admin(
     await db.commit()
     await db.refresh(brand)
     return BrandResponse.model_validate(brand)
+
+
+@router.get("/brands/duplicates", response_model=list[BrandDuplicatePair])
+async def list_brand_duplicates_admin(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[BrandDuplicatePair]:
+    """Brands whose names differ only by spelling, spacing or one typo."""
+    del admin
+    return await brand_duplicate_pairs(db)
+
+
+@router.get("/brands/{brand_id}/merge-preview", response_model=BrandMergePreview)
+async def preview_brand_merge_admin(
+    brand_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    target_id: int = Query(..., ge=1),
+) -> BrandMergePreview:
+    """Show where every filament of a duplicate brand would go."""
+    del admin
+    source = await db.get(Brand, brand_id)
+    target = await db.get(Brand, target_id)
+    if source is None or target is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+    return await build_brand_merge_preview(db, source=source, target=target)
+
+
+@router.post("/brands/{brand_id}/merge", response_model=BrandResponse)
+async def merge_brand_admin(
+    brand_id: int,
+    data: BrandMergeRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandResponse:
+    """Fold a duplicate brand into the brand that stays and delete the duplicate."""
+    del admin
+    brands = await lock_brands(db, brand_id, data.target_id)
+    source = brands.get(brand_id)
+    target = brands.get(data.target_id)
+    if source is None or target is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
+    pairs: dict[int, int] = {}
+    for pair in data.filament_pairs:
+        if pair.source_filament_id in pairs:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_MERGE_PAIR_INVALID)
+        pairs[pair.source_filament_id] = pair.target_filament_id
+    plan = await plan_brand_merge(db, source=source, target=target, pairs=pairs)
+    await merge_brands(db, plan)
+    await db.commit()
+    await db.refresh(target)
+    return BrandResponse.model_validate(target)
 
 
 @router.post("/brands/{brand_id}/logo", response_model=BrandResponse)

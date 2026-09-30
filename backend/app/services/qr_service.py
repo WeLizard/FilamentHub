@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.filament_qr_alias import FilamentQrAlias
 from app.services.qr_mark import (
     MARK_COLOR,
     MARK_COLOR_HEX,
@@ -350,9 +351,16 @@ async def ensure_filament_qr_code(
     if filament.qr_code:
         return False
 
-    short_code = generate_short_code(filament.id)
-    if await db.scalar(select(Filament.id).where(Filament.qr_code == short_code)):
-        short_code = f"{short_code}-{filament.id % 1000}"
+    base_code = generate_short_code(filament.id)
+    short_code = base_code
+    attempt = 0
+    while (
+        await db.scalar(select(Filament.id).where(Filament.qr_code == short_code))
+        or await db.scalar(select(FilamentQrAlias.code).where(FilamentQrAlias.code == short_code))
+    ):
+        attempt += 1
+        suffix = f"-{filament.id % 1000}"
+        short_code = f"{base_code}{suffix}" if attempt == 1 else f"{base_code}{suffix}-{attempt}"
 
     filament.qr_code = short_code
     if render_images:

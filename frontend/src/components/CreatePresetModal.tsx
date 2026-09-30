@@ -154,6 +154,19 @@ const isAchievementCode = (code: string): code is AchievementCode => (
   Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, code)
 );
 
+interface SimilarBrand {
+  id: number;
+  name: string;
+}
+
+function readSimilarBrands(detail: unknown): SimilarBrand[] | null {
+  if (!detail || typeof detail !== 'object') return null;
+  const payload = detail as { code?: string; params?: { candidates?: SimilarBrand[] } };
+  if (payload.code !== 'ERR_BRAND_SIMILAR_EXISTS') return null;
+  const candidates = payload.params?.candidates;
+  return Array.isArray(candidates) && candidates.length > 0 ? candidates : null;
+}
+
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   isOpen,
   onClose,
@@ -378,6 +391,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Для создания нового бренда
   const [showBrandForm, setShowBrandForm] = useState(false); // true = создать новый бренд
   const [newBrandName, setNewBrandName] = useState(''); // Название нового бренда
+  const [similarBrands, setSimilarBrands] = useState<SimilarBrand[] | null>(null);
   const [newBrandWebsite, setNewBrandWebsite] = useState(''); // Сайт нового бренда
   
   const filamentDropdownRef = useRef<HTMLDivElement>(null);
@@ -1339,8 +1353,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
   // Мутация для создания бренда
   const createBrandMutation = useMutation({
-    mutationFn: (data: { name: string; slug?: string; website?: string }) => brandsAPI.create(data),
+    // After the author has seen the similar brands, the next attempt is an
+    // explicit "this is a different manufacturer".
+    mutationFn: (data: { name: string; website?: string }) => brandsAPI.create(data, similarBrands !== null),
     onError: (err: AxiosError<{ detail: unknown }>) => {
+      const similar = readSimilarBrands(err?.response?.data?.detail);
+      if (similar) {
+        setSimilarBrands(similar);
+        return;
+      }
       setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.errors.createBrand')));
       console.error('Failed to create brand:', err);
     },
@@ -1969,11 +1990,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           }
           
           try {
-            // Создаём slug из названия
-            const slug = newBrandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             const newBrand = await createBrandMutation.mutateAsync({
               name: newBrandName.trim(),
-              slug: slug || undefined,
               website: newBrandWebsite.trim() || undefined,
             });
             brandIdFromSelection = newBrand.id;
@@ -1984,10 +2002,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         } else if (!selectedBrandId && brandSearch.trim()) {
           // Если введен текст, но не выбран бренд - создаем новый
           try {
-            const slug = brandSearch.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             const newBrand = await createBrandMutation.mutateAsync({
               name: brandSearch.trim(),
-              slug: slug || undefined,
             });
             brandIdFromSelection = newBrand.id;
           } catch (err) {
@@ -2687,6 +2703,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               value={brandSearch}
                               onChange={(e) => {
                                 setBrandSearch(e.target.value);
+                                setSimilarBrands(null);
                                 setShowBrandDropdown(true);
                                 setSelectedBrandId(null); // Сбрасываем выбор при изменении текста
                               }}
@@ -2759,7 +2776,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="text"
                                 value={newBrandName}
-                                onChange={(e) => { setNewBrandName(e.target.value); }}
+                                onChange={(e) => { setNewBrandName(e.target.value); setSimilarBrands(null); }}
                                 placeholder={t('presetModal.newBrandNamePlaceholder')}
                           className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
@@ -2772,6 +2789,31 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         />
                       </div>
                     )}
+                          {similarBrands && (
+                            <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
+                              <p className="font-medium text-amber-200">{t('presetModal.similarBrandsTitle')}</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {similarBrands.map((candidate) => (
+                                  <button
+                                    key={candidate.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBrandId(candidate.id);
+                                      setBrandSearch(candidate.name);
+                                      setShowBrandForm(false);
+                                      setNewBrandName('');
+                                      setNewBrandWebsite('');
+                                      setSimilarBrands(null);
+                                    }}
+                                    className="rounded-lg bg-amber-500/20 px-3 py-1.5 text-amber-50 transition-all hover:bg-amber-500/30"
+                                  >
+                                    {t('presetModal.useExistingBrand', { name: candidate.name })}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs text-amber-100/70">{t('presetModal.similarBrandsConfirmHint')}</p>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>

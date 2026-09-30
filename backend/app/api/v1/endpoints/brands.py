@@ -16,6 +16,7 @@ from app.core.errors import (
     ERR_BRAND_NAME_CORRECTION_USED,
     ERR_BRAND_NAME_EXISTS,
     ERR_BRAND_NOT_FOUND,
+    ERR_BRAND_SIMILAR_EXISTS,
     ERR_BRAND_SLUG_EXISTS,
     ERR_BRAND_SLUG_INVALID,
     ERR_BRAND_SLUG_RENAME_REQUIRED,
@@ -47,6 +48,7 @@ from app.services.brand_slug_service import (
     resolve_brand_identifier,
     suggest_brand_slug,
 )
+from app.services.catalog_duplicates import comparable_name, find_similar_brands
 from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.file_service import (
     BRAND_LOGO_ALLOWED_EXTENSIONS,
@@ -251,6 +253,9 @@ async def create_brand(
     data: BrandCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    confirm_similar: bool = Query(
+        False, description="Создать, даже если похожий бренд уже есть в каталоге"
+    ),
 ) -> BrandResponse:
     """Создать производителя."""
     # Проверка текстовых полей на плохие слова
@@ -263,6 +268,24 @@ async def create_brand(
         is_valid, error_msg = await validate_text_field(data.description, db, "brand_description")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
+
+    # A typo such as "BambuLabs" next to "Bambu Lab" splits one brand's catalog
+    # in two; the author sees the existing brand and decides.
+    similar = await find_similar_brands(db, data.name)
+    # Names that differ only by case, spacing or punctuation are the same name.
+    if any(comparable_name(brand.name) == comparable_name(data.name) for brand in similar):
+        raise_error(409, ERR_BRAND_NAME_EXISTS)
+    if similar and not confirm_similar:
+        raise_error(
+            409,
+            ERR_BRAND_SIMILAR_EXISTS,
+            {
+                "candidates": [
+                    {"id": brand.id, "name": brand.name, "slug": brand.slug}
+                    for brand in similar[:5]
+                ]
+            },
+        )
 
     selected_slug, available = await choose_brand_slug(
         db,

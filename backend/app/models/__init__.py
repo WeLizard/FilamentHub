@@ -48,6 +48,7 @@ from app.models.filament import Filament
 from app.models.filament_analytics_event import FilamentAnalyticsEvent
 from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
 from app.models.filament_line import FilamentLine
+from app.models.filament_qr_alias import FilamentQrAlias
 from app.models.filament_review import FilamentReview
 from app.models.filament_slug_redirect import FilamentSlugRedirect
 from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
@@ -190,6 +191,7 @@ __all__ = [
     "FilamentAnalyticsEvent",
     "CountryAvailability",
     "FilamentLine",
+    "FilamentQrAlias",
     "FilamentReview",
     "FilamentSlugRedirect",
     "MaterialMapping",

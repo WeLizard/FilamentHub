@@ -2589,3 +2589,53 @@ export interface BrandCountryCell {
   created_at: string;
   updated_at: string;
 }
+
+export interface MergeFilamentSummary {
+  id: number;
+  name: string;
+  slug: string;
+  material_type: string;
+  diameter: number;
+  color_name?: string | null;
+  color_hex?: string | null;
+  has_qr_code: boolean;
+  presets: number;
+  spools: number;
+  reviews: number;
+}
+
+export interface FilamentMergeCandidate extends MergeFilamentSummary {
+  likely_same: boolean;
+}
+
+export interface FilamentMergeCandidatesResponse {
+  source: MergeFilamentSummary;
+  candidates: FilamentMergeCandidate[];
+}
+
+export interface MergeBrandSummary {
+  id: number;
+  name: string;
+  slug: string;
+  verified: boolean;
+  filaments: number;
+}
+
+export interface BrandDuplicatePair {
+  first: MergeBrandSummary;
+  second: MergeBrandSummary;
+}
+
+export interface BrandMergeFilamentRow {
+  source: MergeFilamentSummary;
+  candidates: FilamentMergeCandidate[];
+  suggested_target_id: number | null;
+  needs_pair: boolean;
+}
+
+export interface BrandMergePreview {
+  source: MergeBrandSummary;
+  target: MergeBrandSummary;
+  source_represented: boolean;
+  filaments: BrandMergeFilamentRow[];
+}
