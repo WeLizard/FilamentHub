@@ -24,8 +24,11 @@ def select_components(paths: list[str]) -> set[str]:
             selected.add("backend")
         elif path.startswith("frontend/"):
             selected.add("frontend")
-            # The label-renderer contract compares its mark with the website's SVG.
-            if path == "frontend/public/logo.svg":
+            # The label-renderer contract compares its mark with the website's SVG,
+            # and the registry guard reads the generated Orca preset schema.
+            if path == "frontend/public/logo.svg" or path.startswith(
+                "frontend/src/data/orcaPresetSchema."
+            ):
                 selected.add("backend")
         elif path.startswith("edge-agent/") or path == "repository.yaml":
             selected.add("edge")

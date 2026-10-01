@@ -11,6 +11,8 @@
 
 export type SettingMode = 'simple' | 'advanced' | 'expert';
 
+export const SETTING_MODES: readonly SettingMode[] = ['simple', 'advanced', 'expert'];
+
 export const MODE_RANK: Record<SettingMode, number> = { simple: 0, advanced: 1, expert: 2 };
 
 /** OrcaSlicer mode per filament setting key. Absent key defaults to `simple`. */

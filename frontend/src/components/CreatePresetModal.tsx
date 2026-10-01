@@ -23,6 +23,7 @@ import { type SettingMode, isVisibleAtMode } from '../data/orcaFieldModes';
 import { safeStorage } from '../utils/storage';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
+import { SettingModeSelector } from './SettingModeSelector';
 import { EditGCodeModal } from './EditGCodeModal';
 import { CustomSelect } from './CustomSelect';
 import type { FilamentVisualSettings } from '../types/api';
@@ -3372,21 +3373,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
               <h3 className="text-lg font-semibold text-white">{t('presetModal.detailedSettings')}</h3>
               {/* Уровень сложности (Simple/Advanced/Expert) — как в OrcaSlicer, выбор сохраняется */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">{t('presetModal.settingMode.label')}</span>
-                <div className="inline-flex rounded-lg border border-white/20 overflow-hidden text-xs">
-                  {(['simple', 'advanced', 'expert'] as SettingMode[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setSettingMode(m)}
-                      className={`px-3 py-1 transition-all ${settingMode === m ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                    >
-                      {t(`presetModal.settingMode.${m}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <SettingModeSelector mode={settingMode} onChange={setSettingMode} />
             </div>
 
             {/* Вкладки */}

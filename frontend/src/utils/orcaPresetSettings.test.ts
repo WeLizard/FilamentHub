@@ -12,6 +12,7 @@ import {
   readOrcaBoolean,
   readOrcaNumber,
   readOrcaText,
+  withFilamentCardIdentity,
 } from './orcaPresetSettings';
 
 describe('Orca preset settings', () => {
@@ -112,5 +113,30 @@ describe('Orca preset settings', () => {
   it('serializes flow ratio without reducing Orca precision', () => {
     expect(formatOrcaFlowRatio(92.6)).toBe('0.926');
     expect(formatOrcaFlowRatio(103.48)).toBe('1.0348');
+  });
+
+  it('shows the filament card identity over the stored blob, keeping the stored colour when the card has none', () => {
+    const stored = {
+      filament_type: ['PLA'],
+      filament_vendor: ['"Old Vendor"'],
+      default_filament_colour: ['#111111'],
+      nozzle_temperature: ['240'],
+    };
+    const projected = withFilamentCardIdentity(stored, {
+      material_type: 'ABS',
+      brand_name: 'Bambu Lab',
+      color_hex: null,
+    });
+
+    expect(projected.filament_type).toEqual(['ABS']);
+    expect(projected.filament_vendor).toEqual(['Bambu Lab']);
+    expect(projected.default_filament_colour).toEqual(['#111111']);
+    expect(projected.nozzle_temperature).toEqual(['240']);
+    expect(stored.filament_type).toEqual(['PLA']);
+
+    const coloured = withFilamentCardIdentity(stored, { material_type: 'ABS', color_hex: '#00FF73' });
+    expect(coloured.default_filament_colour).toEqual(['#00FF73']);
+    expect(coloured.filament_colour).toEqual(['#00FF73']);
+    expect(withFilamentCardIdentity(stored, undefined)).toBe(stored);
   });
 });

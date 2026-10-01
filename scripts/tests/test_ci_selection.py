@@ -24,6 +24,7 @@ class ComponentSelectionTest(unittest.TestCase):
             "frontend/src/pages/AboutPage.tsx": {"frontend"},
             "frontend/package-lock.json": {"frontend"},
             "frontend/public/logo.svg": {"backend", "frontend"},
+            "frontend/src/data/orcaPresetSchema.filament.json": {"backend", "frontend"},
             "edge-agent/Dockerfile": {"edge"},
             "repository.yaml": {"edge"},
             "orca-plugin/description.md": {"plugins"},

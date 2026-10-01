@@ -160,3 +160,28 @@ export const formatOrcaFlowRatio = (percent: number): string => {
   const rendered = (percent / 100).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
   return rendered || '0';
 };
+
+interface FilamentCardIdentity {
+  material_type?: string | null;
+  brand_name?: string | null;
+  color_hex?: string | null;
+}
+
+/**
+ * Settings as the preset is delivered to Orca: the exporter overwrites type, vendor
+ * and colour with the filament card's values (a missing card value keeps the stored one).
+ */
+export const withFilamentCardIdentity = (
+  settings: OrcaPresetSettings,
+  filament: FilamentCardIdentity | null | undefined,
+): OrcaPresetSettings => {
+  if (!filament) return settings;
+  const projected: OrcaPresetSettings = { ...settings };
+  if (filament.material_type) projected.filament_type = [filament.material_type];
+  if (filament.brand_name) projected.filament_vendor = [filament.brand_name];
+  if (filament.color_hex) {
+    projected.default_filament_colour = [filament.color_hex];
+    projected.filament_colour = [filament.color_hex];
+  }
+  return projected;
+};
