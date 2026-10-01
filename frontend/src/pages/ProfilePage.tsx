@@ -180,6 +180,41 @@ function UnverifiedEmailNotice() {
   );
 }
 
+function ProfileModeSwitch({
+  showBrandCabinet,
+  onChange,
+}: {
+  showBrandCabinet: boolean;
+  onChange: (showBrandCabinet: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const itemClass = 'flex items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-all';
+  return (
+      <div className="inline-flex rounded-lg border border-white/20 bg-white/10 p-0.5">
+        <button
+          type="button"
+          onClick={() => onChange(false)}
+          aria-pressed={!showBrandCabinet}
+          className={`${itemClass} ${!showBrandCabinet ? 'bg-purple-600 text-white' : 'text-gray-300 hover:text-white'}`}
+        >
+          <User className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{t('profilePage.user')}</span>
+          <span className="sm:hidden">{t('profilePage.profile')}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(true)}
+          aria-pressed={showBrandCabinet}
+          className={`${itemClass} ${showBrandCabinet ? 'bg-green-600 text-white' : 'text-gray-300 hover:text-white'}`}
+        >
+          <Factory className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{t('profilePage.company')}</span>
+          <span className="sm:hidden">{t('profilePage.brand')}</span>
+        </button>
+      </div>
+  );
+}
+
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
@@ -903,39 +938,7 @@ export const ProfilePage: React.FC = () => {
   if (showBrandCabinet) {
     return (
       <div>
-        {/* Переключатель профилей */}
-        {!isAddBrandFlowActive && (
-          <div className="flex justify-center mb-4 min-[1140px]:mb-0 relative z-10 pointer-events-none">
-            <div className="flex bg-white/10 rounded-lg p-1 border border-white/20 pointer-events-auto">
-              <button
-                onClick={() => setShowBrandCabinet(false)}
-                className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all text-gray-300 hover:text-white"
-              >
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('profilePage.user')}</span>
-                <span className="sm:hidden">{t('profilePage.profile')}</span>
-              </button>
-              <button
-                onClick={() => setShowBrandCabinet(true)}
-                className="flex items-center space-x-2 px-6 py-2 rounded-lg transition-all bg-green-600 text-white shadow-lg shadow-green-500/25"
-              >
-                <Factory className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('profilePage.company')}</span>
-                <span className="sm:hidden">{t('profilePage.brand')}</span>
-              </button>
-            </div>
-          </div>
-        )}
-        
-        <div
-          className={
-            user.brand_id
-              ? isAddBrandFlowActive
-                ? ''
-                : 'min-[1140px]:-mt-14'
-              : 'md:mt-12'
-          }
-        >
+        <div>
           <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>}>
             <BrandProfilePage
               onBack={() => setShowBrandCabinet(false)}
@@ -943,6 +946,11 @@ export const ProfilePage: React.FC = () => {
               initialClaimBrandId={(location.state as { onboardingBrandId?: number } | null)?.onboardingBrandId}
               initialClaimBrandName={(location.state as { onboardingBrandName?: string } | null)?.onboardingBrandName}
               onAddBrandFlowChange={setIsAddBrandFlowActive}
+              modeSwitch={
+                isAddBrandFlowActive ? undefined : (
+                  <ProfileModeSwitch showBrandCabinet onChange={setShowBrandCabinet} />
+                )
+              }
             />
           </Suspense>
         </div>
@@ -954,37 +962,10 @@ export const ProfilePage: React.FC = () => {
     <div className="space-y-6 md:space-y-10">
       {user && !user.email_verified && <UnverifiedEmailNotice />}
       <div className="space-y-3 md:space-y-4">
-        <div className="grid min-w-0 gap-3 min-[1140px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1140px]:items-center min-[1140px]:gap-x-6">
-          {/* Переключатель профилей */}
+        <div className="grid min-w-0 gap-3 min-[1140px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1140px]:items-start min-[1140px]:gap-x-6">
           <div className="flex justify-center min-[1140px]:col-start-2 min-[1140px]:row-start-1">
-            <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
-              <button
-                onClick={() => setShowBrandCabinet(false)}
-                className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
-                  !showBrandCabinet
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span className="hidden sm:inline">{t('profilePage.user')}</span>
-                <span className="sm:hidden">{t('profilePage.profile')}</span>
-              </button>
-              <button
-                onClick={() => setShowBrandCabinet(true)}
-                className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
-                  showBrandCabinet
-                    ? 'bg-green-600 text-white shadow-lg shadow-green-500/25'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                <Factory className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span className="hidden sm:inline">{t('profilePage.company')}</span>
-                <span className="sm:hidden">{t('profilePage.brand')}</span>
-              </button>
-            </div>
+            <ProfileModeSwitch showBrandCabinet={false} onChange={setShowBrandCabinet} />
           </div>
-
           {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
           <div className="min-w-0 min-[1140px]:col-start-1 min-[1140px]:row-start-1">
             <div className="flex min-w-0 items-center gap-3">
@@ -1059,7 +1040,7 @@ export const ProfilePage: React.FC = () => {
                   onClick={() => setUserTab(tab.id)}
                   className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-sm whitespace-nowrap ${
                     userTab === tab.id
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                      ? 'bg-purple-600 text-white'
                       : isLocked
                       ? 'text-gray-400 hover:text-white hover:bg-white/10 active:bg-white/15'
                       : 'text-gray-300 hover:text-white hover:bg-white/10 active:bg-white/15'

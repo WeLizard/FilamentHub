@@ -17,7 +17,7 @@ interface BrandLogoFrameProps {
 
 const frameSizeClasses: Record<BrandLogoFrameSize, string> = {
   cabinet:
-    'min-h-14 min-w-14 max-w-16 p-1.5 md:min-h-16 md:min-w-16 md:max-w-[17rem] md:p-2.5',
+    'min-h-11 min-w-11 max-w-14 p-1 md:min-h-14 md:min-w-14 md:max-w-[14rem] md:p-1.5',
   hero: 'min-h-24 min-w-24 max-w-full p-3',
   preview: 'min-h-16 min-w-16 max-w-56 p-2.5',
   settings: 'min-h-28 min-w-28 max-w-64 p-3',
@@ -25,7 +25,7 @@ const frameSizeClasses: Record<BrandLogoFrameSize, string> = {
 };
 
 const imageSizeClasses: Record<BrandLogoFrameSize, string> = {
-  cabinet: 'max-h-10 max-w-14 md:max-h-11 md:max-w-[15rem]',
+  cabinet: 'max-h-8 max-w-12 md:max-h-10 md:max-w-[12rem]',
   hero: 'max-h-16 max-w-56 sm:max-w-[20rem]',
   preview: 'max-h-11 max-w-48',
   settings: 'max-h-20 max-w-56',

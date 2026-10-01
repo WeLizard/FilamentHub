@@ -23,6 +23,7 @@ import {
   Gauge,
   Edit,
   Trash2,
+  GitMerge,
   CheckCircle,
   X,
   Loader2,
@@ -61,6 +62,7 @@ const CreatePresetModal = lazy(() =>
 );
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
+import { FilamentMergeModal } from '../components/FilamentMergeModal';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import { BrandRepresentativesPanel } from '../components/BrandRepresentativesPanel';
@@ -187,6 +189,7 @@ function ClaimScopeSelector({
 
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
+  modeSwitch?: React.ReactNode;
   initialEditing?: boolean; // Открыть редактирование карточки сразу (после принятия инвайта)
   onAddBrandFlowChange?: (isActive: boolean) => void;
   initialClaimBrandId?: number;
@@ -265,6 +268,7 @@ function createImportDraftFile(rows: ImportDraftRow[], fileName: string): File {
 
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   onBack,
+  modeSwitch,
   initialEditing,
   onAddBrandFlowChange,
   initialClaimBrandId,
@@ -295,6 +299,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [sourcePreset, setSourcePreset] = useState<Preset | null>(null);
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
+  const [mergingFilament, setMergingFilament] = useState<Filament | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
@@ -903,7 +908,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="mb-6">
-        <div className="mb-4 flex justify-center md:justify-end">
+        <div className="mb-4 grid min-w-0 gap-3 min-[1140px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1140px]:items-start min-[1140px]:gap-x-6">
+          {modeSwitch && (
+            <div className="flex justify-center min-[1140px]:col-start-2 min-[1140px]:row-start-1">
+              {modeSwitch}
+            </div>
+          )}
+          <div className="flex min-w-0 justify-center md:justify-end min-[1140px]:col-start-3 min-[1140px]:row-start-1">
           <div className="min-w-0 w-full max-w-lg text-center md:w-auto md:max-w-none md:text-right">
             <div className="flex justify-center md:justify-end">
               <div
@@ -915,8 +926,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                   alt={brandData.name}
                   backgroundColor={brandData.logo_bg}
                   size="cabinet"
-                  fallback={<Factory className="h-8 w-8 text-white" />}
-                  fallbackBackgroundClassName="bg-gradient-to-r from-green-500 to-emerald-500 shadow-green-500/25"
+                  fallback={<Factory className="h-6 w-6 text-white md:h-7 md:w-7" />}
+                  fallbackBackgroundClassName="bg-gradient-to-r from-green-500 to-emerald-500"
                   onError={() => setIsBrandLogoVisible(false)}
                 />
                 {brandData.verified && (
@@ -939,11 +950,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                     title={t('profilePage.activeBrand')}
                   >
                     <span className="min-w-0">
-                      <h2 className="truncate text-2xl font-bold text-white sm:text-3xl">
+                      <h2 className="break-words text-base font-bold text-white md:text-xl">
                         {brandData.name}
                       </h2>
                       {activeOrganizationName && (
-                        <span className="block truncate text-xs text-cyan-300/80">
+                        <span className="block break-words text-xs text-cyan-300/80">
                           {activeOrganizationName}
                           {scopeCountry && managedCountries.length === 1
                             ? ` · ${countryName(scopeCountry, i18n.language)}`
@@ -1030,11 +1041,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
-          <div className="flex w-max min-w-full justify-start gap-2 md:justify-center">
+          <div className="flex w-max min-w-full justify-start gap-1.5 md:justify-center md:gap-2">
           {([
             { id: 'materials', label: t('brandProfile.tabs.materials'), icon: Package },
             { id: 'presets', label: t('brandProfile.tabs.presets'), icon: Settings },
@@ -1047,13 +1059,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             <button
               key={tab.id}
               onClick={() => setBrandTab(tab.id)}
-              className={`flex shrink-0 items-center space-x-2 whitespace-nowrap rounded-lg px-4 py-2 transition-all ${
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs transition-all md:gap-2 md:px-4 md:py-2 md:text-sm ${
                 brandTab === tab.id
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                  ? 'bg-purple-600 text-white'
                   : 'text-gray-300 hover:text-white hover:bg-white/10'
               }`}
             >
-              <tab.icon className="w-4 h-4" />
+              <tab.icon className="h-3.5 w-3.5 md:h-4 md:w-4" />
               <span>{tab.label}</span>
             </button>
           ))}
@@ -1096,7 +1108,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             <button
               onClick={handleCreateFilament}
               disabled={isLoadingFilaments}
-              className="order-2 col-span-2 flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white shadow-lg shadow-green-500/25 transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/40 disabled:cursor-not-allowed disabled:opacity-50 sm:order-none sm:col-auto sm:w-auto"
+              className="order-2 col-span-2 flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white transition-all hover:from-green-700 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:order-none sm:col-auto sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               <span>{t('brandProfile.newMaterial')}</span>
@@ -1202,6 +1214,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                               filament={filament}
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
+                              onMerge={setMergingFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               canEditCommon={canEditCommon}
                               canOpenEditor={canOpenEditor}
@@ -1220,6 +1233,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                               filament={filament}
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
+                              onMerge={setMergingFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               canEditCommon={canEditCommon}
                               canOpenEditor={canOpenEditor}
@@ -1270,6 +1284,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>{t('brandProfile.deletingMaterial')}</span>
             </div>
+          )}
+
+          {mergingFilament && (
+            <FilamentMergeModal filament={mergingFilament} onClose={() => setMergingFilament(null)} />
           )}
 
           {/* Delete Confirmation Modal */}
@@ -1380,7 +1398,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             <button
               onClick={handleCreatePreset}
               disabled={isLoadingPresets || filaments.length === 0 || !canCreateOfficialPreset}
-              className="flex shrink-0 items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white shadow-lg shadow-green-500/25 transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex shrink-0 items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white transition-all hover:from-green-700 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               title={filaments.length === 0 ? t('brandProfile.createMaterialFirst') : ''}
             >
               <Plus className="w-4 h-4" />
@@ -1901,7 +1919,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                 type="button"
                 onClick={importPreviewNeedsReview ? revalidateImportDraft : confirmImportCsv}
                 disabled={isImporting || (!importPreviewNeedsReview && importPreview.created + importPreview.updated === 0)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/15 transition hover:from-cyan-400 hover:to-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:from-cyan-400 hover:to-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isImporting
                   ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -2217,7 +2235,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               <button
                 onClick={handleSaveProfile}
                 disabled={updateBrandMutation.isPending || (brandData.name_correction_available && !profileName.trim())}
-                className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 flex items-center space-x-2 disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all flex items-center space-x-2 disabled:opacity-50"
               >
                 {updateBrandMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -2715,7 +2733,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
         <div className="relative glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
           {closeFlowButton}
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/25">
+            <div className="w-20 h-20 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Shield className="w-10 h-10 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-white mb-2">
@@ -3012,7 +3030,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
                   refreshUser(); // Обновляем пользователя на случай если заявка уже одобрена
                   refetchRequests();
                 }}
-                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 flex items-center justify-center"
+                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all flex items-center justify-center"
               >
                 <CheckCircle className="w-5 h-5 mr-2" />
                 {t('brandProfile.refreshStatus')}
@@ -3414,7 +3432,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
                 <button
                 type="submit"
                 disabled={createRequestMutation.isPending || !confirmAccuracy}
-                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {createRequestMutation.isPending ? (
                   <>
@@ -3458,7 +3476,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
       <div className="relative glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
         {closeFlowButton}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-500/25">
+          <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-4">
             <Factory className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">
@@ -3905,7 +3923,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
               <button
                 onClick={handleJoinBrandRequest}
                 disabled={createRequestMutation.isPending || !confirmAccuracy}
-                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {createRequestMutation.isPending ? (
                   <>
@@ -3948,7 +3966,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
 
           <button
             onClick={() => setIsCreatingNew(true)}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-green-500/25 hover:shadow-green-500/40 flex items-center justify-center"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl transition-all flex items-center justify-center"
           >
             <Plus className="w-5 h-5 mr-2" />
             {t('brandProfile.registerNewBrand')}
@@ -4023,6 +4041,7 @@ interface FilamentCardProps {
   filament: Filament;
   onEdit: (filament: Filament) => void;
   onDelete: (filament: Filament) => void;
+  onMerge: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
   canEditCommon: boolean;
   canOpenEditor: boolean;
@@ -4032,7 +4051,7 @@ interface FilamentCardProps {
   viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, onAddColors, canEditCommon, canOpenEditor, scopeCountry, viewMode = 'grid' }) => {
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onMerge, onShowQR, onShowPresets, onAddColors, canEditCommon, canOpenEditor, scopeCountry, viewMode = 'grid' }) => {
   const { t, i18n } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
@@ -4217,6 +4236,16 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             )}
             {canEditCommon && (
                 <button
+                  onClick={() => onMerge(filament)}
+                  className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
+                  title={t('catalogMerge.mergeAction')}
+                  aria-label={t('catalogMerge.mergeAction')}
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                </button>
+            )}
+            {canEditCommon && (
+                <button
                   onClick={() => onDelete(filament)}
                   className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-md text-white transition-all"
                   title={t('brandProfile.delete')}
@@ -4231,7 +4260,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
   }
 
   return (
-    <div className="bg-white/10 rounded-2xl p-6 border border-white/20 shadow-xl hover:shadow-2xl hover:border-white/30 transition-all group">
+    <div className="bg-white/10 rounded-2xl p-6 border border-white/20  hover:border-white/30 transition-all group">
       {/* Header with actions */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
@@ -4271,6 +4300,16 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
                 title={t('brandProfile.edit')}
               >
                 <Edit className="w-4 h-4" />
+              </button>
+          )}
+          {canEditCommon && (
+              <button
+                onClick={() => onMerge(filament)}
+                className="p-2 bg-white/10 hover:bg-purple-500/20 rounded-lg text-white transition-all"
+                title={t('catalogMerge.mergeAction')}
+                aria-label={t('catalogMerge.mergeAction')}
+              >
+                <GitMerge className="w-4 h-4" />
               </button>
           )}
           {canEditCommon && (
