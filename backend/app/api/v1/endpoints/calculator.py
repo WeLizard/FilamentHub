@@ -30,6 +30,8 @@ from app.core.errors import (
     ERR_GCODE_ARTIFACT_CONFLICT,
     ERR_GCODE_ARTIFACT_NOT_FOUND,
     ERR_GCODE_ARTIFACT_QUOTA,
+    ERR_GCODE_EXCERPT_INVALID,
+    ERR_GCODE_EXCERPT_TOO_LARGE,
     ERR_GCODE_PARSE_FAILED,
     ERR_GCODE_UPLOAD_INCOMPLETE,
     ERR_INVALID_FILE_EXT,
@@ -92,6 +94,12 @@ from app.services.calculator_gcode_artifact_service import (
     verify_parse_generation,
     write_artifact_stream,
 )
+from app.services.calculator_gcode_excerpt_service import (
+    GcodeExcerptInvalidError,
+    GcodeExcerptTooLargeError,
+    parse_gcode_excerpt_upload,
+    read_gcode_excerpt_upload,
+)
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
     GcodeParseCancelled,
@@ -100,9 +108,13 @@ from app.services.calculator_gcode_parser import (
 )
 from app.services.calculator_material_identity_service import (
     resolve_calculator_material_identities,
+    resolve_calculator_material_identities_for_jobs,
 )
 from app.services.calculator_power_service import average_power_w
 from app.services.calculator_preflight_service import calculate_material_preflight
+from app.services.calculator_printer_suggestion_service import (
+    attach_suggested_physical_printers,
+)
 from app.services.printer_economics_service import (
     account_economics_readiness,
     clear_incompatible_account_money,
@@ -389,6 +401,8 @@ def _strip_history_thumbnail(parsed_gcode: CalculatorGcodeParseResponse | None) 
 
     payload = parsed_gcode.model_dump(mode="json")
     payload["thumbnail_data_url"] = None
+    # Which printers fit is decided at parse time and would be stale when reopened.
+    payload["suggested_physical_printer_ids"] = []
     return payload
 
 
@@ -1034,7 +1048,23 @@ async def parse_uploaded_gcode(
             response,
             user_id=user_id,
         )
+        [response] = await attach_suggested_physical_printers(db, [response], user_id=user_id)
     return response
+
+
+async def _resolve_parsed_jobs(
+    db: AsyncSession,
+    jobs: list[dict],
+    *,
+    user_id: int,
+) -> list[CalculatorGcodeParseResponse]:
+    """Material identities per job, then the user's matching printers in one query."""
+    resolved = await resolve_calculator_material_identities_for_jobs(
+        db,
+        [CalculatorGcodeParseResponse(**job) for job in jobs],
+        user_id=user_id,
+    )
+    return await attach_suggested_physical_printers(db, resolved, user_id=user_id)
 
 
 def _artifact_response(artifact) -> CalculatorGcodeArtifactResponse:
@@ -1161,14 +1191,7 @@ async def parse_gcode_artifact(
             owner_user_id=current_user.id,
             generation=generation,
         )
-        resolved = [
-            await resolve_calculator_material_identities(
-                db,
-                CalculatorGcodeParseResponse(**job),
-                user_id=current_user.id,
-            )
-            for job in jobs
-        ]
+        resolved = await _resolve_parsed_jobs(db, jobs, user_id=current_user.id)
         return CalculatorGcodeArtifactParseResponse(jobs=resolved)
     except ArtifactNotFoundError:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_GCODE_ARTIFACT_NOT_FOUND)
@@ -1179,6 +1202,49 @@ async def parse_gcode_artifact(
     except ValueError as exc:
         logger.warning("Calculator G-code artifact parse failed for %s: %s", artifact_id, exc)
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
+
+
+async def parse_gcode_excerpt_request(
+    request: Request,
+    db: AsyncSession,
+    *,
+    user_id: int,
+) -> CalculatorGcodeArtifactParseResponse:
+    """Read the parts of a sliced file cut out on the person's machine.
+
+    The browser and the OrcaSlicer plugin both cut the file locally and land
+    here, so a calculation cannot depend on which of them sent it.
+    """
+    try:
+        upload = await read_gcode_excerpt_upload(request)
+    except GcodeExcerptTooLargeError:
+        raise_error(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, ERR_GCODE_EXCERPT_TOO_LARGE)
+    except GcodeExcerptInvalidError:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_EXCERPT_INVALID)
+
+    try:
+        jobs = await _gcode_gate.run(parse_gcode_excerpt_upload, upload)
+    except ValueError as exc:
+        logger.warning("Calculator G-code excerpt parse failed for %s: %s", upload.file_name, exc)
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
+
+    resolved = await _resolve_parsed_jobs(db, jobs, user_id=user_id)
+    return CalculatorGcodeArtifactParseResponse(jobs=resolved)
+
+
+@router.post(
+    "/gcode-excerpts/parse",
+    response_model=CalculatorGcodeArtifactParseResponse,
+)
+async def parse_gcode_excerpts(
+    request: Request,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+) -> CalculatorGcodeArtifactParseResponse:
+    """Read a quote's figures from the head and tail of a G-code cut out in the browser."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return await parse_gcode_excerpt_request(request, db, user_id=current_user.id)
 
 
 @router.delete("/gcode-artifacts/{artifact_id}", status_code=status.HTTP_204_NO_CONTENT)

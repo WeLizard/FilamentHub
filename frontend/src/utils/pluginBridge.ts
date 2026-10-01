@@ -533,6 +533,34 @@ export function requestPendingPluginSliceReports(): void {
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'request-slice-reports' });
 }
 
+// Returning to the window fires focus and visibilitychange together.
+const SLICE_PULL_COALESCE_MS = 1000;
+
+/**
+ * Pull the plugin's queued slice reports once now and again whenever the page
+ * regains attention. New slices are pushed by the plugin itself, so there is
+ * deliberately no timer.
+ */
+export function watchPendingPluginSliceReports(): () => void {
+  let lastPullAt = Number.NEGATIVE_INFINITY;
+  const pull = () => {
+    const now = Date.now();
+    if (now - lastPullAt < SLICE_PULL_COALESCE_MS) return;
+    lastPullAt = now;
+    requestPendingPluginSliceReports();
+  };
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') pull();
+  };
+  pull();
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('focus', pull);
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('focus', pull);
+  };
+}
+
 /** Acknowledge only source keys from a batch the page actually attempted. */
 export function sendPluginSliceReportResult(
   requestId: string,
@@ -1408,16 +1436,52 @@ export function removePrinterRecoveryFromPlugin(
 
 /**
  * Попросить плагин разобрать нарезку: файл лежит на диске у человека, страница
- * открыть его не может, поэтому называет ключ, а Python отправляет G-code в наш
- * же разбор и возвращает результат — тот же, что при ручной загрузке.
+ * открыть его не может, поэтому называет ключ. Python вырезает из G-code начало,
+ * конец и итоги по всем движениям и отправляет на сервер только это: целиком файл
+ * не уходит. Результат — тот же, что при ручной загрузке.
  */
 export function requestSliceParse(sourceKey: string, fileName: string): void {
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'parse-slice', sourceKey, fileName });
 }
 
 export interface PluginSliceParseResult {
+  /** Ключ нарезки, на которую это ответ; старый плагин его не присылает. */
+  sourceKey?: string;
+  /** По одному заданию на каждую пластину. */
+  jobs?: unknown;
+  /** Первое задание — для плагина и страниц, где пластина одна. */
   parsed?: unknown;
   error?: string;
+  status?: number;
+  /** Код ошибки сервера или самого плагина (`ERR_*`), если он известен. */
+  code?: string;
+}
+
+export interface PluginSliceProgress {
+  sourceKey: string;
+  /** Доля (0..1) уже прочитанного файла. */
+  fraction: number;
+}
+
+/** Подписка на ход чтения длинной нарезки: плагин присылает его, пока читает файл. */
+export function subscribeToPluginSliceProgress(
+  onProgress: (progress: PluginSliceProgress) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'parse-slice-progress') {
+      return;
+    }
+    const { sourceKey, fraction } = data as { sourceKey?: unknown; fraction?: unknown };
+    if (typeof sourceKey === 'string' && typeof fraction === 'number' && Number.isFinite(fraction)) {
+      onProgress({ sourceKey, fraction: Math.min(1, Math.max(0, fraction)) });
+    }
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
 }
 
 /**

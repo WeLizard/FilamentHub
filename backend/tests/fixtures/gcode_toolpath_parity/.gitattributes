@@ -1,0 +1,2 @@
+# The G-code keeps its mixed CRLF and LF line endings: they are part of what the parity tests check.
+* -text

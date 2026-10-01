@@ -926,7 +926,7 @@ async def test_preflight_reports_proven_machine_incompatibilities_without_blocki
     assert compatibility["status"] == "incompatible"
     assert compatibility["physical_printer_name"] == "Workshop printer"
     checks = {item["kind"]: item for item in compatibility["checks"]}
-    assert checks["nozzle_diameter"]["status"] == "compatible"
+    assert "nozzle_diameter" not in checks
     assert checks["nozzle_hrc"]["status"] == "incompatible"
     assert checks["nozzle_hrc"]["available_values"] == [2.0]
     assert checks["hotend_temperature"]["status"] == "incompatible"
@@ -934,7 +934,7 @@ async def test_preflight_reports_proven_machine_incompatibilities_without_blocki
 
 
 @pytest.mark.asyncio
-async def test_preflight_keeps_missing_machine_capabilities_unknown(
+async def test_preflight_skips_checks_without_a_known_machine_limit(
     admin_client: AsyncClient,
     admin_user: User,
     db_session: AsyncSession,
@@ -965,8 +965,147 @@ async def test_preflight_keeps_missing_machine_capabilities_unknown(
 
     assert response.status_code == 200
     compatibility = response.json()["printer_compatibility"]
+    # No catalog limit is known, so there is nothing honest to compare.
     assert compatibility["status"] == "unknown"
-    assert [item["status"] for item in compatibility["checks"]] == ["unknown", "unknown"]
+    assert compatibility["checks"] == []
+
+
+@pytest.mark.asyncio
+async def test_preflight_reports_one_check_per_kind_for_plates_on_one_printer(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    brand = Brand(name="Plates brand", slug="plates-brand")
+    catalog_printer = Printer(
+        name="Plates printer",
+        manufacturer="FilamentHub",
+        model="Plates",
+        slug="plates-printer",
+        max_extruder_temp=260,
+        active=True,
+    )
+    db_session.add_all([brand, catalog_printer])
+    await db_session.flush()
+    soft = Filament(
+        brand_id=brand.id, name="Soft", slug="plates-soft", material_type="PLA",
+        diameter=1.75, required_nozzle_hrc=None,
+    )
+    abrasive = Filament(
+        brand_id=brand.id, name="Abrasive", slug="plates-abrasive", material_type="PLA",
+        diameter=1.75, required_nozzle_hrc=50,
+    )
+    profile = PrinterProfile(
+        owner_user_id=admin_user.id,
+        printer_id=catalog_printer.id,
+        name="Plates printer 0.4",
+        slug="plates-printer-04",
+        setting_id="plates-printer-04",
+        nozzle_diameters=[0.4],
+        orcaslicer_settings={"nozzle_hrc": [55]},
+        active=True,
+    )
+    physical_printer = UserPrinterDevice(user_id=admin_user.id, name="Plates Voron")
+    db_session.add_all([soft, abrasive, profile, physical_printer])
+    await db_session.flush()
+    db_session.add(UserPrinterProfileLink(
+        user_id=admin_user.id,
+        physical_printer_id=physical_printer.id,
+        printer_profile_id=profile.id,
+    ))
+    await db_session.commit()
+
+    temperatures = {"plate-1": 238, "plate-2": 255, "plate-3": 238}
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "physical_printer_id": physical_printer.id,
+            "print_jobs": [
+                {"job_key": key, "print_time_seconds": 3600} for key in temperatures
+            ],
+            "machine_evidence": [
+                {
+                    "job_key": key,
+                    "printer_profile_id": profile.id,
+                    "nozzle_diameter_mm": 0.4,
+                    "max_nozzle_temperature_c": temperature,
+                }
+                for key, temperature in temperatures.items()
+            ],
+            "lines": [
+                {
+                    "line_id": f"{key}-tool-0",
+                    "job_key": key,
+                    "filament_id": (abrasive if key == "plate-2" else soft).id,
+                    "weight_g": 10,
+                    "spool_ids": [],
+                }
+                for key in temperatures
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    compatibility = response.json()["printer_compatibility"]
+    assert [item["kind"] for item in compatibility["checks"]] == [
+        "nozzle_hrc",
+        "hotend_temperature",
+    ]
+    hrc, hotend = compatibility["checks"]
+    assert (hrc["required_value"], hrc["status"]) == (50.0, "compatible")
+    assert (hotend["required_value"], hotend["available_values"]) == (255.0, [260.0])
+    assert hotend["status"] == "compatible"
+    assert hotend["printer_profile_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_preflight_takes_the_hotend_limit_from_the_sliced_profile_catalog_model(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    catalog_printer = Printer(
+        name="Linked printer", manufacturer="FilamentHub", model="Linked",
+        slug="linked-printer", max_extruder_temp=300, active=True,
+    )
+    db_session.add(catalog_printer)
+    await db_session.flush()
+    profile = PrinterProfile(
+        owner_user_id=admin_user.id,
+        printer_id=catalog_printer.id,
+        name="Linked printer 0.4",
+        slug="linked-printer-04",
+        setting_id="linked-printer-04",
+        nozzle_diameters=[0.4],
+        orcaslicer_settings={},
+        active=True,
+    )
+    physical_printer = UserPrinterDevice(user_id=admin_user.id, name="Unlinked machine")
+    db_session.add_all([profile, physical_printer])
+    await db_session.flush()
+    db_session.add(UserPrinterProfileLink(
+        user_id=admin_user.id,
+        physical_printer_id=physical_printer.id,
+        printer_profile_id=profile.id,
+    ))
+    await db_session.commit()
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "physical_printer_id": physical_printer.id,
+            "machine_evidence": [{
+                "printer_profile_id": profile.id,
+                "max_nozzle_temperature_c": 238,
+            }],
+            "lines": [{"line_id": "manual", "weight_g": 10, "spool_ids": []}],
+        },
+    )
+
+    assert response.status_code == 200
+    (hotend,) = response.json()["printer_compatibility"]["checks"]
+    assert (hotend["status"], hotend["available_values"]) == ("compatible", [300.0])
+    assert hotend["capability_source"] == "catalog_printer"
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,8 @@
-import type { CalculatorGcodeParseResponse, CalculatorParsedMaterial } from '../types/api';
+import type {
+  CalculatorGcodeParseResponse,
+  CalculatorMaterialIdentityResolution,
+  CalculatorParsedMaterial,
+} from '../types/api';
 
 export type MaterialMatchConfidence = 'high' | 'medium' | 'low';
 
@@ -14,12 +18,26 @@ export interface MaterialMatch<T> {
   item: T;
   score: number;
   confidence: MaterialMatchConfidence;
-  method: 'stable_id' | 'attributes';
+  method: 'stable_id' | 'managed_preset' | 'attributes';
 }
 
 export type PrioritizedMaterialMatch<TUser, TCatalog> =
   | { source: 'user'; match: MaterialMatch<TUser> }
   | { source: 'catalog'; match: MaterialMatch<TCatalog> };
+
+// Orca's filament_id names a material family shared by many presets. The server no
+// longer resolves by it, but calculator history saved earlier may still carry it.
+const FAMILY_ID_SOURCES = new Set<string>(['user_preset_filament_id', 'catalog_preset_filament_id']);
+
+export const trustedIdentityResolution = (
+  material: CalculatorParsedMaterial | null | undefined,
+): CalculatorMaterialIdentityResolution | null => {
+  const resolution = material?.identity_resolution;
+  if (!resolution || (resolution.source && FAMILY_ID_SOURCES.has(resolution.source))) {
+    return null;
+  }
+  return resolution;
+};
 
 const MIN_AUTO_MATCH_SCORE = 8;
 const MIN_UNAMBIGUOUS_MARGIN = 2;
@@ -181,13 +199,16 @@ export const findPrioritizedMaterialMatch = <TUser, TCatalog>(
   getUserCandidate: (item: TUser) => MaterialCandidateFields,
   getCatalogCandidate: (item: TCatalog) => MaterialCandidateFields,
 ): PrioritizedMaterialMatch<TUser, TCatalog> | null => {
-  const identityResolution = parsed.identity_resolution;
+  const identityResolution = trustedIdentityResolution(parsed);
   if (identityResolution?.status === 'ambiguous') {
     return null;
   }
 
   if (identityResolution?.status === 'resolved' && identityResolution.filament_id != null) {
     const filamentId = identityResolution.filament_id;
+    const method = identityResolution.source === 'filamenthub_managed_name'
+      ? 'managed_preset'
+      : 'stable_id';
     const userItem = userItems.find((item) => getUserCandidate(item).filamentId === filamentId);
     if (userItem) {
       return {
@@ -196,7 +217,7 @@ export const findPrioritizedMaterialMatch = <TUser, TCatalog>(
           item: userItem,
           score: Number.POSITIVE_INFINITY,
           confidence: 'high',
-          method: 'stable_id',
+          method,
         },
       };
     }
@@ -211,7 +232,7 @@ export const findPrioritizedMaterialMatch = <TUser, TCatalog>(
           item: catalogItem,
           score: Number.POSITIVE_INFINITY,
           confidence: 'high',
-          method: 'stable_id',
+          method,
         },
       };
     }

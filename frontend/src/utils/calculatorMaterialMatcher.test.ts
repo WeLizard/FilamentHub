@@ -5,6 +5,7 @@ import {
   findPrioritizedMaterialMatch,
   pickPrimaryParsedMaterial,
   scoreMaterialCandidate,
+  trustedIdentityResolution,
 } from './calculatorMaterialMatcher';
 
 describe('calculator material matcher', () => {
@@ -137,8 +138,8 @@ describe('calculator material matcher', () => {
         type: 'PLA',
         identity_resolution: {
           status: 'ambiguous',
-          source: 'user_preset_filament_id',
-          stable_id: 'VENDOR-MATERIAL-42',
+          source: 'filamenthub_managed_name',
+          stable_id: '_local/filamenthub/PLA • Acme • PLA Basic',
           candidate_filament_ids: [1, 2],
         },
       },
@@ -149,6 +150,57 @@ describe('calculator material matcher', () => {
     );
 
     expect(match).toBeNull();
+  });
+
+  it('labels a managed preset match separately from a FilamentHub id match', () => {
+    const match = findPrioritizedMaterialMatch(
+      {
+        name: '_local/filamenthub/PETG • Acme • Gold',
+        type: 'PETG',
+        identity_resolution: {
+          status: 'resolved',
+          source: 'filamenthub_managed_name',
+          stable_id: '_local/filamenthub/PETG • Acme • Gold',
+          filament_id: 9,
+          candidate_filament_ids: [9],
+        },
+      },
+      [],
+      [{ id: 9, filamentId: 9, name: 'Gold', vendor: 'Acme', materialType: 'PETG', color: null }],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(match?.match.item.id).toBe(9);
+    expect(match?.match.method).toBe('managed_preset');
+  });
+
+  it('ignores a family-id resolution kept in saved history', () => {
+    const material = {
+      name: 'Generic PETG',
+      type: 'PETG',
+      identity_resolution: {
+        status: 'resolved' as const,
+        source: 'catalog_preset_filament_id' as const,
+        stable_id: 'OFYPdQJh',
+        filament_id: 20,
+        candidate_filament_ids: [20],
+      },
+    };
+    const match = findPrioritizedMaterialMatch(
+      material,
+      [],
+      [
+        { id: 20, filamentId: 20, name: 'PETG White 00020', vendor: 'SeedBrand', materialType: 'PETG', color: null },
+        { id: 21, filamentId: 21, name: 'Generic PETG', vendor: null, materialType: 'PETG', color: null },
+      ],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(trustedIdentityResolution(material)).toBeNull();
+    expect(match?.match.method).not.toBe('stable_id');
+    expect(match?.match.item.id).not.toBe(20);
   });
 
   it('selects the material row that has real usage', () => {

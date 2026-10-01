@@ -16,7 +16,7 @@ import {
   subscribeToPluginSyncResult,
   subscribeToPluginRecoverList,
   subscribeToPluginSliceReports,
-  requestPendingPluginSliceReports,
+  watchPendingPluginSliceReports,
   sendPluginSliceReportResult,
   sendRecoverImport,
   type RecoverItem,
@@ -121,15 +121,10 @@ function AppContent() {
   const canReportProblem = signedIn && pluginDeveloperMode;
 
   useEffect(() => {
-    if (!isPluginEmbed()) return;
+    if (!isPluginEmbed() || !signedIn) return;
     let deliveryInFlight = false;
-    const requestPending = () => {
-      if (!deliveryInFlight) {
-        requestPendingPluginSliceReports();
-      }
-    };
     const unsubscribe = subscribeToPluginSliceReports((batch) => {
-      if (!user || deliveryInFlight) return;
+      if (deliveryInFlight) return;
       deliveryInFlight = true;
       const sourceKeys = batch.slices
         .map((item) => item.source_key)
@@ -147,15 +142,14 @@ function AppContent() {
         sendPluginSliceReportResult(batch.requestId, sourceKeys, false);
       });
     });
-    const pollTimer = user
-      ? window.setInterval(requestPending, 10_000)
-      : undefined;
-    if (user) requestPending();
+    // A failed batch stays queued in the plugin and is offered again on the next
+    // load, focus or pushed slice, so no retry timer is needed.
+    const stopWatching = watchPendingPluginSliceReports();
     return () => {
       unsubscribe();
-      if (pollTimer !== undefined) window.clearInterval(pollTimer);
+      stopWatching();
     };
-  }, [user, queryClient]);
+  }, [signedIn, queryClient]);
 
   useEffect(() => {
     if (!isPluginEmbed()) {

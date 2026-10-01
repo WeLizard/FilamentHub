@@ -109,45 +109,39 @@ const PrinterCompatibilityCard = ({ compatibility }: { compatibility: Calculator
       <p className="mt-1 text-[10px] leading-4 opacity-70">
         {t('profilePage.calculator.printerCompatibilityHint')}
       </p>
-      {compatibility.checks.length > 0 ? (
-        <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
-          {compatibility.checks.map((check, index) => {
-            const required = check.required_value == null
-              ? '—'
-              : compatibilityValue(check.required_value, check.unit);
-            const available = check.available_values.length > 0
-              ? check.available_values.map((value) => compatibilityValue(value, check.unit)).join(', ')
-              : t('profilePage.calculator.printerCompatibilityUnknownValue');
-            return (
-              <div
-                key={`${check.kind}-${check.job_key ?? 'manual'}-${check.line_id ?? index}`}
-                className="min-w-0 rounded-xl border border-current/10 bg-black/10 px-2.5 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-[10px] font-semibold">
-                    {t(`profilePage.calculator.printerCompatibilityKind.${check.kind}`)}
-                  </p>
-                  {check.status === 'compatible'
-                    ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
-                </div>
-                <p className="mt-0.5 text-[10px] leading-4 opacity-70">
-                  {t('profilePage.calculator.printerCompatibilityValues', { required, available })}
+      <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+        {compatibility.checks.map((check) => {
+          const required = check.required_value == null
+            ? '—'
+            : compatibilityValue(check.required_value, check.unit);
+          const available = check.available_values.length > 0
+            ? check.available_values.map((value) => compatibilityValue(value, check.unit)).join(', ')
+            : t('profilePage.calculator.printerCompatibilityUnknownValue');
+          return (
+            <div
+              key={`${check.kind}-${check.printer_profile_id ?? 'none'}`}
+              className="min-w-0 rounded-xl border border-current/10 bg-black/10 px-2.5 py-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[10px] font-semibold">
+                  {t(`profilePage.calculator.printerCompatibilityKind.${check.kind}`)}
                 </p>
-                {check.printer_profile_name ? (
-                  <p className="mt-0.5 truncate text-[9px] opacity-55" title={check.printer_profile_name}>
-                    {check.printer_profile_name}
-                  </p>
-                ) : null}
+                {check.status === 'compatible'
+                  ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="mt-2 text-[10px] leading-4 opacity-70">
-          {t('profilePage.calculator.printerCompatibilityNoEvidence')}
-        </p>
-      )}
+              <p className="mt-0.5 text-[10px] leading-4 opacity-70">
+                {t('profilePage.calculator.printerCompatibilityValues', { required, available })}
+              </p>
+              {check.printer_profile_name ? (
+                <p className="mt-0.5 truncate text-[9px] opacity-55" title={check.printer_profile_name}>
+                  {check.printer_profile_name}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -252,7 +246,7 @@ export const MaterialPreflightPanel = ({
         <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">{error}</p>
       ) : null}
 
-      {result?.printer_compatibility ? (
+      {result?.printer_compatibility?.checks.length ? (
         <PrinterCompatibilityCard compatibility={result.printer_compatibility} />
       ) : null}
 

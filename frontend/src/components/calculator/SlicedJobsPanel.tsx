@@ -15,12 +15,15 @@ import {
 interface SlicedJobsPanelProps {
   onPick: (slice: OrcaSliceReport) => void;
   pickingId?: number | null;
+  /** Share (0..1) of the slice being read that the plugin has already gone through. */
+  pickingProgress?: number | null;
   goneSourceKeys?: string[];
 }
 
 export const SlicedJobsPanel: React.FC<SlicedJobsPanelProps> = ({
   onPick,
   pickingId = null,
+  pickingProgress = null,
   goneSourceKeys = [],
 }) => {
   const { t, i18n } = useTranslation();
@@ -130,11 +133,16 @@ export const SlicedJobsPanel: React.FC<SlicedJobsPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => onPick(slice)}
-                    disabled={pickingId === slice.id}
+                    disabled={pickingId !== null}
                     className="shrink-0 rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-medium text-cyan-200 transition hover:bg-cyan-500/25 disabled:opacity-50"
                   >
                     {pickingId === slice.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {pickingProgress !== null && (
+                          <span className="tabular-nums">{Math.round(pickingProgress * 100)}%</span>
+                        )}
+                      </span>
                     ) : (
                       t('slicedJobs.use')
                     )}

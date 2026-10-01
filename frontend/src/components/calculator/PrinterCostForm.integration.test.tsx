@@ -124,6 +124,34 @@ describe('PrinterCostForm suggestion provenance', () => {
     await waitFor(() => expect(screen.getAllByText('printerCost.estimateBadge')).toHaveLength(2));
   });
 
+  it('does not claim platform values once the owner filled every physical value', async () => {
+    apiMocks.economics.mockResolvedValue({
+      ...economics('catalog_estimate'),
+      useful_life_hours: 6000,
+      applied_sources: {
+        ...economics('catalog_estimate').applied_sources,
+        printer_power_w: 'printer_explicit',
+      },
+      field_sources: { useful_life_hours: 'printer_explicit' },
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PrinterCostForm
+          printerId={7}
+          printerName="Voron"
+          currency="RUB"
+          fallback={{ purchaseCost: 0, lifeHours: 0, powerWatts: 0, maintenance: 0, rate: 100 }}
+        />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByDisplayValue('6000');
+    await waitFor(() => expect(apiMocks.economicsSuggestion).toHaveBeenCalled());
+    expect(screen.queryByText('printerCost.confidence.model')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'printerCost.applySuggested' })).toBeNull();
+  });
+
   it('saves nothing when focus only passes through a field', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(

@@ -7,9 +7,10 @@ import gzip
 import io
 import json
 import logging
+import math
 import re
 import zipfile
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from itertools import islice
@@ -24,6 +25,7 @@ MAX_DECOMPRESSED_GCODE_BYTES = 200 * 1024 * 1024
 MAX_GCODE_3MF_ENTRIES = 1024
 MAX_GCODE_3MF_SLICE_INFO_BYTES = 2 * 1024 * 1024
 MAX_GCODE_3MF_THUMBNAIL_BYTES = 8 * 1024 * 1024
+MAX_GCODE_3MF_PLATES = 256
 
 
 class GcodeParseCancelled(Exception):
@@ -34,6 +36,24 @@ _THUMBNAIL_END_RE = re.compile(r"^;\s*thumbnail end", re.IGNORECASE)
 _THUMBNAIL_BLOCK_START_RE = re.compile(r"^;\s*THUMBNAIL_BLOCK_START", re.IGNORECASE)
 _THUMBNAIL_BLOCK_END_RE = re.compile(r"^;\s*THUMBNAIL_BLOCK_END", re.IGNORECASE)
 _KEY_VALUE_RE = re.compile(r"^([^:=]+?)\s*(?:=|:)\s*(.+)$")
+# Orca/Bambu ``curr_bed_type`` values (and their display names) to the filament
+# setting that holds that plate's bed temperature.
+_BED_TYPE_TEMPERATURE_KEYS = {
+    "cool plate": "cool_plate_temp",
+    "smooth cool plate": "cool_plate_temp",
+    "supertack plate": "supertack_plate_temp",
+    "cool plate (supertack)": "supertack_plate_temp",
+    "engineering plate": "eng_plate_temp",
+    "high temp plate": "hot_plate_temp",
+    "smooth pei plate": "hot_plate_temp",
+    "textured pei plate": "textured_plate_temp",
+    "textured cool plate": "textured_cool_plate_temp",
+}
+_PLATE_TEMPERATURE_KEYS = frozenset(
+    key
+    for plate_key in set(_BED_TYPE_TEMPERATURE_KEYS.values())
+    for key in (plate_key, f"{plate_key}_initial_layer")
+)
 _INLINE_ASSIGNMENT_RE = re.compile(r"\b([A-Z_]+)=([^\s]+)")
 
 _SLICER_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -47,8 +67,18 @@ _SLICER_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 _VERSION_RE = re.compile(r"\b(\d+\.\d+(?:\.\d+)?(?:[-+._a-z0-9]*)?)\b", re.IGNORECASE)
 _CURA_SETTING_RE = re.compile(r"^SETTING_3\s+(.*)$", re.IGNORECASE)
-_SUPPORT_ROLE_RE = re.compile(r"^TYPE:\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE)
+# Orca/Prusa mark a role with ";TYPE:", Bambu with "; FEATURE:".
+_SUPPORT_ROLE_RE = re.compile(
+    r"^(?:TYPE|FEATURE):\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE
+)
+# Bambu labels each object's moves instead of using EXCLUDE_OBJECT. The name is
+# only written at the end of a block, so it is matched there.
+_LABEL_START_RE = re.compile(r"^start printing object, unique label id: *([0-9]+)$")
+_LABEL_STOP_RE = re.compile(r"^stop printing object, unique label id: *([0-9]+)$")
+_LABEL_NAME_RE = re.compile(r"^stop printing object (.+) id:([0-9]+) copy ([0-9]+)$")
+_LABEL_PLACEHOLDER_RE = re.compile(r"label ([0-9]+)")
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_SETTINGS_KEY_RE = re.compile(r"[A-Za-z0-9_]+")
 _OBJECT_CENTER_RE = re.compile(r"\bCENTER=([-\d.]+),([-\d.]+)", re.IGNORECASE)
 _OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
 _EXCLUDE_OBJECT_START_RE = re.compile(r"^EXCLUDE_OBJECT_START\b.*?\bNAME=([^\s]+)", re.IGNORECASE)
@@ -79,6 +109,21 @@ _FHUB_IDENTITY_RE = re.compile(
 _MAX_FHUB_TOOL_INDEX = 255
 _MAX_FHUB_IDENTITY_ID = 2**63 - 1
 
+# The browser-side walk reports the same facts as ToolpathEvidence.consume;
+# bump the version when its shape changes.
+TOOLPATH_EVIDENCE_VERSION = 1
+_MAX_TOOLPATH_TOOLS = 256
+_MAX_TOOLPATH_ROLES_PER_TOOL = 64
+_MAX_TOOLPATH_OBJECTS = 1024
+_MAX_TOOLPATH_NAME_CHARS = 200
+_MAX_TOOLPATH_TOOL_INDEX = 65535
+_MAX_TOOLPATH_TOOLCHANGES = 2**31 - 1
+_TOOLPATH_TOOL_KEY_RE = re.compile(r"0|[1-9][0-9]{0,4}")
+
+
+class ToolpathEvidenceError(ValueError):
+    """A toolpath summary built by the browser does not follow the contract."""
+
 
 def parse_gcode_payload(
     file_name: str,
@@ -106,7 +151,7 @@ def _parse_plain_gcode_payload(
     file_name: str,
     raw_bytes: bytes,
     decoded_text: str | None = None,
-    extrusion_evidence: _ExtrusionEvidence | None = None,
+    extrusion_evidence: ToolpathEvidence | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Parse one plain (or gzip-compressed) G-code stream.
@@ -126,11 +171,29 @@ def _parse_plain_gcode_payload(
     lines = GcodeLines(decoded_text, should_cancel=should_cancel)
     slicer_name, slicer_version = _detect_slicer(lines)
     thumbnail_evidence = _ThumbnailEvidence()
-    extrusion_evidence = extrusion_evidence or _ExtrusionEvidence()
+    extrusion_evidence = extrusion_evidence or ToolpathEvidence()
 
-    parsed: dict[str, Any] = {
+    parsed = _new_parsed_gcode(file_name, len(raw_bytes), slicer_name, slicer_version)
+    collector = _new_gcode_collector()
+    _collect_gcode_metadata(lines, parsed, collector, thumbnail_evidence, extrusion_evidence)
+    _finalize_gcode_metadata(parsed, collector, thumbnail_evidence)
+    extrusion_evidence.apply_scope(parsed)
+    extrusion_evidence.apply(parsed)
+    _finalize_totals(parsed)
+    if not _has_recognizable_gcode(parsed, collector):
+        raise ValueError("unrecognized_gcode")
+    return parsed
+
+
+def _new_parsed_gcode(
+    file_name: str,
+    file_size_bytes: int,
+    slicer_name: str | None,
+    slicer_version: str | None,
+) -> dict[str, Any]:
+    return {
         "file_name": file_name,
-        "file_size_bytes": len(raw_bytes),
+        "file_size_bytes": file_size_bytes,
         "slicer_name": slicer_name,
         "slicer_version": slicer_version,
         "printer_settings_id": None,
@@ -188,7 +251,9 @@ def _parse_plain_gcode_payload(
         "materials": [],
     }
 
-    collector: dict[str, Any] = {
+
+def _new_gcode_collector() -> dict[str, Any]:
+    return {
         "filament_types": None,
         "filament_names": None,
         "filament_colors": None,
@@ -217,8 +282,25 @@ def _parse_plain_gcode_payload(
         "fhub_identities": {},
         "fhub_identity_conflicts": set(),
         "gcode_command_seen": False,
+        "command_temperatures": {},
+        "bed_type": None,
+        "plate_temperatures": {},
     }
 
+
+def _collect_gcode_metadata(
+    lines: Iterable[str],
+    parsed: dict[str, Any],
+    collector: dict[str, Any],
+    thumbnail_evidence: _ThumbnailEvidence,
+    extrusion_evidence: ToolpathEvidence | None,
+) -> None:
+    """Read slicer metadata line by line.
+
+    Without ``extrusion_evidence`` the toolpath is not accounted for at all: a
+    caller that only holds the head and tail of a file must not derive per-role
+    or per-object weights from the moves it happens to have.
+    """
     for line in lines:
         stripped = line.strip()
         if thumbnail_evidence.collecting or (
@@ -226,7 +308,9 @@ def _parse_plain_gcode_payload(
             and stripped[1:].lstrip()[:20].lower().startswith("thumbnail")
         ):
             thumbnail_evidence.consume(stripped)
-        extrusion_role = extrusion_evidence.consume(stripped)
+        extrusion_role = (
+            extrusion_evidence.consume(stripped) if extrusion_evidence is not None else None
+        )
         # First character, then the prefix — never an upper-cased copy of the
         # whole line, which is what this cost on every movement command.
         if stripped[:1] in ("E", "e") and stripped[:21].upper() == "EXCLUDE_OBJECT_DEFINE":
@@ -239,7 +323,7 @@ def _parse_plain_gcode_payload(
         if not stripped.startswith(";"):
             if _GCODE_COMMAND_RE.match(stripped):
                 collector["gcode_command_seen"] = True
-            _collect_temperature_command_metadata(parsed, stripped)
+            _collect_temperature_command_metadata(collector["command_temperatures"], stripped)
             continue
 
         comment = stripped[1:].strip()
@@ -269,6 +353,12 @@ def _parse_plain_gcode_payload(
         _collect_summary_metadata(parsed, collector, comment)
         _collect_key_value_metadata(parsed, collector, comment)
 
+
+def _finalize_gcode_metadata(
+    parsed: dict[str, Any],
+    collector: dict[str, Any],
+    thumbnail_evidence: _ThumbnailEvidence,
+) -> None:
     if collector["estimated_normal_seconds"] is not None:
         # Orca/Prusa "normal mode" is already the complete print duration.
         # The following first-layer value is a subset and must not be added.
@@ -281,6 +371,11 @@ def _parse_plain_gcode_payload(
     if collector["cura_setting_fragments"]:
         _apply_cura_settings(parsed, "".join(collector["cura_setting_fragments"]))
 
+    _apply_plate_temperatures(parsed, collector)
+    for key, temperature in collector["command_temperatures"].items():
+        if parsed[key] is None:
+            parsed[key] = temperature
+
     parsed["support_roles_detected"] = sorted(collector["support_roles"])
     if collector["support_roles"]:
         parsed["support_used"] = True
@@ -288,11 +383,6 @@ def _parse_plain_gcode_payload(
     _finalize_fhub_identities(parsed, collector)
     _finalize_objects(parsed, collector)
     _finalize_materials(parsed, collector)
-    extrusion_evidence.apply(parsed)
-    _finalize_totals(parsed)
-    if not _has_recognizable_gcode(parsed, collector):
-        raise ValueError("unrecognized_gcode")
-    return parsed
 
 
 def _has_recognizable_gcode(parsed: dict[str, Any], collector: dict[str, Any]) -> bool:
@@ -388,7 +478,7 @@ def _parse_gcode_3mf_payload(
                 raw_bytes=gcode_bytes,
                 should_cancel=should_cancel,
             )
-            extrusion_evidence = _ExtrusionEvidence()
+            extrusion_evidence = ToolpathEvidence()
             parsed = _parse_plain_gcode_payload(
                 file_name=selected_member.filename,
                 raw_bytes=gcode_bytes,
@@ -408,6 +498,10 @@ def _parse_gcode_3mf_payload(
                 selected_plate_index,
                 should_cancel,
             )
+            # Objects the G-code left unnamed take their names from the slice info,
+            # before its support flag is merged, as in the excerpt path.
+            extrusion_evidence.rename_unresolved_labels(slice_info.get("objects", {}))
+            extrusion_evidence.apply_scope(parsed)
             _merge_gcode_3mf_slice_info(parsed, slice_info)
             # Some Bambu/Orca containers keep per-tool weights only in
             # slice_info.config. Resolve the already collected extrusion evidence
@@ -452,6 +546,15 @@ def _read_gcode_3mf_slice_info(
             MAX_GCODE_3MF_SLICE_INFO_BYTES,
             should_cancel,
         )
+    except ValueError:
+        logger.warning("Failed to read Metadata/slice_info.config", exc_info=True)
+        return {}
+    return _parse_gcode_3mf_slice_info(payload).get(plate_index, {})
+
+
+def _parse_gcode_3mf_slice_info(payload: bytes) -> dict[int, dict[str, Any]]:
+    """Per-plate facts from Metadata/slice_info.config, keyed by plate index."""
+    try:
         if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
             raise ValueError("unsafe_gcode_3mf_xml")
         root = ElementTree.fromstring(payload)
@@ -459,19 +562,22 @@ def _read_gcode_3mf_slice_info(
         logger.warning("Failed to parse Metadata/slice_info.config", exc_info=True)
         return {}
 
+    plates: dict[int, dict[str, Any]] = {}
     for plate in root.findall(".//plate"):
         metadata = {
             item.get("key"): item.get("value")
             for item in plate.findall("metadata")
             if item.get("key")
         }
-        if _parse_first_int(metadata.get("index")) != plate_index:
+        plate_index = _parse_first_int(metadata.get("index"))
+        if plate_index is None or plate_index in plates:
             continue
 
         filaments: list[dict[str, Any]] = []
         for item in plate.findall("filament"):
             raw_id = _parse_first_int(item.get("id"))
-            if raw_id is None or raw_id <= 0:
+            # The id is user-supplied and sizes per-slot lists downstream.
+            if raw_id is None or raw_id <= 0 or raw_id - 1 > _MAX_FHUB_TOOL_INDEX:
                 continue
             used_m = _parse_first_float(item.get("used_m"))
             filaments.append(
@@ -487,13 +593,21 @@ def _read_gcode_3mf_slice_info(
                 }
             )
 
-        return {
+        objects: dict[str, str] = {}
+        for item in plate.findall("object"):
+            identify_id = _parse_first_int(item.get("identify_id"))
+            name = (item.get("name") or "").strip()
+            if identify_id is not None and identify_id >= 0 and name:
+                objects[str(identify_id)] = name
+
+        plates[plate_index] = {
+            "objects": objects,
             "support_used": _parse_bool(metadata.get("support_used")),
             "print_time_seconds": _parse_first_int(metadata.get("prediction")),
             "total_filament_weight_g": _parse_first_float(metadata.get("weight")),
             "filaments": filaments,
         }
-    return {}
+    return plates
 
 
 def _merge_gcode_3mf_slice_info(parsed: dict[str, Any], slice_info: dict[str, Any]) -> None:
@@ -588,10 +702,203 @@ def _read_gcode_3mf_thumbnail(
         MAX_GCODE_3MF_THUMBNAIL_BYTES,
         should_cancel,
     )
+    return _png_data_url(payload)
+
+
+def _png_data_url(payload: bytes) -> str | None:
     if not payload.startswith(b"\x89PNG"):
         return None
     encoded = base64.b64encode(payload).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def parse_gcode_excerpt(
+    file_name: str,
+    file_size_bytes: int,
+    head: bytes,
+    tail: bytes | None = None,
+    toolpath: ToolpathEvidence | None = None,
+) -> dict[str, Any]:
+    """Read the slicer summary of a plain G-code file from its head and tail.
+
+    Slicers write totals and the full configuration at the start and the end of
+    the file, so the middle is never needed. Without ``toolpath`` the moves are
+    not accounted for: per-role and per-object figures stay empty because the
+    moves in an excerpt are not the moves of the print. ``toolpath`` is the walk
+    of every move, made where the whole file is; it fills those figures in as a
+    full parse would.
+    """
+    text = _decode_text_bytes(_join_gcode_excerpt(head, tail, file_size_bytes))
+    if not text.strip():
+        raise ValueError("empty_file")
+
+    lines = GcodeLines(text)
+    slicer_name, slicer_version = _detect_slicer(lines)
+    parsed = _new_parsed_gcode(file_name, file_size_bytes, slicer_name, slicer_version)
+    _collect_summary_metadata_lines(lines, parsed)
+    if toolpath is not None:
+        toolpath.apply_scope(parsed)
+        toolpath.apply(parsed)
+    _finalize_totals(parsed)
+    return _as_excerpt_job(parsed, toolpath)
+
+
+def parse_gcode_3mf_excerpt(
+    file_name: str,
+    file_size_bytes: int,
+    entries: Mapping[str, bytes],
+    toolpaths: Mapping[int, ToolpathEvidence] | None = None,
+) -> list[dict[str, Any]]:
+    """Read every plate's summary from the metadata entries of a sliced 3MF.
+
+    ``entries`` is keyed by lower-case, forward-slash archive path. ``toolpaths``
+    holds the walk of a plate's G-code, by plate index, for the plates that have one.
+    """
+    slice_info = entries.get("metadata/slice_info.config")
+    if slice_info is None:
+        raise ValueError("gcode_3mf_excerpt_without_slice_info")
+    plates = _parse_gcode_3mf_slice_info(slice_info)
+    if not plates:
+        raise ValueError("gcode_3mf_has_no_plates")
+    if len(plates) > MAX_GCODE_3MF_PLATES:
+        raise ValueError("gcode_3mf_too_many_plates")
+
+    settings_lines = _project_settings_comment_lines(entries.get("metadata/project_settings.config"))
+    available_plate_indices = sorted(plates)
+    jobs: list[dict[str, Any]] = []
+    for plate_index in available_plate_indices:
+        info = plates[plate_index]
+        parsed = _new_parsed_gcode(file_name, file_size_bytes, None, None)
+        _collect_summary_metadata_lines(
+            [*settings_lines, *_slice_info_usage_lines(info["filaments"])],
+            parsed,
+        )
+        parsed["container_format"] = "gcode_3mf"
+        parsed["plate_index"] = plate_index
+        parsed["available_plate_indices"] = available_plate_indices
+        toolpath = toolpaths.get(plate_index) if toolpaths else None
+        if toolpath is not None:
+            # Before the slice info, as in a full parse: its support flag wins over the roles.
+            toolpath.rename_unresolved_labels(info["objects"])
+            toolpath.apply_scope(parsed)
+        _merge_gcode_3mf_slice_info(parsed, info)
+        if toolpath is not None:
+            toolpath.apply(parsed)
+        _finalize_totals(parsed)
+
+        thumbnails = [
+            entries[name]
+            for name in (
+                f"metadata/plate_{plate_index}.png",
+                f"metadata/plate_{plate_index}_small.png",
+            )
+            if name in entries
+        ]
+        if thumbnails:
+            parsed["thumbnail_data_url"] = _png_data_url(max(thumbnails, key=len))
+        jobs.append(_as_excerpt_job(parsed, toolpath))
+    return jobs
+
+
+def _join_gcode_excerpt(head: bytes, tail: bytes | None, file_size_bytes: int) -> bytes:
+    """Make one byte stream out of the two ends of a file, dropping cut lines.
+
+    The ends are cut at arbitrary offsets, so a head that stops mid-line and a
+    tail that starts mid-line would each feed a half-written line to the parser.
+    When the parts add up to the whole file nothing was cut and they are joined
+    as they are.
+    """
+    if tail is None:
+        if len(head) >= file_size_bytes:
+            return head
+        return head[: head.rfind(b"\n") + 1]
+    if len(head) + len(tail) == file_size_bytes:
+        return head + tail
+    first_newline = tail.find(b"\n")
+    return head[: head.rfind(b"\n") + 1] + (tail[first_newline + 1 :] if first_newline >= 0 else b"")
+
+
+def _collect_summary_metadata_lines(lines: Iterable[str], parsed: dict[str, Any]) -> None:
+    collector = _new_gcode_collector()
+    thumbnail_evidence = _ThumbnailEvidence()
+    _collect_gcode_metadata(lines, parsed, collector, thumbnail_evidence, None)
+    _finalize_gcode_metadata(parsed, collector, thumbnail_evidence)
+
+
+def _as_excerpt_job(parsed: dict[str, Any], toolpath: ToolpathEvidence | None) -> dict[str, Any]:
+    if parsed["print_time_seconds"] is None and parsed["total_filament_weight_g"] is None:
+        raise ValueError("gcode_excerpt_without_summary")
+    parsed["detail_level"] = "summary" if toolpath is None else "full"
+    return parsed
+
+
+def _project_settings_comment_lines(payload: bytes | None) -> list[str]:
+    """Express Metadata/project_settings.config as the G-code config block it mirrors.
+
+    The JSON keys are the ones Orca writes as ``; key = value`` at the end of a
+    G-code file, so the existing key/value collector reads them unchanged.
+    """
+    if payload is None:
+        return []
+    try:
+        settings = json.loads(_decode_text_bytes(payload))
+    except (json.JSONDecodeError, RecursionError):
+        logger.warning("Failed to parse Metadata/project_settings.config", exc_info=True)
+        return []
+    if not isinstance(settings, dict):
+        return []
+
+    lines: list[str] = []
+    for key, value in settings.items():
+        if not isinstance(key, str) or _SETTINGS_KEY_RE.fullmatch(key) is None:
+            continue
+        text = _settings_value_text(value)
+        if text:
+            lines.append(f"; {key} = {text}")
+    return lines
+
+
+def _settings_value_text(value: Any) -> str | None:
+    if isinstance(value, list):
+        items = [_settings_scalar_text(item) for item in value]
+        if any(item is None for item in items):
+            return None
+        # A trailing separator keeps a single entry that contains a comma from
+        # being split on it.
+        return ";".join(items) + ";"
+    return _settings_scalar_text(value)
+
+
+def _settings_scalar_text(value: Any) -> str | None:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    # Multi-line values are custom G-code blocks; as a comment line they would
+    # become several lines.
+    if isinstance(value, str) and not _LINE_BREAKS.intersection(value):
+        return value.strip()
+    return None
+
+
+def _slice_info_usage_lines(filaments: list[dict[str, Any]]) -> list[str]:
+    """Per-slot usage of one plate in the form of the G-code footer totals.
+
+    The footer lists every filament slot of the project, used or not; unused
+    slots read zero, which the material finalizer drops.
+    """
+    if not filaments:
+        return []
+    slot_count = max(item["tool_index"] for item in filaments) + 1
+    weights = [0.0] * slot_count
+    lengths = [0.0] * slot_count
+    for item in filaments:
+        weights[item["tool_index"]] = item["weight_g"] or 0.0
+        lengths[item["tool_index"]] = item["length_mm"] or 0.0
+    return [
+        "; filament used [g] = " + ",".join(f"{value:.6f}" for value in weights),
+        "; filament used [mm] = " + ",".join(f"{value:.6f}" for value in lengths),
+    ]
 
 
 def _gunzip_capped(
@@ -702,6 +1009,10 @@ def _decode_gcode_bytes(
         except (OSError, EOFError, gzip.BadGzipFile) as exc:
             raise ValueError("invalid_gzip") from exc
 
+    return _decode_text_bytes(payload)
+
+
+def _decode_text_bytes(payload: bytes) -> str:
     try:
         return payload.decode("utf-8")
     except UnicodeDecodeError:
@@ -960,11 +1271,19 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
         parsed["nozzle_temperature_other_layers_c"] = _parse_first_float(value)
         return
 
-    if normalized_key in {"first_layer_bed_temperature", "cool_plate_temp_initial_layer", "bed_initial_c"} and parsed["bed_temperature_first_layer_c"] is None:
+    if normalized_key == "curr_bed_type":
+        collector["bed_type"] = value.strip().strip('"').casefold()
+        return
+
+    if normalized_key in _PLATE_TEMPERATURE_KEYS:
+        collector["plate_temperatures"][normalized_key] = _parse_first_float(value)
+        return
+
+    if normalized_key in {"first_layer_bed_temperature", "bed_initial_c"} and parsed["bed_temperature_first_layer_c"] is None:
         parsed["bed_temperature_first_layer_c"] = _parse_first_float(value)
         return
 
-    if normalized_key in {"bed_temperature", "cool_plate_temp", "bed_main_c"} and parsed["bed_temperature_other_layers_c"] is None:
+    if normalized_key in {"bed_temperature", "bed_main_c"} and parsed["bed_temperature_other_layers_c"] is None:
         parsed["bed_temperature_other_layers_c"] = _parse_first_float(value)
         return
 
@@ -1105,7 +1424,9 @@ def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str
         parsed["total_layers"] = _parse_first_int(assignments["total_layer"])
 
 
-def _collect_temperature_command_metadata(parsed: dict[str, Any], line: str) -> None:
+def _collect_temperature_command_metadata(found: dict[str, float], line: str) -> None:
+    # Commands only fill what the slicer's own settings leave unsaid, and those
+    # settings may come later in the file, so they are kept apart until the end.
     # All three things looked for here are anchored to the start of the line:
     # PRINT_START, M104/M109, M140/M190. A movement command begins with G, so
     # one character decides it without copying the line or running a pattern.
@@ -1117,34 +1438,63 @@ def _collect_temperature_command_metadata(parsed: dict[str, Any], line: str) -> 
             parsed_value = _parse_first_float(raw_value)
             if parsed_value is None or parsed_value <= 0:
                 continue
-            if parameter.upper() == "EXTRUDER" and parsed["nozzle_temperature_first_layer_c"] is None:
-                parsed["nozzle_temperature_first_layer_c"] = parsed_value
-            elif parameter.upper() == "BED" and parsed["bed_temperature_first_layer_c"] is None:
-                parsed["bed_temperature_first_layer_c"] = parsed_value
+            if parameter.upper() == "EXTRUDER":
+                found.setdefault("nozzle_temperature_first_layer_c", parsed_value)
+            elif parameter.upper() == "BED":
+                found.setdefault("bed_temperature_first_layer_c", parsed_value)
 
     nozzle_match = _NOZZLE_TEMPERATURE_COMMAND_RE.match(line)
     if nozzle_match:
-        nozzle_temperature = _parse_first_float(nozzle_match.group(1))
-        if nozzle_temperature is not None and nozzle_temperature > 0:
-            if parsed["nozzle_temperature_first_layer_c"] is None:
-                parsed["nozzle_temperature_first_layer_c"] = nozzle_temperature
-            elif (
-                parsed["nozzle_temperature_other_layers_c"] is None
-                and parsed["nozzle_temperature_first_layer_c"] != nozzle_temperature
-            ):
-                parsed["nozzle_temperature_other_layers_c"] = nozzle_temperature
+        _record_command_temperature(
+            found,
+            "nozzle_temperature_first_layer_c",
+            "nozzle_temperature_other_layers_c",
+            _parse_first_float(nozzle_match.group(1)),
+        )
 
     bed_match = _BED_TEMPERATURE_COMMAND_RE.match(line)
     if bed_match:
-        bed_temperature = _parse_first_float(bed_match.group(1))
-        if bed_temperature is not None and bed_temperature > 0:
-            if parsed["bed_temperature_first_layer_c"] is None:
-                parsed["bed_temperature_first_layer_c"] = bed_temperature
-            elif (
-                parsed["bed_temperature_other_layers_c"] is None
-                and parsed["bed_temperature_first_layer_c"] != bed_temperature
-            ):
-                parsed["bed_temperature_other_layers_c"] = bed_temperature
+        _record_command_temperature(
+            found,
+            "bed_temperature_first_layer_c",
+            "bed_temperature_other_layers_c",
+            _parse_first_float(bed_match.group(1)),
+        )
+
+
+def _apply_plate_temperatures(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
+    """Take the bed temperature of the plate the job was sliced for.
+
+    Orca/Bambu keep one temperature per plate type in every file; only the
+    selected ``curr_bed_type`` is the one the printer heats to. Without it the
+    plate is unknown and the heating commands answer instead.
+    """
+    plate_key = _BED_TYPE_TEMPERATURE_KEYS.get(collector["bed_type"] or "")
+    if plate_key is None:
+        return
+    temperatures = collector["plate_temperatures"]
+    for field, key in (
+        ("bed_temperature_first_layer_c", f"{plate_key}_initial_layer"),
+        ("bed_temperature_other_layers_c", plate_key),
+    ):
+        # 0 means the filament does not support that plate.
+        temperature = temperatures.get(key)
+        if temperature:
+            parsed[field] = temperature
+
+
+def _record_command_temperature(
+    found: dict[str, float],
+    first_key: str,
+    other_key: str,
+    temperature: float | None,
+) -> None:
+    if temperature is None or temperature <= 0:
+        return
+    if first_key not in found:
+        found[first_key] = temperature
+    elif other_key not in found and found[first_key] != temperature:
+        found[other_key] = temperature
 
 
 def _collect_object_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
@@ -1354,8 +1704,60 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     )
 
 
+def _checked_toolpath_int(value: object, maximum: int) -> int:
+    if type(value) is not int or not 0 <= value <= maximum:
+        raise ToolpathEvidenceError
+    return value
+
+
+def _checked_toolpath_name(value: object) -> str:
+    if not isinstance(value, str) or not 0 < len(value) <= _MAX_TOOLPATH_NAME_CHARS:
+        raise ToolpathEvidenceError
+    return value
+
+
+def _checked_toolpath_names(value: object, maximum: int) -> list[str]:
+    if not isinstance(value, list) or len(value) > maximum:
+        raise ToolpathEvidenceError
+    return [_checked_toolpath_name(item) for item in value]
+
+
+def _checked_toolpath_amount(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ToolpathEvidenceError
+    try:
+        amount = float(value)
+    except OverflowError as exc:
+        raise ToolpathEvidenceError from exc
+    if not math.isfinite(amount) or amount < 0:
+        raise ToolpathEvidenceError
+    return amount
+
+
+def _checked_toolpath_usage(value: object, max_names_per_tool: int) -> dict[int, dict[str, float]]:
+    if not isinstance(value, dict) or len(value) > _MAX_TOOLPATH_TOOLS:
+        raise ToolpathEvidenceError
+    usage: dict[int, dict[str, float]] = {}
+    for raw_tool, raw_amounts in value.items():
+        if not isinstance(raw_tool, str) or _TOOLPATH_TOOL_KEY_RE.fullmatch(raw_tool) is None:
+            raise ToolpathEvidenceError
+        tool = int(raw_tool)
+        if tool > _MAX_TOOLPATH_TOOL_INDEX:
+            raise ToolpathEvidenceError
+        if not isinstance(raw_amounts, dict) or len(raw_amounts) > max_names_per_tool:
+            raise ToolpathEvidenceError
+        amounts = {
+            _checked_toolpath_name(name): _checked_toolpath_amount(amount)
+            for name, amount in raw_amounts.items()
+        }
+        # The walk never records a tool it saw no extrusion for.
+        if amounts:
+            usage[tool] = amounts
+    return usage
+
+
 @dataclass(slots=True)
-class _ExtrusionEvidence:
+class ToolpathEvidence:
     """One-pass extrusion facts, resolved to grams after slicer totals are known."""
 
     relative_extrusion: bool = False
@@ -1368,6 +1770,17 @@ class _ExtrusionEvidence:
     retraction_debt: dict[int, float] = dataclass_field(default_factory=dict)
     extrusion_by_tool_role: dict[int, dict[str, float]] = dataclass_field(default_factory=dict)
     extrusion_by_tool_object: dict[int, dict[str, float]] = dataclass_field(default_factory=dict)
+    # Insertion-ordered sets: the metadata collector reads the same two facts
+    # from the same lines, and a browser-side walk has to report them too.
+    object_names: dict[str, None] = dataclass_field(default_factory=dict)
+    support_roles: dict[str, None] = dataclass_field(default_factory=dict)
+    # Bambu object labels, by digit string. Until settle_labels() they stand
+    # apart from the EXCLUDE_OBJECT names: a label's name is known only at the
+    # end of its first block, after its moves have been counted.
+    current_label: str | None = None
+    labels: dict[str, None] = dataclass_field(default_factory=dict)
+    label_names: dict[str, str] = dataclass_field(default_factory=dict)
+    extrusion_by_tool_label: dict[int, dict[str, float]] = dataclass_field(default_factory=dict)
 
     def consume(self, stripped: str) -> str | None:
         """Collect one already-stripped line and return its extrusion role, if any."""
@@ -1376,12 +1789,15 @@ class _ExtrusionEvidence:
 
         if stripped[0] == ";":
             comment = stripped[1:].lstrip()
-            if comment[:5].lower() == "type:":
-                role = comment[5:].strip().lower()
-                if not role:
-                    return None
-                self.current_role = role
-                return self.current_role
+            first = comment[:1]
+            if first in ("T", "t"):
+                if comment[:5].lower() == "type:":
+                    return self._set_role(comment, 5)
+            elif first in ("F", "f"):
+                if comment[:8].lower() == "feature:":
+                    return self._set_role(comment, 8)
+            elif first == "s":
+                self._consume_label_marker(comment)
             return None
 
         if ";" in stripped:
@@ -1409,6 +1825,10 @@ class _ExtrusionEvidence:
                 self.current_object = object_start_match.group(1)
             elif _EXCLUDE_OBJECT_END_RE.match(command):
                 self.current_object = None
+            elif stripped[:21].upper() == "EXCLUDE_OBJECT_DEFINE":
+                object_name_match = _OBJECT_NAME_RE.search(stripped)
+                if object_name_match:
+                    self.object_names[object_name_match.group(1)] = None
             return None
 
         if head in "Tt":
@@ -1457,15 +1877,148 @@ class _ExtrusionEvidence:
 
         tool_roles = self.extrusion_by_tool_role.setdefault(self.current_tool, {})
         tool_roles[self.current_role] = tool_roles.get(self.current_role, 0.0) + consumed
-        if self.current_object is not None:
+        if self.current_label is not None:
+            tool_labels = self.extrusion_by_tool_label.setdefault(self.current_tool, {})
+            tool_labels[self.current_label] = tool_labels.get(self.current_label, 0.0) + consumed
+        elif self.current_object is not None:
             tool_objects = self.extrusion_by_tool_object.setdefault(self.current_tool, {})
             tool_objects[self.current_object] = (
                 tool_objects.get(self.current_object, 0.0) + consumed
             )
         return None
 
+    def _set_role(self, comment: str, prefix_length: int) -> str | None:
+        role = comment[prefix_length:].strip().lower()
+        if not role:
+            return None
+        self.current_role = role
+        if role.startswith("support"):
+            support_role_match = _SUPPORT_ROLE_RE.match(comment)
+            if support_role_match:
+                self.support_roles[support_role_match.group(1).lower()] = None
+        return role
+
+    def _consume_label_marker(self, comment: str) -> None:
+        if comment.startswith("start printing object, unique label id:"):
+            start_match = _LABEL_START_RE.match(comment)
+            if start_match:
+                self.current_label = start_match.group(1).lstrip("0") or "0"
+                self.labels[self.current_label] = None
+        elif comment.startswith("stop printing object"):
+            if _LABEL_STOP_RE.match(comment):
+                self.current_label = None
+            elif self.current_label is not None:
+                name_match = _LABEL_NAME_RE.match(comment)
+                if name_match:
+                    # Same shape as an EXCLUDE_OBJECT name, so copies of a part group as one.
+                    self.label_names.setdefault(
+                        self.current_label,
+                        f"{name_match.group(1)}_id_{name_match.group(2)}_copy_{name_match.group(3)}",
+                    )
+
+    def settle_labels(self) -> None:
+        """Fold the label-keyed counts into the object counts under the names the file gave."""
+        if not self.labels and not self.extrusion_by_tool_label:
+            return
+        raw_names = {label: self.label_names.get(label, f"label {label}") for label in self.labels}
+        for raw_name in raw_names.values():
+            self.object_names[raw_name] = None
+        for tool, amounts in self.extrusion_by_tool_label.items():
+            tool_objects = self.extrusion_by_tool_object.setdefault(tool, {})
+            for label, amount in amounts.items():
+                raw_name = raw_names[label]
+                tool_objects[raw_name] = tool_objects.get(raw_name, 0.0) + amount
+        self.labels.clear()
+        self.label_names.clear()
+        self.extrusion_by_tool_label.clear()
+
+    def rename_unresolved_labels(self, names: Mapping[str, str]) -> None:
+        """Name labels the file left anonymous after the objects of its slice info.
+
+        ``names`` is keyed by the label's digit string. A label without a name
+        in either place stays "label <id>".
+        """
+        self.settle_labels()
+        renames: dict[str, str] = {}
+        for raw_name in (
+            *self.object_names,
+            *(name for objects in self.extrusion_by_tool_object.values() for name in objects),
+        ):
+            placeholder = _LABEL_PLACEHOLDER_RE.fullmatch(raw_name)
+            if placeholder and placeholder.group(1) in names:
+                renames[raw_name] = f"{names[placeholder.group(1)]}_id_{placeholder.group(1)}"
+        if not renames:
+            return
+        self.object_names = {renames.get(name, name): None for name in self.object_names}
+        for tool, objects in self.extrusion_by_tool_object.items():
+            renamed: dict[str, float] = {}
+            for name, amount in objects.items():
+                target = renames.get(name, name)
+                renamed[target] = renamed.get(target, 0.0) + amount
+            self.extrusion_by_tool_object[tool] = renamed
+
+    def to_payload(self) -> dict[str, Any]:
+        """The facts a browser-side walk of the same lines has to report."""
+        self.settle_labels()
+        return {
+            "version": TOOLPATH_EVIDENCE_VERSION,
+            "extrusion_by_tool_role": {
+                str(tool): dict(self.extrusion_by_tool_role[tool])
+                for tool in sorted(self.extrusion_by_tool_role)
+            },
+            "extrusion_by_tool_object": {
+                str(tool): dict(self.extrusion_by_tool_object[tool])
+                for tool in sorted(self.extrusion_by_tool_object)
+            },
+            "observed_tool": self.observed_tool,
+            "observed_toolchange_count": self.observed_toolchange_count,
+            "object_names": list(self.object_names),
+            "support_roles": list(self.support_roles),
+        }
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ToolpathEvidence:
+        """Read a payload built outside this process; it is user input, so check all of it."""
+        if not isinstance(payload, dict):
+            raise ToolpathEvidenceError
+        version = payload.get("version")
+        if type(version) is not int or version != TOOLPATH_EVIDENCE_VERSION:
+            raise ToolpathEvidenceError
+
+        observed_tool = payload.get("observed_tool")
+        if observed_tool is not None:
+            observed_tool = _checked_toolpath_int(observed_tool, _MAX_TOOLPATH_TOOL_INDEX)
+        return cls(
+            observed_tool=observed_tool,
+            observed_toolchange_count=_checked_toolpath_int(
+                payload.get("observed_toolchange_count"), _MAX_TOOLPATH_TOOLCHANGES
+            ),
+            extrusion_by_tool_role=_checked_toolpath_usage(
+                payload.get("extrusion_by_tool_role"), _MAX_TOOLPATH_ROLES_PER_TOOL
+            ),
+            extrusion_by_tool_object=_checked_toolpath_usage(
+                payload.get("extrusion_by_tool_object"), _MAX_TOOLPATH_OBJECTS
+            ),
+            object_names=dict.fromkeys(
+                _checked_toolpath_names(payload.get("object_names"), _MAX_TOOLPATH_OBJECTS)
+            ),
+            support_roles=dict.fromkeys(
+                _checked_toolpath_names(payload.get("support_roles"), _MAX_TOOLPATH_ROLES_PER_TOOL)
+            ),
+        )
+
+    def apply_scope(self, parsed: dict[str, Any]) -> None:
+        """Set what the metadata pass reads from the same lines: support roles and objects."""
+        self.settle_labels()
+        support_roles = sorted(self.support_roles)
+        parsed["support_roles_detected"] = support_roles
+        if support_roles:
+            parsed["support_used"] = True
+        _finalize_objects(parsed, {"object_names": set(self.object_names)})
+
     def apply(self, parsed: dict[str, Any]) -> None:
         """Normalize collected extrusion distances to the slicer's material weights."""
+        self.settle_labels()
         if parsed["toolchange_count"] is None and self.observed_tool is not None:
             # The first Tn selects the initial tool. Only later transitions are
             # changes. Slicer metadata still wins when it has a resolved value.
@@ -1579,7 +2132,7 @@ class _ExtrusionEvidence:
 
 def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) -> None:
     """Apply role and object weights when a standalone line source is supplied."""
-    evidence = _ExtrusionEvidence()
+    evidence = ToolpathEvidence()
     for raw_line in lines:
         evidence.consume(raw_line.strip())
     evidence.apply(parsed)
@@ -1809,7 +2362,9 @@ def _split_list(value: str, separators: list[str] | None = None) -> list[str]:
 def _parse_first_float(value: str | None) -> float | None:
     if not value:
         return None
-    match = _FLOAT_RE.search(value.replace(",", "."))
+    # Slicers write C-locale numbers and use "," only between list items, so a
+    # comma must not become a decimal point: "238,250,260" is three values.
+    match = _FLOAT_RE.search(value)
     return float(match.group(0)) if match else None
 
 

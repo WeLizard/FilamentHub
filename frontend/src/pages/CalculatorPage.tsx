@@ -38,9 +38,7 @@ import {
   crmAPI,
   filamentsAPI,
   physicalPrintersAPI,
-  printerProfilesAPI,
   spoolsAPI,
-  type GcodeArtifact,
   type PhysicalPrinter,
   type PrinterEconomics,
   type UserSpool,
@@ -61,7 +59,13 @@ import {
   type MaterialPreflightUiLine,
 } from '../components/calculator/MaterialPreflightPanel';
 import { toast } from '../components/Toast';
-import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '../utils/pluginBridge';
+import {
+  isPluginEmbed,
+  requestSliceParse,
+  subscribeToPluginSliceParse,
+  subscribeToPluginSliceProgress,
+  type PluginSliceParseResult,
+} from '../utils/pluginBridge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { useAuth } from '../contexts/AuthContext';
@@ -77,6 +81,7 @@ import {
 } from '../utils/currency';
 import {
   findPrioritizedMaterialMatch,
+  trustedIdentityResolution,
   pickPrimaryParsedMaterial,
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
@@ -92,6 +97,8 @@ import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/qu
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import { formatBytes } from '../utils/formatBytes';
+import { buildGcodeExcerpt, GcodeExcerptError, type GcodeExcerpt } from '../utils/gcodeExcerpt';
+import { buildGcodeToolpath } from '../utils/gcodeToolpathRunner';
 import { calculatorHistoryKeys, shouldShowInitialHistoryError } from '../utils/calculatorHistoryQueries';
 import {
   enqueueEconomicsSave,
@@ -222,7 +229,7 @@ interface MaterialSelectionSnapshot {
 
 interface AutoMaterialMatchNotice {
   confidence: MaterialMatchConfidence;
-  method: 'stable_id' | 'attributes';
+  method: 'stable_id' | 'managed_preset' | 'attributes';
   source: 'catalog' | 'spool';
   requiresSpoolChoice?: boolean;
 }
@@ -238,35 +245,47 @@ interface AutoMaterialMatchCandidate {
   spoolIds: number[];
 }
 
-interface ParsedJobState {
+export interface ParsedJobState {
   key: string;
   parsed: CalculatorGcodeParseResponse;
   printerProfileId?: number | null;
 }
 
-type GcodeProcessingPhase = 'uploading' | 'restoring' | 'analyzing';
+type GcodeProcessingPhase = 'reading' | 'counting' | 'analyzing';
 
 export interface GcodeProcessingProgress {
   phase: GcodeProcessingPhase;
-  uploadedBytes: number;
-  totalBytes: number;
   processedFiles: number;
   totalFiles: number;
   currentFileName: string | null;
+  /** Share (0..1) of the current file already counted; only while `phase` is `counting`. */
+  countedFraction?: number;
 }
+
+const GCODE_PHASE_LABEL_KEYS: Record<GcodeProcessingPhase, string> = {
+  reading: 'gcodePhaseReading',
+  counting: 'gcodePhaseCounting',
+  analyzing: 'gcodePhaseAnalyzing',
+};
+
+// Each file passes through three steps: the summary is read, the parts are counted
+// (the long one: every move of the file is walked), then the server analyzes it.
+const COUNTING_STARTS_AT = 0.1;
+const COUNTING_SHARE = 0.8;
+const ANALYZING_STARTS_AT = COUNTING_STARTS_AT + COUNTING_SHARE;
 
 export const getGcodeProcessingPercent = (
   progress: GcodeProcessingProgress | null,
 ): number | null => {
-  if (!progress || progress.phase === 'restoring') return null;
-  const completed = progress.phase === 'analyzing'
-    ? progress.processedFiles
-    : progress.uploadedBytes;
-  const total = progress.phase === 'analyzing'
-    ? progress.totalFiles
-    : progress.totalBytes;
-  if (total <= 0) return 0;
-  return Math.min(100, Math.round((completed / total) * 100));
+  if (!progress) return null;
+  if (progress.totalFiles <= 0) return 0;
+  const withinFile = progress.phase === 'analyzing'
+    ? ANALYZING_STARTS_AT
+    : progress.phase === 'counting'
+      ? COUNTING_STARTS_AT + COUNTING_SHARE * Math.min(1, Math.max(0, progress.countedFraction ?? 0))
+      : 0;
+  const completed = progress.processedFiles + withinFile;
+  return Math.min(100, Math.round((completed / progress.totalFiles) * 100));
 };
 
 export interface CalculatorJobConfig {
@@ -285,6 +304,45 @@ const createDefaultJobConfig = (job: ParsedJobState): CalculatorJobConfig => ({
   printTimeSeconds: Math.max(0, job.parsed.print_time_seconds ?? 0),
   physicalPrinterId: '',
 });
+
+/** One match is a fact from the file; two or more machines on one preset is the person's call. */
+export const singleSuggestedPrinterId = (job: ParsedJobState): number | '' => {
+  const ids = job.parsed.suggested_physical_printer_ids ?? [];
+  return ids.length === 1 ? ids[0] : '';
+};
+
+export const appendJobConfigs = (
+  current: CalculatorJobConfig[],
+  added: ParsedJobState[],
+): CalculatorJobConfig[] => [...current, ...createJobConfigs(added, true)];
+
+export const jobPrinterNote = (
+  job: ParsedJobState,
+  config: CalculatorJobConfig,
+): 'several' | 'fromFile' | 'default' => {
+  if (config.physicalPrinterId === '') {
+    return (job.parsed.suggested_physical_printer_ids?.length ?? 0) > 1 ? 'several' : 'default';
+  }
+  return config.physicalPrinterId === singleSuggestedPrinterId(job) ? 'fromFile' : 'default';
+};
+
+const sortSuggestedPrintersFirst = (
+  printers: PhysicalPrinter[],
+  suggestedIds: number[],
+): PhysicalPrinter[] => (suggestedIds.length === 0
+  ? printers
+  : [...printers].sort(
+      (left, right) => Number(suggestedIds.includes(right.id)) - Number(suggestedIds.includes(left.id)),
+    ));
+
+// A lone plate has no machine of its own on screen: its printer is the order-wide one.
+export const createJobConfigs = (
+  jobs: ParsedJobState[],
+  assignSuggestedPrinters: boolean,
+): CalculatorJobConfig[] => jobs.map((job) => ({
+  ...createDefaultJobConfig(job),
+  physicalPrinterId: assignSuggestedPrinters ? singleSuggestedPrinterId(job) : '',
+}));
 
 interface CalculatorMaterialLineState extends CalculatorMaterialLineRequest {
   selectionValue: string;
@@ -897,6 +955,30 @@ const findParsedMaterialForTool = (
 const parsedJobKey = (parsed: CalculatorGcodeParseResponse, uploadIndex: number): string =>
   `${uploadIndex}:${parsed.file_name}:${parsed.file_size_bytes}:${parsed.plate_index ?? 0}`;
 
+// The plugin answers with one job per plate; a plugin that predates plates sends the first only.
+export const pluginSliceJobs = (result: PluginSliceParseResult): CalculatorGcodeParseResponse[] => {
+  const isJob = (value: unknown): value is CalculatorGcodeParseResponse =>
+    typeof value === 'object' && value !== null;
+  if (Array.isArray(result.jobs)) return result.jobs.filter(isJob);
+  return isJob(result.parsed) ? [result.parsed] : [];
+};
+
+// The machine the slice was made for belongs to its own jobs, not to the whole order.
+export const pluginSliceJobStates = (
+  jobs: CalculatorGcodeParseResponse[],
+  slice: Pick<OrcaSliceReport, 'physical_printer_id' | 'printer_profile_id'>,
+): ParsedJobState[] => jobs.map((parsed) => ({
+  key: parsedJobKey(parsed, 0),
+  parsed: slice.physical_printer_id
+    ? { ...parsed, suggested_physical_printer_ids: [slice.physical_printer_id] }
+    : parsed,
+  printerProfileId: slice.printer_profile_id ?? null,
+}));
+
+// Long enough to outlast the plugin's own upload timeout; the plugin reports progress while it
+// reads, so only a read that has stopped answering reaches it.
+const SLICE_PARSE_STALL_MS = 3 * 60 * 1000;
+
 const formatHoursShort = (value: number | null | undefined, hourLabel: string, minLabel: string): string => {
   if (value == null || !Number.isFinite(value) || value <= 0) {
     return '—';
@@ -1131,15 +1213,6 @@ const apiErrorCode = (error: unknown): string | null => {
   return null;
 };
 
-export const isRecoverableGcodeUploadError = (error: unknown): boolean => {
-  if (isAbortError(error)) return false;
-  const response = (error as { response?: { status?: number } }).response;
-  if (!response) return true;
-  if (response.status === 408 || (response.status != null && response.status >= 500)) return true;
-  return ['ERR_GCODE_ARTIFACT_CONFLICT', 'ERR_GCODE_UPLOAD_INCOMPLETE']
-    .includes(apiErrorCode(error) ?? '');
-};
-
 export const isCurrentGcodeOperation = (
   operationToken: number,
   currentToken: number,
@@ -1155,50 +1228,125 @@ export const runForCurrentGcodeOperation = (
   return true;
 };
 
-export interface ReusableGcodeArtifact {
-  id: string;
-  uploaded: boolean;
+const gcodeFailureKey = (error: unknown): string | null =>
+  error instanceof GcodeExcerptError ? error.code : apiErrorCode(error);
+
+interface GcodeBatchResult {
+  jobs: ParsedJobState[];
+  failedFiles: string[];
+  /** Files whose plates are quoted by totals only: the parts could not be counted. */
+  toolpathMissingFiles: string[];
 }
 
-export const resolveGcodeArtifactAttempt = (
-  existing: ReusableGcodeArtifact | undefined,
-  createId: () => string,
-): ReusableGcodeArtifact => existing ?? { id: createId(), uploaded: false };
+export interface GcodeBatchRun {
+  files: File[];
+  signal: AbortSignal;
+  buildExcerpt: (file: File, signal: AbortSignal) => Promise<GcodeExcerpt>;
+  /** Counts the parts of a file in the browser; resolves with the JSON the server expects. */
+  buildToolpath?: (
+    file: File,
+    signal: AbortSignal,
+    onProgress: (fraction: number) => void,
+  ) => Promise<string>;
+  parseExcerpt: (
+    excerpt: GcodeExcerpt,
+    signal: AbortSignal,
+  ) => Promise<{ jobs: CalculatorGcodeParseResponse[] }>;
+  onProgress: (progress: GcodeProcessingProgress) => void;
+  /** Throws a cancellation error when this run was cancelled or replaced. */
+  ensureCurrent: () => void;
+}
 
-type GcodeArtifactUploadTransport = Pick<
-  typeof calculatorAPI,
-  'uploadGcodeArtifact' | 'getGcodeArtifact'
->;
+// The server refuses a toolpath it cannot accept as a whole request; the quote is still
+// possible without it.
+const TOOLPATH_REFUSALS = new Set(['ERR_GCODE_EXCERPT_INVALID', 'ERR_GCODE_EXCERPT_TOO_LARGE']);
 
-export const uploadGcodeArtifactWithRecovery = async (
-  transport: GcodeArtifactUploadTransport,
-  file: File,
-  artifactId: string,
-  onUploadProgress: (loadedBytes: number) => void,
-  onRestoring: () => void,
-  signal: AbortSignal,
-): Promise<{ artifact: GcodeArtifact; restored: boolean }> => {
-  try {
-    return {
-      artifact: await transport.uploadGcodeArtifact(
-        file,
-        artifactId,
-        (progress) => onUploadProgress(Math.min(file.size, progress.loadedBytes)),
-        signal,
-      ),
-      restored: false,
-    };
-  } catch (error) {
-    if (!isRecoverableGcodeUploadError(error) || signal.aborted) throw error;
-    onRestoring();
+/**
+ * Reads the slicer summary out of each file in the browser, counts its parts there, and
+ * sends only those small results for parsing; the whole file never leaves the device.
+ */
+export const parseGcodeFilesFromExcerpts = async ({
+  files,
+  signal,
+  buildExcerpt,
+  buildToolpath,
+  parseExcerpt,
+  onProgress,
+  ensureCurrent,
+}: GcodeBatchRun): Promise<GcodeBatchResult> => {
+  const jobs: ParsedJobState[] = [];
+  const failures: Array<{ fileName: string; error: unknown }> = [];
+  const toolpathMissing: string[] = [];
+
+  for (const [index, file] of files.entries()) {
+    ensureCurrent();
+    const report = (phase: GcodeProcessingPhase, countedFraction?: number) => onProgress({
+      phase,
+      processedFiles: index,
+      totalFiles: files.length,
+      currentFileName: file.name,
+      countedFraction,
+    });
     try {
-      const artifact = await transport.getGcodeArtifact(artifactId, signal);
-      if (artifact.state === 'ready') return { artifact, restored: true };
-    } catch (recoveryError) {
-      if (signal.aborted || isAbortError(recoveryError)) throw recoveryError;
+      report('reading');
+      let excerpt = await buildExcerpt(file, signal);
+      ensureCurrent();
+
+      let toolpathMissed = buildToolpath === undefined;
+      if (buildToolpath) {
+        report('counting', 0);
+        try {
+          const toolpath = await buildToolpath(
+            file,
+            signal,
+            (fraction) => report('counting', fraction),
+          );
+          ensureCurrent();
+          excerpt = { ...excerpt, toolpath };
+        } catch (error) {
+          ensureCurrent();
+          if (isAbortError(error)) throw error;
+          toolpathMissed = true;
+        }
+      }
+
+      report('analyzing');
+      let parsed: { jobs: CalculatorGcodeParseResponse[] };
+      try {
+        parsed = await parseExcerpt(excerpt, signal);
+      } catch (error) {
+        ensureCurrent();
+        if (excerpt.toolpath === undefined || !TOOLPATH_REFUSALS.has(apiErrorCode(error) ?? '')) {
+          throw error;
+        }
+        toolpathMissed = true;
+        parsed = await parseExcerpt({ ...excerpt, toolpath: undefined }, signal);
+      }
+      ensureCurrent();
+      if (toolpathMissed) toolpathMissing.push(file.name);
+      jobs.push(...parsed.jobs.map((job) => ({
+        key: parsedJobKey(job, index),
+        parsed: job,
+      })));
+    } catch (error) {
+      ensureCurrent();
+      if (isAbortError(error)) throw error;
+      failures.push({ fileName: file.name, error });
     }
-    throw error;
   }
+
+  if (jobs.length === 0) {
+    // One shared reason is shown as it is (for example "no slicer summary in the
+    // file"); mixed reasons collapse into the generic batch message.
+    const keys = new Set(failures.map((failure) => gcodeFailureKey(failure.error)));
+    if (failures.length > 0 && keys.size === 1 && !keys.has(null)) throw failures[0].error;
+    throw new Error(ALL_GCODE_FILES_FAILED);
+  }
+  return {
+    jobs,
+    failedFiles: Array.from(new Set(failures.map((failure) => failure.fileName))),
+    toolpathMissingFiles: Array.from(new Set(toolpathMissing)),
+  };
 };
 
 export const resolveGcodeParseError = (error: unknown, t: TFunction): string | null => {
@@ -1215,6 +1363,10 @@ export const resolveGcodeParseError = (error: unknown, t: TFunction): string | n
 
   if (isAbortError(errorWithResponse)) {
     return null;
+  }
+
+  if (error instanceof GcodeExcerptError) {
+    return translateApiError(t, { code: error.code }, t('profilePage.calc.unknownError'));
   }
 
   if (errorWithResponse.message === ALL_GCODE_FILES_FAILED) {
@@ -1988,15 +2140,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const quoteSequenceRef = useRef(0);
   const gcodeAbortControllerRef = useRef<AbortController | null>(null);
   const gcodeOperationSequenceRef = useRef(0);
-  const activeGcodeArtifactIdsRef = useRef(new Set<string>());
-  const reusableGcodeArtifactsRef = useRef(new Map<string, ReusableGcodeArtifact>());
   const lastGcodeFilesRef = useRef<File[]>([]);
 
   useEffect(() => () => {
     gcodeAbortControllerRef.current?.abort();
-    for (const artifactId of activeGcodeArtifactIdsRef.current) {
-      void calculatorAPI.deleteGcodeArtifact(artifactId).catch(() => undefined);
-    }
   }, []);
 
   const formatCurrency = useMemo(
@@ -2035,9 +2182,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     return Array.from(new Set(
       parsedSources.flatMap((parsed) =>
         parsed.materials.flatMap((material) => {
-          const filamentId = material.identity_resolution?.status === 'resolved'
-            ? material.identity_resolution.filament_id
-            : null;
+          const resolution = trustedIdentityResolution(material);
+          const filamentId = resolution?.status === 'resolved' ? resolution.filament_id : null;
           return filamentId != null ? [filamentId] : [];
         }),
       ),
@@ -2111,185 +2257,38 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const controller = new AbortController();
       gcodeAbortControllerRef.current?.abort();
       gcodeAbortControllerRef.current = controller;
-      let totalBytes = limitedFiles.reduce((sum, file) => {
-        const key = `${file.name}:${file.size}:${file.lastModified}`;
-        return sum + (reusableGcodeArtifactsRef.current.get(key)?.uploaded ? 0 : file.size);
-      }, 0);
-      const uploadedBytes = new Array(limitedFiles.length).fill(0) as number[];
-      const uploaded: Array<{ file: File; uploadIndex: number; artifactId: string }> = [];
-      const failedFiles: string[] = [];
-      const updateProgress = (progress: GcodeProcessingProgress) => {
-        if (controller.signal.aborted) return;
-        runForCurrentGcodeOperation(
-          operationToken,
-          gcodeOperationSequenceRef.current,
-          () => setGcodeProcessingProgress(progress),
-        );
-      };
-      const ensureCurrentOperation = () => {
-        if (
-          controller.signal.aborted
-          || !isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)
-        ) {
-          throw new DOMException('canceled', 'AbortError');
-        }
-      };
-      const sentBytes = () => uploadedBytes.reduce((sum, value) => sum + value, 0);
-      updateProgress({
-        phase: totalBytes > 0 ? 'uploading' : 'restoring',
-        uploadedBytes: 0,
-        totalBytes,
-        processedFiles: 0,
-        totalFiles: limitedFiles.length,
-        currentFileName: limitedFiles[0]?.name ?? null,
-      });
 
       try {
-        // Finish the upload phase before parsing so aggregate progress never moves
-        // backwards from analysis to upload when several files were selected.
-        for (const [uploadIndex, file] of limitedFiles.entries()) {
-          if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
-          const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
-          const reusable = resolveGcodeArtifactAttempt(
-            reusableGcodeArtifactsRef.current.get(fileKey),
-            () => crypto.randomUUID(),
-          );
-          let artifactId = reusable.id;
-          reusableGcodeArtifactsRef.current.set(fileKey, reusable);
-          activeGcodeArtifactIdsRef.current.add(artifactId);
-          const uploadCurrentArtifact = async () => {
-            updateProgress({
-              phase: 'uploading',
-              uploadedBytes: sentBytes(),
-              totalBytes,
-              processedFiles: uploadIndex,
-              totalFiles: limitedFiles.length,
-              currentFileName: file.name,
-            });
-            const result = await uploadGcodeArtifactWithRecovery(
-              calculatorAPI,
-              file,
-              artifactId,
-              (loadedBytes) => {
-                uploadedBytes[uploadIndex] = loadedBytes;
-                updateProgress({
-                  phase: 'uploading',
-                  uploadedBytes: sentBytes(),
-                  totalBytes,
-                  processedFiles: uploadIndex,
-                  totalFiles: limitedFiles.length,
-                  currentFileName: file.name,
-                });
-              },
-              () => updateProgress({
-                phase: 'restoring',
-                uploadedBytes: sentBytes(),
-                totalBytes,
-                processedFiles: uploadIndex,
-                totalFiles: limitedFiles.length,
-                currentFileName: file.name,
-              }),
-              controller.signal,
+        const { jobs, failedFiles, toolpathMissingFiles } = await parseGcodeFilesFromExcerpts({
+          files: limitedFiles,
+          signal: controller.signal,
+          buildExcerpt: buildGcodeExcerpt,
+          buildToolpath: (file, signal, onToolpathProgress) => buildGcodeToolpath(file, {
+            signal,
+            onProgress: onToolpathProgress,
+          }),
+          parseExcerpt: (excerpt, signal) => calculatorAPI.parseGcodeExcerpt(excerpt, signal),
+          onProgress: (progress) => {
+            if (controller.signal.aborted) return;
+            runForCurrentGcodeOperation(
+              operationToken,
+              gcodeOperationSequenceRef.current,
+              () => setGcodeProcessingProgress(progress),
             );
-            ensureCurrentOperation();
-            if (reusableGcodeArtifactsRef.current.get(fileKey)?.id === artifactId) {
-              reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: true });
+          },
+          ensureCurrent: () => {
+            if (
+              controller.signal.aborted
+              || !isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)
+            ) {
+              throw new DOMException('canceled', 'AbortError');
             }
-            return result.artifact;
-          };
-          try {
-            if (!reusable.uploaded) {
-              await uploadCurrentArtifact();
-            } else {
-              try {
-                updateProgress({
-                  phase: 'restoring',
-                  uploadedBytes: sentBytes(),
-                  totalBytes,
-                  processedFiles: uploadIndex,
-                  totalFiles: limitedFiles.length,
-                  currentFileName: file.name,
-                });
-                const artifact = await calculatorAPI.getGcodeArtifact(
-                  artifactId,
-                  controller.signal,
-                );
-                ensureCurrentOperation();
-                if (artifact.state !== 'ready') throw new Error('artifact_not_ready');
-              } catch (error) {
-                ensureCurrentOperation();
-                activeGcodeArtifactIdsRef.current.delete(artifactId);
-                artifactId = crypto.randomUUID();
-                activeGcodeArtifactIdsRef.current.add(artifactId);
-                reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: false });
-                totalBytes += file.size;
-                await uploadCurrentArtifact();
-              }
-            }
-            uploaded.push({ file, uploadIndex, artifactId });
-          } catch (error) {
-            ensureCurrentOperation();
-            if (!isRecoverableGcodeUploadError(error)) {
-              if (reusableGcodeArtifactsRef.current.get(fileKey)?.id === artifactId) {
-                reusableGcodeArtifactsRef.current.delete(fileKey);
-              }
-              activeGcodeArtifactIdsRef.current.delete(artifactId);
-              void calculatorAPI.deleteGcodeArtifact(artifactId).catch(() => undefined);
-            }
-            failedFiles.push(file.name);
-          }
-        }
-
-        if (uploaded.length === 0) throw new Error(ALL_GCODE_FILES_FAILED);
-        updateProgress({
-          phase: 'analyzing',
-          uploadedBytes: sentBytes(),
-          totalBytes,
-          processedFiles: 0,
-          totalFiles: uploaded.length,
-          currentFileName: uploaded[0]?.file.name ?? null,
+          },
         });
-        const jobs: ParsedJobState[] = [];
-        for (const [parseIndex, item] of uploaded.entries()) {
-          let parsed;
-          try {
-            parsed = await calculatorAPI.parseGcodeArtifact(
-              item.artifactId,
-              controller.signal,
-            );
-            ensureCurrentOperation();
-          } catch (error) {
-            ensureCurrentOperation();
-            failedFiles.push(item.file.name);
-          } finally {
-            updateProgress({
-              phase: 'analyzing',
-              uploadedBytes: sentBytes(),
-              totalBytes,
-              processedFiles: parseIndex + 1,
-              totalFiles: uploaded.length,
-              currentFileName: uploaded[parseIndex + 1]?.file.name ?? null,
-            });
-          }
-          if (parsed) {
-            if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
-            jobs.push(...parsed.jobs.map((job) => ({
-              key: parsedJobKey(job, item.uploadIndex),
-              parsed: job,
-            })));
-            activeGcodeArtifactIdsRef.current.delete(item.artifactId);
-            reusableGcodeArtifactsRef.current.delete(
-              `${item.file.name}:${item.file.size}:${item.file.lastModified}`,
-            );
-            void calculatorAPI.deleteGcodeArtifact(item.artifactId).catch(() => undefined);
-          }
-        }
-        if (jobs.length === 0) {
-          throw new Error(ALL_GCODE_FILES_FAILED);
-        }
         return {
           jobs,
-          failedFiles: Array.from(new Set(failedFiles)),
+          failedFiles,
+          toolpathMissingFiles,
           skippedCount: Math.max(0, files.length - limitedFiles.length),
         };
       } finally {
@@ -2583,6 +2582,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const [pickedSliceId, setPickedSliceId] = useState<number | null>(null);
   const [goneSourceKeys, setGoneSourceKeys] = useState<string[]>([]);
+  const [sliceProgress, setSliceProgress] = useState<number | null>(null);
   const pendingSliceRef = useRef<OrcaSliceReport | null>(null);
 
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | ''>('');
@@ -2602,38 +2602,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     enabled: hasCalculatorAccess,
   });
   const printers = printersQuery.data ?? [];
-
-  const ownedPrinterProfilesQuery = useQuery({
-    queryKey: ['calculator', 'printer-profiles', user?.id],
-    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
-    enabled: Boolean(user?.id) && hasCalculatorAccess,
-    staleTime: 60_000,
-  });
-
-  // The file already names the machine preset it was sliced with. Asking again is asking
-  // the person to repeat what the slicer wrote down.
-  useEffect(() => {
-    if (selectedPrinterId !== '' || !parsedGcode || printers.length === 0) return;
-    const profiles = ownedPrinterProfilesQuery.data ?? [];
-    if (profiles.length === 0) return;
-    const settingId = parsedGcode.printer_settings_id?.trim();
-    const model = parsedGcode.printer_model?.trim();
-    // setting_id breaks the moment a preset is renamed; printer_model survives that.
-    const matchedProfiles = profiles.filter((profile) => {
-      if (settingId && profile.setting_id === settingId) return true;
-      return Boolean(model) && profile.name === model;
-    });
-    if (matchedProfiles.length === 0) return;
-    const matchedIds = new Set(matchedProfiles.map((profile) => profile.id));
-    const matchedPrinters = printers.filter(
-      (printer) => printer.printer_profile_ids.some((id) => matchedIds.has(id)),
-    );
-    // Two machines on one preset is a real setup; picking one of them would be a guess.
-    if (matchedPrinters.length !== 1) return;
-    setSelectedPrinterId(matchedPrinters[0].id);
-    setPrinterPickedFrom(tc('printerPickedFromGcode'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsedGcode, printers, ownedPrinterProfilesQuery.data, selectedPrinterId]);
 
   const printerEconomicsQuery = useQuery({
     queryKey: ['printer-economics', selectedPrinterId],
@@ -2681,7 +2649,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       toast.error(t('slicedJobs.gone'));
       return;
     }
+    // The plugin reads one slice at a time and answers without naming a request.
+    if (pendingSliceRef.current) return;
     pendingSliceRef.current = slice;
+    setSliceProgress(null);
     setPickedSliceId(slice.id);
     requestSliceParse(slice.source_key, slice.file_name);
   };
@@ -3106,7 +3077,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const added = jobs.filter((job) => !existingKeys.has(job.key));
       if (added.length === 0) return;
       setParsedJobs([...parsedJobs, ...added]);
-      setJobConfigs((current) => [...current, ...added.map(createDefaultJobConfig)]);
+      setJobConfigs((current) => appendJobConfigs(current, added));
       return;
     }
 
@@ -3114,8 +3085,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setSelectedSpoolId('');
     setMaterialPriceSource('unset');
     setParsedJobs(jobs);
-    setJobConfigs(jobs.map(createDefaultJobConfig));
+    setJobConfigs(createJobConfigs(jobs, jobs.length > 1));
     setParsedGcode(jobs[0]?.parsed ?? null);
+    // The file already names the machine it was sliced for. Asking again is asking
+    // the person to repeat what the slicer wrote down.
+    const filePrinterId = jobs.length === 1 ? singleSuggestedPrinterId(jobs[0]) : '';
+    if (filePrinterId !== '' && selectedPrinterId === '') {
+      setSelectedPrinterId(filePrinterId);
+      setPrinterPickedFrom(tc('printerPickedFromGcode'));
+    }
     setForm((prev) => ({
       ...applyParsedJobsToForm(prev, jobs),
       selectedFilamentId: '',
@@ -3138,30 +3116,28 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
 
-  const handleGcodeFiles = async (files: File[], preserveArtifacts = false) => {
+  const handleGcodeFiles = async (files: File[]) => {
     const operationToken = gcodeOperationSequenceRef.current + 1;
     gcodeOperationSequenceRef.current = operationToken;
-    if (!preserveArtifacts) {
-      gcodeAbortControllerRef.current?.abort();
-      const replacedArtifactIds = Array.from(activeGcodeArtifactIdsRef.current);
-      activeGcodeArtifactIdsRef.current.clear();
-      reusableGcodeArtifactsRef.current.clear();
-      void Promise.allSettled(
-        replacedArtifactIds.map((artifactId) => calculatorAPI.deleteGcodeArtifact(artifactId)),
-      );
-    }
+    gcodeAbortControllerRef.current?.abort();
     lastGcodeFilesRef.current = files;
     parseGcodeMutation.reset();
     try {
       const batch = await parseGcodeMutation.mutateAsync({ files, operationToken });
       if (!isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)) return;
-      applyParsedJobs(
-        batch.jobs,
+      const notices = [
         batch.failedFiles.length > 0 || batch.skippedCount > 0
           ? tc('batchParsePartial')
               .replace('{{failed}}', String(batch.failedFiles.length))
               .replace('{{skipped}}', String(batch.skippedCount))
           : null,
+        batch.toolpathMissingFiles.length > 0
+          ? tc('gcodeToolpathUnavailable').replace('{{files}}', batch.toolpathMissingFiles.join(', '))
+          : null,
+      ].filter((notice): notice is string => notice !== null);
+      applyParsedJobs(
+        batch.jobs,
+        notices.length > 0 ? notices.join(' ') : null,
         parsedJobs.length > 0 ? 'append' : 'replace',
       );
       lastGcodeFilesRef.current = [];
@@ -3180,18 +3156,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const cancelGcodeProcessing = () => {
     gcodeOperationSequenceRef.current += 1;
     gcodeAbortControllerRef.current?.abort();
-    const artifactIds = Array.from(activeGcodeArtifactIdsRef.current);
-    activeGcodeArtifactIdsRef.current.clear();
-    reusableGcodeArtifactsRef.current.clear();
-    void Promise.allSettled(
-      artifactIds.map((artifactId) => calculatorAPI.deleteGcodeArtifact(artifactId)),
-    );
     setGcodeProcessingProgress(null);
   };
 
   const retryGcodeProcessing = () => {
     if (lastGcodeFilesRef.current.length > 0) {
-      void handleGcodeFiles(lastGcodeFilesRef.current, true);
+      void handleGcodeFiles(lastGcodeFilesRef.current);
     }
   };
 
@@ -3204,34 +3174,57 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (!isPluginEmbed()) {
       return;
     }
-    return subscribeToPluginSliceParse((result) => {
+    const stopProgress = subscribeToPluginSliceProgress((progress) => {
+      if (pendingSliceRef.current?.source_key === progress.sourceKey) {
+        setSliceProgress(progress.fraction);
+      }
+    });
+    const stopResult = subscribeToPluginSliceParse((result) => {
       const slice = pendingSliceRef.current;
+      // An answer nobody is waiting for, e.g. to a page that was reloaded meanwhile.
+      if (!slice || (result.sourceKey && result.sourceKey !== slice.source_key)) {
+        return;
+      }
       pendingSliceRef.current = null;
       setPickedSliceId(null);
+      setSliceProgress(null);
       if (result.error === 'gone') {
-        if (slice?.source_key) {
+        if (slice.source_key) {
           setGoneSourceKeys((current) => [...current, slice.source_key as string]);
         }
         toast.error(t('slicedJobs.gone'));
         return;
       }
-      const parsed = result.parsed as CalculatorGcodeParseResponse | undefined;
-      if (!parsed || typeof parsed !== 'object') {
-        toast.error(translateCalculator(t, 'sliceParseFailed'));
+      const parsedJobs = pluginSliceJobs(result);
+      if (parsedJobs.length === 0) {
+        const fallback = translateCalculator(t, 'sliceParseFailed');
+        toast.error(result.code ? translateApiError(t, { code: result.code }, fallback) : fallback);
         return;
       }
-      applyParsedJobsRef.current([{
-        key: parsedJobKey(parsed, 0),
-        parsed,
-        printerProfileId: slice?.printer_profile_id ?? null,
-      }], null);
-      if (slice?.physical_printer_id) {
-        setSelectedPrinterId(slice.physical_printer_id);
-        setPrinterPickedFrom(t('printerCost.pickedFromSlice', { name: slice.file_name }));
-      }
-      toast.success(t('slicedJobs.taken', { name: slice?.file_name ?? '' }));
+      // A slice joins the order like a dropped file does: an order can mix plates
+      // sliced for different machines.
+      applyParsedJobsRef.current(pluginSliceJobStates(parsedJobs, slice), null, 'append');
+      toast.success(t('slicedJobs.taken', { name: slice.file_name }));
     });
+    return () => {
+      stopProgress();
+      stopResult();
+    };
   }, [t]);
+
+  // The plugin always answers; this only frees the list if it never does (plugin reloaded mid-read).
+  useEffect(() => {
+    if (pickedSliceId === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      pendingSliceRef.current = null;
+      setPickedSliceId(null);
+      setSliceProgress(null);
+      toast.error(translateCalculator(t, 'sliceParseFailed'));
+    }, SLICE_PARSE_STALL_MS);
+    return () => window.clearTimeout(timer);
+  }, [pickedSliceId, sliceProgress, t]);
 
   const handleJobSelect = (jobKey: string) => {
     const job = parsedJobs.find((candidate) => candidate.key === jobKey);
@@ -4303,6 +4296,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onFileSelect={handleFileSelection}
           onSlicePick={handleSlicePick}
           pickingSliceId={pickedSliceId}
+          pickingSliceProgress={sliceProgress}
           goneSourceKeys={goneSourceKeys}
           printers={printers}
           selectedPrinterId={selectedPrinterId}
@@ -4470,6 +4464,7 @@ interface CalculatorViewProps {
   onFileSelect: (files: FileList | null) => Promise<void>;
   onSlicePick: (slice: OrcaSliceReport) => void;
   pickingSliceId: number | null;
+  pickingSliceProgress: number | null;
   goneSourceKeys: string[];
   printers: PhysicalPrinter[];
   selectedPrinterId: number | '';
@@ -4560,6 +4555,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onFileSelect,
   onSlicePick,
   pickingSliceId,
+  pickingSliceProgress,
   goneSourceKeys,
   printers,
   selectedPrinterId,
@@ -4596,13 +4592,28 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const { t, i18n } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
   const gcodeProgressPercent = getGcodeProcessingPercent(gcodeProcessingProgress) ?? 0;
-  const gcodeProcessingLabel = gcodeProcessingProgress?.phase === 'analyzing'
-    ? tc('gcodePhaseAnalyzing')
+  const gcodeProcessingLabel = gcodeProcessingProgress
+    ? tc(GCODE_PHASE_LABEL_KEYS[gcodeProcessingProgress.phase])
         .replace('{{current}}', String(gcodeProcessingProgress.processedFiles))
         .replace('{{total}}', String(gcodeProcessingProgress.totalFiles))
-    : gcodeProcessingProgress?.phase === 'restoring'
-      ? tc('gcodePhaseRestoring')
-      : tc('gcodePhaseUploading').replace('{{percent}}', String(gcodeProgressPercent));
+    : '';
+  const gcodeProcessingDetail = (() => {
+    if (!gcodeProcessingProgress) return '';
+    if (gcodeProcessingProgress.phase === 'reading') {
+      return tc('gcodeReadingDetail').replace('{{file}}', gcodeProcessingProgress.currentFileName ?? '');
+    }
+    if (gcodeProcessingProgress.phase === 'counting') {
+      return tc('gcodeCountingDetail')
+        .replace('{{file}}', gcodeProcessingProgress.currentFileName ?? '')
+        .replace(
+          '{{percent}}',
+          String(Math.round((gcodeProcessingProgress.countedFraction ?? 0) * 100)),
+        );
+    }
+    return tc('gcodeAnalysisDetail')
+      .replace('{{current}}', String(gcodeProcessingProgress.processedFiles))
+      .replace('{{total}}', String(gcodeProcessingProgress.totalFiles));
+  })();
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
@@ -4647,11 +4658,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const materialMatchConfidenceLabel = autoMaterialMatch
     ? autoMaterialMatch.method === 'stable_id'
       ? tc('materialIdentityExact')
-      : {
-        high: tc('materialMatchConfidenceHigh'),
-        medium: tc('materialMatchConfidenceMedium'),
-        low: tc('materialMatchConfidenceLow'),
-      }[autoMaterialMatch.confidence]
+      : autoMaterialMatch.method === 'managed_preset'
+        ? tc('materialIdentityManagedPreset')
+        : {
+          high: tc('materialMatchConfidenceHigh'),
+          medium: tc('materialMatchConfidenceMedium'),
+          low: tc('materialMatchConfidenceLow'),
+        }[autoMaterialMatch.confidence]
     : null;
   const selectedSpoolPriceCurrency = selectedSpool
     ? resolveUserSpoolPriceCurrency(selectedSpool)
@@ -4924,7 +4937,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     const rowOpen = openMaterialRowIds.has(line.line_id);
     const preflightUiLine = preflightLines.find((item) => item.lineId === line.line_id) ?? null;
     const lineReadiness = preflightResult?.lines.find((item) => item.line_id === line.line_id) ?? null;
-    const identityResolution = parsedMaterial?.identity_resolution;
+    const identityResolution = trustedIdentityResolution(parsedMaterial);
     const roleWeights = resolveMaterialRoleWeights(line);
     const roleWeightSource = line.role_weight_source ?? line.support_weight_source;
     const supportWeightG = roleWeightSource === 'gcode_extrusion_roles'
@@ -4944,7 +4957,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       identityResolution?.status === 'resolved'
       && identityResolution.filament_id != null
       && identityResolution.filament_id === line.filament_id
-        ? { label: tc('materialIdentityExact'), tone: 'text-emerald-300/80' }
+        ? {
+            label: identityResolution.source === 'filamenthub_managed_name'
+              ? tc('materialIdentityManagedPreset')
+              : tc('materialIdentityExact'),
+            tone: 'text-emerald-300/80',
+          }
         : identityResolution?.status === 'ambiguous'
           ? { label: tc('materialIdentityAmbiguous'), tone: 'text-amber-300/90' }
           : line.mappingSource === 'automatic'
@@ -5755,44 +5773,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <div className="mt-3" role="status" aria-live="polite">
                       <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
                         <div
-                          className={`h-full rounded-full bg-cyan-400 transition-[width] duration-200 ${
-                            gcodeProcessingProgress.phase === 'restoring' ? 'animate-pulse' : ''
-                          }`}
-                          style={{
-                            width: gcodeProcessingProgress.phase === 'analyzing'
-                              ? `${gcodeProgressPercent}%`
-                              : gcodeProcessingProgress.phase === 'restoring'
-                                ? '33%'
-                                : `${gcodeProgressPercent}%`,
-                          }}
+                          className="h-full rounded-full bg-cyan-400 transition-[width] duration-200"
+                          style={{ width: `${gcodeProgressPercent}%` }}
                         />
                       </div>
-                      <p className="mt-1.5 text-xs text-slate-400">
-                        {gcodeProcessingProgress.phase === 'uploading'
-                          ? tc('gcodeUploadBytes')
-                              .replace(
-                                '{{uploaded}}',
-                                formatBytes(gcodeProcessingProgress.uploadedBytes, i18n.language),
-                              )
-                              .replace(
-                                '{{total}}',
-                                formatBytes(gcodeProcessingProgress.totalBytes, i18n.language),
-                              )
-                          : gcodeProcessingProgress.phase === 'restoring'
-                            ? tc('gcodeRestoreDetail').replace(
-                                '{{file}}',
-                                gcodeProcessingProgress.currentFileName ?? '',
-                              )
-                            : tc('gcodeAnalysisDetail')
-                                .replace(
-                                  '{{current}}',
-                                  String(gcodeProcessingProgress.processedFiles),
-                                )
-                                .replace(
-                                  '{{total}}',
-                                  String(gcodeProcessingProgress.totalFiles),
-                                )}
-                      </p>
+                      <p className="mt-1.5 text-xs text-slate-400">{gcodeProcessingDetail}</p>
                       <button
                         type="button"
                         className="mt-2 inline-flex min-h-9 items-center rounded-xl border border-slate-600 px-3 text-xs font-semibold text-slate-200 transition hover:border-slate-400 hover:text-white"
@@ -5812,6 +5797,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <SlicedJobsPanel
                     onPick={onSlicePick}
                     pickingId={pickingSliceId}
+                    pickingProgress={pickingSliceProgress}
                     goneSourceKeys={goneSourceKeys}
                   />
                 )}
@@ -5987,6 +5973,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         : config.quoteMode;
                       const outputPerRun = calculatorOutputQuantityPerRun(objectGroups, quoteMode);
                       const timeParts = splitSeconds(config.printTimeSeconds);
+                      const suggestedPrinterIds = job.parsed.suggested_physical_printer_ids ?? [];
+                      const printerNote = jobPrinterNote(job, config);
                       return (
                         <article
                           key={job.key}
@@ -6080,13 +6068,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 })}
                               >
                                 <option value="">{tc('jobPrinterFromOrder')}</option>
-                                {printers.map((printer) => (
+                                {sortSuggestedPrintersFirst(printers, suggestedPrinterIds).map((printer) => (
                                   <option key={`job-printer-${job.key}-${printer.id}`} value={printer.id}>
                                     {printer.name}
                                   </option>
                                 ))}
                               </select>
-                              <span className="text-[11px] text-slate-500">{tc('jobPrinterHint')}</span>
+                              {printerNote === 'several' ? (
+                                <span className="text-[11px] text-cyan-300/90">{tc('jobPrinterSeveralFit')}</span>
+                              ) : printerNote === 'fromFile' ? (
+                                <span className="text-[11px] text-cyan-300/90">{tc('printerPickedFromGcode')}</span>
+                              ) : (
+                                <span className="text-[11px] text-slate-500">{tc('jobPrinterHint')}</span>
+                              )}
                               {jobRateMissing ? (
                                 <span className="basis-full text-[11px] leading-4 text-amber-300/90">
                                   {tc('jobPrinterRateMissing')}

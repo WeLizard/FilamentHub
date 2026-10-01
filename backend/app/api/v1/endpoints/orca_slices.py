@@ -2,15 +2,18 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Path, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Path, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.calculator import parse_uploaded_gcode
+from app.api.v1.endpoints.calculator import parse_gcode_excerpt_request, parse_uploaded_gcode
 from app.core.dependencies import get_current_active_user, require_preset_write
 from app.core.errors import ERR_CALCULATOR_ACCESS_REQUIRED, ERR_SLICE_NOT_FOUND, raise_error
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.calculator import CalculatorGcodeParseResponse
+from app.schemas.calculator import (
+    CalculatorGcodeArtifactParseResponse,
+    CalculatorGcodeParseResponse,
+)
 from app.schemas.orca_slice_report import (
     OrcaSliceReportAccepted,
     OrcaSliceReportBatch,
@@ -64,6 +67,25 @@ async def parse_slice(
         db=db,
         user_id=current_user.id,
     )
+
+
+@router.post("/excerpts/parse", response_model=CalculatorGcodeArtifactParseResponse)
+async def parse_slice_excerpts(
+    request: Request,
+    current_user: Annotated[User, Depends(require_preset_write)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+) -> CalculatorGcodeArtifactParseResponse:
+    """Read a slice from the parts of it the plugin cut out on this computer.
+
+    Same contract and answer as the calculator's excerpt route, which a plugin
+    session cannot call. The whole G-code never leaves the machine, so the size
+    of the print does not matter.
+    """
+    if not pro_active(current_user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
+    response.headers["Cache-Control"] = "private, no-store"
+    return await parse_gcode_excerpt_request(request, db, user_id=current_user.id)
 
 
 @router.get("", response_model=list[OrcaSliceReportResponse])

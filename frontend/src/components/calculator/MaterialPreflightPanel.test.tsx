@@ -171,8 +171,6 @@ describe('MaterialPreflightPanel alternatives', () => {
             checks: [{
               kind: 'nozzle_hrc',
               status: 'incompatible',
-              job_key: null,
-              line_id: 'tool-0',
               printer_profile_id: 12,
               printer_profile_name: 'Voron 0.4 brass',
               required_value: 50,

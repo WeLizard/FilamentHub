@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "extrusion_by_tool_role": {
+    "0": {
+      "custom": 0.4,
+      "outer wall": 1.2,
+      "support": 3.0,
+      "support interface": 0.5,
+      "sparse infill": 1.5,
+      "brim": 0.3,
+      "inner wall": 0.7,
+      "top surface": 0.9,
+      "internal solid infill": 0.6,
+      "prime tower": 0.6
+    }
+  },
+  "extrusion_by_tool_object": {
+    "0": {
+      "Cube_id_1111_copy_0": 4.4,
+      "Cube_id_1111_copy_1": 2.5,
+      "label 31": 0.9,
+      "My Part v2_id_2222_copy_0": 0.6
+    }
+  },
+  "observed_tool": null,
+  "observed_toolchange_count": 0,
+  "object_names": [
+    "Cube_id_1111_copy_0",
+    "Cube_id_1111_copy_1",
+    "label 31",
+    "My Part v2_id_2222_copy_0"
+  ],
+  "support_roles": [
+    "support",
+    "support interface"
+  ]
+}

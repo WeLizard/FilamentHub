@@ -59,10 +59,17 @@ def _numbers(value: Any) -> list[float]:
     return sorted(result)
 
 
-def _profile_nozzles(profile: PrinterProfile) -> list[float]:
-    if profile.nozzle_diameters:
-        return _numbers(profile.nozzle_diameters)
-    return _numbers((profile.orcaslicer_settings or {}).get("nozzle_diameter"))
+def nozzle_values(nozzle_diameters: Any, nozzle_setting: Any) -> list[float]:
+    """The explicit diameters of a profile, else the slicer's own nozzle setting."""
+    if nozzle_diameters:
+        return _numbers(nozzle_diameters)
+    return _numbers(nozzle_setting)
+
+
+def profile_nozzles(profile: PrinterProfile) -> list[float]:
+    return nozzle_values(
+        profile.nozzle_diameters, (profile.orcaslicer_settings or {}).get("nozzle_diameter")
+    )
 
 
 def profile_nozzle_hrc(profile: PrinterProfile | None) -> float | None:
@@ -104,32 +111,25 @@ def _exact_profile(
     return None
 
 
-def _configuration_for_evidence(
+def _profile_for_evidence(
     evidence: CalculatorPreflightMachineEvidence,
     profiles: list[PrinterProfile],
-) -> tuple[PrinterProfile | None, list[float]]:
+) -> PrinterProfile | None:
+    """The machine configuration a sliced job belongs to, when it can be proven."""
     exact = _exact_profile(evidence, profiles)
     if exact is not None:
-        return exact, _profile_nozzles(exact)
-
-    available = sorted(
-        {
-            nozzle
-            for profile in profiles
-            for nozzle in _profile_nozzles(profile)
-        }
-    )
+        return exact
     if evidence.nozzle_diameter_mm is None:
-        return None, available
+        return None
     matching = [
         profile
         for profile in profiles
         if any(
             isclose(evidence.nozzle_diameter_mm, nozzle, abs_tol=0.01)
-            for nozzle in _profile_nozzles(profile)
+            for nozzle in profile_nozzles(profile)
         )
     ]
-    return (matching[0] if len(matching) == 1 else None), available
+    return matching[0] if len(matching) == 1 else None
 
 
 def _overall_status(
@@ -140,6 +140,32 @@ def _overall_status(
     if not checks or any(check.status == "unknown" for check in checks):
         return "unknown"
     return "compatible"
+
+
+async def _hotend_limit(
+    db: AsyncSession,
+    physical_printer: UserPrinterDevice,
+    evidence_profiles: list[PrinterProfile],
+) -> float | None:
+    """The catalog hotend limit of the machine, never a guess between models.
+
+    The physical printer's own catalog model wins. Without one, the models of
+    the configurations the jobs were sliced for answer, but only when they
+    agree: two catalog variants of one machine can have different limits.
+    """
+    if physical_printer.printer_id is not None:
+        catalog_printer = await db.get(Printer, physical_printer.printer_id)
+        if catalog_printer is not None and catalog_printer.max_extruder_temp is not None:
+            return float(catalog_printer.max_extruder_temp)
+
+    limits: set[float] = set()
+    for printer_id in {p.printer_id for p in evidence_profiles if p.printer_id is not None}:
+        profile_printer = await db.get(Printer, printer_id)
+        if profile_printer is not None and profile_printer.max_extruder_temp is not None:
+            limits.add(float(profile_printer.max_extruder_temp))
+        else:
+            return None
+    return limits.pop() if len(limits) == 1 else None
 
 
 async def calculate_printer_compatibility(
@@ -176,104 +202,77 @@ async def calculate_printer_compatibility(
             .order_by(PrinterProfile.id)
         )
     ).scalars().all()
-    catalog_printer = (
-        await db.get(Printer, physical_printer.printer_id)
-        if physical_printer.printer_id is not None
-        else None
-    )
-
     lines_by_job: dict[str | None, list[CalculatorPreflightLineRequest]] = {}
     for line in payload.lines:
         lines_by_job.setdefault(line.job_key, []).append(line)
 
-    checks: list[CalculatorPrinterCompatibilityCheck] = []
+    # One check per kind: plates sliced for the same machine would otherwise
+    # repeat the same comparison once per plate. The strictest requirement
+    # decides, and a weaker one cannot change the verdict.
+    hrc_by_profile: dict[int | None, tuple[PrinterProfile | None, float]] = {}
+    hotend_required: float | None = None
+    hotend_profiles: dict[int, PrinterProfile] = {}
     for evidence in payload.machine_evidence:
-        profile, available_nozzles = _configuration_for_evidence(evidence, profiles)
-        profile_fields = {
-            "printer_profile_id": profile.id if profile is not None else None,
-            "printer_profile_name": profile.name if profile is not None else None,
-        }
-
-        if evidence.nozzle_diameter_mm is not None:
-            if not available_nozzles:
-                nozzle_status: CalculatorPrinterCompatibilityStatus = "unknown"
-            elif any(
-                isclose(evidence.nozzle_diameter_mm, nozzle, abs_tol=0.01)
-                for nozzle in available_nozzles
-            ):
-                nozzle_status = "compatible"
-            else:
-                nozzle_status = "incompatible"
-            checks.append(
-                CalculatorPrinterCompatibilityCheck(
-                    kind="nozzle_diameter",
-                    status=nozzle_status,
-                    job_key=evidence.job_key,
-                    required_value=evidence.nozzle_diameter_mm,
-                    available_values=available_nozzles,
-                    unit="mm",
-                    requirement_source="gcode",
-                    capability_source="printer_profile" if available_nozzles else None,
-                    **profile_fields,
-                )
-            )
+        profile = _profile_for_evidence(evidence, profiles)
+        profile_key = profile.id if profile is not None else None
 
         for line in lines_by_job.get(evidence.job_key, []):
             filament = target_filaments.get(line.filament_id or 0)
             required_hrc = filament.required_nozzle_hrc if filament is not None else None
             if required_hrc is None or required_hrc <= 0:
                 continue
-            configured_hrc = profile_nozzle_hrc(profile)
-            if configured_hrc is None:
-                hrc_status: CalculatorPrinterCompatibilityStatus = "unknown"
-                available_hrc: list[float] = []
-            else:
-                hrc_status = "compatible" if configured_hrc >= required_hrc else "incompatible"
-                available_hrc = [configured_hrc]
-            checks.append(
-                CalculatorPrinterCompatibilityCheck(
-                    kind="nozzle_hrc",
-                    status=hrc_status,
-                    job_key=evidence.job_key,
-                    line_id=line.line_id,
-                    required_value=float(required_hrc),
-                    available_values=available_hrc,
-                    unit="HRC",
-                    requirement_source="filament_catalog",
-                    capability_source="printer_profile" if configured_hrc is not None else None,
-                    **profile_fields,
-                )
-            )
+            known = hrc_by_profile.get(profile_key)
+            if known is None or required_hrc > known[1]:
+                hrc_by_profile[profile_key] = (profile, float(required_hrc))
 
         if evidence.max_nozzle_temperature_c is not None:
-            max_temperature = (
-                float(catalog_printer.max_extruder_temp)
-                if catalog_printer is not None and catalog_printer.max_extruder_temp is not None
-                else None
+            hotend_required = max(hotend_required or 0.0, evidence.max_nozzle_temperature_c)
+            if profile is not None:
+                hotend_profiles[profile.id] = profile
+
+    checks: list[CalculatorPrinterCompatibilityCheck] = []
+    for profile, required_hrc in hrc_by_profile.values():
+        configured_hrc = profile_nozzle_hrc(profile)
+        if configured_hrc is None:
+            hrc_status: CalculatorPrinterCompatibilityStatus = "unknown"
+            available_hrc: list[float] = []
+        else:
+            hrc_status = "compatible" if configured_hrc >= required_hrc else "incompatible"
+            available_hrc = [configured_hrc]
+        checks.append(
+            CalculatorPrinterCompatibilityCheck(
+                kind="nozzle_hrc",
+                status=hrc_status,
+                printer_profile_id=profile.id if profile is not None else None,
+                printer_profile_name=profile.name if profile is not None else None,
+                required_value=required_hrc,
+                available_values=available_hrc,
+                unit="HRC",
+                requirement_source="filament_catalog",
+                capability_source="printer_profile" if configured_hrc is not None else None,
             )
-            if max_temperature is None:
-                temperature_status: CalculatorPrinterCompatibilityStatus = "unknown"
-                available_temperatures: list[float] = []
-            else:
-                temperature_status = (
-                    "compatible"
-                    if max_temperature >= evidence.max_nozzle_temperature_c
-                    else "incompatible"
-                )
-                available_temperatures = [max_temperature]
-            checks.append(
-                CalculatorPrinterCompatibilityCheck(
-                    kind="hotend_temperature",
-                    status=temperature_status,
-                    job_key=evidence.job_key,
-                    required_value=evidence.max_nozzle_temperature_c,
-                    available_values=available_temperatures,
-                    unit="°C",
-                    requirement_source="gcode",
-                    capability_source="catalog_printer" if max_temperature is not None else None,
-                    **profile_fields,
-                )
+        )
+
+    max_temperature = (
+        await _hotend_limit(db, physical_printer, list(hotend_profiles.values()))
+        if hotend_required is not None
+        else None
+    )
+    # Neither Orca machine profiles nor most catalog models carry a hotend
+    # limit, so an unknown limit is the norm: reporting it would put every
+    # calculation into "not enough data" with nothing the person can fix.
+    if hotend_required is not None and max_temperature is not None:
+        checks.append(
+            CalculatorPrinterCompatibilityCheck(
+                kind="hotend_temperature",
+                status="compatible" if max_temperature >= hotend_required else "incompatible",
+                required_value=hotend_required,
+                available_values=[max_temperature],
+                unit="°C",
+                requirement_source="gcode",
+                capability_source="catalog_printer",
             )
+        )
 
     return CalculatorPrinterCompatibilityResponse(
         physical_printer_id=physical_printer.id,

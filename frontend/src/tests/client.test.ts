@@ -479,6 +479,29 @@ describe('calculator G-code uploads', () => {
       '/calculator/gcode-artifacts/artifact-1',
     );
   });
+
+  it('posts only the excerpt parts as multipart form data', async () => {
+    const { calculatorAPI } = await loadClientModule();
+    const controller = new AbortController();
+    axiosState.apiInstance.post.mockResolvedValueOnce({ data: { jobs: [] } });
+
+    await calculatorAPI.parseGcodeExcerpt({
+      fileName: 'job.gcode',
+      fileSizeBytes: 70_000_000,
+      container: 'plain_gcode',
+      parts: [{ field: 'head', blob: new Blob(['G1']), filename: 'head.gcode' }],
+    }, controller.signal);
+
+    const [url, body, config] = axiosState.apiInstance.post.mock.calls[0];
+    expect(url).toBe('/calculator/gcode-excerpts/parse');
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get('file_name')).toBe('job.gcode');
+    expect(body.get('file_size_bytes')).toBe('70000000');
+    expect(body.get('container')).toBe('plain_gcode');
+    expect((body.get('head') as File).size).toBe(2);
+    expect(body.has('tail')).toBe(false);
+    expect(config.signal).toBe(controller.signal);
+  });
 });
 
 describe('admin email uploads', () => {

@@ -1673,15 +1673,13 @@ export interface CalculatorPreflightResponse {
 export type CalculatorPrinterCompatibilityStatus = 'compatible' | 'incompatible' | 'unknown';
 
 export interface CalculatorPrinterCompatibilityCheck {
-  kind: 'nozzle_diameter' | 'nozzle_hrc' | 'hotend_temperature';
+  kind: 'nozzle_hrc' | 'hotend_temperature';
   status: CalculatorPrinterCompatibilityStatus;
-  job_key: string | null;
-  line_id: string | null;
   printer_profile_id: number | null;
   printer_profile_name: string | null;
   required_value: number | null;
   available_values: number[];
-  unit: 'mm' | 'HRC' | '°C';
+  unit: 'HRC' | '°C';
   requirement_source: 'gcode' | 'filament_catalog';
   capability_source: 'printer_profile' | 'catalog_printer' | null;
 }
@@ -1866,6 +1864,7 @@ export interface CalculatorMaterialIdentityResolution {
   source?:
     | 'filamenthub_filament_id'
     | 'filamenthub_preset_id'
+    | 'filamenthub_managed_name'
     | 'user_preset_filament_id'
     | 'catalog_preset_filament_id'
     | null;
@@ -1924,6 +1923,8 @@ export interface CalculatorGcodeParseResponse {
   printer_settings_id?: string | null;
   print_settings_id?: string | null;
   printer_model?: string | null;
+  /** The user's own printers that match the machine the file was sliced for. */
+  suggested_physical_printer_ids?: number[];
   fhub_identities?: CalculatorFhubIdentity[];
   print_time_seconds?: number | null;
   first_layer_print_time_seconds?: number | null;
@@ -1971,6 +1972,8 @@ export interface CalculatorGcodeParseResponse {
   toolchange_count?: number | null;
   thumbnail_data_url?: string | null;
   container_format?: 'plain_gcode' | 'gcode_3mf' | string;
+  /** 'summary' comes from the end-of-file statistics only: no per-object breakdown. */
+  detail_level?: 'full' | 'summary';
   plate_index?: number | null;
   available_plate_indices?: number[];
   materials: CalculatorParsedMaterial[];

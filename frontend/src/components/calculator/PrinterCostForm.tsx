@@ -269,6 +269,12 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     };
   }, [saved]);
 
+  // The platform note claims we filled something in; once every physical value
+  // is the owner's own, that claim is false and only reads as a warning.
+  const usesPlatformEstimate = estimated.lifeHours
+    || estimated.powerWatts
+    || Object.values(parts).some((value) => value == null);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -456,7 +462,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
               readiness: saved.readiness,
             }]}
           />
-          {suggestion ? (
+          {suggestion && usesPlatformEstimate ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="min-w-0 flex-1 text-[11px] leading-4 text-slate-400">
                 {t(`printerCost.confidence.${suggestion.confidence}`, {

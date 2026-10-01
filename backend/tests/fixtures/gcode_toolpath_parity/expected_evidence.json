@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "extrusion_by_tool_role": {
+    "0": {
+      "skirt": 0.8,
+      "outer wall": 4.35,
+      "sparse infill": 3.9,
+      "brim": 1.2
+    },
+    "1": {
+      "prime tower": 2.0,
+      "support": 2.0,
+      "support interface": 0.5,
+      "internal solid infill": 2.0,
+      "wipe tower": 0.75
+    }
+  },
+  "extrusion_by_tool_object": {
+    "0": {
+      "Cube_id_0": 7.1
+    },
+    "1": {
+      "Cube_id_1": 4.0,
+      "Bracket_id_2.stl": 0.5
+    }
+  },
+  "observed_tool": 0,
+  "observed_toolchange_count": 2,
+  "object_names": [
+    "Cube_id_0",
+    "Cube_id_1",
+    "Bracket_id_2.stl"
+  ],
+  "support_roles": [
+    "support",
+    "support interface"
+  ]
+}

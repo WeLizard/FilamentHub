@@ -309,17 +309,15 @@ CalculatorPrinterCompatibilityStatus = Literal["compatible", "incompatible", "un
 
 
 class CalculatorPrinterCompatibilityCheck(BaseModel):
-    """One explainable, advisory machine/material compatibility comparison."""
+    """One explainable, advisory comparison, covering every plate it applies to."""
 
-    kind: Literal["nozzle_diameter", "nozzle_hrc", "hotend_temperature"]
+    kind: Literal["nozzle_hrc", "hotend_temperature"]
     status: CalculatorPrinterCompatibilityStatus
-    job_key: str | None = None
-    line_id: str | None = None
     printer_profile_id: int | None = None
     printer_profile_name: str | None = None
     required_value: float | None = None
     available_values: list[float] = Field(default_factory=list)
-    unit: Literal["mm", "HRC", "°C"]
+    unit: Literal["HRC", "°C"]
     requirement_source: Literal["gcode", "filament_catalog"]
     capability_source: Literal["printer_profile", "catalog_printer"] | None = None
 
@@ -597,6 +595,9 @@ class CalculatorMaterialIdentityResolution(BaseModel):
     source: Literal[
         "filamenthub_filament_id",
         "filamenthub_preset_id",
+        "filamenthub_managed_name",
+        # No longer produced: Orca's filament_id names a material family, not a
+        # filament. Kept so saved calculator history still validates.
         "user_preset_filament_id",
         "catalog_preset_filament_id",
     ] | None = None
@@ -705,6 +706,10 @@ class CalculatorGcodeParseResponse(BaseModel):
     printer_settings_id: str | None = Field(None, description="Machine preset из G-code")
     print_settings_id: str | None = Field(None, description="Process preset из G-code")
     printer_model: str | None = Field(None, description="Модель принтера из G-code")
+    suggested_physical_printer_ids: list[int] = Field(
+        default_factory=list,
+        description="Физические принтеры пользователя, подходящие под машину из G-code",
+    )
     fhub_identities: list[CalculatorFhubIdentity] = Field(
         default_factory=list,
         description="Доступные текущему пользователю стабильные FH identities из G-code",
@@ -785,6 +790,10 @@ class CalculatorGcodeParseResponse(BaseModel):
     is_multi_material: bool | None = Field(None, description="Мульти-материальная ли печать")
     toolchange_count: int | None = Field(None, ge=0, description="Количество смен инструмента / материала")
     thumbnail_data_url: str | None = Field(None, description="Data URL превью G-code, если найден")
+    detail_level: Literal["full", "summary"] = Field(
+        "full",
+        description="summary: прочитаны только сводка и конфигурация слайсера, без учёта траектории",
+    )
     container_format: str = Field("plain_gcode", description="plain_gcode или gcode_3mf")
     plate_index: int | None = Field(None, ge=1, description="Выбранная plate внутри gcode.3mf")
     available_plate_indices: list[int] = Field(default_factory=list, description="Доступные sliced plates внутри gcode.3mf")

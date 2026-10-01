@@ -31,6 +31,8 @@ import {
   subscribeToLocalPrinterSetup,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
+  subscribeToPluginSliceParse,
+  subscribeToPluginSliceProgress,
   subscribeToPluginSliceReports,
   subscribeToPluginSyncResult,
   startPluginOAuth,
@@ -318,6 +320,34 @@ describe('pluginBridge inbound messages', () => {
       Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');
     }
+  });
+
+  it('carries the progress and every plate of a slice the plugin reads, from the trusted parent only', () => {
+    const onProgress = vi.fn();
+    const onParsed = vi.fn();
+    const stopProgress = subscribeToPluginSliceProgress(onProgress);
+    const stopParsed = subscribeToPluginSliceParse(onParsed);
+    const dispatch = (data: unknown, origin = window.location.origin) => {
+      window.dispatchEvent(new MessageEvent('message', { data, origin, source: window }));
+    };
+    const progress = { source: PLUGIN_MESSAGE_SOURCE, type: 'parse-slice-progress' };
+
+    dispatch({ ...progress, sourceKey: 'k1', fraction: 0.4 }, 'https://evil.example');
+    dispatch({ ...progress, sourceKey: 'k1', fraction: 'half' });
+    dispatch({ ...progress, sourceKey: 7, fraction: 0.5 });
+    dispatch({ ...progress, sourceKey: 'k1', fraction: 7 });
+    dispatch({ ...progress, sourceKey: 'k1', fraction: 0.4 });
+    expect(onProgress.mock.calls).toEqual([
+      [{ sourceKey: 'k1', fraction: 1 }],
+      [{ sourceKey: 'k1', fraction: 0.4 }],
+    ]);
+
+    const result = { sourceKey: 'k1', jobs: [{ plate_index: 1 }, { plate_index: 2 }], parsed: { plate_index: 1 } };
+    dispatch({ source: PLUGIN_MESSAGE_SOURCE, type: 'parsed-slice', result });
+    expect(onParsed).toHaveBeenCalledWith(result);
+
+    stopProgress();
+    stopParsed();
   });
 
   it('accepts navigation only from the trusted parent origin', () => {

@@ -9,6 +9,7 @@ import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMod
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 import { currentRequestLanguage } from '../utils/requestLanguage';
+import { buildGcodeExcerptFormData, type GcodeExcerpt } from '../utils/gcodeExcerpt';
 import type { LabelExportOptions, LabelMetadata, LabelPreset, LabelPresetSettings, LabelPreview } from '../types/labels';
 
 const API_BASE_URL = '/api/v1';
@@ -2311,6 +2312,18 @@ export const calculatorAPI = {
       `/calculator/gcode-artifacts/${artifactId}/parse`,
       undefined,
       { signal },
+    );
+    return response.data;
+  },
+
+  parseGcodeExcerpt: async (
+    excerpt: GcodeExcerpt,
+    signal?: AbortSignal,
+  ): Promise<{ jobs: import('../types/api').CalculatorGcodeParseResponse[] }> => {
+    const response = await api.post<{ jobs: import('../types/api').CalculatorGcodeParseResponse[] }>(
+      '/calculator/gcode-excerpts/parse',
+      buildGcodeExcerptFormData(excerpt),
+      { headers: { 'Content-Type': 'multipart/form-data' }, signal },
     );
     return response.data;
   },

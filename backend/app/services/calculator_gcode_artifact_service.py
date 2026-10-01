@@ -17,7 +17,11 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
 from app.models.calculator_gcode_artifact import CalculatorGcodeArtifact
 from app.models.user import User
-from app.services.calculator_gcode_parser import GcodeParseCancelled, parse_gcode_payload
+from app.services.calculator_gcode_parser import (
+    MAX_GCODE_3MF_PLATES,
+    GcodeParseCancelled,
+    parse_gcode_payload,
+)
 from app.services.file_service import get_upload_root_dir
 
 logger = logging.getLogger(__name__)
@@ -30,7 +34,7 @@ ORPHAN_FILE_GRACE = ARTIFACT_TTL
 MAX_ARTIFACTS_PER_USER = 20
 MAX_ARTIFACT_BYTES_PER_USER = 500 * 1024 * 1024
 UPLOAD_CHUNK_SIZE = 1024 * 1024
-MAX_PLATES_PER_ARTIFACT = 256
+MAX_PLATES_PER_ARTIFACT = MAX_GCODE_3MF_PLATES
 
 
 class ArtifactNotFoundError(Exception):
