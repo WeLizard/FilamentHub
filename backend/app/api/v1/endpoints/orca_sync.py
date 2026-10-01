@@ -3946,7 +3946,6 @@ async def batch_export_presets(
             config = await preset_to_orcaslicer_json(
                 preset,
                 preset.filament,
-                db,
                 settings_override=settings_override,
             )
             info = preset_to_orcaslicer_info(preset)

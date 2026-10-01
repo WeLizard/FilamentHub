@@ -4,12 +4,10 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.filament import Filament
 from app.models.preset import Preset
 from app.models.printer_profile import PrinterProfile
-from app.services.material_mapping_service import get_material_preset
+from app.services.material_mapping_service import orca_parent_for_material
 from app.services.orca_printer_identity import (
     is_orca_system_printer,
     resolve_orca_printer_model,
@@ -89,7 +87,7 @@ def preset_to_orcaslicer_info(preset: Preset) -> str:
     sync_info = fhub:<preset_id>:<source>  # Метка FilamentHub (приоритетный источник истины)
     user_id = <orcaslicer_user_id>         # Заполняется OrcaSlicer
     setting_id = FHUB<preset_id_padded>    # FilamentHub preset ID
-    base_id = <base_preset_name>           # Родительский пресет
+    base_id = null                         # setting_id родителя; FilamentHub его не знает
     updated_time = <unix_timestamp>        # Время обновления
 
     Args:
@@ -106,11 +104,9 @@ def preset_to_orcaslicer_info(preset: Preset) -> str:
     # Используется как уникальный идентификатор в OrcaSlicer
     setting_id = f"FHUB{preset.id:06d}"
 
-    # base_id: Базовый профиль (из inherits в orcaslicer_settings)
-    # Извлекаем из orcaslicer_settings если есть, иначе используем умолчание
-    orcaslicer_settings = preset.orcaslicer_settings or {}
-    inherits = orcaslicer_settings.get("inherits", "fdm_filament_common")
-    base_id = inherits
+    # OrcaSlicer expects the parent's setting_id here, not a name. The exported
+    # parent follows the catalogue material, so the stored one would be wrong.
+    base_id = "null"
 
     # updated_time: Unix timestamp обновления
     import time
@@ -169,7 +165,6 @@ def _target_profiles_condition(target_profiles: list["PrinterProfile"]) -> str |
 async def preset_to_orcaslicer_json(
     preset: Preset,
     filament: Filament,
-    db: AsyncSession | None = None,
     target_profiles: "list[PrinterProfile] | None" = None,
     *,
     settings_override: dict[str, Any] | None = None,
@@ -219,33 +214,7 @@ async def preset_to_orcaslicer_json(
     # the produced G-code through the namespaced fhub_identity_v1 contract.
     profile["setting_id"] = f"FHUB{preset.id:06d}"
 
-    # Наследование от базового профиля по типу материала (ОБЯЗАТЕЛЬНОЕ поле)
-    # Мапим FilamentHub material_type на реальные имена системных пресетов OrcaSlicer
-    #
-    # Важно: OrcaSlicer использует find_preset(inherits_value, false, true) для поиска родителя
-    # Поэтому нужно указывать ТОЧНОЕ имя системного пресета (например "Generic PLA @System")
-    #
-    # find_preset2 в ensure_parent_preset_exists (C++) умеет автопреобразовывать:
-    # - "fdm_filament_pla" -> "Generic PLA @System" (через regex)
-    # Но лучше использовать правильные имена сразу
-
-    # Получаем базовый профиль для наследования через сервис маппинга материалов
-    # Приоритет: MaterialMapping из БД > базовый маппинг > умный поиск > fallback
-    if db:
-        base_profile = await get_material_preset(
-            filament.material_type,
-            db,
-            log_unknown=True,  # Логируем неизвестные типы для анализа
-        )
-    else:
-        # Fallback если db session не передан (для обратной совместимости)
-        logger.warning(
-            f"preset_to_orcaslicer_json called without db session for material_type='{filament.material_type}', "
-            "using fallback 'fdm_filament_common'"
-        )
-        base_profile = "fdm_filament_common"
-
-    profile["inherits"] = base_profile
+    profile["inherits"] = orca_parent_for_material(filament.material_type)
 
     # Все параметры в OrcaSlicer хранятся как массивы строк
     # Это связано с поддержкой мультиэкструдеров (каждый экструдер - элемент массива)
@@ -413,26 +382,6 @@ async def preset_to_orcaslicer_json(
     validate_orca_transport_shapes(profile, preset.name)
 
     return profile
-
-
-async def export_preset_to_orcaslicer(
-    preset: Preset,
-    filament: Filament,
-    db: AsyncSession | None = None,
-) -> str:
-    """
-    Экспортировать Preset в JSON строку формата OrcaSlicer.
-
-    Args:
-        preset: Preset из FilamentHub
-        filament: Filament из FilamentHub
-        db: AsyncSession для запросов к БД (опционально, для маппинга материалов)
-
-    Returns:
-        str: JSON строка профиля OrcaSlicer
-    """
-    profile = await preset_to_orcaslicer_json(preset, filament, db)
-    return json.dumps(profile, indent=4, ensure_ascii=False)
 
 
 def generate_profile_info(preset: Preset, filament: Filament) -> str:

@@ -100,7 +100,7 @@ async def test_process_keys_are_dropped_from_filament_export():
         "filament_max_volumetric_speed": ["15"],  # filament-scope — must stay
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert "layer_height" not in profile
     assert "print_speed" not in profile
@@ -112,7 +112,7 @@ async def test_process_keys_are_dropped_from_filament_export():
 async def test_filament_scope_keys_survive():
     preset = _preset({"pressure_advance": ["0.02"], "filament_soluble": ["0"]})
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert profile.get("pressure_advance") == ["0.02"]
     assert profile.get("filament_soluble") == ["0"]
@@ -130,7 +130,7 @@ async def test_unknown_transportable_fields_keep_their_exact_json_shape():
     }
 
     profile = await preset_to_orcaslicer_json(
-        _preset(untouched), _filament(), db=None
+        _preset(untouched), _filament()
     )
 
     for key, value in untouched.items():
@@ -152,7 +152,7 @@ async def test_unknown_untransportable_fields_are_withheld_instead_of_guessed():
         "future_mixed_vector": ["left", 2],
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     for key in (
         "future_number",
@@ -181,7 +181,7 @@ async def test_known_vector_fields_are_normalized_to_arrays_of_strings():
         "filament_retraction_length": [None],
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert profile["fan_max_speed"] == ["100"]
     assert profile["filament_max_volumetric_speed"] == ["10"]
@@ -201,7 +201,7 @@ async def test_enrichment_metadata_never_reaches_orcaslicer():
         "filament_max_volumetric_speed": ["18"],
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert "enrichment" not in profile
     assert preset.orcaslicer_settings["enrichment"] == {
@@ -222,8 +222,8 @@ async def test_export_never_mutates_the_stored_settings_blob():
     preset = _preset(stored)
     snapshot = deepcopy(stored)
 
-    await preset_to_orcaslicer_json(preset, _filament(), db=None)
-    await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    await preset_to_orcaslicer_json(preset, _filament())
+    await preset_to_orcaslicer_json(preset, _filament())
 
     assert preset.orcaslicer_settings == snapshot
 
@@ -240,13 +240,13 @@ async def test_export_is_stable_across_a_full_orcaslicer_round_trip():
         "future_setting": ["keep me"],
     })
 
-    exported = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    exported = await preset_to_orcaslicer_json(preset, _filament())
     assert orca_transport_violations(exported) == []
 
     # The plugin serializes the payload to disk and pushes the parsed file back.
     reimported = json.loads(json.dumps(exported))
     imported_preset = _preset(reimported)
-    reexported = await preset_to_orcaslicer_json(imported_preset, _filament(), db=None)
+    reexported = await preset_to_orcaslicer_json(imported_preset, _filament())
 
     assert reexported == exported
     assert reexported["future_setting"] == ["keep me"]
@@ -270,7 +270,7 @@ async def test_identity_name_stays_a_scalar_string():
         "type": "filament",
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert isinstance(profile["name"], str)
     assert profile["name"] == "Test [fh]"          # authoritative preset.name, unwrapped
@@ -287,7 +287,7 @@ async def test_catalogue_colour_overrides_conflicting_orca_colour_keys():
         "filament_colour": ["#0000FF"],
     })
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert profile["default_filament_colour"] == ["#FF0000"]
     assert profile["filament_colour"] == ["#FF0000"]
@@ -297,13 +297,13 @@ async def test_catalogue_colour_overrides_conflicting_orca_colour_keys():
 async def test_compat_context_exported_as_provenance():
     preset = _preset({})
     preset.compat_context = {"nozzle_type": "CHT", "plate": "textured"}
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
     assert '"nozzle_type": "CHT"' in profile["fhub_compat_context"]
 
 
 @pytest.mark.asyncio
 async def test_compat_context_absent_when_unset():
-    profile = await preset_to_orcaslicer_json(_preset({}), _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(_preset({}), _filament())
     assert "fhub_compat_context" not in profile
 
 
@@ -312,7 +312,7 @@ async def test_required_nozzle_hrc_exported_from_material():
     # Nozzle hardness is a material property — exported on the profile from the filament.
     fil = _filament()
     fil.required_nozzle_hrc = 50
-    profile = await preset_to_orcaslicer_json(_preset({}), fil, db=None)
+    profile = await preset_to_orcaslicer_json(_preset({}), fil)
     assert profile.get("required_nozzle_HRC") == ["50"]
 
 
@@ -320,7 +320,7 @@ async def test_required_nozzle_hrc_exported_from_material():
 async def test_structured_flow_ratio_keeps_orca_precision():
     preset = _preset({})
     preset.flow_rate = 92.6
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
     assert profile["filament_flow_ratio"] == ["0.926"]
 
 
@@ -330,7 +330,7 @@ async def test_structured_retraction_preserves_zero_and_fractional_speed():
     preset.retraction_length = 0
     preset.retraction_speed = 0.4
 
-    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    profile = await preset_to_orcaslicer_json(preset, _filament())
 
     assert profile["filament_retraction_length"] == ["0"]
     assert profile["filament_retraction_speed"] == ["0.4"]

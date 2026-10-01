@@ -61,7 +61,7 @@ async def test_a_copied_vendor_profile_exports_on_the_universal_material_parent(
     }
     preset, filament = await _published_preset(db_session, "PETG", dict(stored))
 
-    profile = await preset_to_orcaslicer_json(preset, filament, db=db_session)
+    profile = await preset_to_orcaslicer_json(preset, filament)
 
     assert profile["inherits"] == "Generic PETG @System"
     assert profile["filament_type"] == ["PETG"]
@@ -77,7 +77,7 @@ async def test_a_plus_variant_inherits_its_base_material(db_session: AsyncSessio
         db_session, "PETG+", {"inherits": "Generic PETG @K2 Pro-all"}
     )
 
-    profile = await preset_to_orcaslicer_json(preset, filament, db=db_session)
+    profile = await preset_to_orcaslicer_json(preset, filament)
 
     assert profile["inherits"] == "Generic PETG @System"
 

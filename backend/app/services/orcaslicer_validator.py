@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.utils import like_pattern
 from app.models.material_mapping import MaterialMapping
+from app.services.material_mapping_service import orca_parent_for_material
 
 # Известные системные пресеты OrcaSlicer
 KNOWN_PARENT_PRESETS = {
@@ -149,32 +149,11 @@ async def validate_parent_preset(
             material_type="PLA",
         )
 
-    # Проверяем material_mapping для определения fallback
-    result = await db.execute(
-        select(MaterialMapping).where(
-            MaterialMapping.material_type.ilike(like_pattern(material_type))
-        )
-    )
-    mapping = result.scalars().first()
-
-    if mapping:
-        # Нашли mapping — используем orcaslicer_preset как fallback
-        fallback = mapping.orcaslicer_preset
-        return ParentValidationResult(
-            exists=False,
-            needs_fallback=True,
-            fallback_preset=fallback,
-            confidence=0.8,
-            material_type=material_type,
-        )
-
-    # Fallback на системный generic пресет
-    fallback = f"Generic {material_type} @System"
     return ParentValidationResult(
         exists=False,
         needs_fallback=True,
-        fallback_preset=fallback,
-        confidence=0.7,
+        fallback_preset=orca_parent_for_material(material_type),
+        confidence=0.8,
         material_type=material_type,
     )
 

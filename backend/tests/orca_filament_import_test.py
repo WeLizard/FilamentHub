@@ -893,7 +893,7 @@ async def test_managed_filament_roundtrip_keeps_opaque_untransported_settings(
     db_session.add(preset)
     await db_session.flush()
 
-    exported = await preset_to_orcaslicer_json(preset, filament, db_session)
+    exported = await preset_to_orcaslicer_json(preset, filament)
     assert exported["future_scalar"] == "sent"
     assert exported["future_vector"] == ["left", "right"]
     for hidden in (

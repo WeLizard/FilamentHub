@@ -80,7 +80,7 @@ async def test_tested_on_links_remain_in_catalog_but_do_not_restrict_export(
     assert detail.status_code == 200
     assert {printer["id"] for printer in detail.json()["printers"]} == {p1.id, p2.id}
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
-    profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
+    profile = await preset_to_orcaslicer_json(preset, export_filament)
     assert profile["compatible_printers"] == []
     assert profile["compatible_printers_condition"] == ""
 
@@ -94,7 +94,7 @@ async def test_unscoped_without_system_links_is_universal(db_session: AsyncSessi
         db_session.add(PresetPrinter(preset_id=preset.id, printer_id=custom.id))
     await db_session.commit()
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
-    profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
+    profile = await preset_to_orcaslicer_json(preset, export_filament)
     assert profile["compatible_printers"] == []
     assert profile["compatible_printers_condition"] == ""
 
@@ -116,7 +116,7 @@ async def test_legacy_restrictions_stay_in_source_evidence_but_never_in_managed_
     await db_session.commit()
 
     export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
-    profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
+    profile = await preset_to_orcaslicer_json(preset, export_filament)
 
     assert profile["compatible_printers"] == []
     assert profile["compatible_printers_condition"] == ""
@@ -126,7 +126,7 @@ async def test_legacy_restrictions_stay_in_source_evidence_but_never_in_managed_
 
     # A pinned historical version is subject to the same export policy.
     overridden = await preset_to_orcaslicer_json(
-        preset, export_filament, db=db_session, settings_override=original,
+        preset, export_filament, settings_override=original,
     )
     assert overridden["compatible_printers"] == []
     assert overridden["compatible_printers_condition"] == ""

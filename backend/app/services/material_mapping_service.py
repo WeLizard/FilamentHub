@@ -1,302 +1,135 @@
-"""Material mapping service для определения системного пресета OrcaSlicer по типу материала."""
+"""The OrcaSlicer parent a FilamentHub material is exported on.
+
+A managed filament profile carries its own values; the parent only fills what
+the profile leaves out and decides which printers OrcaSlicer offers it for.
+Every parent is therefore one of OrcaSlicer's universal library presets
+(``OrcaFilamentLibrary``), which every installation has and which binds to no
+printer. The material decides which one: the closest library preset for its
+base polymer and, where the library has one, for its variant (CF, HF, Silk).
+"""
 
 import logging
 import re
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.utils import escape_like
-from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
-
 logger = logging.getLogger(__name__)
 
-# Базовый маппинг материалов (fallback если нет в БД)
-# Основано на docs/ORCASLICER_FILAMENT_TYPES.md
-BASE_MATERIAL_MAP = {
-    # Базовые материалы
-    "PLA": "Generic PLA @System",
-    "ABS": "Generic ABS @System",
-    "PETG": "Generic PETG @System",
-    "PET": "Generic PETG @System",  # PET наследуется от PETG
-    "TPU": "Generic TPU @System",
-    "ASA": "Generic ASA @System",
-    "PC": "Generic PC @System",
-    "PA": "Generic PA @System",
-    "PVA": "Generic PVA @System",
-    "HIPS": "Generic ABS @System",  # HIPS наследуется от ABS
-    "PP": "Generic PLA @System",  # PP → PLA (как в документации)
-    "POM": "Generic PLA @System",  # POM → PLA (как в документации)
+# Generic filament presets shipped in OrcaSlicer's OrcaFilamentLibrary.
+ORCA_LIBRARY_PARENTS = frozenset({
+    "Generic ABS @System",
+    "Generic ASA @System",
+    "Generic BVOH @System",
+    "Generic CoPE @System",
+    "Generic EVA @System",
+    "Generic HIPS @System",
+    "Generic PA @System",
+    "Generic PA-CF @System",
+    "Generic PC @System",
+    "Generic PCTG @System",
+    "Generic PE @System",
+    "Generic PE-CF @System",
+    "Generic PETG @System",
+    "Generic PETG HF @System",
+    "Generic PETG-CF @System",
+    "Generic PHA @System",
+    "Generic PLA @System",
+    "Generic PLA High Speed @System",
+    "Generic PLA Matte @System",
+    "Generic PLA Silk @System",
+    "Generic PLA-CF @System",
+    "Generic PP @System",
+    "Generic PP-CF @System",
+    "Generic PP-GF @System",
+    "Generic PPA-CF @System",
+    "Generic PPA-GF @System",
+    "Generic PVA @System",
+    "Generic SBS @System",
+    "Generic TPU @System",
+})
 
-    # Материалы с углеродным волокном (CF)
-    "PET-CF": "Generic PETG @System",
-    "PETG-CF": "Generic PETG @System",
-    "PLA-CF": "Generic PLA @System",
-    "ABS-CF": "Generic ABS @System",
-    "ASA-CF": "Generic ASA @System",
-    "PC-CF": "Generic PC @System",
-    "PA-CF": "Generic PA @System",
-    "PP-CF": "Generic PLA @System",
+# A preset without a parent is not neutral in OrcaSlicer: it starts from the
+# default filament, which is PLA, and a name containing "@" binds it to the
+# printer named after that sign. An unrecognised material therefore gets the
+# PLA parent explicitly.
+UNKNOWN_MATERIAL_PARENT = "Generic PLA @System"
 
-    # Материалы со стекловолокном (GF)
-    "ABS-GF": "Generic ABS @System",
-    "ASA-GF": "Generic ASA @System",
-    "PA-GF": "Generic PA @System",
-    "PET-GF": "Generic PETG @System",
-    "PETG-GF": "Generic PETG @System",
-    "PC-PBT": "Generic PC @System",
+_CF = re.compile(r"\bCF|CF\b|CARBON")
+_GF = re.compile(r"\bGF|GF\b|GLASS")
 
-    # Полиамиды (PA вариации)
-    "PA6": "Generic PA @System",
-    "PA11": "Generic PA @System",
-    "PA12": "Generic PA @System",
-    "PAHT": "Generic PA @System",
-    "PA6-CF": "Generic PA @System",
-    "PA11-CF": "Generic PA @System",
-    "PA12-CF": "Generic PA @System",
-    "PAHT-CF": "Generic PA @System",
-    "PA6-GF": "Generic PA @System",
-    "PA11-GF": "Generic PA @System",
-    "PA12-GF": "Generic PA @System",
-    "PAHT-GF": "Generic PA @System",
-
-    # Высокотемпературные материалы → PC
-    "PEI": "Generic PC @System",
-    "PEI-1010": "Generic PC @System",
-    "PEI-9085": "Generic PC @System",
-    "PEI-1010-CF": "Generic PC @System",
-    "PEI-9085-CF": "Generic PC @System",
-    "PEI-1010-GF": "Generic PC @System",
-    "PEI-9085-GF": "Generic PC @System",
-    "PEEK": "Generic PC @System",
-    "PEEK-CF": "Generic PC @System",
-    "PEEK-GF": "Generic PC @System",
-    "PEKK": "Generic PC @System",
-    "PEKK-CF": "Generic PC @System",
-    "PES": "Generic PC @System",
-    "PPS": "Generic PC @System",
-    "PPSU": "Generic PC @System",
-    "PSU": "Generic PC @System",
-    "TPI": "Generic TPU @System",  # TPI → TPU (гибкий)
-    "PI": "Generic PC @System",
-
-    # Гибкие материалы → TPU
-    "FLEX": "Generic TPU @System",
-    "PCL": "Generic TPU @System",
-
-    # Растворимые материалы → PVA
-    "BVOH": "Generic PVA @System",
-    "PVB": "Generic PVA @System",
-
-    # Специальные материалы
-    "ASA-AERO": "Generic ASA @System",
-    "PLA-AERO": "Generic PLA @System",
-    "PC-ABS": "Generic PC @System",
-    "PCTG": "Generic PETG @System",  # PCTG → PETG (близкий по свойствам)
-    "PHA": "Generic PLA @System",  # PHA → PLA (близкий по свойствам)
-    "PE": "Generic PLA @System",  # PE → PLA
-    "PE-CF": "Generic PLA @System",
-    "PE-GF": "Generic PLA @System",
-    "PVDF": "Generic PLA @System",  # PVDF → PLA (по умолчанию)
-    "SBS": "Generic PLA @System",  # SBS → PLA (по умолчанию)
-    "PPA": "Generic PA @System",  # PPA → PA
-    "PPA-CF": "Generic PA @System",
-    "PPA-GF": "Generic PA @System",
-    "EVA": "Generic TPU @System",  # EVA → TPU (гибкий)
-
-    # Альтернативные названия (с модификаторами)
-    "PLA+": "Generic PLA @System",
-    "PLA PRO": "Generic PLA @System",
-    "PLA PRO+": "Generic PLA @System",
-    "PLA MAX": "Generic PLA @System",
-    "PP+": "Generic PLA @System",  # PP+ → PP → PLA
-    "PP PLUS": "Generic PLA @System",
-}
-
-# Паттерны для умного поиска материалов
-# Основано на docs/ORCASLICER_FILAMENT_TYPES.md
-MATERIAL_PATTERNS = [
-    # PLA варианты (включая PLA+, PLA-CF, PLA-AERO)
-    (r"(?i)\bPLA[^A-Z]*(?:CF|AERO|PRO|\+)?\b", "Generic PLA @System"),
-    # ABS варианты (включая ABS-CF, ABS-GF)
-    (r"(?i)\bABS[^A-Z]*(?:CF|GF)?\b", "Generic ABS @System"),
-    # PETG/PET варианты (включая PET-CF, PETG-CF, PETG-GF, PET-GF, PCTG)
-    (r"(?i)\b(?:PETG?|PCTG)[^A-Z]*(?:CF|GF)?\b", "Generic PETG @System"),
-    # TPU варианты
-    (r"(?i)\bTPU[^A-Z]*\b", "Generic TPU @System"),
-    # Гибкие материалы (FLEX, EVA, PCL, TPI)
-    (r"(?i)\b(FLEX|EVA|PCL|TPI)\b", "Generic TPU @System"),
-    # ASA варианты (включая ASA-CF, ASA-GF, ASA-AERO)
-    (r"(?i)\bASA[^A-Z]*(?:CF|GF|AERO)?\b", "Generic ASA @System"),
-    # PC варианты (включая PC-CF, PC-ABS, PC-PBT)
-    (r"(?i)\bPC[^A-Z]*(?:CF|ABS|PBT)?\b", "Generic PC @System"),
-    # Высокотемпературные материалы (PEI, PEEK, PEKK, PES, PPS, PPSU, PSU, PI)
-    (r"(?i)\b(PEI|PEEK|PEKK|PES|PPS|PPSU|PSU|PI)[^A-Z]*(?:CF|GF)?\b", "Generic PC @System"),
-    # PA/Nylon варианты (включая PA6, PA11, PA12, PAHT, PA-CF, PA-GF, PPA)
-    (r"(?i)\b(?:PA|NYLON|PPA)[^A-Z0-9]*(?:6|11|12|HT)?[^A-Z]*(?:CF|GF)?\b", "Generic PA @System"),
-    # PVA варианты (включая BVOH, PVB)
-    (r"(?i)\b(?:PVA|BVOH|PVB)\b", "Generic PVA @System"),
-    # PP варианты (Polypropylene, включая PP+, PP-CF, PP-GF)
-    (r"(?i)\bPP[^A-Z]*(?:CF|GF|\+|PLUS)?\b", "Generic PLA @System"),  # PP → PLA (как в документации)
-    # POM (Delrin) → PLA
-    (r"(?i)\bPOM\b", "Generic PLA @System"),
-    # PE (Polyethylene) → PLA
-    (r"(?i)\bPE[^A-Z]*(?:CF|GF)?\b", "Generic PLA @System"),
-    # HIPS → ABS
-    (r"(?i)\bHIPS\b", "Generic ABS @System"),
-    # SBS, PHA, PVDF → PLA (по умолчанию)
-    (r"(?i)\b(SBS|PHA|PVDF)\b", "Generic PLA @System"),
-]
-
-
-async def get_material_preset(
-    material_type: str,
-    db: AsyncSession,
-    log_unknown: bool = True,
-) -> str:
-    """
-    Получить системный пресет OrcaSlicer для типа материала.
-
-    Приоритет поиска:
-    1. MaterialMapping из БД (brand > manual > automatic)
-    2. Базовый маппинг (BASE_MATERIAL_MAP)
-    3. Умный поиск по паттернам (MATERIAL_PATTERNS)
-    4. Умный поиск базового типа (убирает модификаторы +, PRO, MAX, CF, GF)
-    5. Fallback на fdm_filament_common (для любых неизвестных типов)
-
-    Args:
-        material_type: Тип материала (например "PLA-MAX", "SUPER PLA")
-        db: AsyncSession для запросов к БД
-        log_unknown: Логировать неизвестные типы материалов
-
-    Returns:
-        str: Имя системного пресета OrcaSlicer (например "Generic PLA @System")
-    """
-    material_type_upper = material_type.upper().strip()
-
-    # 1. Проверяем MaterialMapping из БД (сортировка по приоритету)
-    query = select(MaterialMapping).where(
-        MaterialMapping.material_type.ilike(escape_like(material_type_upper)),
-        MaterialMapping.active == True,
-    ).order_by(
-        # Приоритет: brand > manual > automatic
-        MaterialMapping.priority.desc()
+# Base polymer, most specific first. The first match decides; a later, broader
+# rule never sees a material an earlier one recognised (PETG before PE, PPA
+# before PA and PP, PC before ABS so that PC/ABS blends follow PC).
+_BASE_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern), base)
+    for pattern, base in (
+        (r"\bCO ?PET?\b|\bCPE\b", "COPE"),
+        (r"\bPCTG\b", "PCTG"),
+        (r"\bPEBA|\bTPU|\bTPEE?\b|\bTPC\b|\bTPI\b|\bFLEX|\bPCL\b", "TPU"),
+        (r"\b(?:PEI|PEEK|PEKK|PES|PPSU|PPS|PSU|PI)(?:\b|\d)", "HIGH_TEMP"),
+        (r"\bPET", "PETG"),
+        (r"\bPC(?:\b|CF|GF)", "PC"),
+        (r"\bPPA", "PPA"),
+        (r"\b(?:PA(?:\d+|HT)?|NYLON)(?:\b|CF|GF)", "PA"),
+        (r"\bPP(?:\b|\+|CF|GF|PLUS)", "PP"),
+        (r"\bPE(?:\b|CF|GF)", "PE"),
+        (r"\bHIPS\b", "HIPS"),
+        (r"\bABS", "ABS"),
+        (r"\bASA", "ASA"),
+        (r"\bEVA\b", "EVA"),
+        (r"\bBVOH\b", "BVOH"),
+        (r"\bPV[AB]\b", "PVA"),
+        (r"\bPHA\b", "PHA"),
+        (r"\bSBS\b", "SBS"),
+        (r"PLA|\bSILK\b|\bMATTE\b|\bPOM\b|\bPVDF\b", "PLA"),
     )
+)
 
-    result = await db.execute(query)
-    mapping = result.scalar_one_or_none()
 
-    if mapping and mapping.orcaslicer_preset and mapping.orcaslicer_preset.strip():
-        preset = mapping.orcaslicer_preset.strip()
-        logger.debug(f"MaterialMapping found: {material_type} -> {preset} (priority: {mapping.priority.value})")
-        return preset
-    if mapping:
-        # Пустой orcaslicer_preset дал бы неразрешимый inherits в экспорте — игнорируем маппинг
-        # и падаем в системный generic ниже (для не-плагинного/ручного импорта бэкенд — последняя защита).
-        logger.warning(
-            f"MaterialMapping for '{material_type}' has empty orcaslicer_preset — "
-            "ignoring and falling back to base mapping"
-        )
+def _parent_for_base(base: str, material: str) -> str:
+    cf = bool(_CF.search(material))
+    gf = bool(_GF.search(material))
+    if base == "PLA":
+        if cf:
+            return "Generic PLA-CF @System"
+        if re.search(r"\bSILK", material):
+            return "Generic PLA Silk @System"
+        if re.search(r"\bMATTE", material):
+            return "Generic PLA Matte @System"
+        if re.search(r"\bHS\b|HIGH ?SPEED", material):
+            return "Generic PLA High Speed @System"
+        return "Generic PLA @System"
+    if base == "PETG":
+        if cf:
+            return "Generic PETG-CF @System"
+        if re.search(r"\bHF\b|HF\b", material):
+            return "Generic PETG HF @System"
+        return "Generic PETG @System"
+    if base == "PA":
+        return "Generic PA-CF @System" if cf else "Generic PA @System"
+    if base == "PPA":
+        if cf:
+            return "Generic PPA-CF @System"
+        return "Generic PPA-GF @System" if gf else "Generic PA @System"
+    if base == "PP":
+        if cf:
+            return "Generic PP-CF @System"
+        return "Generic PP-GF @System" if gf else "Generic PP @System"
+    if base == "PE":
+        return "Generic PE-CF @System" if cf else "Generic PE @System"
+    if base == "HIGH_TEMP":
+        return "Generic PC @System"
+    if base == "COPE":
+        return "Generic CoPE @System"
+    return f"Generic {base} @System"
 
-    # 2. Проверяем базовый маппинг
-    if material_type_upper in BASE_MATERIAL_MAP:
-        logger.debug(f"Base mapping found: {material_type} -> {BASE_MATERIAL_MAP[material_type_upper]}")
-        return BASE_MATERIAL_MAP[material_type_upper]
 
-    # 3. Умный поиск по паттернам
-    for pattern, preset in MATERIAL_PATTERNS:
-        if re.search(pattern, material_type):
-            logger.info(f"Pattern match: {material_type} -> {preset} (pattern: {pattern})")
-            return preset
-
-    # 3.5. Умный поиск базового типа (например, PP+ → PP → Generic PLA)
-    # Убираем модификаторы типа +, PRO, MAX, CF, GF и ищем базовый тип
-    # Основано на docs/ORCASLICER_FILAMENT_TYPES.md
-    base_types_map = {
-        "PLA": "Generic PLA @System",
-        "ABS": "Generic ABS @System",
-        "PETG": "Generic PETG @System",
-        "PET": "Generic PETG @System",
-        "TPU": "Generic TPU @System",
-        "ASA": "Generic ASA @System",
-        "PC": "Generic PC @System",
-        "PA": "Generic PA @System",
-        "PVA": "Generic PVA @System",
-        "HIPS": "Generic ABS @System",  # HIPS → ABS
-        "PP": "Generic PLA @System",  # PP → PLA (как в документации)
-        "POM": "Generic PLA @System",  # POM → PLA (как в документации)
-        "PE": "Generic PLA @System",  # PE → PLA
-        "PEI": "Generic PC @System",  # PEI → PC (высокотемпературный)
-        "PEEK": "Generic PC @System",  # PEEK → PC (высокотемпературный)
-        "PEKK": "Generic PC @System",  # PEKK → PC (высокотемпературный)
-        "PES": "Generic PC @System",  # PES → PC (высокотемпературный)
-        "PPS": "Generic PC @System",  # PPS → PC (высокотемпературный)
-        "PPSU": "Generic PC @System",  # PPSU → PC (высокотемпературный)
-        "PSU": "Generic PC @System",  # PSU → PC (высокотемпературный)
-        "PI": "Generic PC @System",  # PI → PC (высокотемпературный)
-        "FLEX": "Generic TPU @System",  # FLEX → TPU (гибкий)
-        "EVA": "Generic TPU @System",  # EVA → TPU (гибкий)
-        "PCL": "Generic TPU @System",  # PCL → TPU (гибкий)
-        "TPI": "Generic TPU @System",  # TPI → TPU (гибкий)
-        "BVOH": "Generic PVA @System",  # BVOH → PVA (растворимый)
-        "PVB": "Generic PVA @System",  # PVB → PVA (растворимый)
-        "PPA": "Generic PA @System",  # PPA → PA
-        "PCTG": "Generic PETG @System",  # PCTG → PETG (близкий по свойствам)
-        "PHA": "Generic PLA @System",  # PHA → PLA (близкий по свойствам)
-        "PVDF": "Generic PLA @System",  # PVDF → PLA (по умолчанию)
-        "SBS": "Generic PLA @System",  # SBS → PLA (по умолчанию)
-    }
-
-    for base_type, preset in base_types_map.items():
-        # Ищем базовый тип в начале или после дефиса/пробела
-        # Учитываем модификаторы: +, PRO, MAX, PLUS, ZERO, CF, GF, -AERO, -PBT, и числа (PA6, PA11, PA12)
-        pattern = rf"(?i)\b{re.escape(base_type)}(?:\+|PRO|MAX|PLUS|ZERO|-\w+|\d+)?\b"
-        if re.search(pattern, material_type_upper):
-            logger.info(f"Base type match: {material_type} -> {base_type} -> {preset}")
-            return preset
-
-    # 4. Fallback на fdm_filament_common (универсальный пресет для неизвестных типов)
+def orca_parent_for_material(material_type: str | None, log_unknown: bool = True) -> str:
+    """The OrcaSlicer library preset a filament of this material inherits from."""
+    material = re.sub(r"[\s\-_/.,]+", " ", (material_type or "").upper()).strip()
+    for pattern, base in _BASE_RULES:
+        if pattern.search(material):
+            return _parent_for_base(base, material)
     if log_unknown:
-        logger.warning(f"Unknown material type: '{material_type}', using fallback 'fdm_filament_common'")
-
-    return "fdm_filament_common"
-
-
-async def create_material_mapping(
-    material_type: str,
-    orcaslicer_preset: str,
-    db: AsyncSession,
-    priority: MaterialMappingPriority = MaterialMappingPriority.MANUAL,
-    brand_id: int | None = None,
-    description: str | None = None,
-) -> MaterialMapping:
-    """
-    Создать новый маппинг материала.
-
-    Args:
-        material_type: Тип материала
-        orcaslicer_preset: Системный пресет OrcaSlicer
-        db: AsyncSession
-        priority: Приоритет маппинга
-        brand_id: ID бренда (если от производителя)
-        description: Описание маппинга
-
-    Returns:
-        MaterialMapping: Созданный маппинг
-    """
-    mapping = MaterialMapping(
-        material_type=material_type.upper().strip(),
-        orcaslicer_preset=orcaslicer_preset,
-        priority=priority,
-        brand_id=brand_id,
-        description=description,
-        active=True,
-    )
-
-    db.add(mapping)
-    await db.commit()
-    await db.refresh(mapping)
-
-    logger.info(f"Created MaterialMapping: {material_type} -> {orcaslicer_preset} (priority: {priority.value})")
-    return mapping
-
+        logger.warning(
+            "Unknown material type %r, using parent %r", material_type, UNKNOWN_MATERIAL_PARENT
+        )
+    return UNKNOWN_MATERIAL_PARENT

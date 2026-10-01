@@ -28,7 +28,7 @@ from app.core.errors import (
     raise_error,
 )
 from app.core.limiter import limiter
-from app.core.utils import escape_like, like_pattern
+from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
@@ -831,12 +831,6 @@ async def create_filament(
 ) -> FilamentResponse:
     """Создать материал."""
     # Check if brand exists
-    from app.models.material_mapping import MaterialMappingPriority
-    from app.services.material_mapping_service import (
-        create_material_mapping,
-        get_material_preset,
-    )
-
     brand_result = await db.execute(select(Brand).where(Brand.id == data.brand_id))
     brand = brand_result.scalar_one_or_none()
     if not brand:
@@ -1069,46 +1063,6 @@ async def create_filament(
 
     await db.commit()
     await db.refresh(filament)
-
-    # Автоматически создаём маппинг для нового типа материала, если его ещё нет
-    material_type_upper = data.material_type.upper().strip()
-
-    # Проверяем, есть ли уже маппинг для этого типа
-    from app.models.material_mapping import MaterialMapping
-
-    existing_mapping = await db.execute(
-        select(MaterialMapping).where(
-            MaterialMapping.material_type.ilike(escape_like(material_type_upper)),
-            MaterialMapping.active == True,
-        )
-    )
-
-    if not existing_mapping.scalar_one_or_none():
-        # Маппинга нет - определяем базовый пресет через сервис
-        base_preset = await get_material_preset(
-            data.material_type,
-            db,
-            log_unknown=True,
-        )
-
-        # Создаём автоматический маппинг
-        try:
-            await create_material_mapping(
-                material_type=data.material_type,
-                orcaslicer_preset=base_preset,
-                db=db,
-                priority=MaterialMappingPriority.AUTOMATIC,
-                brand_id=None,  # Автоматический маппинг, не от производителя
-                description=f"Автоматически создан для материала '{data.material_type}' → '{base_preset}'",
-            )
-        except Exception as e:
-            # Логируем ошибку, но не блокируем создание филамента
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                f"Failed to create automatic material mapping for '{data.material_type}': {e}"
-            )
 
     return FilamentResponse.model_validate(filament)
 

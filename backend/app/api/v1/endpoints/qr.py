@@ -176,7 +176,8 @@ async def get_qr_preset(
 
     # Находим официальный пресет
     from app.models.preset import Preset
-    from app.services.orcaslicer_exporter import export_preset_to_orcaslicer
+    from app.services.orcaslicer_exporter import preset_to_orcaslicer_json
+    from app.services.preset_publication import public_orca_settings
 
     preset_result = await db.execute(
         select(Preset)
@@ -189,10 +190,12 @@ async def get_qr_preset(
     if not preset:
         raise_error(404, ERR_OFFICIAL_PRESET_NOT_FOUND)
 
-    # Экспортируем в формат OrcaSlicer
-    preset_json = await export_preset_to_orcaslicer(preset, db)
-
-    return preset_json
+    await db.refresh(filament, attribute_names=["brand"])
+    return await preset_to_orcaslicer_json(
+        preset,
+        filament,
+        settings_override=public_orca_settings(preset.orcaslicer_settings),
+    )
 
 
 @router.post("/{short_code}/claim", response_model=ManufacturerQrClaimResponse)

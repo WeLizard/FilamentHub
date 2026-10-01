@@ -1180,7 +1180,6 @@ async def export_preset_json(
         profile_dict = await preset_to_orcaslicer_json(
             preset,
             preset.filament,
-            db,
             target_profiles=target_profiles,
             settings_override=settings_override,
             structured_override=structured_override,

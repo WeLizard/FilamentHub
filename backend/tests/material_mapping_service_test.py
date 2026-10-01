@@ -1,63 +1,72 @@
-"""Tests for get_material_preset — the source of the exported `inherits` parent.
+"""The OrcaSlicer parent of an exported filament, chosen from its material.
 
-The invariant that matters for Orca: the returned name must be non-empty and
-resolvable to a system preset, otherwise the exported filament profile either
-loads without inheriting a base (empty inherits) or is skipped entirely
-(non-empty but unresolvable). The backend is the last line of defence for the
-non-plugin path (a user who downloads the JSON and imports it by hand).
+A parent that is not an OrcaSlicer library preset either fails to resolve on a
+receiver's machine or restricts the preset to a vendor's printers; both hide
+the synchronized preset.
 """
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.material_mapping import MaterialMapping, MaterialMappingPriority
-from app.services.material_mapping_service import get_material_preset
-
-
-@pytest.mark.asyncio
-async def test_known_base_type_maps_to_system_generic(db_session: AsyncSession):
-    assert await get_material_preset("PLA", db_session) == "Generic PLA @System"
+from app.services.material_mapping_service import (
+    ORCA_LIBRARY_PARENTS,
+    UNKNOWN_MATERIAL_PARENT,
+    orca_parent_for_material,
+)
 
 
-@pytest.mark.asyncio
-async def test_unknown_type_falls_back_to_common(db_session: AsyncSession):
-    assert await get_material_preset("NOPE-9000", db_session) == "fdm_filament_common"
+@pytest.mark.parametrize(
+    ("material", "parent"),
+    [
+        # Materials of the production catalogue keep their parent.
+        ("PLA", "Generic PLA @System"),
+        ("PLA+", "Generic PLA @System"),
+        ("PETG", "Generic PETG @System"),
+        ("PET-GF", "Generic PETG @System"),
+        ("ABS", "Generic ABS @System"),
+        ("ABS-CF", "Generic ABS @System"),
+        ("ABS-GF", "Generic ABS @System"),
+        ("PA", "Generic PA @System"),
+        ("TPU", "Generic TPU @System"),
+        # A variant the library knows gets that library preset.
+        ("PLA-CF", "Generic PLA-CF @System"),
+        ("CF PLA", "Generic PLA-CF @System"),
+        ("Silk PLA", "Generic PLA Silk @System"),
+        ("PLA Matte", "Generic PLA Matte @System"),
+        ("PETG-HF", "Generic PETG HF @System"),
+        ("PETG-CF", "Generic PETG-CF @System"),
+        ("PA12-CF", "Generic PA-CF @System"),
+        ("PPA-GF", "Generic PPA-GF @System"),
+        ("PP+", "Generic PP @System"),
+        ("HIPS", "Generic HIPS @System"),
+        ("PCTG", "Generic PCTG @System"),
+        # Names that used to fall through to no parent at all.
+        ("CPE", "Generic CoPE @System"),
+        ("CoPET", "Generic CoPE @System"),
+        ("HTPLA", "Generic PLA @System"),
+        ("TPU95A", "Generic TPU @System"),
+        ("TPE", "Generic TPU @System"),
+        ("PEBA", "Generic TPU @System"),
+        # Blends follow one rule however they are written.
+        ("PC-ABS", "Generic PC @System"),
+        ("PC/ABS", "Generic PC @System"),
+        ("PEI-9085", "Generic PC @System"),
+        # Nothing to go on: an explicit PLA parent, never none.
+        ("PMMA", UNKNOWN_MATERIAL_PARENT),
+        ("", UNKNOWN_MATERIAL_PARENT),
+        (None, UNKNOWN_MATERIAL_PARENT),
+    ],
+)
+def test_material_selects_the_closest_library_parent(material, parent):
+    assert orca_parent_for_material(material, log_unknown=False) == parent
 
 
-@pytest.mark.asyncio
-async def test_active_mapping_wins(db_session: AsyncSession):
-    db_session.add(
-        MaterialMapping(
-            material_type="PLA",
-            orcaslicer_preset="Bambu PLA Basic @BBL X1C",
-            priority=MaterialMappingPriority.BRAND,
-            active=True,
-        )
-    )
-    await db_session.commit()
-
-    assert await get_material_preset("PLA", db_session) == "Bambu PLA Basic @BBL X1C"
-
-
-@pytest.mark.asyncio
-async def test_empty_mapping_is_ignored_and_falls_back(db_session: AsyncSession):
-    # An admin-created mapping with a blank preset must not leak an empty inherits;
-    # it is ignored and the known system generic is used instead.
-    db_session.add(
-        MaterialMapping(
-            material_type="PLA",
-            orcaslicer_preset="   ",
-            priority=MaterialMappingPriority.MANUAL,
-            active=True,
-        )
-    )
-    await db_session.commit()
-
-    assert await get_material_preset("PLA", db_session) == "Generic PLA @System"
-
-
-@pytest.mark.asyncio
-async def test_result_is_always_non_empty(db_session: AsyncSession):
-    for material in ("PLA", "PETG-CF", "PA6", "totally-unknown", ""):
-        result = await get_material_preset(material, db_session, log_unknown=False)
-        assert result and result.strip(), f"empty inherits for {material!r}"
+def test_every_parent_is_an_orca_library_preset():
+    materials = [
+        "PLA", "PLA-CF", "PLA Silk", "PLA Matte", "PLA HS", "PETG", "PETG HF",
+        "PETG-CF", "PET", "PCTG", "CPE", "ABS", "ASA", "HIPS", "PC", "PEEK", "PA",
+        "PA6-GF", "PA-CF", "PPA", "PPA-CF", "PPA-GF", "PP", "PP-CF", "PP-GF", "PE",
+        "PE-CF", "TPU", "EVA", "PVA", "PVB", "BVOH", "PHA", "SBS", "POM", "PVDF",
+        "WOOD",
+    ]
+    parents = {orca_parent_for_material(m, log_unknown=False) for m in materials}
+    assert parents <= ORCA_LIBRARY_PARENTS, parents - ORCA_LIBRARY_PARENTS

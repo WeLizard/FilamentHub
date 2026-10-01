@@ -674,3 +674,34 @@ def test_print_shops_can_take_the_code_as_vector():
     assert svg.startswith("<?xml")
     assert "<svg" in svg
     assert "<path" in svg
+
+
+@pytest.mark.asyncio
+async def test_qr_preset_downloads_the_official_profile_without_private_data(
+    client: AsyncClient, db_session: AsyncSession
+):
+    filament = await _create_verified_filament(db_session)
+    db_session.add(Preset(
+        filament_id=filament.id,
+        name="Official PLA",
+        extruder_temp=210.0,
+        bed_temp=60.0,
+        is_official=True,
+        active=True,
+        moderation_status=PresetModerationStatus.APPROVED,
+        orcaslicer_settings={
+            "inherits": "Bambu PLA Basic @BBL X1",
+            "pressure_advance": ["0.02"],
+            "filament_notes": ["internal note"],
+        },
+    ))
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/qr/{filament.qr_code}/preset")
+
+    assert response.status_code == 200
+    profile = response.json()
+    assert profile["inherits"] == "Generic PLA @System"
+    assert profile["compatible_printers"] == []
+    assert profile["pressure_advance"] == ["0.02"]
+    assert "filament_notes" not in profile
