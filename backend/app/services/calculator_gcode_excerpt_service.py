@@ -17,10 +17,6 @@ from fastapi import Request
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import parse_options_header
 
-from app.services.calculator_gcode_artifact_service import (
-    ArtifactUploadError,
-    normalize_artifact_file_name,
-)
 from app.services.calculator_gcode_parser import (
     MAX_GCODE_3MF_ENTRIES,
     MAX_GCODE_3MF_PLATES,
@@ -242,12 +238,17 @@ async def read_gcode_excerpt_upload(request: Request) -> GcodeExcerptUpload:
     return _validated_upload(reader)
 
 
+def _display_file_name(file_name: str) -> str:
+    """Keep the display name while refusing paths and control characters."""
+    normalized = file_name.replace("\\", "/").split("/")[-1].strip()
+    if not normalized or len(normalized) > 255 or any(ord(char) < 32 for char in normalized):
+        raise GcodeExcerptInvalidError
+    return normalized
+
+
 def _validated_upload(reader: _ExcerptFormReader) -> GcodeExcerptUpload:
     fields = {name: value for name, value in reader.fields.items() if name in _FIELD_NAMES}
-    try:
-        file_name = normalize_artifact_file_name(fields.get("file_name", ""))
-    except ArtifactUploadError as exc:
-        raise GcodeExcerptInvalidError from exc
+    file_name = _display_file_name(fields.get("file_name", ""))
     if not is_supported_gcode_filename(file_name):
         raise GcodeExcerptInvalidError
 
