@@ -633,8 +633,9 @@ function Confirm-OwnerTestedCandidate {
     Write-Host "`n$Name — пакет для выпуска:" -ForegroundColor Cyan
     Write-Host $WheelPath
     Write-Host "SHA-256 проверен автоматически: $Sha256" -ForegroundColor DarkGray
-    Write-Host 'Этот пакет проверен в приложении и принят? Y / Д — да; любая другая клавиша — пропустить.'
-    return (Read-OwnerApprovalKey) -cin @('y', 'Y', 'д', 'Д')
+    Write-Host 'Этот пакет проверен в приложении и принят? Y / Д — да (в любой раскладке); любая другая клавиша — пропустить.'
+    # Y and Д are meant as keys, not letters: in the other layout the same keys give Н and L.
+    return (Read-OwnerApprovalKey) -cin @('y', 'Y', 'н', 'Н', 'д', 'Д', 'l', 'L')
 }
 
 function Assert-OwnerApprovedCandidates {

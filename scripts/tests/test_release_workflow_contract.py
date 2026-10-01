@@ -114,6 +114,8 @@ function Read-OwnerApprovalKey {
         'malformed_approval' { return '?' }
         'empty_approval' { return [char]13 }
         'russian_approval' { return 'Д' }
+        'other_layout_y_approval' { return 'н' }
+        'other_layout_d_approval' { return 'L' }
         'changed_during_approval' {
             [IO.File]::WriteAllText(
                 (Join-Path $env:RELEASE_FIXTURES 'filamenthub-1.2.3-py3-none-any.whl'),
@@ -290,7 +292,9 @@ def test_owner_preflight_rejects_missing_or_changed_approval(tmp_path, scenario)
     assert result["waits"] == 0
 
 
-@pytest.mark.parametrize("scenario", ["approved", "russian_approval", "noop"])
+@pytest.mark.parametrize("scenario", [
+    "approved", "russian_approval", "other_layout_y_approval", "other_layout_d_approval", "noop",
+])
 def test_release_menu_computes_hashes_and_requests_one_key_for_actionable_plans(tmp_path, scenario):
     result = run_offline_publication(tmp_path, "menu", scenario)
 
