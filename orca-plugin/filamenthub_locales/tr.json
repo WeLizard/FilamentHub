@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Yerel bağlantı hâlâ engelli. Yazıcı veya hesap verileri değiştirilmedi.",
   "sliceSettingsTitle": "FilamentHub — dilimlenmiş dosyalar",
   "sliceSettingsPurpose": "Yazdırma maliyetlerini hesaplamak için dışa aktarılan G-code dosyalarını FilamentHub'da erişilebilir tutun.",
-  "sliceSettingsLocal": "Etkinleştirildiğinde eklenti, OrcaSlicer tarafından oluşturulan G-code'u okur, FilamentHub profillerini tanımlayan yorumlar ekler ve sınırlı bir yerel kopya tutar. Yazdırma hareketleri değiştirilmez.",
-  "sliceSettingsRemote": "Seçilen FilamentHub sunucusu dosya adını, yazıcı modelini, yazıcı ile yazdırma profilinin adlarını ve tanımlayıcılarını, slicer sürümünü, dışa aktarma hedef türünü ve bu dilimlemeyi bu bilgisayara bağlayan tanımlayıcıları alır. G-code'un tamamı yalnızca bir hesaplama istediğinizde yüklenir.",
+  "sliceSettingsStamp": "Bu seçenek etkin olsun ya da olmasın, eklenti bu eklenti seçiliyken oluşturulan G-code'a kullanılan FilamentHub profillerini tanımlayan yorumlar ekler. Yorumlar yazdırma hareketlerini değiştirmez ve seçenek etkin değilse hiçbir yere gönderilmez.",
+  "sliceSettingsLocal": "Etkinleştirildiğinde eklenti, OrcaSlicer tarafından oluşturulan G-code'un sınırlı bir yerel kopyasını tutar.",
+  "sliceSettingsRemote": "Seçilen FilamentHub sunucusu dosya adını, yazıcı modelini, yazıcı ile yazdırma profilinin adlarını ve tanımlayıcılarını, slicer sürümünü, dışa aktarma hedef türünü ve bu dilimlemeyi bu bilgisayara bağlayan tanımlayıcıları alır. G-code'un tamamı bu bilgisayardan hiç ayrılmaz; bir hesaplama yalnızca özetini gönderir (dosyanın başı ve sonu ile burada hesaplanan parça başına toplamlar).",
   "sliceSettingsEnable": "Dilimlenmiş dosyaları kaydet ve ayrıntılarını FilamentHub'a gönder",
   "sliceReportingDisabled": "Dilimleme raporlaması kapalı. Ne yaptığını okumak ve etkinleştirmek için bu dilimleme eklentisinin ayarlarını açın."
 }

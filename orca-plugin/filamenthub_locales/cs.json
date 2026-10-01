@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Místní připojení je stále blokováno. Žádná data tiskárny ani účtu nebyla změněna.",
   "sliceSettingsTitle": "FilamentHub — soubory po slicování",
   "sliceSettingsPurpose": "Uchovávejte exportované soubory G-code ve FilamentHubu pro výpočty nákladů tisku.",
-  "sliceSettingsLocal": "Je-li tato možnost zapnutá, plugin čte G-code vytvořený OrcaSlicerem, přidává komentáře s identifikací profilů FilamentHub a uchovává omezenou místní kopii. Pohyby při tisku se nemění.",
-  "sliceSettingsRemote": "Vybraný server FilamentHub obdrží název souboru, model tiskárny, názvy a identifikátory tiskárny a tiskového profilu, verzi sliceru, typ cíle exportu a identifikátory propojující tento soubor s tímto počítačem. Celý G-code se nahraje pouze na vyžádání výpočtu.",
+  "sliceSettingsStamp": "Bez ohledu na to, zda je tato možnost zapnutá, plugin přidává do G-code vytvořeného s tímto vybraným pluginem komentáře identifikující použité profily FilamentHub. Komentáře nemění pohyby při tisku a nikam se neodesílají, pokud není tato možnost zapnutá.",
+  "sliceSettingsLocal": "Je-li tato možnost zapnutá, plugin uchovává omezenou místní kopii G-code vytvořeného OrcaSlicerem.",
+  "sliceSettingsRemote": "Vybraný server FilamentHub obdrží název souboru, model tiskárny, názvy a identifikátory tiskárny a tiskového profilu, verzi sliceru, typ cíle exportu a identifikátory propojující tento soubor s tímto počítačem. Celý G-code tento počítač nikdy neopustí; výpočet odešle jen souhrn (začátek a konec souboru a součty po dílech spočítané zde).",
   "sliceSettingsEnable": "Ukládat soubory po slicování a odesílat jejich podrobnosti do FilamentHubu",
   "sliceReportingDisabled": "Hlášení o slicování je vypnuté. Otevřete nastavení tohoto slicovacího pluginu, přečtěte si, co dělá, a zapněte ho."
 }

@@ -259,8 +259,9 @@ removes only entries acknowledged after a successful response. If the page is
 signed out, closed, or temporarily offline, the queue survives and is retried
 when the page becomes available. This keeps the audited report endpoint out of
 plugin activation and the slicing worker, so it cannot open the native HTTP
-permission dialog or block either lifecycle. The full G-code is uploaded only
-when a calculation is explicitly requested. Reporting failures never fail
+permission dialog or block either lifecycle. The full G-code never leaves the
+computer: a calculation sends only its summary (the start and end of the file
+and per-part totals computed locally). Reporting failures never fail
 G-code export or printer upload, and the reporter never probes the system
 temporary directory.
 

@@ -28,7 +28,7 @@ Printer connections run from OrcaSlicer on your computer, while your FilamentHub
 
 - FilamentHub manages only the preset copies it creates. System, project, third-party, and other user presets are left untouched.
 - Printer access codes and API keys stay on your computer. Connection addresses can be synchronized to your FilamentHub account when you enable **Store printer addresses in FilamentHub**, and may then appear on the site.
-- Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations; the full G-code is uploaded only when you request a calculation.
+- Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations. The full G-code never leaves your computer; a calculation sends only its summary (the start and end of the file and per-part totals computed locally).
 - Network discovery, profile recovery, and changes to printer material systems start only from an explicit action.
 - Bambu usage calculated from G-code is marked as an estimate, so it is never presented as a scale measurement.
 

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.2"
+# version = "0.2.3"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -62,8 +62,10 @@ the account access/refresh credentials never cross the plugin bridge. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
 
+import codecs
 import csv
 import ftplib
+import gzip
 import io
 import math
 import posixpath
@@ -93,6 +95,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
@@ -415,7 +418,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.2"
+PLUGIN_VERSION = "0.2.3"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -3600,6 +3603,10 @@ def http_post_file(path, token, file_path, field="file", file_name=""):
     )
     tail = crlf + "--" + boundary + "--" + crlf
     body = head.encode("utf-8") + content + tail.encode("utf-8")
+    return _send_multipart(path, token, boundary, body)
+
+
+def _send_multipart(path, token, boundary, body, max_response_bytes=MAX_RESPONSE_BYTES):
     headers = {
         "Accept": "application/json",
         "Content-Type": "multipart/form-data; boundary=" + boundary,
@@ -3610,11 +3617,646 @@ def http_post_file(path, token, file_path, field="file", file_name=""):
     req = urllib.request.Request(API_BASE + path, data=body, headers=headers, method="POST")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT * 4) as resp:
-            return resp.getcode(), _read_response_limited(resp)
+            payload = resp.read(max_response_bytes + 1)
+            if len(payload) > max_response_bytes:
+                raise ValueError("FilamentHub response exceeds %d bytes" % max_response_bytes)
+            return resp.getcode(), payload
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
     except (OSError, ValueError, urllib.error.URLError) as exc:
         return 0, str(exc).encode("utf-8", errors="replace")
+
+
+# --------------------------------------------------------------------------- #
+# Slice excerpts. The site needs the slicer's summary and configuration at the
+# ends of a G-code file (or a few metadata entries of a sliced 3MF) plus the
+# totals of every move. All of it is cut out here, so the whole file, often
+# hundreds of megabytes, never leaves this computer.
+#
+# The cut mirrors frontend/src/utils/gcodeExcerpt.ts and the contract read by
+# backend/app/services/calculator_gcode_excerpt_service.py.
+# --------------------------------------------------------------------------- #
+_MIB = 1024 * 1024
+_SLICE_WHOLE_BYTES = 5 * _MIB
+_SLICE_HEAD_BYTES = 1 * _MIB
+_SLICE_TAIL_BYTES = 4 * _MIB
+_SLICE_REQUEST_BYTES = 24 * _MIB
+_SLICE_REQUEST_OVERHEAD = 256 * 1024 + 64 * 1024
+_SLICE_READ_CHUNK = 1 * _MIB
+_SLICE_DECOMPRESSED_LIMIT = 2048 * _MIB
+_SLICE_RESPONSE_BYTES = 16 * _MIB
+_SLICE_SUPPORTED_NAMES = (".gcode.3mf", ".gcode.gz", ".gcode", ".txt")
+_SLICE_ENTRY_RULES = (
+    (re.compile(r"metadata/slice_info\.config"), 2 * _MIB, False),
+    (re.compile(r"metadata/project_settings\.config"), 4 * _MIB, False),
+    (re.compile(r"metadata/model_settings\.config"), 1 * _MIB, False),
+    (re.compile(r"metadata/plate_\d{1,6}\.json"), 1 * _MIB, False),
+    (re.compile(r"metadata/plate_\d{1,6}(?:_small)?\.png"), 8 * _MIB, True),
+)
+_SLICE_PLATE_GCODE_RE = re.compile(r"metadata/plate_(\d{1,6})\.gcode")
+_SLICE_SLICE_INFO_PATH = "metadata/slice_info.config"
+_SLICE_ERR_INVALID = "ERR_GCODE_EXCERPT_INVALID"
+_SLICE_ERR_TOO_LARGE = "ERR_GCODE_EXCERPT_TOO_LARGE"
+_SLICE_ERR_UNSUPPORTED = "ERR_GCODE_UNSUPPORTED_FILE"
+
+
+class SliceExcerptError(Exception):
+    """The slice cannot be cut into a request the site accepts; `code` is an apiErrors key."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+class SliceToolpathLimit(Exception):
+    """The file is valid G-code, but its summary would not fit the contract with the site."""
+
+
+# Everything `str.splitlines` ends a line on, so a line is the same line here as on the site.
+_SLICE_LINE_BREAKS = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85  ")
+_SLICE_SUPPORT_ROLE_RE = re.compile(
+    r"^(?:TYPE|FEATURE):\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE
+)
+_SLICE_LABEL_START_RE = re.compile(r"^start printing object, unique label id: *([0-9]+)$")
+_SLICE_LABEL_STOP_RE = re.compile(r"^stop printing object, unique label id: *([0-9]+)$")
+_SLICE_LABEL_NAME_RE = re.compile(r"^stop printing object (.+) id:([0-9]+) copy ([0-9]+)$")
+_SLICE_OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
+_SLICE_EXCLUDE_START_RE = re.compile(r"^EXCLUDE_OBJECT_START\b.*?\bNAME=([^\s]+)", re.IGNORECASE)
+_SLICE_EXCLUDE_END_RE = re.compile(r"^EXCLUDE_OBJECT_END\b", re.IGNORECASE)
+_SLICE_NUMBER = r"-?(?:\d+(?:\.\d*)?|\.\d+)"
+_SLICE_MOVE_RE = re.compile(r"^(?:G0|G1|G2|G3)\b.*?\bE(" + _SLICE_NUMBER + ")", re.IGNORECASE)
+_SLICE_RESET_RE = re.compile(r"^G92\b.*?\bE(" + _SLICE_NUMBER + ")", re.IGNORECASE)
+_SLICE_TOOL_RE = re.compile(r"^T(\d+)\b", re.IGNORECASE)
+_SLICE_TOOLPATH_VERSION = 1
+_SLICE_TOOLPATH_TOOLS = 256
+_SLICE_TOOLPATH_ROLES = 64
+_SLICE_TOOLPATH_OBJECTS = 1024
+_SLICE_TOOLPATH_NAME_CHARS = 200
+_SLICE_TOOLPATH_TOOL_INDEX = 65535
+_SLICE_TOOLPATH_LINE_CHARS = 4 * _MIB
+_SLICE_TOOLPATH_PAYLOAD_BYTES = 256 * 1024
+
+
+class SliceToolpathWalker:
+    """Totals of every move of a sliced file, in constant memory.
+
+    The line walk is `ToolpathEvidence.consume` of
+    backend/app/services/calculator_gcode_parser.py, which the plugin cannot
+    import. tests/test_slicing_storage.py runs both over the shared parity
+    fixtures, so a change on one side that is not made on the other fails.
+    The limits are the ones the site enforces on the summary it receives.
+    """
+
+    def __init__(self):
+        self._relative_extrusion = False
+        self._current_tool = 0
+        self._observed_tool = None
+        self._observed_toolchange_count = 0
+        self._current_role = "unclassified"
+        self._current_object = None
+        self._current_label = None
+        self._last_absolute_e = {}
+        self._retraction_debt = {}
+        self._by_tool_role = {}
+        self._by_tool_object = {}
+        self._by_tool_label = {}
+        self._object_names = {}
+        self._support_roles = {}
+        self._labels = {}
+        self._label_names = {}
+        self._carry = ""
+
+    def push(self, text):
+        """Feed the next piece of text; pieces may end anywhere, even inside a line end."""
+        if self._carry:
+            text = self._carry + text
+            self._carry = ""
+        if not text:
+            return
+        # A "\r" at the edge may be half of "\r\n"; the next piece settles it.
+        held = ""
+        if text.endswith("\r"):
+            text, held = text[:-1], "\r"
+        lines = text.splitlines()
+        if text and text[-1] not in _SLICE_LINE_BREAKS:
+            self._carry = lines.pop() + held
+            if len(self._carry) > _SLICE_TOOLPATH_LINE_CHARS:
+                raise SliceToolpathLimit("line")
+        else:
+            self._carry = held
+        consume = self._consume
+        for line in lines:
+            consume(line.strip())
+
+    def finish(self):
+        """Read what is left and return the summary the site expects."""
+        for line in self._carry.splitlines():
+            self._consume(line.strip())
+        self._carry = ""
+        self._settle_labels()
+        return {
+            "version": _SLICE_TOOLPATH_VERSION,
+            "extrusion_by_tool_role": {
+                str(tool): dict(self._by_tool_role[tool]) for tool in sorted(self._by_tool_role)
+            },
+            "extrusion_by_tool_object": {
+                str(tool): dict(self._by_tool_object[tool])
+                for tool in sorted(self._by_tool_object)
+            },
+            "observed_tool": self._observed_tool,
+            "observed_toolchange_count": self._observed_toolchange_count,
+            "object_names": list(self._object_names),
+            "support_roles": list(self._support_roles),
+        }
+
+    @staticmethod
+    def _checked_name(name):
+        if len(name) > _SLICE_TOOLPATH_NAME_CHARS:
+            raise SliceToolpathLimit("name")
+        return name
+
+    @staticmethod
+    def _add(amounts, name, consumed, limit, reason):
+        previous = amounts.get(name)
+        if previous is None:
+            if len(amounts) >= limit:
+                raise SliceToolpathLimit(reason)
+            SliceToolpathWalker._checked_name(name)
+            previous = 0.0
+        total = previous + consumed
+        if total == math.inf:
+            raise SliceToolpathLimit("value")
+        amounts[name] = total
+
+    def _add_object_name(self, name):
+        if name in self._object_names:
+            return
+        if len(self._object_names) >= _SLICE_TOOLPATH_OBJECTS:
+            raise SliceToolpathLimit("objects")
+        self._object_names[self._checked_name(name)] = None
+
+    def _consume(self, stripped):
+        if not stripped:
+            return
+
+        if stripped[0] == ";":
+            comment = stripped[1:].lstrip()
+            first = comment[:1]
+            if first in ("T", "t"):
+                if comment[:5].lower() == "type:":
+                    self._set_role(comment, 5)
+            elif first in ("F", "f"):
+                if comment[:8].lower() == "feature:":
+                    self._set_role(comment, 8)
+            elif first == "s":
+                self._consume_label_marker(comment)
+            return
+
+        if ";" in stripped:
+            command = stripped.split(";", 1)[0].strip()
+            if not command:
+                return
+        else:
+            command = stripped
+
+        head = command[0]
+        if head in "Mm":
+            upper_command = command.upper()
+            if upper_command == "M82":
+                self._relative_extrusion = False
+            elif upper_command == "M83":
+                self._relative_extrusion = True
+            return
+
+        if head in "Ee":
+            start_match = _SLICE_EXCLUDE_START_RE.match(command)
+            if start_match:
+                self._current_object = start_match.group(1)
+            elif _SLICE_EXCLUDE_END_RE.match(command):
+                self._current_object = None
+            elif stripped[:21].upper() == "EXCLUDE_OBJECT_DEFINE":
+                name_match = _SLICE_OBJECT_NAME_RE.search(stripped)
+                if name_match:
+                    self._add_object_name(name_match.group(1))
+            return
+
+        if head in "Tt":
+            tool_match = _SLICE_TOOL_RE.match(command)
+            if tool_match:
+                next_tool = int(tool_match.group(1))
+                if next_tool > _SLICE_TOOLPATH_TOOL_INDEX:
+                    raise SliceToolpathLimit("tool_index")
+                if self._observed_tool is not None and next_tool != self._observed_tool:
+                    self._observed_toolchange_count += 1
+                self._observed_tool = next_tool
+                self._current_tool = next_tool
+            return
+
+        if head not in "Gg":
+            return
+
+        if command[1:3] == "92":
+            reset_match = _SLICE_RESET_RE.match(command)
+            if reset_match:
+                self._last_absolute_e[self._current_tool] = float(reset_match.group(1))
+            return
+
+        # Only a move that names an extruder axis can match; checking for the
+        # letter first keeps the regex off the bulk of a file's lines.
+        if "E" not in command and "e" not in command:
+            return
+        move_match = _SLICE_MOVE_RE.match(command)
+        if not move_match:
+            return
+
+        tool = self._current_tool
+        extrusion_value = float(move_match.group(1))
+        if self._relative_extrusion:
+            delta = extrusion_value
+        else:
+            delta = extrusion_value - self._last_absolute_e.get(tool, 0.0)
+            self._last_absolute_e[tool] = extrusion_value
+
+        debt = self._retraction_debt.get(tool, 0.0)
+        if delta < 0:
+            self._retraction_debt[tool] = debt + abs(delta)
+            return
+        if delta <= 0:
+            return
+
+        recovery = min(debt, delta)
+        self._retraction_debt[tool] = max(0.0, debt - recovery)
+        consumed = delta - recovery
+        if consumed <= 0:
+            return
+
+        roles = self._by_tool_role.get(tool)
+        if roles is None:
+            if len(self._by_tool_role) >= _SLICE_TOOLPATH_TOOLS:
+                raise SliceToolpathLimit("tools")
+            roles = self._by_tool_role[tool] = {}
+        self._add(roles, self._current_role, consumed, _SLICE_TOOLPATH_ROLES, "roles")
+        if self._current_label is not None:
+            labels = self._by_tool_label.setdefault(tool, {})
+            self._add(labels, self._current_label, consumed, _SLICE_TOOLPATH_OBJECTS, "objects")
+        elif self._current_object is not None:
+            objects = self._by_tool_object.setdefault(tool, {})
+            self._add(objects, self._current_object, consumed, _SLICE_TOOLPATH_OBJECTS, "objects")
+
+    def _set_role(self, comment, prefix_length):
+        role = comment[prefix_length:].strip().lower()
+        if not role:
+            return
+        self._current_role = role
+        if role.startswith("support"):
+            match = _SLICE_SUPPORT_ROLE_RE.match(comment)
+            if match:
+                name = match.group(1).lower()
+                if name not in self._support_roles:
+                    if len(self._support_roles) >= _SLICE_TOOLPATH_ROLES:
+                        raise SliceToolpathLimit("support_roles")
+                    self._support_roles[self._checked_name(name)] = None
+
+    def _consume_label_marker(self, comment):
+        if comment.startswith("start printing object, unique label id:"):
+            match = _SLICE_LABEL_START_RE.match(comment)
+            if match:
+                self._current_label = match.group(1).lstrip("0") or "0"
+                if self._current_label not in self._labels:
+                    if len(self._labels) >= _SLICE_TOOLPATH_OBJECTS:
+                        raise SliceToolpathLimit("objects")
+                    self._labels[self._current_label] = None
+        elif comment.startswith("stop printing object"):
+            if _SLICE_LABEL_STOP_RE.match(comment):
+                self._current_label = None
+            elif self._current_label is not None:
+                match = _SLICE_LABEL_NAME_RE.match(comment)
+                if match:
+                    # Same shape as an EXCLUDE_OBJECT name, so copies of a part group as one.
+                    self._label_names.setdefault(
+                        self._current_label,
+                        "%s_id_%s_copy_%s" % match.groups(),
+                    )
+
+    def _settle_labels(self):
+        """Fold the label-keyed counts into the object counts under the names the file gave."""
+        if not self._labels and not self._by_tool_label:
+            return
+        raw_names = {
+            label: self._label_names.get(label, "label %s" % label) for label in self._labels
+        }
+        for raw_name in raw_names.values():
+            self._add_object_name(raw_name)
+        for tool, amounts in self._by_tool_label.items():
+            objects = self._by_tool_object.setdefault(tool, {})
+            for label, amount in amounts.items():
+                self._add(objects, raw_names[label], amount, _SLICE_TOOLPATH_OBJECTS, "objects")
+        self._labels.clear()
+        self._label_names.clear()
+        self._by_tool_label.clear()
+
+
+def _serialize_slice_toolpath(value):
+    """The JSON text sent to the site; refuses what the site would refuse."""
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except ValueError:
+        raise SliceToolpathLimit("value")
+    if len(text.encode("utf-8")) > _SLICE_TOOLPATH_PAYLOAD_BYTES:
+        raise SliceToolpathLimit("size")
+    return text
+
+
+def _slice_source_kind(path):
+    with open(path, "rb") as fh:
+        magic = fh.read(4)
+    if magic[:2] == b"PK":
+        return "3mf"
+    if magic[:2] == b"\x1f\x8b":
+        return "gzip"
+    if magic == _BINARY_GCODE_MAGIC:
+        return "binary"
+    return "plain"
+
+
+class _SliceProgress:
+    """Report how far a long read has got, rarely enough to cost nothing."""
+
+    def __init__(self, report, total):
+        self._report = report
+        self._total = max(1, total)
+        self._last_fraction = -1.0
+        self._last_at = 0.0
+
+    def update(self, consumed):
+        if self._report is None:
+            return
+        fraction = min(1.0, consumed / self._total)
+        now = time.monotonic()
+        if fraction - self._last_fraction >= 0.01 and now - self._last_at >= 0.3:
+            self._last_fraction = fraction
+            self._last_at = now
+            self._report(fraction)
+
+
+def _yield_to_host():
+    """Let the host's own Python threads run between chunks of a long read."""
+    ensure_worker_generation_active()
+    time.sleep(0.0005)
+
+
+def _plain_slice_excerpt(path, kind, progress):
+    """Head, tail and the walk of every move of a text G-code, in one pass."""
+    total_size = os.path.getsize(path)
+    head = bytearray()
+    tail_chunks = []
+    tail_length = 0
+    total = 0
+    walker = None if kind == "binary" else SliceToolpathWalker()
+    decoder = codecs.getincrementaldecoder("utf-8-sig")("replace")
+    meter = _SliceProgress(progress, total_size)
+
+    with open(path, "rb") as raw:
+        reader = gzip.GzipFile(fileobj=raw) if kind == "gzip" else raw
+        try:
+            while True:
+                _yield_to_host()
+                chunk = reader.read(_SLICE_READ_CHUNK)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _SLICE_DECOMPRESSED_LIMIT:
+                    raise SliceExcerptError(_SLICE_ERR_TOO_LARGE)
+                if len(head) < _SLICE_HEAD_BYTES:
+                    head += chunk[: _SLICE_HEAD_BYTES - len(head)]
+                tail_chunks.append(chunk)
+                tail_length += len(chunk)
+                # Drop the oldest chunk only while the tail stays long enough without it.
+                while len(tail_chunks) > 1 and tail_length - len(tail_chunks[0]) >= _SLICE_TAIL_BYTES:
+                    tail_length -= len(tail_chunks.pop(0))
+                if walker is not None:
+                    try:
+                        walker.push(decoder.decode(chunk))
+                    except SliceToolpathLimit:
+                        walker = None
+                meter.update(raw.tell())
+        except (OSError, EOFError, zlib.error):
+            raise SliceExcerptError(_SLICE_ERR_INVALID)
+
+    if total == 0:
+        raise SliceExcerptError(_SLICE_ERR_INVALID)
+    toolpath = None
+    if walker is not None:
+        try:
+            walker.push(decoder.decode(b"", True))
+            toolpath = _serialize_slice_toolpath(walker.finish())
+        except SliceToolpathLimit:
+            toolpath = None
+
+    if total <= _SLICE_WHOLE_BYTES:
+        # The tail buffer reaches back at least to where the head ends.
+        whole = bytes(head)
+        if total > len(head):
+            whole += b"".join(tail_chunks)[len(head) - (total - tail_length):]
+        parts = [("head", "head.gcode", whole)]
+    else:
+        # The oldest chunk is only kept while it overlaps the tail, so
+        # trimming it leaves exactly the last tail bytes.
+        tail_chunks[0] = tail_chunks[0][tail_length - _SLICE_TAIL_BYTES:]
+        parts = [
+            ("head", "head.gcode", bytes(head)),
+            ("tail", "tail.gcode", b"".join(tail_chunks)),
+        ]
+    return {"container": "plain_gcode", "parts": parts, "toolpath": toolpath}
+
+
+def _slice_entry_rule(name_lower):
+    for priority, (pattern, limit, thumbnail) in enumerate(_SLICE_ENTRY_RULES):
+        if pattern.fullmatch(name_lower):
+            return priority, limit, thumbnail
+    return None
+
+
+def _walk_slice_plates(archive, plates, progress):
+    """Walk each plate's G-code as a stream; the plate itself is never sent."""
+    meter = _SliceProgress(progress, sum(info.file_size for _, info in plates))
+    consumed = 0
+    evidence = {}
+    for plate_index, info in plates:
+        key = str(plate_index)
+        if key in evidence:
+            raise SliceToolpathLimit("plate")
+        walker = SliceToolpathWalker()
+        decoder = codecs.getincrementaldecoder("utf-8-sig")("replace")
+        read = 0
+        with archive.open(info) as stream:
+            while True:
+                _yield_to_host()
+                chunk = stream.read(_SLICE_READ_CHUNK)
+                if not chunk:
+                    break
+                read += len(chunk)
+                if read > _SLICE_DECOMPRESSED_LIMIT:
+                    raise SliceToolpathLimit("size")
+                walker.push(decoder.decode(chunk))
+                meter.update(consumed + read)
+        walker.push(decoder.decode(b"", True))
+        if read != info.file_size:
+            raise SliceToolpathLimit("plate")
+        consumed += read
+        evidence[key] = walker.finish()
+    return _serialize_slice_toolpath(evidence)
+
+
+def _sliced_3mf_excerpt(path, progress):
+    """The metadata entries of a sliced 3MF and the walk of each plate's G-code."""
+    try:
+        archive = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile, NotImplementedError):
+        raise SliceExcerptError(_SLICE_ERR_INVALID)
+    with archive:
+        entries = []
+        plates = []
+        seen = set()
+        walkable = True
+        plate_names = set()
+        for info in archive.infolist():
+            name_lower = info.filename.lower()
+            plate = _SLICE_PLATE_GCODE_RE.fullmatch(name_lower)
+            if plate is not None:
+                # A plate that cannot be walked costs the figures per part,
+                # never the summary.
+                if (
+                    name_lower in plate_names
+                    or info.flag_bits & 0x1
+                    or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+                ):
+                    walkable = False
+                plate_names.add(name_lower)
+                plates.append((int(plate.group(1)), info))
+                continue
+            rule = _slice_entry_rule(name_lower)
+            if rule is None:
+                continue
+            if (
+                name_lower in seen
+                or info.flag_bits & 0x1
+                or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+            ):
+                raise SliceExcerptError(_SLICE_ERR_INVALID)
+            seen.add(name_lower)
+            entries.append((rule, info))
+        if _SLICE_SLICE_INFO_PATH not in seen:
+            raise SliceExcerptError(_SLICE_ERR_INVALID)
+
+        budget = _SLICE_REQUEST_BYTES - _SLICE_REQUEST_OVERHEAD
+        used = 0
+        parts = []
+        for (_priority, limit, thumbnail), info in sorted(entries, key=lambda item: item[0][0]):
+            # A thumbnail that does not fit is left out; any other entry that
+            # does not fit makes the file unusable.
+            if info.file_size > limit or used + info.file_size > budget:
+                if thumbnail:
+                    continue
+                raise SliceExcerptError(_SLICE_ERR_TOO_LARGE)
+            try:
+                with archive.open(info) as stream:
+                    data = stream.read(limit + 1)
+            except (OSError, zipfile.BadZipFile, NotImplementedError, EOFError, zlib.error):
+                raise SliceExcerptError(_SLICE_ERR_INVALID)
+            if len(data) != info.file_size:
+                raise SliceExcerptError(_SLICE_ERR_INVALID)
+            used += len(data)
+            parts.append(("entry", info.filename, data))
+
+        toolpath = None
+        if plates and walkable:
+            try:
+                toolpath = _walk_slice_plates(
+                    archive, sorted(plates, key=lambda item: item[0]), progress
+                )
+            except (SliceToolpathLimit, OSError, zipfile.BadZipFile, NotImplementedError, EOFError, zlib.error):
+                toolpath = None
+    return {"container": "gcode_3mf", "parts": parts, "toolpath": toolpath}
+
+
+def build_slice_excerpt(path, file_name, progress=None):
+    """Cut what a quote needs out of a sliced file; raises SliceExcerptError.
+
+    Returns the form fields and file parts of the excerpt request. A walk that
+    cannot be completed leaves `toolpath` out, so the site answers with the
+    summary alone, as it does for a file dropped in the browser.
+    """
+    name = "".join(
+        char for char in os.path.basename(file_name or path) if ord(char) >= 32
+    ).strip()
+    lower = name.lower()
+    suffix = next((ext for ext in _SLICE_SUPPORTED_NAMES if lower.endswith(ext)), None)
+    if suffix is None:
+        raise SliceExcerptError(_SLICE_ERR_UNSUPPORTED)
+    if len(name) > 255:
+        name = name[: 255 - len(suffix)] + name[len(name) - len(suffix):]
+        lower = name.lower()
+    kind = _slice_source_kind(path)
+    if (kind == "3mf") != lower.endswith(".gcode.3mf"):
+        raise SliceExcerptError(_SLICE_ERR_INVALID)
+    size = os.path.getsize(path)
+    if kind == "3mf":
+        excerpt = _sliced_3mf_excerpt(path, progress)
+    else:
+        excerpt = _plain_slice_excerpt(path, kind, progress)
+    fields = [
+        ("file_name", name),
+        ("file_size_bytes", str(size)),
+        ("container", excerpt["container"]),
+    ]
+    if excerpt["toolpath"] is not None:
+        fields.append(("toolpath", excerpt["toolpath"]))
+    return fields, excerpt["parts"]
+
+
+def encode_slice_excerpt(fields, parts):
+    """Multipart body of an excerpt request, refused if it outgrows the site's cap."""
+    boundary = "----FilamentHub" + secrets.token_hex(16)
+    crlf = b"\r\n"
+    chunks = []
+    for name, value in fields:
+        chunks.append(
+            ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n' % (boundary, name)).encode("utf-8")
+            + value.encode("utf-8")
+            + crlf
+        )
+    for field, filename, data in parts:
+        safe_name = filename.replace("\r", "").replace("\n", "").replace('"', "%22")
+        chunks.append(
+            (
+                '--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\n'
+                "Content-Type: application/octet-stream\r\n\r\n" % (boundary, field, safe_name)
+            ).encode("utf-8")
+            + data
+            + crlf
+        )
+    chunks.append(("--%s--\r\n" % boundary).encode("ascii"))
+    body = b"".join(chunks)
+    if len(body) > _SLICE_REQUEST_BYTES:
+        raise SliceExcerptError(_SLICE_ERR_TOO_LARGE)
+    return boundary, body
+
+
+def http_post_slice_excerpt(token, fields, parts):
+    """Send the parts of a slice to FilamentHub's reader of them; returns (status, bytes)."""
+    ensure_worker_generation_active()
+    try:
+        boundary, body = encode_slice_excerpt(fields, parts)
+    except SliceExcerptError as exc:
+        return 413, json.dumps({"detail": {"code": exc.code}}).encode("utf-8")
+    return _send_multipart(
+        "/orcaslicer/slices/excerpts/parse",
+        token,
+        boundary,
+        body,
+        max_response_bytes=_SLICE_RESPONSE_BYTES,
+    )
 
 
 def _preset_scalar(value):
@@ -9302,10 +9944,12 @@ class _PluginRuntimeLifecycleMixin:
 _SLICING = getattr(orca, "slicing", None)
 _SLICE_CAPABILITY_BASE = getattr(_SLICING, "SlicingPipelineCapabilityBase", None)
 _TAIL_BYTES = 300000
+_BINARY_GCODE_MAGIC = b"GCDE"
 _SLICE_INDEX_FILE = os.path.join(PLUGIN_DIR, ".fh_slices.json")
 _SLICE_REPORT_OUTBOX_FILE = os.path.join(PLUGIN_DIR, ".fh_slice_reports.json")
 _SLICE_INDEX_LIMIT = 300
 _SLICE_INDEX_LOCK = threading.Lock()
+_SLICE_PARSE_LOCK = threading.Lock()
 _SLICE_REPORT_OUTBOX_LIMIT = 300
 _SLICE_REPORT_OUTBOX_LOCK = threading.Lock()
 # Sending a print writes the G-code to a temporary file the host deletes right
@@ -9441,6 +10085,10 @@ def _append_fhub_slice_identities(path, identities):
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
+            # Appending text would corrupt a binary G-code container.
+            if fh.read(4) == _BINARY_GCODE_MAGIC:
+                fh_log("slice identity annotation skipped: binary G-code")
+                return False
             fh.seek(max(0, size - _TAIL_BYTES))
             tail = fh.read().decode("utf-8", errors="replace")
         existing = {line.strip() for line in tail.splitlines()}
@@ -9657,8 +10305,21 @@ def _deliver_pending_slice_reports(target=None):
     return True
 
 
+def _push_pending_slice_reports():
+    """Offer the queued reports to the open page from the plugin's own worker.
+
+    The slicing worker must never call into the window, but it may hand the
+    work to another thread because it does not wait for it. A job that fails or
+    finds no page leaves the queue untouched: the page also pulls it on load,
+    sign-in and when it regains focus.
+    """
+    if _slice_delivery_target() is None:
+        return False
+    return BACKGROUND_WORKER.submit(_deliver_pending_slice_reports)
+
+
 def report_slice(gcode_path, output_name="", host=""):
-    """Queue one slice without crossing from Orca's slicing worker into UI."""
+    """Queue one slice, then let the page know, without touching Orca's UI."""
     identity = _read_slice_identity(gcode_path)
     if identity is None:
         return False, ui_text("sliceUnreadable")
@@ -9670,6 +10331,7 @@ def report_slice(gcode_path, output_name="", host=""):
     if host:
         identity["target_host"] = host[:50]
     _queue_slice_report(identity)
+    _push_pending_slice_reports()
     return True, identity["file_name"]
 
 
@@ -9677,12 +10339,14 @@ def report_slice(gcode_path, output_name="", host=""):
 SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
 SLICE_SETTINGS_DEFAULTS = {"report_slices": False}
 SLICE_SETTINGS_COPY_KEYS = (
-    "sliceSettingsTitle", "sliceSettingsPurpose", "sliceSettingsLocal",
+    "sliceSettingsTitle", "sliceSettingsPurpose", "sliceSettingsStamp",
+    "sliceSettingsLocal",
     "sliceSettingsRemote", "sliceSettingsPermission", "sliceSettingsEnable",
 )
 SLICE_SETTINGS_PAGE = SETTINGS_PAGE.split("</style>", 1)[0] + r"""</style>
 <h3 data-copy="sliceSettingsTitle"></h3>
 <p data-copy="sliceSettingsPurpose"></p>
+<p class="note" data-copy="sliceSettingsStamp"></p>
 <p class="note" data-copy="sliceSettingsLocal"></p>
 <p class="note" data-copy="sliceSettingsRemote"></p>
 <p class="note" data-copy="sliceSettingsPermission"></p>
@@ -9755,16 +10419,31 @@ class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
         if step is not None and post is not None and step != post:
             return orca.ExecutionResult.skipped(ui_text("sliceWrongStep"))
 
-        if not slice_reporting_enabled(self):
-            return orca.ExecutionResult.skipped(ui_text("sliceReportingDisabled"))
-
         path = getattr(ctx, "gcode_path", "") or ""
         if not path or not os.path.exists(path):
             return orca.ExecutionResult.skipped(ui_text("sliceNotReady"))
 
+        # The identity comments stay in the file whether or not the person
+        # opted into reporting: the website needs them to recognise the material.
+        # A failure here must never spoil an export the person asked for.
         try:
-            if not _append_fhub_slice_identities(path, _slice_managed_identities(ctx)):
-                return orca.ExecutionResult.skipped(ui_text("sliceUnreadable"))
+            identities = _slice_managed_identities(ctx)
+            annotated = _append_fhub_slice_identities(path, identities)
+        except Exception as exc:
+            fh_log("slice identity annotation failed: %s" % exc)
+            annotated = False
+        if not annotated:
+            return orca.ExecutionResult.skipped(ui_text("sliceUnreadable"))
+
+        if not slice_reporting_enabled(self):
+            if identities:
+                return orca.ExecutionResult.success(ui_text(
+                    "sliceIdentityStamped",
+                    name=os.path.basename(getattr(ctx, "output_name", "") or path),
+                ))
+            return orca.ExecutionResult.skipped(ui_text("sliceReportingDisabled"))
+
+        try:
             sent, reason = report_slice(
                 path,
                 getattr(ctx, "output_name", "") or "",
@@ -10856,26 +11535,85 @@ class FilamentHubCatalog(
         entry = slice_entry_for_key(key)
         path = entry["path"] if entry else ""
         if not path:
-            self._deliver_slice_result({"error": "gone"})
+            self._deliver_slice_result({"sourceKey": key, "error": "gone"})
             return
         if not token:
-            self._deliver_slice_result({"error": "auth"})
+            self._deliver_slice_result({"sourceKey": key, "error": "auth"})
+            return
+        if not _SLICE_PARSE_LOCK.acquire(False):
+            self._deliver_slice_result({"sourceKey": key, "error": "busy"})
             return
         # The list is what a person is looking at, so the name they see there
         # wins; the remembered one covers slices seen before names were kept.
-        status, body = http_post_file(
-            "/orcaslicer/slices/parse", token, path, file_name=file_name or entry["name"]
-        )
-        if status != 200:
-            fh_log("slice parse HTTP %s for %s" % (status, os.path.basename(path)))
-            self._deliver_slice_result({"error": "http", "status": status})
-            return
+        name = file_name or entry["name"]
+        generation = BACKGROUND_WORKER.current_job_generation()
+
+        def run():
+            try:
+                BACKGROUND_WORKER.run_in_generation(
+                    generation, self._parse_slice, key, token, path, name
+                )
+            finally:
+                _SLICE_PARSE_LOCK.release()
+
+        # Walking every move of a long print takes a minute or more. The single
+        # worker also runs sync, so the read gets its own thread; it still
+        # carries the worker's lifecycle generation and stops when the plugin
+        # is unloaded.
         try:
-            parsed = json.loads(body.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            self._deliver_slice_result({"error": "body"})
+            threading.Thread(target=run, name="filamenthub-slice-parse", daemon=True).start()
+        except RuntimeError:
+            _SLICE_PARSE_LOCK.release()
+            self._deliver_slice_result({"sourceKey": key, "error": "read"})
+
+    def _parse_slice(self, key, token, path, name):
+        """Cut the slice down to what the site reads, send only that, deliver the answer."""
+
+        def finish(**result):
+            self._deliver_slice_result(dict(result, sourceKey=key))
+
+        def report(fraction):
+            self._deliver("parse-slice-progress", sourceKey=key, fraction=round(fraction, 3))
+
+        try:
+            try:
+                fields, parts = build_slice_excerpt(path, name, report)
+            except SliceExcerptError as exc:
+                fh_log("slice excerpt refused for %s: %s" % (os.path.basename(path), exc.code))
+                finish(error="read", code=exc.code)
+                return
+            except OSError as exc:
+                fh_log("slice read failed for %s: %s" % (os.path.basename(path), exc))
+                finish(error="read" if os.path.exists(path) else "gone")
+                return
+            status, body = http_post_slice_excerpt(token, fields, parts)
+            if status != 200:
+                fh_log("slice parse HTTP %s for %s" % (status, os.path.basename(path)))
+                code = _http_error_shape(body)
+                finish(
+                    error="http",
+                    status=status,
+                    code=code if re.fullmatch(r"ERR_[A-Z0-9_]{1,90}", code) else "",
+                )
+                return
+            try:
+                jobs = json.loads(body.decode("utf-8"))["jobs"]
+            except (ValueError, UnicodeDecodeError, KeyError, TypeError):
+                jobs = None
+            if not (
+                isinstance(jobs, list)
+                and jobs
+                and all(isinstance(job, dict) for job in jobs)
+            ):
+                finish(error="body")
+                return
+            # `parsed` stays for a page that predates plates.
+            finish(jobs=jobs, parsed=jobs[0])
+        except PluginLifecycleStopped:
             return
-        self._deliver_slice_result({"parsed": parsed})
+        except Exception as exc:
+            fh_log("slice parse failed for %s: %s" % (os.path.basename(path), exc))
+            finish(error="read")
 
     def _do_happy_hare_action(
         self,

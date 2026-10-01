@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "A conexão local continua bloqueada. Nenhum dado da impressora ou da conta foi alterado.",
   "sliceSettingsTitle": "FilamentHub — arquivos fatiados",
   "sliceSettingsPurpose": "Mantenha os arquivos G-code exportados disponíveis no FilamentHub para calcular o custo de impressão.",
-  "sliceSettingsLocal": "Quando ativado, o plugin lê o G-code produzido pelo OrcaSlicer, adiciona comentários que identificam os perfis do FilamentHub e mantém uma cópia local limitada. Os movimentos de impressão não são alterados.",
-  "sliceSettingsRemote": "O servidor FilamentHub selecionado recebe o nome do arquivo, o modelo da impressora, os nomes e identificadores da impressora e do perfil de impressão, a versão do slicer, o tipo de destino da exportação e identificadores que vinculam este fatiamento a este computador. O G-code completo só é enviado quando você solicita um cálculo.",
+  "sliceSettingsStamp": "Com esta opção ativada ou não, o plugin adiciona ao G-code produzido com este plugin selecionado comentários que identificam os perfis do FilamentHub usados. Os comentários não alteram os movimentos de impressão e não são enviados a lugar nenhum se a opção não estiver ativada.",
+  "sliceSettingsLocal": "Quando ativado, o plugin mantém uma cópia local limitada do G-code produzido pelo OrcaSlicer.",
+  "sliceSettingsRemote": "O servidor FilamentHub selecionado recebe o nome do arquivo, o modelo da impressora, os nomes e identificadores da impressora e do perfil de impressão, a versão do slicer, o tipo de destino da exportação e identificadores que vinculam este fatiamento a este computador. O G-code completo nunca sai deste computador; um cálculo envia apenas o resumo (o início e o fim do arquivo e os totais por peça calculados aqui).",
   "sliceSettingsEnable": "Salvar arquivos fatiados e enviar seus detalhes ao FilamentHub",
   "sliceReportingDisabled": "O relatório de fatiamento está desativado. Abra as configurações deste plugin de fatiamento para ler o que ele faz e ativá-lo."
 }

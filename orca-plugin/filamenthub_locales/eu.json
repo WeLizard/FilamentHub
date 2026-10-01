@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Konexio lokala blokeatuta dago oraindik. Ez da inprimagailuaren edo kontuaren daturik aldatu.",
   "sliceSettingsTitle": "FilamentHub — zatitutako fitxategiak",
   "sliceSettingsPurpose": "Mantendu esportatutako G-code fitxategiak FilamentHub-en eskuragarri inprimatze-kostuak kalkulatzeko.",
-  "sliceSettingsLocal": "Gaituta dagoenean, pluginak OrcaSlicer-ek sortutako G-code-a irakurtzen du, FilamentHub profilak identifikatzen dituzten iruzkinak gehitzen ditu eta tokiko kopia mugatu bat gordetzen du. Inprimatze-mugimenduak ez dira aldatzen.",
-  "sliceSettingsRemote": "Hautatutako FilamentHub zerbitzariak fitxategiaren izena, inprimagailuaren modeloa, inprimagailuaren eta inprimatze-profilaren izen eta identifikatzaileak, slicerraren bertsioa, esportazio-helmugaren mota eta zatia ordenagailu honekin lotzen duten identifikatzaileak jasotzen ditu. G-code osoa kalkulu bat eskatzen duzunean bakarrik igotzen da.",
+  "sliceSettingsStamp": "Aukera hau gaituta egon zein ez, pluginak erabilitako FilamentHub profilak identifikatzen dituzten iruzkinak gehitzen ditu plugin hori hautatuta sortutako G-code-an. Iruzkinek ez dituzte inprimatze-mugimenduak aldatzen, eta ez dira inora bidaltzen aukera hau gaituta ez badago.",
+  "sliceSettingsLocal": "Gaituta dagoenean, pluginak OrcaSlicer-ek sortutako G-code-aren tokiko kopia mugatu bat gordetzen du.",
+  "sliceSettingsRemote": "Hautatutako FilamentHub zerbitzariak fitxategiaren izena, inprimagailuaren modeloa, inprimagailuaren eta inprimatze-profilaren izen eta identifikatzaileak, slicerraren bertsioa, esportazio-helmugaren mota eta zatia ordenagailu honekin lotzen duten identifikatzaileak jasotzen ditu. G-code osoak ez du inoiz ordenagailu hau uzten; kalkulu batek laburpena baino ez du bidaltzen (fitxategiaren hasiera eta amaiera eta hemen kalkulatutako pieza bakoitzeko guztizkoak).",
   "sliceSettingsEnable": "Gorde zatitutako fitxategiak eta bidali haien xehetasunak FilamentHub-era",
   "sliceReportingDisabled": "Zatiketaren txostena desaktibatuta dago. Ireki zatiketa-plugin honen ezarpenak zer egiten duen irakurtzeko eta gaitzeko."
 }

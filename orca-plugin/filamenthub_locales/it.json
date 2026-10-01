@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "La connessione locale è ancora bloccata. Nessun dato della stampante o dell’account è stato modificato.",
   "sliceSettingsTitle": "FilamentHub — file sottoposti a slicing",
   "sliceSettingsPurpose": "Mantieni disponibili in FilamentHub i file G-code esportati per calcolare il costo di stampa.",
-  "sliceSettingsLocal": "Quando è attivo, il plugin legge il G-code prodotto da OrcaSlicer, aggiunge commenti che identificano i profili FilamentHub e conserva una copia locale limitata. I movimenti di stampa non vengono modificati.",
-  "sliceSettingsRemote": "Il server FilamentHub selezionato riceve il nome del file, il modello della stampante, i nomi e gli identificatori della stampante e del profilo di stampa, la versione dello slicer, il tipo di destinazione dell’esportazione e gli identificatori che collegano questo slicing a questo computer. Il G-code completo viene caricato solo quando richiedi un calcolo.",
+  "sliceSettingsStamp": "Che questa opzione sia attiva o no, il plugin aggiunge al G-code prodotto con questo plugin selezionato commenti che identificano i profili FilamentHub utilizzati. I commenti non modificano i movimenti di stampa e non vengono inviati altrove se l’opzione non è attiva.",
+  "sliceSettingsLocal": "Quando è attivo, il plugin conserva una copia locale limitata del G-code prodotto da OrcaSlicer.",
+  "sliceSettingsRemote": "Il server FilamentHub selezionato riceve il nome del file, il modello della stampante, i nomi e gli identificatori della stampante e del profilo di stampa, la versione dello slicer, il tipo di destinazione dell’esportazione e gli identificatori che collegano questo slicing a questo computer. Il G-code completo non lascia mai questo computer; un calcolo invia solo il suo riepilogo (l’inizio e la fine del file e i totali per parte calcolati qui).",
   "sliceSettingsEnable": "Salva i file sottoposti a slicing e inviane i dettagli a FilamentHub",
   "sliceReportingDisabled": "La reportistica dello slicing è disattivata. Apri le impostazioni di questo plugin di slicing per leggere cosa fa e abilitarla."
 }

@@ -4,6 +4,13 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.2.3
+- G-code made with the FilamentHub slicing plugin selected now always carries the identifiers of the FilamentHub profiles it used, even when sending slice details is off. FilamentHub can then recognise your materials when you open that file in the calculator. Nothing is sent without the existing option.
+- A failure while adding these identifiers never affects the exported or uploaded file.
+- New slices reach the open FilamentHub tab as soon as they are ready, and the tab checks once when it opens, when you sign in and when you return to it. It no longer asks the plugin every few seconds.
+- Using a slice from OrcaSlicer in the FilamentHub calculator now works for prints of any size. Only a small summary of the slice is sent to FilamentHub, so the full G-code never leaves your computer, and each plate of a multi-plate project becomes its own calculation.
+- While a long slice is being read, its entry in the list shows the progress, and reading it no longer holds up synchronization.
+
 ## 0.2.2
 - Synchronized filament presets now appear for every printer. A preset created from a copy of a vendor profile (for example Bambu X1 only) is no longer hidden on other machines.
 - Presets sent from OrcaSlicer to FilamentHub keep every value they print with, including the ones inherited from a vendor profile other users may not have.

@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "La conexión local sigue bloqueada. No se modificó ningún dato de la impresora ni de la cuenta.",
   "sliceSettingsTitle": "FilamentHub — archivos laminados",
   "sliceSettingsPurpose": "Mantén disponibles en FilamentHub los archivos G-code exportados para calcular el coste de impresión.",
-  "sliceSettingsLocal": "Cuando está activado, el complemento lee el G-code producido por OrcaSlicer, añade comentarios que identifican los perfiles de FilamentHub y conserva una copia local limitada. Los movimientos de impresión no se modifican.",
-  "sliceSettingsRemote": "El servidor de FilamentHub seleccionado recibe el nombre del archivo, el modelo de la impresora, los nombres e identificadores de la impresora y del perfil de impresión, la versión del laminador, el tipo de destino de exportación y los identificadores que vinculan este laminado con este ordenador. El G-code completo solo se sube cuando solicitas un cálculo.",
+  "sliceSettingsStamp": "Esté activada esta opción o no, el complemento añade comentarios que identifican los perfiles de FilamentHub utilizados al G-code producido con este complemento seleccionado. Los comentarios no modifican los movimientos de impresión y no se envían a ningún sitio si la opción no está activada.",
+  "sliceSettingsLocal": "Cuando está activado, el complemento conserva una copia local limitada del G-code producido por OrcaSlicer.",
+  "sliceSettingsRemote": "El servidor de FilamentHub seleccionado recibe el nombre del archivo, el modelo de la impresora, los nombres e identificadores de la impresora y del perfil de impresión, la versión del laminador, el tipo de destino de exportación y los identificadores que vinculan este laminado con este ordenador. El G-code completo nunca sale de este ordenador; un cálculo solo envía su resumen (el principio y el final del archivo y los totales por pieza calculados aquí).",
   "sliceSettingsEnable": "Guardar archivos laminados y enviar sus detalles a FilamentHub",
   "sliceReportingDisabled": "Los informes de laminado están desactivados. Abre la configuración de este complemento de laminado para saber qué hace y activarlos."
 }

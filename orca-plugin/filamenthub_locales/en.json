@@ -116,10 +116,12 @@
   "settingsAccountHint": "Which presets to sync is set in your profile on FilamentHub.",
   "sliceSettingsTitle": "FilamentHub — sliced files",
   "sliceSettingsPurpose": "Keep exported G-code available in FilamentHub for print-cost calculations.",
-  "sliceSettingsLocal": "When enabled, the plugin reads the G-code produced by OrcaSlicer, adds comments identifying FilamentHub profiles, and keeps a limited local copy. Print moves are not changed.",
-  "sliceSettingsRemote": "The selected FilamentHub server receives the file name, printer model, printer and print profile names and identifiers, slicer version, export destination type, and identifiers linking this slice to this computer. The full G-code is uploaded only when you request a calculation.",
+  "sliceSettingsStamp": "Whether or not this option is enabled, the plugin adds comments identifying the FilamentHub profiles used to G-code produced with this plugin selected. The comments do not change print moves and are not sent anywhere unless this option is enabled.",
+  "sliceSettingsLocal": "When enabled, the plugin keeps a limited local copy of the G-code produced by OrcaSlicer.",
+  "sliceSettingsRemote": "The selected FilamentHub server receives the file name, printer model, printer and print profile names and identifiers, slicer version, export destination type, and identifiers linking this slice to this computer. The full G-code never leaves this computer; a calculation sends only its summary (the start and end of the file and per-part totals computed here).",
   "sliceSettingsPermission": "Reports are queued locally and sent by the signed-in FilamentHub page. Activation and slicing do not make this HTTP request, so this endpoint does not open a native permission dialog. Failed deliveries stay queued and are retried when the page is available.",
   "sliceSettingsEnable": "Save sliced files and send their details to FilamentHub",
+  "sliceIdentityStamped": "Added FilamentHub profile identifiers to {name}. Slice reporting is off.",
   "sliceReportingDisabled": "Slice reporting is off. Open this slicing plugin’s settings to read what it does and enable it.",
   "sliceQueued": "Saved {name} locally. Its details will be sent when the FilamentHub page is signed in."
 }

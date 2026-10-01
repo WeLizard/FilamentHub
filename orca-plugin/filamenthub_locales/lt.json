@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Vietinis ryšys vis dar užblokuotas. Jokie spausdintuvo ar paskyros duomenys nebuvo pakeisti.",
   "sliceSettingsTitle": "FilamentHub — supjaustyti failai",
   "sliceSettingsPurpose": "Laikykite eksportuotus G-code failus pasiekiamus FilamentHub, kad būtų galima apskaičiuoti spausdinimo kainą.",
-  "sliceSettingsLocal": "Įjungtas papildinys perskaito OrcaSlicer sukurtą G-code, prideda komentarus, identifikuojančius FilamentHub profilius, ir išsaugo ribotą vietinę kopiją. Spausdinimo judesiai nekeičiami.",
-  "sliceSettingsRemote": "Pasirinktas FilamentHub serveris gauna failo pavadinimą, spausdintuvo modelį, spausdintuvo ir spausdinimo profilio pavadinimus bei identifikatorius, pjaustyklės versiją, eksporto paskirties tipą ir identifikatorius, susiejančius šį pjovimą su šiuo kompiuteriu. Visas G-code įkeliamas tik paprašius apskaičiuoti.",
+  "sliceSettingsStamp": "Nesvarbu, ar ši parinktis įjungta, papildinys prie G-code, sukurto pasirinkus šį papildinį, prideda komentarus, identifikuojančius naudotus FilamentHub profilius. Komentarai nekeičia spausdinimo judesių ir niekur nesiunčiami, jei ši parinktis neįjungta.",
+  "sliceSettingsLocal": "Įjungtas papildinys išsaugo ribotą vietinę OrcaSlicer sukurto G-code kopiją.",
+  "sliceSettingsRemote": "Pasirinktas FilamentHub serveris gauna failo pavadinimą, spausdintuvo modelį, spausdintuvo ir spausdinimo profilio pavadinimus bei identifikatorius, pjaustyklės versiją, eksporto paskirties tipą ir identifikatorius, susiejančius šį pjovimą su šiuo kompiuteriu. Visas G-code niekada nepalieka šio kompiuterio; skaičiavimui siunčiama tik santrauka (failo pradžia ir pabaiga bei čia apskaičiuotos kiekvienos dalies sumos).",
   "sliceSettingsEnable": "Išsaugoti supjaustytus failus ir siųsti jų informaciją į FilamentHub",
   "sliceReportingDisabled": "Pjaustymo ataskaitos išjungtos. Atidarykite šio pjaustymo papildinio nustatymus, kad perskaitytumėte, ką jis daro, ir jį įjungtumėte."
 }

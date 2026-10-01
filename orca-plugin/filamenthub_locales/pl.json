@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Połączenie lokalne nadal jest zablokowane. Nie zmieniono żadnych danych drukarki ani konta.",
   "sliceSettingsTitle": "FilamentHub — pocięte pliki",
   "sliceSettingsPurpose": "Zachowuj wyeksportowane pliki G-code w FilamentHub, aby obliczać koszt druku.",
-  "sliceSettingsLocal": "Po włączeniu wtyczka odczytuje G-code utworzony przez OrcaSlicer, dodaje komentarze identyfikujące profile FilamentHub i przechowuje ograniczoną kopię lokalną. Ruchy drukowania nie są zmieniane.",
-  "sliceSettingsRemote": "Wybrany serwer FilamentHub otrzymuje nazwę pliku, model drukarki, nazwy i identyfikatory drukarki oraz profilu druku, wersję slicera, typ miejsca docelowego eksportu oraz identyfikatory łączące ten plik z tym komputerem. Cały G-code jest przesyłany tylko na żądanie obliczenia.",
+  "sliceSettingsStamp": "Niezależnie od tego, czy ta opcja jest włączona, wtyczka dodaje do G-code utworzonego z wybraną wtyczką komentarze identyfikujące użyte profile FilamentHub. Komentarze nie zmieniają ruchów drukowania i nie są nigdzie wysyłane, jeśli opcja nie jest włączona.",
+  "sliceSettingsLocal": "Po włączeniu wtyczka przechowuje ograniczoną kopię lokalną G-code utworzonego przez OrcaSlicer.",
+  "sliceSettingsRemote": "Wybrany serwer FilamentHub otrzymuje nazwę pliku, model drukarki, nazwy i identyfikatory drukarki oraz profilu druku, wersję slicera, typ miejsca docelowego eksportu oraz identyfikatory łączące ten plik z tym komputerem. Cały G-code nigdy nie opuszcza tego komputera; obliczenie wysyła tylko podsumowanie (początek i koniec pliku oraz obliczone tutaj sumy dla poszczególnych części).",
   "sliceSettingsEnable": "Zapisuj pocięte pliki i wysyłaj ich szczegóły do FilamentHub",
   "sliceReportingDisabled": "Raportowanie slicowania jest wyłączone. Otwórz ustawienia tej wtyczki slicera, aby przeczytać, co robi, i ją włączyć."
 }

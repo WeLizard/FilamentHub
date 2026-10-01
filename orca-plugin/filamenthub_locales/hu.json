@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "A helyi kapcsolat továbbra is blokkolva van. Sem a nyomtató, sem a fiók adatai nem változtak.",
   "sliceSettingsTitle": "FilamentHub — szeletelt fájlok",
   "sliceSettingsPurpose": "Tartsd elérhetően az exportált G-code fájlokat a FilamentHubban a nyomtatási költség kiszámításához.",
-  "sliceSettingsLocal": "Bekapcsolva a plugin beolvassa az OrcaSlicer által készített G-code-ot, a FilamentHub-profilokat azonosító megjegyzéseket ad hozzá, és korlátozott helyi másolatot őriz meg. A nyomtatási mozgások nem változnak.",
-  "sliceSettingsRemote": "A kiválasztott FilamentHub-szerver megkapja a fájl nevét, a nyomtató modelljét, a nyomtató és a nyomtatási profil nevét és azonosítóit, a szeletelő verzióját, az exportálási cél típusát, valamint azokat az azonosítókat, amelyek ezt a szeletelést ehhez a számítógéphez kapcsolják. A teljes G-code csak akkor kerül feltöltésre, ha számítást kérsz.",
+  "sliceSettingsStamp": "Függetlenül attól, hogy ez a beállítás be van-e kapcsolva, a plugin a kiválasztott pluginnal készült G-code-hoz megjegyzéseket ad, amelyek azonosítják a használt FilamentHub-profilokat. A megjegyzések nem változtatják meg a nyomtatási mozgásokat, és csak bekapcsolt beállítás esetén kerülnek elküldésre.",
+  "sliceSettingsLocal": "Bekapcsolva a plugin korlátozott helyi másolatot őriz az OrcaSlicer által készített G-code-ról.",
+  "sliceSettingsRemote": "A kiválasztott FilamentHub-szerver megkapja a fájl nevét, a nyomtató modelljét, a nyomtató és a nyomtatási profil nevét és azonosítóit, a szeletelő verzióját, az exportálási cél típusát, valamint azokat az azonosítókat, amelyek ezt a szeletelést ehhez a számítógéphez kapcsolják. A teljes G-code soha nem hagyja el ezt a számítógépet; egy számítás csak az összegzést küldi el (a fájl elejét és végét, valamint a helyben kiszámított alkatrészenkénti összegeket).",
   "sliceSettingsEnable": "Szeletelt fájlok mentése és részleteik elküldése a FilamentHubnak",
   "sliceReportingDisabled": "A szeletelési jelentés ki van kapcsolva. Nyisd meg ennek a szeletelőpluginnek a beállításait, hogy elolvasd, mit csinál, és bekapcsold."
 }

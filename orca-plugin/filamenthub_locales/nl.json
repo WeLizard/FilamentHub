@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "De lokale verbinding is nog steeds geblokkeerd. Er zijn geen printer- of accountgegevens gewijzigd.",
   "sliceSettingsTitle": "FilamentHub — geslicete bestanden",
   "sliceSettingsPurpose": "Houd geëxporteerde G-code beschikbaar in FilamentHub voor het berekenen van printkosten.",
-  "sliceSettingsLocal": "Als dit is ingeschakeld, leest de plugin de door OrcaSlicer geproduceerde G-code, voegt opmerkingen toe die FilamentHub-profielen identificeren en bewaart een beperkte lokale kopie. Printbewegingen worden niet gewijzigd.",
-  "sliceSettingsRemote": "De geselecteerde FilamentHub-server ontvangt de bestandsnaam, het printermodel, de namen en identificatiegegevens van de printer en het printprofiel, de slicerversie, het type exportbestemming en identificatiegegevens die deze slice aan deze computer koppelen. De volledige G-code wordt alleen geüpload wanneer je een berekening aanvraagt.",
+  "sliceSettingsStamp": "Of deze optie nu is ingeschakeld of niet, de plugin voegt aan de G-code die met deze geselecteerde plugin is gemaakt opmerkingen toe die de gebruikte FilamentHub-profielen identificeren. De opmerkingen wijzigen geen printbewegingen en worden nergens naartoe verzonden als deze optie niet is ingeschakeld.",
+  "sliceSettingsLocal": "Als dit is ingeschakeld, bewaart de plugin een beperkte lokale kopie van de door OrcaSlicer geproduceerde G-code.",
+  "sliceSettingsRemote": "De geselecteerde FilamentHub-server ontvangt de bestandsnaam, het printermodel, de namen en identificatiegegevens van de printer en het printprofiel, de slicerversie, het type exportbestemming en identificatiegegevens die deze slice aan deze computer koppelen. De volledige G-code verlaat deze computer nooit; een berekening verstuurt alleen de samenvatting (het begin en einde van het bestand en hier berekende totalen per onderdeel).",
   "sliceSettingsEnable": "Geslicete bestanden opslaan en hun details naar FilamentHub sturen",
   "sliceReportingDisabled": "Slice-rapportage staat uit. Open de instellingen van deze slicingplugin om te lezen wat deze doet en de functie in te schakelen."
 }

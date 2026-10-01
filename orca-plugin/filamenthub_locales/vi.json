@@ -107,8 +107,9 @@
   "localPermissionRetryFailed": "Kết nối cục bộ vẫn bị chặn. Không có dữ liệu máy in hay tài khoản nào bị thay đổi.",
   "sliceSettingsTitle": "FilamentHub — tệp đã cắt lớp",
   "sliceSettingsPurpose": "Giữ các tệp G-code đã xuất trong FilamentHub để tính chi phí in.",
-  "sliceSettingsLocal": "Khi bật, plugin đọc G-code do OrcaSlicer tạo, thêm các chú thích nhận diện hồ sơ FilamentHub và lưu một bản sao cục bộ có giới hạn. Các chuyển động in không bị thay đổi.",
-  "sliceSettingsRemote": "Máy chủ FilamentHub được chọn nhận tên tệp, mẫu máy in, tên và mã nhận diện của máy in và hồ sơ in, phiên bản slicer, loại đích xuất tệp và các mã nhận diện liên kết bản cắt này với máy tính hiện tại. Toàn bộ G-code chỉ được tải lên khi bạn yêu cầu tính toán.",
+  "sliceSettingsStamp": "Dù tùy chọn này có được bật hay không, plugin vẫn thêm các chú thích nhận diện hồ sơ FilamentHub đã dùng vào G-code được tạo khi chọn plugin này. Các chú thích không thay đổi chuyển động in và không được gửi đi đâu nếu tùy chọn này chưa được bật.",
+  "sliceSettingsLocal": "Khi bật, plugin lưu một bản sao cục bộ có giới hạn của G-code do OrcaSlicer tạo.",
+  "sliceSettingsRemote": "Máy chủ FilamentHub được chọn nhận tên tệp, mẫu máy in, tên và mã nhận diện của máy in và hồ sơ in, phiên bản slicer, loại đích xuất tệp và các mã nhận diện liên kết bản cắt này với máy tính hiện tại. G-code đầy đủ không bao giờ rời khỏi máy tính này; phép tính chỉ gửi bản tóm tắt (phần đầu và phần cuối tệp cùng tổng theo từng chi tiết được tính tại đây).",
   "sliceSettingsEnable": "Lưu các tệp đã cắt lớp và gửi thông tin của chúng đến FilamentHub",
   "sliceReportingDisabled": "Tính năng báo cáo bản cắt đang tắt. Mở phần cài đặt của plugin cắt lớp này để đọc chức năng và bật nó."
 }
