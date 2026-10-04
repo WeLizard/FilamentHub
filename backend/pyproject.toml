@@ -44,6 +44,7 @@ dev = [
     "pytest~=8.3.0",
     "pytest-asyncio~=0.24.0",
     "pytest-cov~=6.0.0",
+    "pytest-xdist~=3.6.0",  # Parallel test run (-n auto) in CI and locally
     "aiosqlite~=0.20.0",  # For async SQLite tests (in-memory)
     # Читает наши же QR обратно: без декодера проверка печатного кода сводится
     # к «выглядит похоже». В production-образ не входит.

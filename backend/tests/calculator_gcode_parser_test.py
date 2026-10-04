@@ -392,6 +392,8 @@ def test_gcode_3mf_rejects_archive_without_sliced_plate() -> None:
         ("broken.gcode.gz", gzip.compress(b"G1 X1 E0.1\n")[:-4], "invalid_gzip"),
         ("garbage.gcode", b"this is neither metadata nor machine code", "unrecognized_gcode"),
     ],
+    # gzip embeds a timestamp, so the generated id would differ between xdist workers.
+    ids=["invalid_gcode_3mf", "invalid_gzip", "unrecognized_gcode"],
 )
 def test_corrupted_or_unrecognized_payload_is_rejected(
     file_name: str,

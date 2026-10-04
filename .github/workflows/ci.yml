@@ -17,8 +17,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   changes:
@@ -132,9 +132,9 @@ jobs:
       - name: Run tests (pytest, in-memory SQLite)
         run: |
           if [ "$COLLECT_COVERAGE" = "true" ]; then
-            pytest --no-cov-on-fail --durations=15
+            pytest -n auto --no-cov-on-fail --durations=15
           else
-            pytest --no-cov --durations=15
+            pytest -n auto --no-cov --durations=15
           fi
         env:
           COLLECT_COVERAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.coverage }}

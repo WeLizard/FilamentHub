@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs the tests that the staged change can break, before it enters history.
+# Runs the checks and tests that the staged change can break, before it enters
+# history: ruff, the Alembic revision graph and tsc first, as CI does.
 #
 # Lives in git rather than in one agent's settings so it works the same for every
 # agent and for a hand-made commit. It never runs the whole suite: that takes
@@ -42,6 +43,28 @@ run_backend() {
         backend_python=python
     fi
 
+    # CI runs `ruff check app` first and stops there, so a lint error never
+    # reaches the tests. Same check here, on the staged app files only.
+    lint_files=$(echo "$files" | grep -E '^backend/app/' | sed 's#^backend/##' || true)
+    if [ -n "$lint_files" ]; then
+        echo "pre-commit: ruff по изменённым backend-файлам"
+        # shellcheck disable=SC2086
+        ( cd "$repo_root/backend" && "$backend_python" -m ruff check $lint_files ) || {
+            echo "pre-commit: ruff нашёл ошибки; чаще всего хватает: cd backend && python -m ruff check --fix <файлы>"
+            failed="$failed ruff"
+            return 0
+        }
+    fi
+
+    # A new or changed migration must keep a single Alembic head, as in CI.
+    if echo "$files" | grep -q '^backend/alembic/versions/'; then
+        echo "pre-commit: граф ревизий Alembic"
+        ( cd "$repo_root/backend" && "$backend_python" ../scripts/tests/test_migration_graph.py ) || {
+            failed="$failed alembic-graph"
+            return 0
+        }
+    fi
+
     # A changed file's name is the cheapest usable link to its tests:
     # app/services/orcaslicer_exporter.py -> orcaslicer_exporter_test.py.
     keys=$(echo "$files" | sed 's#.*/##; s#\.py$##' | grep -v '^__init__$' | sort -u)
@@ -72,6 +95,13 @@ run_frontend() {
         return 0
     }
 
+    # CI type-checks through `npm run build` (tsc && vite build); only tsc here.
+    echo "pre-commit: проверка типов frontend (tsc --noEmit)"
+    ( cd "$repo_root/frontend" && npx tsc --noEmit -p . ) || {
+        failed="$failed frontend-types"
+        return 0
+    }
+
     # vitest resolves the import graph itself, so a changed component pulls in
     # the tests that actually cover it.
     paths=$(echo "$files" | sed "s#^frontend/##" | paste -sd ' ' -)
@@ -96,7 +126,7 @@ run_plugin
 
 if [ -n "$failed" ]; then
     echo ""
-    echo "pre-commit: тесты упали ($failed). Коммит остановлен."
+    echo "pre-commit: проверки не прошли ($failed). Коммит остановлен."
     echo "Почини или, если это осознанно, повтори с FH_SKIP_TESTS=1."
     exit 1
 fi
