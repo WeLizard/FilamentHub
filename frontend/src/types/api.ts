@@ -1723,6 +1723,7 @@ export interface CalculatorEstimateRequest {
   nozzle_temperature_c?: number | null;
   
   // Дополнительные услуги
+  scanning_price?: number | null;
   modeling_hours?: number | null;
   modeling_minutes?: number | null;
   modeling_rate_per_hour?: number | null;
@@ -1768,6 +1769,7 @@ export interface CalculatorEstimateResponse {
   cost_waste?: number;
   cost_electricity: number;
   cost_modeling: number;
+  cost_scanning?: number;
   cost_printing: number;
   cost_postprocessing: number;
   cost_amortization: number;
@@ -2191,6 +2193,12 @@ export interface CrmQuoteVersionPayload {
   tax_total?: number;
   html_content?: string | null;
   lines: CrmQuoteLineCreate[];
+}
+
+export interface CrmDraftQuoteUpdate extends CrmQuoteVersionPayload {
+  expected_version_number: number;
+  title: string;
+  valid_until?: string | null;
 }
 
 export interface CrmQuoteCreate extends CrmQuoteVersionPayload {

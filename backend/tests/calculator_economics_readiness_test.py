@@ -447,6 +447,61 @@ async def test_estimate_preserves_explicit_zero_pricing_adjustments(
     assert body["cost_final"] == 100.37
 
 
+@pytest.mark.asyncio
+async def test_estimate_adds_scanning_after_markup_and_taxes_it_once(
+    admin_client: AsyncClient,
+) -> None:
+    base = {
+        "pricing_method": "combined",
+        "quantity": 3,
+        "time_hours": 1,
+        "printing_rate_per_hour": 100,
+        "overhead_percent": 20,
+        "markup_percent": 30,
+        "urgency_coefficient": 1.5,
+        "tax_rate_percent": 24,
+        "round_to_nearest": 0,
+    }
+    plain = await admin_client.post("/api/v1/calculator/estimate", json=base)
+    scanned = await admin_client.post(
+        "/api/v1/calculator/estimate", json={**base, "scanning_price": 2000}
+    )
+
+    assert plain.status_code == 200
+    assert scanned.status_code == 200
+    plain_body, scanned_body = plain.json(), scanned.json()
+    assert plain_body["cost_scanning"] == 0.0
+    assert scanned_body["cost_scanning"] == 2000.0
+    assert scanned_body["cost_direct"] == plain_body["cost_direct"]
+    assert scanned_body["total_time_hours"] == plain_body["total_time_hours"]
+    assert scanned_body["cost_final"] - plain_body["cost_final"] == pytest.approx(
+        2000 * 1.24, abs=0.01
+    )
+    assert scanned_body["cost_subsequent_parts"] == plain_body["cost_subsequent_parts"]
+
+
+@pytest.mark.asyncio
+async def test_estimate_applies_min_order_price_to_production_only(
+    admin_client: AsyncClient,
+) -> None:
+    base = {
+        "pricing_method": "combined",
+        "time_hours": 1,
+        "printing_rate_per_hour": 100,
+        "overhead_percent": 0,
+        "markup_percent": 0,
+        "tax_rate_percent": 0,
+        "min_order_price": 500,
+        "round_to_nearest": 0,
+    }
+    scanned = await admin_client.post(
+        "/api/v1/calculator/estimate", json={**base, "scanning_price": 300}
+    )
+
+    assert scanned.status_code == 200
+    assert scanned.json()["cost_final"] == 800.0
+
+
 @pytest.mark.parametrize(
     ("rounding_mode", "expected"),
     [("up", 110.0), ("nearest", 100.0), ("down", 100.0)],

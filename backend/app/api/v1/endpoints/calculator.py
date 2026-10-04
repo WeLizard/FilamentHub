@@ -765,6 +765,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
             cost_modeling = modeling_time * data.modeling_rate_per_hour
 
+        # A flat customer price: bypasses overhead, markup and coefficients, but is taxed.
+        cost_scanning = data.scanning_price or 0.0
+
         cost_printing = 0.0
         for hours, rate, _amortization, _power_w in machine_hours:
             if hours > 0 and rate:
@@ -853,6 +856,8 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         if data.min_order_price and taxable_subtotal < data.min_order_price:
             taxable_subtotal = data.min_order_price
 
+        taxable_subtotal += cost_scanning
+
         cost_tax = _calculate_tax(taxable_subtotal, tax_rate_percent)
         cost_final_before_rounding = taxable_subtotal + cost_tax
         cost_final = cost_final_before_rounding
@@ -910,7 +915,7 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             total_time_hours += postprocessing_time_total
 
         cost_of_goods_sold = cost_before_markup
-        revenue_before_tax = max(cost_final - cost_tax, 0.0)
+        revenue_before_tax = max(cost_final - cost_tax - cost_scanning, 0.0)
         profit_margin = revenue_before_tax - cost_of_goods_sold
         profit_margin_percent = (
             (profit_margin / revenue_before_tax * 100.0) if revenue_before_tax > 0 else 0.0
@@ -922,6 +927,7 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             cost_waste=round(cost_waste, 2),
             cost_electricity=round(cost_electricity, 2),
             cost_modeling=round(cost_modeling, 2),
+            cost_scanning=round(cost_scanning, 2),
             cost_printing=round(cost_printing, 2),
             cost_postprocessing=round(cost_postprocessing, 2),
             cost_monitoring=round(cost_monitoring, 2),

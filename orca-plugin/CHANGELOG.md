@@ -6,6 +6,7 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 - Open My Spools when the FilamentHub tab starts; the catalog remains available from its own tab.
 - Choose FilamentHub or OrcaSlicer appearance for the embedded page. OrcaSlicer appearance follows the host's light and dark colors.
 - After a local printer connection drops, reconnecting starts with fresh printer information and resumes material-use estimates from a new observed baseline.
+- Save a quotation PDF to your Downloads folder and open it in your PDF viewer straight from the embedded FilamentHub page.
 
 ## 0.2.3
 - G-code made with the FilamentHub slicing plugin selected now always carries the identifiers of the FilamentHub profiles it used, even when sending slice details is off. FilamentHub can then recognise your materials when you open that file in the calculator. Nothing is sent without the existing option.

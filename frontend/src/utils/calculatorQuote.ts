@@ -33,3 +33,38 @@ export const allocateRoundedTotal = (total: number, rawWeights: number[]): numbe
     return value;
   });
 };
+
+/** Make the quantity × cent-priced unit values reproduce the saved line amount. */
+export const normalizeQuoteLineUnitPrice = <T extends {
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}>(line: T): T[] | null => {
+  if (!Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.totalPrice) || line.totalPrice < 0) return null;
+  const totalCents = Math.round(line.totalPrice * 100 + Number.EPSILON);
+  if (Number.isInteger(line.quantity)) {
+    const lowUnitCents = Math.floor(totalCents / line.quantity);
+    const highCount = totalCents - lowUnitCents * line.quantity;
+    const lowCount = line.quantity - highCount;
+    const normalized: T[] = [];
+    if (lowCount > 0) normalized.push({
+      ...line,
+      quantity: lowCount,
+      unitPrice: lowUnitCents / 100,
+      totalPrice: lowCount * lowUnitCents / 100,
+    });
+    if (highCount > 0) normalized.push({
+      ...line,
+      quantity: highCount,
+      unitPrice: (lowUnitCents + 1) / 100,
+      totalPrice: highCount * (lowUnitCents + 1) / 100,
+    });
+    return normalized;
+  }
+
+  const unitCents = Math.round(line.unitPrice * 100 + Number.EPSILON);
+  const apiLineCents = Math.round(line.quantity * unitCents);
+  return apiLineCents === totalCents
+    ? [{ ...line, unitPrice: unitCents / 100, totalPrice: totalCents / 100 }]
+    : null;
+};

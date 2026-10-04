@@ -12,6 +12,9 @@ interface DropdownOption {
   icon?: ReactNode;
   /** Options sharing a group are listed together under its heading. */
   group?: string;
+  /** Unavailable option: listed but not selectable; `title` explains why. */
+  disabled?: boolean;
+  title?: string;
 }
 
 interface DropdownProps {
@@ -315,7 +318,9 @@ export const Dropdown: React.FC<DropdownProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOptionClick(option.value)}
-                      className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between`}
+                      disabled={option.disabled}
+                      title={option.title}
+                      className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent`}
                     >
                       {renderOption ? (
                         renderOption(option)

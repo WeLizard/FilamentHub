@@ -111,6 +111,12 @@ class CrmQuoteVersionCreate(CrmQuoteVersionPayload):
     pass
 
 
+class CrmQuoteDraftUpdate(CrmQuoteVersionPayload):
+    expected_version_number: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1, max_length=255)
+    valid_until: date | None = None
+
+
 class CrmQuoteVersionResponse(BaseModel):
     id: int
     version_number: int

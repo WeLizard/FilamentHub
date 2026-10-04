@@ -22,6 +22,7 @@ from app.core.errors import (
     ERR_CRM_ORDER_NOT_FOUND,
     ERR_CRM_QUOTE_HAS_NO_DOCUMENT,
     ERR_CRM_QUOTE_LOCKED,
+    ERR_CRM_QUOTE_DRAFT_CHANGED,
     ERR_CRM_QUOTE_NOT_FOUND,
     ERR_CRM_QUOTE_NUMBER_EXISTS,
     raise_error,
@@ -58,6 +59,7 @@ from app.schemas.crm import (
     CrmOrderSpoolReservationResponse,
     CrmOrderUpdate,
     CrmQuoteCreate,
+    CrmQuoteDraftUpdate,
     CrmQuoteDetailResponse,
     CrmQuoteEventResponse,
     CrmQuoteListResponse,
@@ -367,15 +369,18 @@ async def _load_customer(db: AsyncSession, user_id: int, customer_id: int) -> Cr
     return customer
 
 
-async def _load_quote(db: AsyncSession, user_id: int, quote_id: int) -> CrmQuote:
-    quote = (
-        await db.execute(
-            select(CrmQuote)
-            .execution_options(populate_existing=True)
-            .options(*_quote_load_options())
-            .where(CrmQuote.id == quote_id, CrmQuote.user_id == user_id)
-        )
-    ).scalar_one_or_none()
+async def _load_quote(
+    db: AsyncSession, user_id: int, quote_id: int, *, for_update: bool = False
+) -> CrmQuote:
+    query = (
+        select(CrmQuote)
+        .execution_options(populate_existing=True)
+        .options(*_quote_load_options())
+        .where(CrmQuote.id == quote_id, CrmQuote.user_id == user_id)
+    )
+    if for_update:
+        query = query.with_for_update()
+    quote = (await db.execute(query)).scalar_one_or_none()
     if quote is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CRM_QUOTE_NOT_FOUND)
     _validate_quote_protected_fields(quote)
@@ -719,7 +724,7 @@ async def update_quote(
     current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
-    quote = await _load_quote(db, current_user.id, quote_id)
+    quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
     changes = payload.model_dump(exclude_unset=True)
     if "customer_id" in changes:
         customer_id = changes.pop("customer_id")
@@ -747,7 +752,7 @@ async def create_quote_version(
     current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
-    quote = await _load_quote(db, current_user.id, quote_id)
+    quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
     if quote.status == CrmQuoteStatus.ACCEPTED:
         raise_error(status.HTTP_409_CONFLICT, ERR_CRM_QUOTE_LOCKED)
     previous_status = quote.status
@@ -768,6 +773,42 @@ async def create_quote_version(
     return _serialize_quote_detail(await _load_quote(db, current_user.id, quote.id))
 
 
+@router.put(
+    "/quotes/{quote_id}/draft",
+    response_model=CrmQuoteDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def update_draft_quote(
+    quote_id: int,
+    payload: CrmQuoteDraftUpdate,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CrmQuoteDetailResponse:
+    """Atomically replace an editable draft with a new immutable version."""
+    quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
+    current_version = _current_version(quote)
+    if (
+        quote.status != CrmQuoteStatus.DRAFT
+        or current_version.version_number != payload.expected_version_number
+    ):
+        raise_error(status.HTTP_409_CONFLICT, ERR_CRM_QUOTE_DRAFT_CHANGED)
+    title = payload.title.strip()
+    if not title:
+        raise_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ERR_CRM_QUOTE_DRAFT_CHANGED)
+
+    await _add_version(
+        db,
+        quote,
+        payload,
+        current_version.version_number + 1,
+        current_user.id,
+    )
+    quote.title = title
+    quote.valid_until = payload.valid_until
+    await db.commit()
+    return _serialize_quote_detail(await _load_quote(db, current_user.id, quote.id))
+
+
 @router.post("/quotes/{quote_id}/status", response_model=CrmQuoteDetailResponse)
 async def update_quote_status(
     quote_id: int,
@@ -775,7 +816,7 @@ async def update_quote_status(
     current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
-    quote = await _load_quote(db, current_user.id, quote_id)
+    quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
     previous = quote.status
     target = payload.status
     if target == previous:
@@ -828,7 +869,7 @@ async def share_quote(
     current_user: Annotated[User, Depends(require_calculator_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmShareQuoteResponse:
-    quote = await _load_quote(db, current_user.id, quote_id)
+    quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
     version = _current_version(quote)
     if not version.html_content:
         raise_error(status.HTTP_409_CONFLICT, ERR_CRM_QUOTE_HAS_NO_DOCUMENT)

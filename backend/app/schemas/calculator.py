@@ -416,6 +416,10 @@ class CalculatorEstimateRequest(BaseModel):
     nozzle_temperature_c: float | None = Field(None, ge=0, le=600)
 
     # ========== Дополнительные услуги (почасовая оплата) ==========
+    scanning_price: float | None = Field(
+        None, ge=0, description="Цена 3D-сканирования для заказчика, разовая на заказ (без наценки)"
+    )
+
     modeling_hours: float | None = Field(
         None, ge=0, description="Время моделирования в часах"
     )
@@ -545,6 +549,7 @@ class CalculatorEstimateResponse(BaseModel):
     cost_waste: float = Field(0, ge=0, description="Потери материала (пурга, скирт, дефекты)")
     cost_electricity: float = Field(0, ge=0, description="Стоимость электроэнергии")
     cost_modeling: float = Field(0, ge=0, description="Стоимость моделирования")
+    cost_scanning: float = Field(0, ge=0, description="Стоимость 3D-сканирования")
     cost_printing: float = Field(0, ge=0, description="Стоимость печати (почасовая)")
     cost_postprocessing: float = Field(0, ge=0, description="Стоимость постобработки")
     cost_monitoring: float = Field(0, ge=0, description="Мониторинг печати (пассивное время оператора)")

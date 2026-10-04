@@ -66,12 +66,30 @@ import {
   subscribeToPluginSliceProgress,
   type PluginSliceParseResult,
 } from '../utils/pluginBridge';
+import { deliverQuotePdf, QuotePdfSaveError } from '../utils/quotePdf';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { QuotePdfPreview } from '../components/QuotePdfPreview';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { USER_PREFERENCES_QUERY_KEY } from '../hooks/useUserCurrency';
 import { translateApiError } from '../utils/translateApiError';
+import { createQuoteBreakdownHtml, createQuoteFooterHtml, createQuoteHeaderHtml, quoteDocumentLayoutCss, quoteDocumentTotalsCss, quoteFooterBaseCss, workBreakdownHtmlEntries } from '../utils/quoteDocumentPresentation';
+import { QuoteDisclosureSettings } from '../components/QuoteDisclosureSettings';
+import { InputWithSuffix, numberInputResetClass } from '../components/InputWithSuffix';
+import {
+  buildQuoteWorkBreakdown,
+  getCompleteQuoteDisclosureSnapshot,
+  isQuoteDisclosureBoundToLines,
+  getSnapshotTaxDisclosure,
+  removeEmbeddedTaxFromLines,
+  replaceCustomerDeliveryLine,
+  quoteLinesFingerprint,
+  restoreQuoteBaseLines,
+  sumQuotePositions,
+  type QuoteDisclosureSnapshot,
+  type QuoteWorkBreakdownEntry,
+} from '../utils/quoteDisclosure';
 import {
   currencySymbol,
   normalizeCurrency,
@@ -85,7 +103,7 @@ import {
   pickPrimaryParsedMaterial,
   type MaterialMatchConfidence,
 } from '../utils/calculatorMaterialMatcher';
-import { allocateRoundedTotal, quoteTitleFromFileName } from '../utils/calculatorQuote';
+import { allocateRoundedTotal, normalizeQuoteLineUnitPrice, quoteTitleFromFileName } from '../utils/calculatorQuote';
 import {
   buildConfiguredCalculatorBatchSummary,
   calculatorOutputQuantityPerRun,
@@ -133,8 +151,6 @@ const surfaceClass =
   'relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl';
 const inputClass =
   'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-transparent transition-all';
-const numberInputResetClass =
-  '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 const compactNumericInputClass = `${inputClass} ${numberInputResetClass} w-full sm:max-w-[15rem]`;
 const ghostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
@@ -167,6 +183,11 @@ interface QuoteProfileState {
   disclaimerMode: QuoteDisclaimerMode;
   currency: CurrencyCode;
   quoteNumberPrefix: string;
+  customerDeliveryAmount: number;
+  taxKind: 'tax' | 'vat';
+  taxMode: 'hide' | 'included' | 'separate';
+  showCostBreakdown: boolean;
+  costBreakdownNote: string;
 }
 
 interface CalculatorFormState {
@@ -188,6 +209,7 @@ interface CalculatorFormState {
   powerBedW: number;
   powerSteppersW: number;
   powerElectronicsW: number;
+  scanningPrice: number;
   modelingHours: number;
   modelingMinutes: number;
   modelingRatePerHour: number;
@@ -376,6 +398,7 @@ const DEFAULT_FORM_STATE: CalculatorFormState = {
   powerBedW: 0,
   powerSteppersW: 0,
   powerElectronicsW: 0,
+  scanningPrice: 0,
   modelingHours: 0,
   modelingMinutes: 0,
   modelingRatePerHour: 934,
@@ -552,6 +575,11 @@ const DEFAULT_QUOTE_PROFILE: QuoteProfileState = {
   disclaimerMode: 'not_offer',
   currency: 'RUB',
   quoteNumberPrefix: '',
+  customerDeliveryAmount: 0,
+  taxKind: 'tax',
+  taxMode: 'included',
+  showCostBreakdown: false,
+  costBreakdownNote: '',
 };
 const DEFAULT_QUOTE_PARTY_FORM: QuotePartyFormState = {
   ...DEFAULT_QUOTE_PROFILE,
@@ -772,6 +800,10 @@ export const buildEstimateRequest = (
     requestData.power_bed_w = form.powerBedW || null;
     requestData.power_steppers_w = form.powerSteppersW || null;
     requestData.power_electronics_w = form.powerElectronicsW || null;
+  }
+
+  if (form.scanningPrice > 0) {
+    requestData.scanning_price = form.scanningPrice;
   }
 
   if (form.modelingRatePerHour) {
@@ -1026,16 +1058,24 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
       sellerName: typeof parsed.sellerName === 'string' ? parsed.sellerName : undefined,
       sellerInn: typeof parsed.sellerInn === 'string' ? parsed.sellerInn : undefined,
       sellerPhone: typeof parsed.sellerPhone === 'string' ? parsed.sellerPhone : undefined,
+      sellerRegistrationId: typeof parsed.sellerRegistrationId === 'string' ? parsed.sellerRegistrationId : undefined,
+      sellerTaxCode: typeof parsed.sellerTaxCode === 'string' ? parsed.sellerTaxCode : undefined,
+      sellerAddress: typeof parsed.sellerAddress === 'string' ? parsed.sellerAddress : undefined,
+      sellerBankDetails: typeof parsed.sellerBankDetails === 'string' ? parsed.sellerBankDetails : undefined,
+      quoteMarket: typeof parsed.quoteMarket === 'string' ? parsed.quoteMarket : undefined,
       paymentTerms: typeof parsed.paymentTerms === 'string' ? parsed.paymentTerms : undefined,
       validityDays:
         typeof parsed.validityDays === 'number' && Number.isFinite(parsed.validityDays)
           ? parsed.validityDays
           : undefined,
-      disclaimerMode: parsed.disclaimerMode === 'offer' || parsed.disclaimerMode === 'not_offer'
-        ? parsed.disclaimerMode
-        : undefined,
+      disclaimerMode: 'not_offer',
       currency: parsed.currency ? normalizeCurrency(parsed.currency) : undefined,
       quoteNumberPrefix: typeof parsed.quoteNumberPrefix === 'string' ? parsed.quoteNumberPrefix : undefined,
+      customerDeliveryAmount: typeof parsed.customerDeliveryAmount === 'number' ? Math.max(0, parsed.customerDeliveryAmount) : undefined,
+      taxKind: parsed.taxKind === 'vat' ? 'vat' : parsed.taxKind === 'tax' ? 'tax' : undefined,
+      taxMode: parsed.taxMode === 'hide' || parsed.taxMode === 'included' || parsed.taxMode === 'separate' ? parsed.taxMode : undefined,
+      showCostBreakdown: typeof parsed.showCostBreakdown === 'boolean' ? parsed.showCostBreakdown : undefined,
+      costBreakdownNote: typeof parsed.costBreakdownNote === 'string' ? parsed.costBreakdownNote : undefined,
     };
   } catch {
     return {};
@@ -1053,11 +1093,21 @@ const saveStoredQuoteProfile = (data: QuoteProfileState): void => {
       sellerName: data.sellerName,
       sellerInn: data.sellerInn,
       sellerPhone: data.sellerPhone,
+      sellerRegistrationId: data.sellerRegistrationId,
+      sellerTaxCode: data.sellerTaxCode,
+      sellerAddress: data.sellerAddress,
+      sellerBankDetails: data.sellerBankDetails,
+      quoteMarket: data.quoteMarket,
       paymentTerms: data.paymentTerms,
       validityDays: data.validityDays,
       disclaimerMode: data.disclaimerMode,
       currency: data.currency,
       quoteNumberPrefix: data.quoteNumberPrefix,
+      customerDeliveryAmount: data.customerDeliveryAmount,
+      taxKind: data.taxKind,
+      taxMode: data.taxMode,
+      showCostBreakdown: data.showCostBreakdown,
+      costBreakdownNote: data.costBreakdownNote,
     }),
   );
 };
@@ -1562,6 +1612,7 @@ const buildFormFromHistoryEntry = (entry: CalculatorHistoryEntry): CalculatorFor
     pricePerHour: request.price_per_hour ?? DEFAULT_FORM_STATE.pricePerHour,
     electricityCostPerKwh: request.electricity_cost_per_kwh ?? DEFAULT_FORM_STATE.electricityCostPerKwh,
     printerPowerW: request.printer_power_w ?? DEFAULT_FORM_STATE.printerPowerW,
+    scanningPrice: request.scanning_price ?? DEFAULT_FORM_STATE.scanningPrice,
     modelingHours: request.modeling_hours ?? DEFAULT_FORM_STATE.modelingHours,
     modelingMinutes: request.modeling_minutes ?? DEFAULT_FORM_STATE.modelingMinutes,
     modelingRatePerHour: request.modeling_rate_per_hour ?? DEFAULT_FORM_STATE.modelingRatePerHour,
@@ -1598,23 +1649,42 @@ interface QuoteLineItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  sourceData?: Record<string, unknown> | null;
 }
+
+const normalizeQuoteLineItems = (items: QuoteLineItem[]): QuoteLineItem[] => items.flatMap((item) => {
+  const normalized = normalizeQuoteLineUnitPrice(item);
+  if (!normalized) throw new Error('quoteQuantityPriceUnrepresentable');
+  return normalized;
+});
 
 interface QuoteItem {
   id: string;
   lineItem: QuoteLineItem;
   includedItems: string[];
+  calculationSnapshot: CalculatorHistoryEntryCreate;
 }
 
 interface BuildQuoteHtmlParams {
   t: TFunction;
+  language: string;
   items: QuoteLineItem[];
+  workBreakdown?: QuoteWorkBreakdownEntry[] | null;
   includedItems: string[];
   grandTotal: number;
   parties: QuotePartyFormState;
   formatCurrency: (value: number | null | undefined) => string;
   quoteNumber?: string;
   taxRatePercent?: number;
+  taxDisclosure?: { kind: 'tax' | 'vat'; mode: 'hide' | 'included' | 'separate'; amount: number; netAmount: number } | null;
+  taxTotal?: number;
+  customerDeliveryAmount?: number;
+  calculationSnapshot?: CalculatorHistoryEntryCreate | null;
+  quoteSources?: CalculatorHistoryEntryCreate[];
+  quoteDisclosure?: { taxKind: 'tax' | 'vat' | null; taxMode: 'hide' | 'included' | 'separate' | null; taxAmount: number; customerDelivery: number; invalidated: boolean; baseLineFingerprint?: string; showCostBreakdown?: boolean; costBreakdownNote?: string };
+  taxSplitUnavailable?: boolean;
+  showCostBreakdown?: boolean;
+  costBreakdownNote?: string;
 }
 
 export const buildQuoteLineItems = (
@@ -1650,13 +1720,13 @@ export const buildQuoteLineItems = (
         : null,
     ].filter(Boolean) as string[];
     const totalPrice = result.cost_final || result.cost_total;
-    return [{
+    return normalizeQuoteLineItems([{
       title: quoteTitleFromFileName(parsedGcode?.file_name ?? '', fallbackTitle),
       details,
       quantity,
       unitPrice: totalPrice / quantity,
       totalPrice,
-    }];
+    }]);
   }
 
   const configsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
@@ -1800,13 +1870,13 @@ export const buildQuoteLineItems = (
     drafts.map((draft) => draft.score),
   );
 
-  return drafts.map((draft, index) => ({
+  return normalizeQuoteLineItems(drafts.map((draft, index) => ({
     title: draft.title,
     details: draft.details,
     quantity: draft.quantity,
     unitPrice: allocatedTotals[index] / draft.quantity,
     totalPrice: allocatedTotals[index],
-  }));
+  })));
 };
 
 const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateResponse): string[] => {
@@ -1821,7 +1891,7 @@ const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateRespons
   if (result.cost_printing > 0) {
     included.push(t('profilePage.calculator.quoteIncluded.printing'));
   }
-  if (result.cost_modeling > 0) {
+  if (result.cost_modeling > 0 || (result.cost_scanning ?? 0) > 0) {
     included.push(t('profilePage.calculator.quoteIncluded.modeling'));
   }
   if (result.cost_postprocessing > 0) {
@@ -1831,32 +1901,43 @@ const buildQuoteIncludedItems = (t: TFunction, result: CalculatorEstimateRespons
   return included.length > 0 ? included : [t('profilePage.calculator.quoteIncluded.none')];
 };
 
-const buildQuoteDisclaimerLabel = (t: TFunction, mode: QuoteDisclaimerMode): string =>
-  mode === 'offer' ? t('profilePage.calculator.quoteDisclaimerOffer') : t('profilePage.calculator.quoteDisclaimerNotOffer');
+const buildQuoteDisclaimerLabel = (t: TFunction): string =>
+  t('profilePage.calculator.quoteDisclaimerNotOffer');
 
 export const buildQuoteDocumentHtml = ({
   t,
+  language,
   items,
+  workBreakdown,
   includedItems,
   grandTotal,
   parties,
   formatCurrency,
   quoteNumber,
+  customerDeliveryAmount = 0,
   taxRatePercent = 0,
+  taxDisclosure = null,
+  quoteDisclosure = undefined,
+  showCostBreakdown = false,
+  costBreakdownNote = '',
 }: BuildQuoteHtmlParams): string => {
   const lineItems = items;
   const issuedAt = new Date();
-  const rules = quoteMarketRules(resolveQuoteMarket(parties.quoteMarket, parties.currency));
+  const selectedQuoteMarket = parties.quoteMarket === 'ru' || parties.quoteMarket === 'intl' || parties.quoteMarket === 'cn'
+    ? resolveQuoteMarket(parties.quoteMarket, null)
+    : language.toLowerCase().startsWith('ru') ? 'ru' : 'intl';
+  const rules = quoteMarketRules(selectedQuoteMarket);
+  const sellerTaxIdLabelKey = selectedQuoteMarket === 'ru'
+    ? rules.taxIdKey
+    : 'profilePage.calculator.quoteSellerTaxIdGeneric';
+  const sellerRegistrationLabelKey = selectedQuoteMarket === 'ru'
+    ? rules.registrationIdKey
+    : 'profilePage.calculator.quoteSellerRegistrationIdGeneric';
   const formatDate = (value: Date): string =>
-    new Intl.DateTimeFormat(rules.dateLocale, { dateStyle: 'long' }).format(value);
+    new Intl.DateTimeFormat(language, { dateStyle: 'long' }).format(value);
   const today = formatDate(issuedAt);
   const validityDays = Math.max(1, Math.round(parties.validityDays || DEFAULT_QUOTE_PROFILE.validityDays));
   const validUntil = formatDate(addDays(issuedAt, validityDays));
-  const disclaimerMode = parties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode;
-  const disclaimerLabel = t(
-    disclaimerMode === 'offer' ? rules.disclaimerKeys.binding : rules.disclaimerKeys.nonBinding,
-  );
-  const buyerFallback = t('profilePage.calculator.quoteBuyerFallback');
 
   const tableRows = lineItems
     .map(
@@ -1876,34 +1957,30 @@ export const buildQuoteDocumentHtml = ({
 
   const includedMarkup = includedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
 
-  const showsTaxSeparately = rules.showTaxLine && taxRatePercent > 0;
-  const taxAmount = showsTaxSeparately
-    ? grandTotal - grandTotal / (1 + taxRatePercent / 100)
-    : 0;
-  const netAmount = grandTotal - taxAmount;
-  const taxRows = showsTaxSeparately
-    ? `
-          <tr>
-            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('quoteMarket.netAmount'))}:</td>
-            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(netAmount))}</td>
-          </tr>
-          <tr>
-            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('quoteMarket.taxLine'))} ${escapeHtml(String(taxRatePercent))}%:</td>
-            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(taxAmount))}</td>
-          </tr>`
+  const taxRows = taxDisclosure && taxDisclosure.amount > 0
+    ? taxDisclosure.mode === 'included'
+      ? `<div class="quote-total-row" data-quote-total-kind="included-tax"><span>${escapeHtml(t('profilePage.calculator.quoteTaxIncludedAmount', { taxLabel: t(taxDisclosure.kind === 'vat' ? 'profilePage.calculator.quoteTaxVat' : 'profilePage.calculator.quoteTaxGeneric') }).replace('{{taxLabel}}', t(taxDisclosure.kind === 'vat' ? 'profilePage.calculator.quoteTaxVat' : 'profilePage.calculator.quoteTaxGeneric')))}:</span><span>${escapeHtml(formatCurrency(taxDisclosure.amount))}</span></div>`
+      : `
+          <div class="quote-total-row" data-quote-total-kind="net"><span>${escapeHtml(t('profilePage.calculator.quoteSubtotal'))}:</span><span>${escapeHtml(formatCurrency(taxDisclosure.netAmount))}</span></div>
+          <div class="quote-total-row" data-quote-total-kind="tax"><span>${escapeHtml(t('profilePage.calculator.quoteTaxFromEstimate', { taxLabel: t(taxDisclosure.kind === 'vat' ? 'profilePage.calculator.quoteTaxVat' : 'profilePage.calculator.quoteTaxGeneric') }).replace('{{taxLabel}}', t(taxDisclosure.kind === 'vat' ? 'profilePage.calculator.quoteTaxVat' : 'profilePage.calculator.quoteTaxGeneric')))}:</span><span>${escapeHtml(formatCurrency(taxDisclosure.amount))}</span></div>`
+    : '';
+  const taxDeliveryRow = '';
+  const breakdownEntries = showCostBreakdown && workBreakdown?.length
+    ? workBreakdownHtmlEntries(workBreakdown, t, formatCurrency, language)
+    : [];
+  const breakdownMarkup = breakdownEntries.length > 0
+    ? createQuoteBreakdownHtml(t('profilePage.calculator.quoteBreakdownLabel'), breakdownEntries, costBreakdownNote)
     : '';
 
-  const buyerName = parties.buyerName.trim() || buyerFallback;
+  const buyerName = parties.buyerName.trim();
   const buyerInn = parties.buyerInn.trim();
   const buyerAddress = parties.buyerAddress.trim();
   const paymentTerms = parties.paymentTerms.trim();
   const sellerName = parties.sellerName.trim() || '—';
 
 
-  // Документ следует рынку сделки, а не языку интерфейса: даты в нём уже
-  // форматируются по нему же, и объявленный язык не должен с этим спорить.
   return `<!doctype html>
-<html lang="${escapeHtml(rules.dateLocale)}">
+<html lang="${escapeHtml(language)}">
   <head>
     <meta charset="utf-8" />
     <title>${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</title>
@@ -1915,13 +1992,13 @@ export const buildQuoteDocumentHtml = ({
         margin: 0 auto; padding: 20mm;
         background: #fff;
       }
-      h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+      h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
       .subtitle { font-size: 13px; color: #6b7280; }
       .date { font-size: 13px; margin-top: 8px; }
-      .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
-      .header-right { text-align: right; font-size: 13px; line-height: 1.7; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+      .header > div:first-child { width: 55%; }
+      .header-right { width: 40%; text-align: right; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
       .header-right p strong { font-size: 14px; }
-      .header-right .status { font-size: 11px; color: #9ca3af; margin-top: 6px; }
       .box { border: 1px solid #d1d5db; border-radius: 8px; padding: 14px 16px; background: #f9fafb; margin-bottom: 20px; }
       .box-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
       .box-line { font-size: 13px; line-height: 1.6; color: #374151; }
@@ -1941,35 +2018,62 @@ export const buildQuoteDocumentHtml = ({
       .included { margin-bottom: 24px; }
       .included-title { font-weight: 700; margin-bottom: 8px; font-size: 14px; }
       .included ul { padding-left: 20px; font-size: 13px; color: #4b5563; line-height: 1.8; }
-      .signatures { display: flex; justify-content: space-between; margin-top: 28px; }
-      .sig-block { width: 38%; }
-      .sig-block p { font-size: 13px; margin-bottom: 32px; }
-      .sig-line { border-bottom: 1px solid #1f2937; padding-bottom: 4px; font-size: 13px; }
-      .sig-hint { font-size: 10px; color: #9ca3af; margin-top: 4px; }
-      .footer-note { margin-top: 18px; text-align: center; font-size: 10px; color: #d1d5db; }
+      ${quoteFooterBaseCss}
       .total-row td { font-weight: 700; font-size: 15px; background: #f9fafb; }
+      @media screen {
+        body { display: flex; flex-direction: column; }
+        .page { order: 0; }
+        .document-header { order: -1; width: 210mm; margin: 0 auto; padding: 5mm 20mm; background: white; }
+        .document-footer { order: 1; width: 210mm; margin: 0 auto; padding: 5mm 20mm; background: white; }
+      }
       @media print {
-        @page { size: A4; margin: 14mm; }
+        @page {
+          size: A4;
+          margin: 24mm 14mm 32mm;
+          @top-center {
+            content: element(quoteHeader);
+            vertical-align: bottom;
+            width: 100%;
+          }
+          @bottom-center {
+            content: element(quoteFooter);
+            vertical-align: top;
+            width: 100%;
+          }
+        }
         body { background: white; }
         .page { width: 100%; min-height: auto; margin: 0; padding: 0; box-shadow: none; }
-        .signatures, .footer-note { break-inside: avoid; }
+        tr, .box, .included { break-inside: avoid; }
+        /* Chromium ignores the running element declaration below and retains this header fallback. */
+        .document-header { position: fixed; top: -14mm; left: 0; right: 0; height: 10mm; margin: 0; }
+        .document-header { position: running(quoteHeader); width: 100%; height: auto; margin: 0; padding: 0 0 2mm; }
+        /* Chromium ignores the running element declaration below and retains this footer fallback. */
+        .document-footer { position: fixed; bottom: -24mm; left: 0; right: 0; height: 20mm; margin: 0; }
+        .document-footer { position: running(quoteFooter); width: 100%; height: auto; margin: 0; padding: 4mm 0 0; }
       }
+      ${quoteDocumentTotalsCss}
+      ${quoteDocumentLayoutCss}
     </style>
   </head>
   <body>
+    ${createQuoteHeaderHtml(
+      t('profilePage.calculator.quoteHeaderNoticeBefore'),
+      t('profilePage.calculator.quoteHeaderNoticeAfter'),
+    )}
+    ${createQuoteFooterHtml(t('profilePage.calculator.quoteFooterNote'))}
     <div class="page">
       <div class="header">
         <div>
           <h2>${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</h2>
           <p class="subtitle">${escapeHtml(t('profilePage.calculator.quoteDocumentSubtitle'))}</p>
-          <p class="date">${escapeHtml(today)}</p>
         </div>
         <div class="header-right">
-          <p><strong>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</strong></p>
+          <div class="quote-seller-block">
+          <p class="party-label">${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</p>
           <p>${escapeHtml(sellerName)}</p>
-          <p>${escapeHtml(t(rules.taxIdKey))}: ${escapeHtml(parties.sellerInn.trim() || '—')}</p>
-          ${rules.registrationIdKey && parties.sellerRegistrationId.trim()
-            ? `<p>${escapeHtml(t(rules.registrationIdKey))}: ${escapeHtml(parties.sellerRegistrationId.trim())}</p>`
+          ${parties.sellerInn.trim() ? `<p>${escapeHtml(t(sellerTaxIdLabelKey))}: ${escapeHtml(parties.sellerInn.trim())}</p>` : ''}
+          ${sellerRegistrationLabelKey && parties.sellerRegistrationId.trim()
+            ? `<p>${escapeHtml(t(sellerRegistrationLabelKey))}: ${escapeHtml(parties.sellerRegistrationId.trim())}</p>`
             : ''}
           ${rules.showTaxCode && parties.sellerTaxCode.trim()
             ? `<p>${escapeHtml(t('quoteMarket.ru.taxCode'))}: ${escapeHtml(parties.sellerTaxCode.trim())}</p>`
@@ -1977,30 +2081,26 @@ export const buildQuoteDocumentHtml = ({
           ${parties.sellerAddress.trim()
             ? `<p>${escapeHtml(t('quoteMarket.sellerAddress'))}: ${escapeHtml(parties.sellerAddress.trim())}</p>`
             : ''}
-          <p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim() || '—')}</p>
+          ${parties.sellerPhone.trim() ? `<p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim())}</p>` : ''}
           ${rules.showBankDetails && parties.sellerBankDetails.trim()
             ? `<p>${escapeHtml(t('quoteMarket.sellerBank'))}: ${escapeHtml(parties.sellerBankDetails.trim())}</p>`
             : ''}
-          <p class="status">${escapeHtml(t('profilePage.calculator.quoteTaxStatus'))}</p>
+          </div>
+          <div class="quote-buyer-block">
+            <p class="party-label">${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
+            ${buyerName ? `<p class="box-line">${escapeHtml(buyerName)}</p>` : ''}
+            ${buyerInn ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</p>` : ''}
+            ${buyerAddress ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</p>` : ''}
+          </div>
         </div>
       </div>
-
-      <div class="box">
-        <p class="box-title">${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
-        <p class="box-line">${escapeHtml(buyerName)}</p>
-        ${buyerInn ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</p>` : ''}
-        ${buyerAddress ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</p>` : ''}
-      </div>
+      <div class="quote-meta-row"><p data-quote-issue-date>${escapeHtml(today)}</p><p data-quote-validity>${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: <strong>${escapeHtml(validUntil)}</strong></p></div>
 
       ${paymentTerms ? `
       <div class="box">
         <p class="box-title">${escapeHtml(t('profilePage.calculator.quotePaymentTerms'))}:</p>
         <p class="box-line">${escapeHtml(paymentTerms)}</p>
       </div>` : ''}
-
-      <div class="box" style="margin-bottom: 24px;">
-        <p class="box-line">${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: <strong>${escapeHtml(validUntil)}</strong></p>
-      </div>
 
       <table>
         <thead>
@@ -2015,40 +2115,20 @@ export const buildQuoteDocumentHtml = ({
         <tbody>
           ${tableRows}
         </tbody>
-        <tfoot>
-          ${taxRows}
-          <tr class="total-row">
-            <td colspan="4" class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(t('profilePage.calculator.totalCost'))}:</td>
-            <td class="p-2 border border-gray-400 text-sm text-right">${escapeHtml(formatCurrency(grandTotal))}</td>
-          </tr>
-        </tfoot>
       </table>
+      <div class="quote-totals" data-quote-totals>
+        ${taxRows}
+        ${taxDeliveryRow}
+        <div class="quote-total-row quote-grand-total" data-quote-total-kind="total"><span>${escapeHtml(t('profilePage.calculator.totalCost'))}:</span><strong>${escapeHtml(formatCurrency(grandTotal))}</strong></div>
+      </div>
 
+      ${breakdownMarkup}
 
       <div class="included">
         <p class="included-title">${escapeHtml(t('profilePage.calculator.quoteIncludedTitle'))}:</p>
         <ul>${includedMarkup}</ul>
       </div>
 
-      <div class="box" style="background: transparent; border-color: #e5e7eb;">
-        ${showsTaxSeparately ? '' : `<p class="box-muted">${escapeHtml(t('quoteMarket.taxIncluded'))}</p>`}
-        <p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteLegalStatus'))}: ${escapeHtml(disclaimerLabel)}</p>
-      </div>
-
-      <div class="signatures">
-        <div class="sig-block">
-          <p>${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</p>
-          <p class="sig-line">${escapeHtml(sellerName)}</p>
-          <p class="sig-hint">(${escapeHtml(t('profilePage.calculator.quoteSignatureHint'))})</p>
-        </div>
-        <div class="sig-block" style="text-align: right;">
-          <p>${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
-          <p class="sig-line"></p>
-          <p class="sig-hint">(${escapeHtml(t('profilePage.calculator.quoteSignatureHint'))})</p>
-        </div>
-      </div>
-
-      <p class="footer-note">${escapeHtml(t('profilePage.calculator.quoteFooterNote'))}</p>
     </div>
   </body>
 </html>`;
@@ -2115,6 +2195,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [failedRestoreHistoryEntryId, setFailedRestoreHistoryEntryId] = useState<number | null>(null);
   const restoreHistoryAttemptRef = useRef<number | null>(null);
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [quotePdfPreview, setQuotePdfPreview] = useState<{ url: string; title: string; printable?: boolean } | null>(null);
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
@@ -2128,7 +2209,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [accountEconomicsSaving, setAccountEconomicsSaving] = useState(false);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
+  useEffect(() => () => {
+    if (quotePdfPreview?.url) URL.revokeObjectURL(quotePdfPreview.url);
+  }, [quotePdfPreview?.url]);
   const [quoteCustomerSelection, setQuoteCustomerSelection] = useState('new');
+  const [quoteCustomerDelivery, setQuoteCustomerDelivery] = useState('');
+  const [quoteTaxKind, setQuoteTaxKind] = useState<'tax' | 'vat'>('tax');
+  const [quoteTaxMode, setQuoteTaxMode] = useState<'hide' | 'included' | 'separate'>('hide');
+  const [quoteShowBreakdown, setQuoteShowBreakdown] = useState(false);
+  const [quoteBreakdownNote, setQuoteBreakdownNote] = useState('');
   const [isSharing, setIsSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [isPdfDownloading, setIsPdfDownloading] = useState(false);
@@ -3426,32 +3515,25 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
 
-  const handlePrintQuote = () => {
+  const handlePrintQuote = async () => {
     if (!result && quoteItems.length === 0) return;
 
-    const quoteWindow = window.open('', '_blank');
-    if (!quoteWindow) {
-      setHistoryFeedback({ kind: 'error', message: tc('quotePopupBlocked') });
+    let quoteHtml: string;
+    let quoteNumber = '';
+    try {
+      const prefix = quoteProfile.quoteNumberPrefix
+        || quoteMarketRules(resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency)).numberPrefix;
+      quoteSequenceRef.current += 1;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      quoteNumber = `${prefix}-${dateStr}-${String(quoteSequenceRef.current).padStart(2, '0')}`;
+      quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
+    } catch (error) {
+      setHistoryFeedback({ kind: 'error', message: error instanceof Error && error.message === 'quoteQuantityPriceUnrepresentable' ? tc('quoteQuantityPriceUnrepresentable') : tc('quotePdfError') });
       return;
     }
 
-    quoteSequenceRef.current += 1;
-    const prefix =
-      quoteProfile.quoteNumberPrefix
-      || quoteMarketRules(resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency)).numberPrefix;
-    const seq = quoteSequenceRef.current;
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const quoteNumber = `${prefix}-${dateStr}-${String(seq).padStart(2, '0')}`;
-
-    const quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
-
-    quoteWindow.document.open();
-    quoteWindow.document.write(quoteHtml);
-    quoteWindow.document.close();
-    quoteWindow.focus();
-    setTimeout(() => {
-      quoteWindow.print();
-    }, 250);
+    const url = URL.createObjectURL(new Blob([quoteHtml], { type: 'text/html;charset=utf-8' }));
+    setQuotePdfPreview({ url, title: quoteNumber, printable: true });
   };
 
   const handleShareQuote = async () => {
@@ -3484,7 +3566,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         message: translateApiError(
           t,
           errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
-          tc('quoteShareError'),
+          errorWithResponse.message === 'quoteQuantityPriceUnrepresentable' ? tc('quoteQuantityPriceUnrepresentable') : tc('quoteShareError'),
         ),
       });
     } finally {
@@ -3506,19 +3588,27 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
       const quoteHtml = buildQuoteDocumentHtml(buildQuoteHtmlParams(quoteNumber));
 
-      await calculatorAPI.downloadQuotePdf({
-        title: quoteNumber,
-        html_content: quoteHtml,
-      });
-      setHistoryFeedback({ kind: 'success', message: tc('quotePdfDownloaded') });
+      const delivery = await deliverQuotePdf({ title: quoteNumber, html_content: quoteHtml });
+      if (delivery.kind === 'preview') {
+        setQuotePdfPreview({ url: delivery.url, title: quoteNumber });
+      } else {
+        setHistoryFeedback({
+          kind: 'success',
+          message: delivery.kind === 'saved' ? t('profilePage.calculator.quotePdfSaved', { fileName: delivery.fileName }) : tc('quotePdfDownloaded'),
+        });
+      }
     } catch (err) {
+      if (err instanceof QuotePdfSaveError) {
+        setHistoryFeedback({ kind: 'error', message: tc('quotePdfSaveFailed') });
+        return;
+      }
       const errorWithResponse = err as { response?: { data?: { detail?: unknown } }; message?: string };
       setHistoryFeedback({
         kind: 'error',
         message: translateApiError(
           t,
           errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
-          tc('quotePdfError'),
+          errorWithResponse.message === 'quoteQuantityPriceUnrepresentable' ? tc('quoteQuantityPriceUnrepresentable') : tc('quotePdfError'),
         ),
       });
     } finally {
@@ -3528,21 +3618,31 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const handleAddToQuote = () => {
     if (!result) return;
-    const lineItems = buildQuoteLineItems(
-      t,
-      form,
-      result,
-      parsedGcode,
-      selectedMaterial,
-      parsedJobs,
-      materialLines,
-      jobConfigs,
-    );
+    let lineItems: QuoteLineItem[];
+    try {
+      lineItems = buildQuoteLineItems(
+        t,
+        form,
+        result,
+        parsedGcode,
+        selectedMaterial,
+        parsedJobs,
+        materialLines,
+        jobConfigs,
+      );
+    } catch (error) {
+      setHistoryFeedback({ kind: 'error', message: error instanceof Error && error.message === 'quoteQuantityPriceUnrepresentable' ? tc('quoteQuantityPriceUnrepresentable') : tc('quoteSaveWorkspaceError') });
+      return;
+    }
     const included = buildQuoteIncludedItems(t, result);
+    const calculationSnapshot = buildHistoryPayload(
+      form, result, parsedGcode, selectedMaterial, materialLines, parsedJobs, jobConfigs, printerEconomics, quoteProfile.currency,
+    );
     const newItems = lineItems.map((lineItem) => ({
       id: crypto.randomUUID(),
       lineItem,
       includedItems: included,
+      calculationSnapshot,
     }));
     setQuoteItems((prev) => [...prev, ...newItems]);
     setHistoryFeedback({ kind: 'success', message: tc('addedToQuote') });
@@ -3558,6 +3658,38 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         ? { ...item, lineItem: { ...item.lineItem, title } }
         : item
     )));
+  };
+
+  const getQuoteDisclosureContext = () => {
+    const currentSnapshot = result
+      ? buildHistoryPayload(form, result, parsedGcode, selectedMaterial, materialLines, parsedJobs, jobConfigs, printerEconomics, quoteProfile.currency)
+      : null;
+    const snapshots = quoteItems.length > 0
+      ? quoteItems.map((item) => item.calculationSnapshot)
+      : currentSnapshot ? [currentSnapshot] : [];
+    const uniqueSources = [...new Map(snapshots.map((snapshot) => [JSON.stringify(snapshot), snapshot])).values()];
+    const snapshot = uniqueSources.length === 1 ? uniqueSources[0] : null;
+    const baseTotal = quoteItems.length > 0
+      ? quoteItems.reduce((sum, item) => sum + item.lineItem.totalPrice, 0)
+      : Number(result?.cost_final ?? result?.cost_total ?? 0);
+    const complete = getCompleteQuoteDisclosureSnapshot(snapshot as unknown as QuoteDisclosureSnapshot | null);
+    const disclosureLines = quoteItems.length > 0
+      ? quoteItems.map((item) => item.lineItem)
+      : result
+        ? buildQuoteLineItems(t, form, result, parsedGcode, selectedMaterial, parsedJobs, materialLines, jobConfigs)
+        : [];
+    const eligible = Boolean(complete) && Math.round(Number(complete?.result.cost_final) * 100) === Math.round(baseTotal * 100)
+      && isQuoteDisclosureBoundToLines(snapshot as unknown as QuoteDisclosureSnapshot | null, disclosureLines.map((line) => ({
+        quantity: line.quantity, unit: 'pcs', unitPrice: line.unitPrice,
+      })), quoteLinesFingerprint(disclosureLines.map((line) => ({ quantity: line.quantity, unit: 'pcs', unitPrice: line.unitPrice }))));
+    return {
+      snapshot,
+      uniqueSources,
+      baseTotal,
+      fullSnapshot: eligible ? complete : null,
+      sourceEligible: eligible,
+      disclosureLines,
+    };
   };
 
   const buildQuoteHtmlParams = (quoteNumber: string): BuildQuoteHtmlParams => {
@@ -3581,22 +3713,74 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         jobConfigs,
       );
       includedItems = buildQuoteIncludedItems(t, result);
-      grandTotal = result.cost_final || result.cost_total;
+      grandTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
     } else {
       items = [];
       includedItems = [];
       grandTotal = 0;
     }
 
+    const context = getQuoteDisclosureContext();
+    const sourceSnapshot = context.snapshot as unknown as QuoteDisclosureSnapshot | null;
+    const baseTotal = grandTotal;
+    const sameSavedCalculation = context.sourceEligible;
+    let taxDisclosure: BuildQuoteHtmlParams['taxDisclosure'] = null;
+    let taxTotal = 0;
+    let savedTaxAmount = 0;
+    let taxSplitUnavailable = false;
+    if (sameSavedCalculation && sourceSnapshot) {
+      const tax = getSnapshotTaxDisclosure(sourceSnapshot, baseTotal);
+      if (tax.available && tax.taxAmount && tax.netAmount !== null) {
+        savedTaxAmount = tax.taxAmount;
+        if (quoteTaxMode === 'included') {
+          taxDisclosure = { kind: quoteTaxKind, mode: quoteTaxMode, amount: tax.taxAmount, netAmount: tax.netAmount };
+        } else if (quoteTaxMode === 'separate') {
+          const netLines = removeEmbeddedTaxFromLines(items, tax.taxAmount);
+          if (netLines) {
+            items = netLines.map((line) => ({ ...line, sourceData: line.sourceData ?? null }));
+            taxDisclosure = { kind: quoteTaxKind, mode: quoteTaxMode, amount: tax.taxAmount, netAmount: tax.netAmount };
+            taxTotal = tax.taxAmount;
+          } else taxSplitUnavailable = true;
+        }
+      }
+    }
+    const delivery = Math.round((Number(quoteCustomerDelivery) || 0) * 100 + Number.EPSILON) / 100;
+    const withDelivery = replaceCustomerDeliveryLine(items, delivery, t('profilePage.calculator.quoteDelivery'));
+    if (withDelivery) items = withDelivery.map((line) => ({ ...line, sourceData: line.sourceData ?? null }));
+    const workBreakdown = quoteShowBreakdown && sameSavedCalculation
+      ? buildQuoteWorkBreakdown({ snapshot: sourceSnapshot, positionsTotal: sumQuotePositions(items), positionsIncludeTax: taxTotal <= 0, customerDelivery: delivery })
+      : null;
     return {
       t,
+      language: i18n.language,
       items,
+      workBreakdown,
       includedItems,
-      grandTotal,
+      grandTotal: baseTotal + delivery,
       parties: quoteParties,
       formatCurrency,
       quoteNumber,
       taxRatePercent: form.taxRatePercent,
+      taxDisclosure,
+      taxTotal,
+      customerDeliveryAmount: delivery,
+      calculationSnapshot: sameSavedCalculation ? context.snapshot : null,
+      quoteSources: context.uniqueSources,
+      quoteDisclosure: {
+        taxKind: savedTaxAmount > 0 ? quoteTaxKind : null,
+        taxMode: savedTaxAmount > 0 ? quoteTaxMode : null,
+        taxAmount: savedTaxAmount,
+        customerDelivery: delivery,
+        showCostBreakdown: quoteShowBreakdown,
+        costBreakdownNote: quoteBreakdownNote,
+        invalidated: false,
+        baseLineFingerprint: quoteLinesFingerprint(restoreQuoteBaseLines(items).map((line) => ({
+          quantity: line.quantity, unit: 'pcs', unitPrice: line.unitPrice,
+        }))),
+      },
+      showCostBreakdown: quoteShowBreakdown,
+      costBreakdownNote: quoteBreakdownNote,
+      taxSplitUnavailable,
     };
   };
 
@@ -3616,26 +3800,32 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const handleSaveQuoteToWorkspace = async () => {
     if ((!result && quoteItems.length === 0) || !user) return;
-    const quoteParams = buildQuoteHtmlParams('{{CRM_QUOTE_NUMBER}}');
+    let quoteParams: BuildQuoteHtmlParams;
+    try {
+      quoteParams = buildQuoteHtmlParams('{{CRM_QUOTE_NUMBER}}');
+    } catch (error) {
+      setHistoryFeedback({ kind: 'error', message: error instanceof Error && error.message === 'quoteQuantityPriceUnrepresentable' ? tc('quoteQuantityPriceUnrepresentable') : tc('quoteSaveWorkspaceError') });
+      return;
+    }
     if (quoteParams.items.length === 0) return;
+    if (quoteParams.taxSplitUnavailable) {
+      setHistoryFeedback({ kind: 'error', message: tc('quoteTaxSplitUnrepresentable') });
+      return;
+    }
 
     const selectedCustomerId = quoteCustomerSelection.startsWith('customer:')
       ? Number(quoteCustomerSelection.slice('customer:'.length))
       : null;
     const shouldCreateCustomer = quoteCustomerSelection === 'new' && Boolean(quoteParties.buyerName.trim());
-    const calculationSnapshot = result
-      ? buildHistoryPayload(
-          form,
-          result,
-          parsedGcode,
-          selectedMaterial,
-          materialLines,
-          parsedJobs,
-          jobConfigs,
-          printerEconomics,
-          quoteProfile.currency,
-        )
-      : null;
+    const calculationSnapshot = quoteParams.calculationSnapshot
+      ? {
+          ...quoteParams.calculationSnapshot,
+          ...(quoteParams.quoteSources && quoteParams.quoteSources.length > 1 ? { quote_sources: quoteParams.quoteSources } : {}),
+          quote_disclosure: quoteParams.quoteDisclosure,
+        }
+      : quoteParams.quoteSources?.length
+        ? { quote_sources: quoteParams.quoteSources, quote_disclosure: quoteParams.quoteDisclosure }
+        : { quote_disclosure: quoteParams.quoteDisclosure };
     const preflightRequest = currentPreflightRequest();
 
     try {
@@ -3676,8 +3866,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             }
           : null,
         payment_terms: quoteParties.paymentTerms,
-        disclaimer_mode: quoteParties.disclaimerMode,
-        tax_total: 0,
+        disclaimer_mode: 'not_offer',
+        tax_total: quoteParams.taxTotal ?? 0,
         html_content: buildQuoteDocumentHtml(quoteParams),
         lines: quoteParams.items.map((item, index) => ({
           title: item.title,
@@ -3685,7 +3875,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           quantity: item.quantity,
           unit: 'pcs',
           unit_price: item.unitPrice,
-          source_data: { position: index + 1, source: estimateSource },
+          source_data: { ...(item.sourceData ?? {}), position: index + 1, source: estimateSource },
         })),
       });
       setHistoryFeedback({ kind: 'success', message: tc('quoteSavedToWorkspace') });
@@ -3704,6 +3894,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   };
 
   const handleOpenQuote = () => {
+    setQuoteCustomerDelivery(quoteProfile.customerDeliveryAmount > 0 ? String(quoteProfile.customerDeliveryAmount) : '');
+    setQuoteTaxKind(quoteProfile.taxKind);
+    setQuoteTaxMode(quoteProfile.taxMode);
+    setQuoteShowBreakdown(quoteProfile.showCostBreakdown);
+    setQuoteBreakdownNote(quoteProfile.costBreakdownNote);
     setQuoteParties((prev) => ({
       ...prev,
       ...quoteProfile,
@@ -3723,6 +3918,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         id: crypto.randomUUID(),
         lineItem,
         includedItems: included,
+        calculationSnapshot: buildHistoryPayload(
+          form, result, parsedGcode, selectedMaterial, materialLines, parsedJobs, jobConfigs, printerEconomics, quoteProfile.currency,
+        ),
       })));
     }
     setQuoteModalOpen(true);
@@ -3742,7 +3940,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         quote_market: quoteProfile.quoteMarket,
         payment_terms: quoteProfile.paymentTerms,
         validity_days: quoteProfile.validityDays,
-        disclaimer_mode: quoteProfile.disclaimerMode,
+        disclaimer_mode: 'not_offer',
         currency: quoteProfile.currency,
         quote_number_prefix: quoteProfile.quoteNumberPrefix,
       });
@@ -3773,7 +3971,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         quoteMarket: profile.quote_market,
         paymentTerms: profile.payment_terms,
         validityDays: profile.validity_days,
-        disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
+        disclaimerMode: 'not_offer',
         currency: normalizeCurrency(profile.currency),
         quoteNumberPrefix: profile.quote_number_prefix,
       }));
@@ -3788,9 +3986,14 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         quoteMarket: profile.quote_market,
         paymentTerms: profile.payment_terms,
         validityDays: profile.validity_days,
-        disclaimerMode: profile.disclaimer_mode as QuoteDisclaimerMode,
+        disclaimerMode: 'not_offer',
         currency: normalizeCurrency(profile.currency),
         quoteNumberPrefix: profile.quote_number_prefix,
+        customerDeliveryAmount: quoteProfile.customerDeliveryAmount,
+        taxKind: quoteProfile.taxKind,
+        taxMode: quoteProfile.taxMode,
+        showCostBreakdown: quoteProfile.showCostBreakdown,
+        costBreakdownNote: quoteProfile.costBreakdownNote,
       });
       toast.success(tc('cloudLoadSuccess'));
     } catch (error) {
@@ -4170,6 +4373,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         }]
       : [];
 
+  const quoteDisclosureContext = getQuoteDisclosureContext();
+  const quoteTaxAvailable = quoteDisclosureContext.sourceEligible
+    && getSnapshotTaxDisclosure(quoteDisclosureContext.snapshot as unknown as QuoteDisclosureSnapshot | null, quoteDisclosureContext.baseTotal).available;
+  const quoteTaxSnapshot = quoteDisclosureContext.snapshot as unknown as QuoteDisclosureSnapshot | null;
+  const taxPreview = quoteTaxAvailable ? getSnapshotTaxDisclosure(quoteTaxSnapshot, quoteDisclosureContext.baseTotal) : null;
+  const quoteByWorkAvailable = quoteDisclosureContext.sourceEligible;
+  const quoteTaxSeparateAvailable = Boolean(taxPreview?.available && taxPreview.taxAmount
+    && removeEmbeddedTaxFromLines(quoteDisclosureContext.disclosureLines, taxPreview.taxAmount));
+
   return (
     <div className="space-y-6">
       {trialDaysLeft !== null && (
@@ -4368,6 +4580,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
       <QuoteModal
         isOpen={quoteModalOpen}
+        embedded={embedded}
         source={estimateSource}
         quoteParties={quoteParties}
         result={result}
@@ -4396,7 +4609,23 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         isSavingToWorkspace={saveQuoteToWorkspaceMutation.isPending}
         isLoggedIn={!!user}
         formatCurrency={formatCurrency}
+        customerDelivery={quoteCustomerDelivery}
+        onCustomerDeliveryChange={setQuoteCustomerDelivery}
+        byWorkAvailable={quoteByWorkAvailable}
+        currencySymbol={currencySymbol(quoteProfile.currency)}
+        taxDisclosureAvailable={quoteTaxAvailable}
+        taxSeparateAvailable={quoteTaxSeparateAvailable}
+        taxKind={quoteTaxKind}
+        onTaxKindChange={setQuoteTaxKind}
+        taxMode={quoteTaxMode}
+        onTaxModeChange={setQuoteTaxMode}
+        showCostBreakdown={quoteShowBreakdown}
+        onShowCostBreakdownChange={setQuoteShowBreakdown}
+        costBreakdownNote={quoteBreakdownNote}
+        onCostBreakdownNoteChange={setQuoteBreakdownNote}
       />
+
+      {quotePdfPreview && <QuotePdfPreview url={quotePdfPreview.url} title={quotePdfPreview.title} printable={quotePdfPreview.printable} onClose={() => setQuotePdfPreview(null)} />}
 
       <ConfirmDeleteModal
         isOpen={deletingHistoryEntry !== null}
@@ -5623,16 +5852,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     />
                   </FieldBlock>
                   <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
-                    <select
-                      className={`${inputClass} w-full sm:max-w-[18rem]`}
-                      value={quoteProfile.disclaimerMode}
-                      onChange={(event) =>
-                        onQuoteProfileChange('disclaimerMode', event.target.value as QuoteDisclaimerMode)
-                      }
-                    >
-                      <option value="not_offer">{tc('quoteDisclaimerNotOffer')}</option>
-                      <option value="offer">{tc('quoteDisclaimerOffer')}</option>
-                    </select>
+                    <p className="text-sm text-slate-200">{tc('quoteDisclaimerNotOffer')}</p>
                   </FieldBlock>
                   <FieldBlock label={tc('quoteNumberPrefix')} hint={tc('quoteNumberPrefixHint')}>
                     <TextInput
@@ -5669,6 +5889,23 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </FieldBlock>
                   </div>
                   </div>
+                </div>
+                <div className="mt-3 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-3">
+                  <QuoteDisclosureSettings
+                    byWork={quoteProfile.showCostBreakdown}
+                    onByWorkChange={(value) => onQuoteProfileChange('showCostBreakdown', value)}
+                    note={quoteProfile.costBreakdownNote}
+                    onNoteChange={(value) => onQuoteProfileChange('costBreakdownNote', value)}
+                    taxKind={quoteProfile.taxKind}
+                    onTaxKindChange={(value) => onQuoteProfileChange('taxKind', value)}
+                    taxMode={quoteProfile.taxMode}
+                    onTaxModeChange={(value) => onQuoteProfileChange('taxMode', value)}
+                    delivery={quoteProfile.customerDeliveryAmount}
+                    onDeliveryChange={(value) => onQuoteProfileChange('customerDeliveryAmount', value)}
+                    currencySymbol={currencySymbol(quoteProfile.currency)}
+                  >
+                    <p className="text-[11px] leading-4 text-slate-500">{tc('quoteProfileDisclosureHint')}</p>
+                  </QuoteDisclosureSettings>
                 </div>
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                   <p className="text-xs leading-5 text-slate-400">{tc('quoteCloudHint')}</p>
@@ -6866,12 +7103,32 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <div>
                   <p className="text-sm font-semibold text-white">{t('profilePage.calc.additionalServices')}</p>
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <FieldBlock label={t('profilePage.calc.modelingHours')}>
-                      <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
-                    </FieldBlock>
-                    <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
-                      <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
-                    </FieldBlock>
+                    <div className="md:col-span-2 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-200">{tc('modelPrepTitle')}</p>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-400">{tc('modelPrepHint')}</p>
+                      </div>
+                      <div>
+                        <FieldBlock label={tc('scanningTitle')} hint={tc('scanningHint')}>
+                          <div className="max-w-[12rem]">
+                            <InputWithSuffix
+                              value={form.scanningPrice}
+                              onChange={(value) => onChange('scanningPrice', value)}
+                              placeholder="0"
+                              suffix={currencySymbol(quoteProfile.currency)}
+                            />
+                          </div>
+                        </FieldBlock>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <FieldBlock label={t('profilePage.calc.modelingHours')}>
+                          <NumberInput value={form.modelingHours} onChange={(value) => onChange('modelingHours', value)} placeholder="0" />
+                        </FieldBlock>
+                        <FieldBlock label={t('profilePage.calc.modelingMinutes')}>
+                          <NumberInput value={form.modelingMinutes} onChange={(value) => onChange('modelingMinutes', value)} placeholder="0" />
+                        </FieldBlock>
+                      </div>
+                    </div>
                     <FieldBlock label={t('profilePage.calc.postprocessingHours')}>
                       <NumberInput
                         value={form.postprocessingHours}
@@ -7191,6 +7448,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </div>
                   ) : null}
                   <MetricRow label={t('profilePage.calc.electricityLabel')} value={formatCurrency(result.cost_electricity)} />
+                  {(result.cost_scanning ?? 0) > 0 ? (
+                    <MetricRow label={t('profilePage.calculator.scanningTitle')} value={formatCurrency(result.cost_scanning ?? 0)} />
+                  ) : null}
                   <MetricRow label={t('profilePage.calc.modeling')} value={formatCurrency(result.cost_modeling)} />
                   <MetricRow label={t('profilePage.calc.printing')} value={formatCurrency(result.cost_printing)} />
                   <MetricRow label={t('profilePage.calc.postprocessing')} value={formatCurrency(result.cost_postprocessing)} />
@@ -7294,7 +7554,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       {/* Rendered outside <main>: it sits in its own stacking context, so a floating
           button inside it always slides under the footer no matter how high its z-index. */}
       {showCalculateAction ? createPortal(
-        <div className="fixed bottom-5 right-5 z-[70] max-w-[calc(100vw-2.5rem)] lg:bottom-8 lg:right-8">
+        <div className={`fixed z-[70] max-w-[calc(100vw-2.5rem)] ${embedded ? 'bottom-24 right-6' : 'bottom-5 right-5 lg:bottom-8 lg:right-8'}`}>
           <button
             type="button"
             data-testid="calculator-floating-action"
@@ -7472,6 +7732,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
 interface QuoteModalProps {
   isOpen: boolean;
+  embedded?: boolean;
   source: 'manual' | 'gcode';
   quoteParties: QuotePartyFormState;
   result: CalculatorEstimateResponse | null;
@@ -7495,10 +7756,25 @@ interface QuoteModalProps {
   isSavingToWorkspace: boolean;
   isLoggedIn: boolean;
   formatCurrency: (value: number | null | undefined) => string;
+  customerDelivery: string;
+  onCustomerDeliveryChange: (value: string) => void;
+  byWorkAvailable: boolean;
+  currencySymbol: string;
+  taxDisclosureAvailable: boolean;
+  taxSeparateAvailable: boolean;
+  taxKind: 'tax' | 'vat';
+  onTaxKindChange: (kind: 'tax' | 'vat') => void;
+  taxMode: 'hide' | 'included' | 'separate';
+  onTaxModeChange: (mode: 'hide' | 'included' | 'separate') => void;
+  showCostBreakdown: boolean;
+  onShowCostBreakdownChange: (value: boolean) => void;
+  costBreakdownNote: string;
+  onCostBreakdownNoteChange: (value: string) => void;
 }
 
 const QuoteModal: React.FC<QuoteModalProps> = ({
   isOpen,
+  embedded = false,
   source,
   quoteParties,
   result,
@@ -7522,8 +7798,23 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   isSavingToWorkspace,
   isLoggedIn,
   formatCurrency,
+  customerDelivery,
+  onCustomerDeliveryChange,
+  byWorkAvailable,
+  currencySymbol,
+  taxDisclosureAvailable,
+  taxSeparateAvailable,
+  taxKind,
+  onTaxKindChange,
+  taxMode,
+  onTaxModeChange,
+  showCostBreakdown,
+  onShowCostBreakdownChange,
+  costBreakdownNote,
+  onCostBreakdownNoteChange,
 }) => {
   const { t } = useTranslation();
+  const insidePluginEmbed = isPluginEmbed();
   const tc = (key: string) => translateCalculator(t, key);
   const isHeaderVisible = useHeaderVisible();
 
@@ -7535,6 +7826,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
   const displayTotal = hasItems
     ? quoteItems.reduce((sum, qi) => sum + qi.lineItem.totalPrice, 0)
     : result?.cost_total ?? 0;
+  const customerDeliveryValue = Math.max(0, Number(customerDelivery) || 0);
 
   return (
     <ModalOverlay
@@ -7628,14 +7920,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     />
                   </FieldBlock>
                   <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
-                    <select
-                      className={`${inputClass} w-full sm:max-w-[18rem]`}
-                      value={quoteParties.disclaimerMode}
-                      onChange={(event) => onPartyChange('disclaimerMode', event.target.value as QuoteDisclaimerMode)}
-                    >
-                      <option value="not_offer">{tc('quoteDisclaimerNotOffer')}</option>
-                      <option value="offer">{tc('quoteDisclaimerOffer')}</option>
-                    </select>
+                    <p className="text-sm text-slate-200">{tc('quoteDisclaimerNotOffer')}</p>
                   </FieldBlock>
                   <div className="md:col-span-2">
                     <FieldBlock label={tc('quotePaymentTerms')}>
@@ -7689,9 +7974,27 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
             </div>
 
             <div className="space-y-5">
+              <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+                <QuoteDisclosureSettings
+                  byWork={showCostBreakdown}
+                  onByWorkChange={onShowCostBreakdownChange}
+                  byWorkAvailable={byWorkAvailable}
+                  note={costBreakdownNote}
+                  onNoteChange={onCostBreakdownNoteChange}
+                  taxKind={taxKind}
+                  onTaxKindChange={onTaxKindChange}
+                  taxMode={taxMode}
+                  onTaxModeChange={onTaxModeChange}
+                  taxAvailable={taxDisclosureAvailable}
+                  taxSeparateAvailable={taxSeparateAvailable}
+                  delivery={customerDeliveryValue}
+                  onDeliveryChange={(value) => onCustomerDeliveryChange(value > 0 ? String(value) : '')}
+                  currencySymbol={currencySymbol}
+                />
+              </div>
               <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/10 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">{tc('quoteSummaryTitle')}</p>
-                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{formatCurrency(displayTotal)}</p>
+                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{formatCurrency(displayTotal + customerDeliveryValue)}</p>
                 <div className="mt-5 space-y-3 text-sm text-slate-200">
                   {hasItems && (
                     <div className="flex items-center justify-between gap-4">
@@ -7722,7 +8025,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-slate-300">{tc('quoteLegalStatus')}</span>
                     <span className="text-right font-medium text-white">
-                      {buildQuoteDisclaimerLabel(t, quoteParties.disclaimerMode || DEFAULT_QUOTE_PROFILE.disclaimerMode)}
+                      {buildQuoteDisclaimerLabel(t)}
                     </span>
                   </div>
                 </div>
@@ -7787,7 +8090,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
               )}
 
               <div className="space-y-3">
-                <button
+                {!embedded && <button
                   type="button"
                   onClick={onSaveToWorkspace}
                   disabled={isSavingToWorkspace}
@@ -7795,15 +8098,15 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                 >
                   {isSavingToWorkspace ? <Loader2 className="h-4 w-4 animate-spin" /> : <BriefcaseBusiness className="h-4 w-4" />}
                   {tc('quoteSaveWorkspaceAction')}
-                </button>
-                <button
+                </button>}
+                {!insidePluginEmbed && <button
                   type="button"
                   onClick={onPrint}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] bg-[linear-gradient(135deg,#0891b2,#7c3aed)] px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(6,182,212,0.7)] transition-all hover:translate-y-[-1px] hover:shadow-[0_22px_42px_-18px_rgba(124,58,237,0.72)]"
                 >
                   <FileText className="h-4 w-4" />
                   {tc('quotePrintAction')}
-                </button>
+                </button>}
                 {isLoggedIn && (
                   <button
                     type="button"
@@ -7812,7 +8115,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     className="inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] border border-cyan-400/20 bg-cyan-400/10 px-5 py-4 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-400/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isPdfDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
-                    {tc('quoteDownloadPdfAction')}
+                    {tc(insidePluginEmbed ? 'quoteSavePdfAction' : 'quoteDownloadPdfAction')}
                   </button>
                 )}
                 {isLoggedIn && (
@@ -8005,28 +8308,6 @@ const TextareaInput: React.FC<{
     placeholder={placeholder}
     onChange={(event) => onChange(event.target.value)}
   />
-);
-
-const InputWithSuffix: React.FC<{
-  value: number;
-  onChange: (value: number) => void;
-  placeholder: string;
-  suffix: string;
-  step?: string;
-}> = ({ value, onChange, placeholder, suffix, step }) => (
-  <div className="flex w-full items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/60 pr-3 transition-all focus-within:border-transparent focus-within:ring-2 focus-within:ring-cyan-400/60 sm:max-w-[15rem]">
-    <input
-      type="number"
-      className={`${numberInputResetClass} w-full min-w-0 bg-transparent px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none`}
-      value={value || ''}
-      placeholder={placeholder}
-      step={step}
-      onChange={(event) => onChange(Number(event.target.value) || 0)}
-    />
-    <span className="pointer-events-none shrink-0 rounded-xl border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-xs font-medium text-slate-300">
-      {suffix}
-    </span>
-  </div>
 );
 
 const MetricTile: React.FC<{ label: string; value: string }> = ({ label, value }) => (

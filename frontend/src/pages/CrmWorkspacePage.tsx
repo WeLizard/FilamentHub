@@ -1,10 +1,13 @@
 /** CRM-lite workspace for customers, commercial proposals, and accepted orders. */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { QuoteDisclosureSettings } from '../components/QuoteDisclosureSettings';
+import { currencySymbol } from '../utils/currency';
+import { QuotePdfPreview } from '../components/QuotePdfPreview';
 import {
   Archive,
   AlertTriangle,
@@ -29,14 +32,17 @@ import {
   X,
 } from 'lucide-react';
 
-import { calculatorAPI, crmAPI, spoolsAPI, type UserSpool } from '../api/client';
+import { crmAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { formatMediumDate } from '../utils/formatDate';
 import { translateApiError } from '../utils/translateApiError';
+import { isPluginEmbed } from '../utils/pluginBridge';
+import { deliverQuotePdf, QuotePdfSaveError } from '../utils/quotePdf';
 import type {
   CrmCustomer,
   CrmCustomerCreate,
+  CrmDraftQuoteUpdate,
   CrmOrder,
   CrmOrderCreate,
   CrmOrderSpoolReservationCreate,
@@ -45,6 +51,20 @@ import type {
   CrmQuoteDetail,
   CrmQuoteStatus,
 } from '../types/api';
+import { buildEditedDraftQuoteHtml, readDraftQuoteDocumentDefaults } from '../utils/quoteDocumentEditor';
+import {
+  buildQuoteWorkBreakdown,
+  sumQuotePositions,
+  getCompleteQuoteDisclosureSnapshot,
+  getSnapshotTaxDisclosure,
+  isQuoteDisclosureBoundToLines,
+  projectDraftQuoteFinancials,
+  quoteLinesFingerprint,
+  removeEmbeddedTaxFromLines,
+  restoreQuoteBaseLines,
+  type QuoteDisclosureLine,
+  type QuoteDisclosureSnapshot,
+} from '../utils/quoteDisclosure';
 
 type WorkspaceTab = 'quotes' | 'orders' | 'customers';
 type Feedback = { kind: 'success' | 'error'; text: string } | null;
@@ -153,8 +173,13 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [customerDialog, setCustomerDialog] = useState<CrmCustomer | 'new' | null>(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; title: string } | null>(null);
   const [reservationOrder, setReservationOrder] = useState<CrmOrder | null>(null);
   const hasAccess = user?.has_calculator_access ?? false;
+
+  useEffect(() => () => {
+    if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+  }, [pdfPreview?.url]);
 
   const summaryQuery = useQuery({
     queryKey: ['crm', 'summary'],
@@ -253,6 +278,20 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     }),
   });
 
+  const quoteDraftMutation = useMutation({
+    mutationFn: ({ quoteId, payload }: { quoteId: number; payload: CrmDraftQuoteUpdate }) => (
+      crmAPI.updateDraftQuote(quoteId, payload)
+    ),
+    onSuccess: async () => {
+      setFeedback({ kind: 'success', text: t('crmWorkspace.feedback.draftSaved') });
+      await refreshWorkspace();
+    },
+    onError: (error) => setFeedback({
+      kind: 'error',
+      text: translateApiError(t, error, t('crmWorkspace.feedback.error')),
+    }),
+  });
+
   const orderMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: number; status: CrmOrderStatus }) => (
       crmAPI.updateOrder(orderId, { status })
@@ -339,11 +378,18 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
       return;
     }
     try {
-      await calculatorAPI.downloadQuotePdf({
+      const document = {
         title: quote.number,
         html_content: quote.current_version.html_content,
-      });
+      };
+      const delivery = await deliverQuotePdf(document);
+      if (delivery.kind === 'preview') setPdfPreview({ url: delivery.url, title: quote.number });
+      if (delivery.kind === 'saved') setFeedback({ kind: 'success', text: t('profilePage.calculator.quotePdfSaved', { fileName: delivery.fileName }) });
     } catch (error) {
+      if (error instanceof QuotePdfSaveError) {
+        setFeedback({ kind: 'error', text: t('profilePage.calculator.quotePdfSaveFailed') });
+        return;
+      }
       setFeedback({ kind: 'error', text: translateApiError(t, error, t('crmWorkspace.feedback.error')) });
     }
   };
@@ -567,9 +613,13 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
           onCustomer={(customerId) => selectedQuoteId && quoteCustomerMutation.mutate({ quoteId: selectedQuoteId, customerId })}
           onShare={() => selectedQuoteId && shareMutation.mutate(selectedQuoteId)}
           onPdf={(quote) => void downloadPdf(quote)}
-          busy={quoteStatusMutation.isPending || quoteCustomerMutation.isPending || shareMutation.isPending}
+          onSaveDraft={(payload) => selectedQuoteId
+            ? quoteDraftMutation.mutateAsync({ quoteId: selectedQuoteId, payload })
+            : Promise.resolve()}
+          busy={quoteStatusMutation.isPending || quoteCustomerMutation.isPending || shareMutation.isPending || quoteDraftMutation.isPending}
         />
       )}
+      {pdfPreview && <QuotePdfPreview url={pdfPreview.url} title={pdfPreview.title} onClose={() => setPdfPreview(null)} />}
     </div>
   );
 };
@@ -606,12 +656,20 @@ const StatusBadge: React.FC<{ status: CrmQuoteStatus | CrmOrderStatus; kind: 'qu
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone[status]}`}>{t(`crmWorkspace.status.${kind}.${status}`)}</span>;
 };
 
-const StatusSelect = <T extends string>({ value, options, label, onChange, disabled }: { value: T; options: T[]; label: (status: T) => string; onChange: (status: T) => void; disabled: boolean }) => (
-  <select value="" disabled={disabled || options.length === 0} onChange={(event) => { if (event.target.value) onChange(event.target.value as T); }} className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-45">
-    <option value="">{options.length > 0 ? label(value) : '—'}</option>
+const StatusSelect = <T extends string>({ value, options, label, onChange, disabled, actionLabel }: { value: T; options: T[]; label: (status: T) => string; onChange: (status: T) => void; disabled: boolean; actionLabel?: string }) => (
+  <select aria-label={actionLabel} value="" disabled={disabled || options.length === 0} onChange={(event) => { if (event.target.value) onChange(event.target.value as T); }} className="max-w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-45">
+    <option value="">{options.length > 0 ? actionLabel ?? label(value) : actionLabel ?? '—'}</option>
     {options.map((status) => <option key={status} value={status}>{label(status)}</option>)}
   </select>
 );
+
+const QuoteStatusActions: React.FC<{ status: CrmQuoteStatus; onChange: (status: CrmQuoteStatus) => void; disabled: boolean }> = ({ status, onChange, disabled }) => {
+  const { t } = useTranslation();
+  return <>
+    {status === 'draft' && <button type="button" disabled={disabled} onClick={() => onChange('sent')} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25 disabled:opacity-45"><Send className="h-4 w-4 shrink-0" />{t('crmWorkspace.actions.markSent')}</button>}
+    <StatusSelect value={status} options={QUOTE_TRANSITIONS[status]} actionLabel={t('crmWorkspace.actions.changeStatus')} label={(next) => t(`crmWorkspace.status.quote.${next}`)} onChange={onChange} disabled={disabled} />
+  </>;
+};
 
 const QuotesList: React.FC<{ quotes: CrmQuote[]; onOpen: (id: number) => void; onStatus: (id: number, status: CrmQuoteStatus) => void; onShare: (id: number) => void; onPdf: (quote: CrmQuote) => void; busy: boolean }> = ({ quotes, onOpen, onStatus, onShare, onPdf, busy }) => {
   const { t } = useTranslation();
@@ -628,8 +686,8 @@ const QuotesList: React.FC<{ quotes: CrmQuote[]; onOpen: (id: number) => void; o
           </button>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
             <span className="mr-2 text-lg font-semibold text-white">{formatter.format(quote.current_version.grand_total)}</span>
-            <StatusSelect value={quote.status} options={QUOTE_TRANSITIONS[quote.status]} label={(status) => t(`crmWorkspace.status.quote.${status}`)} onChange={(status) => onStatus(quote.id, status)} disabled={busy} />
-            <button type="button" onClick={() => onPdf(quote)} disabled={!quote.current_version.html_content} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-35" title={t('crmWorkspace.actions.pdf')}><CloudDownload className="h-4 w-4" /></button>
+            <QuoteStatusActions status={quote.status} onChange={(status) => onStatus(quote.id, status)} disabled={busy} />
+            <button type="button" onClick={() => onPdf(quote)} disabled={!quote.current_version.html_content} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-35" title={t(isPluginEmbed() ? 'profilePage.calculator.quoteSavePdfAction' : 'crmWorkspace.actions.pdf')}><CloudDownload className="h-4 w-4" /></button>
             <button type="button" onClick={() => onShare(quote.id)} disabled={busy || !quote.current_version.html_content} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-35" title={t('crmWorkspace.actions.share')}><Copy className="h-4 w-4" /></button>
             <button type="button" onClick={() => onOpen(quote.id)} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/10 hover:text-white"><ChevronRight className="h-4 w-4" /></button>
           </div>
@@ -898,8 +956,232 @@ const OrderDialog: React.FC<{
 
 const DialogField: React.FC<{ label: string; children: ReactNode }> = ({ label, children }) => <label className="block"><span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>{children}</label>;
 
-const QuoteDetailDrawer: React.FC<{ quote: CrmQuoteDetail | null; customers: CrmCustomer[]; isLoading: boolean; onClose: () => void; onStatus: (status: CrmQuoteStatus) => void; onCustomer: (customerId: number | null) => void; onShare: () => void; onPdf: (quote: CrmQuoteDetail) => void; busy: boolean }> = ({ quote, customers, isLoading, onClose, onStatus, onCustomer, onShare, onPdf, busy }) => {
+const DraftQuoteEditor: React.FC<{
+  quote: CrmQuoteDetail;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (payload: CrmDraftQuoteUpdate) => Promise<unknown>;
+}> = ({ quote, busy, onCancel, onSave }) => {
+  const { t, i18n } = useTranslation();
+  const html = quote.current_version.html_content ?? '';
+  const [defaults] = useState(() => {
+    try {
+      return readDraftQuoteDocumentDefaults(html, quote.current_version.seller_snapshot, quote.current_version.customer_snapshot);
+    } catch {
+      return null;
+    }
+  });
+  const sellerSnapshot = quote.current_version.seller_snapshot;
+  const buyerSnapshot = quote.current_version.customer_snapshot;
+  const calculationSnapshot = quote.current_version.calculation_snapshot ?? {};
+  const savedDisclosure = calculationSnapshot.quote_disclosure && typeof calculationSnapshot.quote_disclosure === 'object'
+    ? calculationSnapshot.quote_disclosure as { taxKind?: 'tax' | 'vat' | null; taxMode?: 'hide' | 'included' | 'separate' | null; taxAmount?: number; taxLinesAreNet?: boolean; customerDelivery?: number; invalidated?: boolean; baseLineFingerprint?: string; showCostBreakdown?: boolean; costBreakdownNote?: string }
+    : {};
+  const hasMixedSources = Array.isArray(calculationSnapshot.quote_sources);
+  const disclosureSnapshot = !hasMixedSources && calculationSnapshot.request_data && calculationSnapshot.result_data
+    ? calculationSnapshot as unknown as QuoteDisclosureSnapshot
+    : null;
+  const fullDisclosureSnapshot = getCompleteQuoteDisclosureSnapshot(disclosureSnapshot);
+  const [taxKind, setTaxKind] = useState<'tax' | 'vat'>(() => savedDisclosure.taxKind ?? 'tax');
+  const [taxMode, setTaxMode] = useState<'hide' | 'included' | 'separate'>(() => savedDisclosure.taxMode ?? (quote.current_version.tax_total > 0 ? 'separate' : 'hide'));
+  const [customerDelivery, setCustomerDelivery] = useState(() => String(Math.max(0, Number(savedDisclosure.customerDelivery) || 0)));
+  const [showCostBreakdown, setShowCostBreakdown] = useState(savedDisclosure.showCostBreakdown === true);
+  const [costBreakdownNote, setCostBreakdownNote] = useState(savedDisclosure.costBreakdownNote ?? '');
+  const [financiallyEdited, setFinanciallyEdited] = useState(false);
+  const [title, setTitle] = useState(quote.title);
+  const [validUntil, setValidUntil] = useState(quote.valid_until?.slice(0, 10) ?? '');
+  const [sellerName, setSellerName] = useState(defaults?.sellerName ?? String(sellerSnapshot.name ?? ''));
+  const [sellerInn, setSellerInn] = useState(defaults?.sellerInn ?? String(sellerSnapshot.inn ?? ''));
+  const [sellerPhone, setSellerPhone] = useState(defaults?.sellerPhone ?? String(sellerSnapshot.phone ?? ''));
+  const [sellerDetails, setSellerDetails] = useState(defaults?.sellerAdditionalDetails ?? '');
+  const [buyerName, setBuyerName] = useState(defaults?.buyerName ?? String(buyerSnapshot.name ?? ''));
+  const [buyerInn, setBuyerInn] = useState(defaults?.buyerInn ?? String(buyerSnapshot.inn ?? ''));
+  const [buyerAddress, setBuyerAddress] = useState(defaults?.buyerAddress ?? String(buyerSnapshot.address ?? ''));
+  const [paymentTerms, setPaymentTerms] = useState(quote.current_version.payment_terms ?? '');
+  const [lines, setLines] = useState(() => restoreQuoteBaseLines(quote.current_version.lines.map((line) => ({
+    title: line.title, details: line.details, quantity: line.quantity, unit: line.unit, unitPrice: line.unit_price,
+    totalPrice: line.total_price, sourceData: line.source_data,
+  }))).map((line) => ({
+    title: line.title, details: line.details, quantity: line.quantity, unit: line.unit ?? 'pcs',
+    unit_price: line.unitPrice, source_data: line.sourceData ?? null,
+  })));
+  const editorBaseTotal = Math.round(lines.reduce((sum, line) => sum + Math.round(line.quantity * line.unit_price * 100 + Number.EPSILON) / 100, 0) * 100 + Number.EPSILON) / 100;
+  const deliveryValue = Math.max(0, Number(customerDelivery) || 0);
+  const disclosureSourceMatches = !financiallyEdited && fullDisclosureSnapshot !== null && Boolean(savedDisclosure.baseLineFingerprint)
+    && isQuoteDisclosureBoundToLines(disclosureSnapshot, lines.map((line) => ({ quantity: line.quantity, unit: line.unit, unitPrice: line.unit_price })), savedDisclosure.baseLineFingerprint, savedDisclosure.invalidated === true);
+  const currentBaseLineFingerprint = quoteLinesFingerprint(lines.map((line) => ({ quantity: line.quantity, unit: line.unit, unitPrice: line.unit_price })));
+  const disclosureProvenanceInvalidated = financiallyEdited || savedDisclosure.invalidated === true
+    || !fullDisclosureSnapshot || !savedDisclosure.baseLineFingerprint
+    || savedDisclosure.baseLineFingerprint !== currentBaseLineFingerprint;
+  const editorTaxAvailable = disclosureSourceMatches
+    && getSnapshotTaxDisclosure(disclosureSnapshot, editorBaseTotal + deliveryValue, deliveryValue).available;
+  const previewLines: QuoteDisclosureLine[] = lines.map((line) => ({
+    title: line.title, details: line.details, quantity: line.quantity, unitPrice: line.unit_price,
+    totalPrice: Math.round(line.quantity * line.unit_price * 100 + Number.EPSILON) / 100, sourceData: line.source_data,
+  }));
+  const previewTax = disclosureSourceMatches ? getSnapshotTaxDisclosure(disclosureSnapshot, editorBaseTotal + deliveryValue, deliveryValue) : null;
+  const taxSeparateUnavailable = Boolean(previewTax?.available && previewTax.taxAmount
+    && !removeEmbeddedTaxFromLines(previewLines, previewTax.taxAmount));
+
+  const updateLine = (index: number, field: 'title' | 'quantity' | 'unit_price', value: string) => {
+    if (field !== 'title') {
+      setFinanciallyEdited(true);
+      setTaxMode(quote.current_version.tax_total > 0 && savedDisclosure.taxAmount == null ? 'separate' : 'hide');
+    }
+    setLines((current) => current.map((line, lineIndex) => lineIndex === index
+      ? { ...line, [field]: field === 'title' ? value : Number(value) }
+      : line));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!defaults || busy || !title.trim() || !sellerName.trim() || lines.some((line) => !line.title.trim() || !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unit_price) || line.unit_price < 0)) return;
+    if (taxMode === 'separate' && taxSeparateUnavailable) return;
+    const roundMoney = (value: number) => Math.round(value * 100 + Number.EPSILON) / 100;
+    const baseLines = lines.map((line) => {
+      const sourceData = { ...(line.source_data ?? {}) };
+      if (financiallyEdited) {
+        delete sourceData.quote_base_unit_price;
+        delete sourceData.quote_base_total_price;
+        delete sourceData.quote_gross_unit_price;
+        delete sourceData.quote_gross_total_price;
+      }
+      return {
+      title: line.title.trim(), details: line.details, quantity: line.quantity, unit: line.unit ?? 'pcs', unitPrice: roundMoney(line.unit_price),
+        totalPrice: roundMoney(line.quantity * line.unit_price), sourceData,
+      };
+    });
+    const sourceMatches = disclosureSourceMatches && !financiallyEdited;
+    const deliveryAmount = roundMoney(Math.max(0, Number(customerDelivery) || 0));
+    const taxDisclosure = sourceMatches ? getSnapshotTaxDisclosure(disclosureSnapshot, editorBaseTotal + deliveryAmount, deliveryAmount) : null;
+    // Capture provenance before financially edited rows have their restoration metadata stripped.
+    const hasRestorableGrossPrices = lines.some((line) => typeof line.source_data?.quote_gross_unit_price === 'number'
+      || typeof line.source_data?.quote_base_unit_price === 'number');
+    const projection = projectDraftQuoteFinancials({
+      lines: baseLines,
+      snapshot: disclosureSnapshot,
+      sourceBound: sourceMatches,
+      invalidated: disclosureProvenanceInvalidated,
+      taxKind,
+      taxMode,
+      savedTaxAmount: Math.max(0, Number(savedDisclosure.taxAmount) || 0),
+      savedRowsAreNet: savedDisclosure.taxLinesAreNet === true && !hasRestorableGrossPrices,
+      legacyTaxTotal: Math.max(0, Number(quote.current_version.tax_total) || 0),
+      financiallyEdited,
+      customerDeliveryAmount: deliveryAmount,
+      deliveryTitle: t('profilePage.calculator.quoteDelivery'),
+      baseLineFingerprint: quoteLinesFingerprint(baseLines),
+    });
+    if (taxMode === 'separate' && projection.taxSplitUnavailable) return;
+    const workBreakdown = showCostBreakdown && sourceMatches
+      ? buildQuoteWorkBreakdown({ snapshot: disclosureSnapshot, positionsTotal: sumQuotePositions(projection.lines), positionsIncludeTax: projection.taxTotal <= 0, customerDelivery: deliveryAmount })
+      : null;
+    const outputLines = projection.lines;
+    const disclosureTaxAmount = projection.taxDisclosureAmount;
+    const effectiveTaxTotal = projection.taxTotal;
+    const persistedLines = outputLines.map((line) => ({
+      title: line.title, details: line.details, quantity: line.quantity, unit: line.unit ?? 'pcs',
+      unit_price: line.unitPrice, source_data: line.sourceData ?? null,
+    }));
+    const calcSnapshotWithDisclosure = {
+      ...calculationSnapshot,
+      quote_disclosure: { ...projection.quoteDisclosure, showCostBreakdown, costBreakdownNote },
+    };
+    const payload: CrmDraftQuoteUpdate = {
+      expected_version_number: quote.current_version.version_number,
+      title: title.trim(),
+      valid_until: validUntil || null,
+      source_history_id: quote.current_version.source_history_id,
+      seller_snapshot: { ...sellerSnapshot, name: sellerName.trim(), inn: sellerInn.trim(), phone: sellerPhone.trim(), document_additional_details: sellerDetails },
+      customer_snapshot: { ...buyerSnapshot, name: buyerName.trim(), inn: buyerInn.trim(), address: buyerAddress.trim() },
+      calculation_snapshot: calcSnapshotWithDisclosure,
+      payment_terms: paymentTerms.trim() || null,
+      disclaimer_mode: 'not_offer',
+      tax_total: effectiveTaxTotal,
+      html_content: buildEditedDraftQuoteHtml(html, {
+        language: i18n.language.split('-')[0],
+        quoteNumber: quote.number,
+        title: title.trim(),
+        currency: quote.currency,
+        validUntil: validUntil || null,
+        sellerName,
+        sellerInn,
+        sellerPhone,
+        sellerAdditionalDetails: sellerDetails,
+        sellerIdLabel: defaults.sellerIdLabel,
+        sellerPhoneLabel: defaults.sellerPhoneLabel,
+        buyerName,
+        buyerInn,
+        buyerAddress,
+        paymentTerms,
+        originalLineCount: quote.current_version.lines.length,
+        lines: persistedLines.map((line, index) => ({ ...line, id: index + 1, position: index + 1, total_price: roundMoney(line.quantity * line.unit_price) })),
+        grandTotal: projection.grandTotal,
+        taxTotal: effectiveTaxTotal,
+        taxRatePercent: taxDisclosure?.ratePercent ?? null,
+        taxKind: disclosureTaxAmount > 0 ? taxKind : effectiveTaxTotal > 0 ? (savedDisclosure.taxKind ?? 'tax') : null,
+        taxMode,
+        taxDisclosureAmount: disclosureTaxAmount,
+        customerDeliveryAmount: deliveryAmount,
+        formatCurrency: makeCurrencyFormatter(quote.currency).format,
+        t: (key, options) => t(key, options),
+        showCostBreakdown,
+        costBreakdownNote,
+        workBreakdown,
+      }),
+      lines: persistedLines.map((line) => ({ ...line, details: line.details.filter((detail) => detail.trim()) })),
+    };
+    try {
+      await onSave(payload);
+      onCancel();
+    } catch {
+      // The mutation reports a localized error in the workspace feedback area.
+    }
+  };
+
+  if (!defaults) return <div className="space-y-4"><h2 className="text-xl font-semibold text-white">{t('crmWorkspace.quotes.editDraft')}</h2><p className="text-sm leading-6 text-amber-200">{t('crmWorkspace.quotes.editUnavailable')}</p><button type="button" onClick={onCancel} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-200">{t('crmWorkspace.actions.close')}</button></div>;
+  return <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
+    <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold text-white">{t('crmWorkspace.quotes.editDraft')}</h2><p className="mt-1 text-xs text-slate-400">{quote.number} · v{quote.current_version.version_number}</p></div><button type="button" onClick={onCancel} className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300"><X className="h-5 w-5" /></button></div>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="sm:col-span-2"><DialogField label={t('crmWorkspace.quotes.draftTitle')}><input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={255} required /></DialogField></div>
+      <DialogField label={t('crmWorkspace.quotes.validUntil')}><input className={`${inputClass} w-auto min-w-40`} type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} /></DialogField>
+      <DialogField label={t('crmWorkspace.quotes.sellerName')}><input className={inputClass} value={sellerName} onChange={(event) => setSellerName(event.target.value)} required /></DialogField>
+      <DialogField label={t('crmWorkspace.quotes.sellerInn')}><input className={inputClass} value={sellerInn} onChange={(event) => setSellerInn(event.target.value)} /></DialogField>
+      <DialogField label={t('crmWorkspace.quotes.sellerPhone')}><input className={inputClass} value={sellerPhone} onChange={(event) => setSellerPhone(event.target.value)} /></DialogField>
+      <div className="sm:col-span-2"><DialogField label={t('crmWorkspace.quotes.sellerDetails')}><textarea className={`${inputClass} min-h-20`} value={sellerDetails} onChange={(event) => setSellerDetails(event.target.value)} /></DialogField></div>
+      <DialogField label={t('crmWorkspace.quotes.buyerName')}><input className={inputClass} value={buyerName} onChange={(event) => setBuyerName(event.target.value)} /></DialogField>
+      <DialogField label={t('crmWorkspace.quotes.buyerInn')}><input className={inputClass} value={buyerInn} onChange={(event) => setBuyerInn(event.target.value)} /></DialogField>
+      <div className="sm:col-span-2"><DialogField label={t('crmWorkspace.quotes.buyerAddress')}><input className={inputClass} value={buyerAddress} onChange={(event) => setBuyerAddress(event.target.value)} /></DialogField></div>
+      <div className="sm:col-span-2"><DialogField label={t('crmWorkspace.quotes.paymentTerms')}><textarea className={`${inputClass} min-h-20`} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} maxLength={1000} /></DialogField></div>
+    </div>
+    <section className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+      <QuoteDisclosureSettings
+        byWork={showCostBreakdown}
+        onByWorkChange={setShowCostBreakdown}
+        byWorkAvailable={disclosureSourceMatches}
+        note={costBreakdownNote}
+        onNoteChange={setCostBreakdownNote}
+        taxKind={taxKind}
+        onTaxKindChange={setTaxKind}
+        taxMode={taxMode}
+        onTaxModeChange={setTaxMode}
+        taxAvailable={editorTaxAvailable}
+        taxSeparateAvailable={!taxSeparateUnavailable}
+        delivery={deliveryValue}
+        onDeliveryChange={(value) => setCustomerDelivery(String(value))}
+        currencySymbol={currencySymbol(quote.currency)}
+      >
+        {financiallyEdited && <p className="text-xs text-amber-200">{t('profilePage.calculator.quoteDisclosureInvalidated')}</p>}
+      </QuoteDisclosureSettings>
+    </section>
+    <section className="space-y-3"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.positionsTitle')}</h3>{lines.map((line, index) => <div key={quote.current_version.lines[index].id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_6.5rem_8rem]"><DialogField label={t('crmWorkspace.quotes.lineTitle')}><input className={inputClass} value={line.title} onChange={(event) => updateLine(index, 'title', event.target.value)} maxLength={255} required /></DialogField><DialogField label={t('crmWorkspace.quotes.quantity')}><input className={inputClass} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(index, 'quantity', event.target.value)} required /></DialogField><DialogField label={t('crmWorkspace.quotes.unitPrice')}><input className={inputClass} type="number" min="0" step="0.01" value={line.unit_price} onChange={(event) => updateLine(index, 'unit_price', event.target.value)} required /></DialogField></div><DialogField label={t('crmWorkspace.quotes.lineDetails')}><textarea className={`${inputClass} mt-2 min-h-16`} value={line.details.join('\n')} onChange={(event) => setLines((current) => current.map((entry, lineIndex) => lineIndex === index ? { ...entry, details: event.target.value.split(/\r?\n/).map((detail) => detail.trim()).filter(Boolean) } : entry))} /></DialogField></div>)}</section>
+    <div className="flex flex-wrap justify-end gap-2 border-t border-white/10 pt-4"><button type="button" onClick={onCancel} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-200">{t('crmWorkspace.actions.cancel')}</button><button type="submit" disabled={busy || !title.trim() || (taxMode === 'separate' && taxSeparateUnavailable)} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{busy ? t('crmWorkspace.quotes.savingDraft') : t('crmWorkspace.quotes.saveDraft')}</button></div>
+  </form>;
+};
+
+const QuoteDetailDrawer: React.FC<{ quote: CrmQuoteDetail | null; customers: CrmCustomer[]; isLoading: boolean; onClose: () => void; onStatus: (status: CrmQuoteStatus) => void; onCustomer: (customerId: number | null) => void; onShare: () => void; onPdf: (quote: CrmQuoteDetail) => void; onSaveDraft: (payload: CrmDraftQuoteUpdate) => Promise<unknown>; busy: boolean }> = ({ quote, customers, isLoading, onClose, onStatus, onCustomer, onShare, onPdf, onSaveDraft, busy }) => {
   const { t } = useTranslation();
+  const [editingDraft, setEditingDraft] = useState(false);
   if (!quote && !isLoading) return null;
-  return <ModalOverlay onClose={onClose} contentClassName="flex h-[100dvh] min-h-0 items-stretch justify-end"><aside className="h-full min-h-0 w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-slate-950 shadow-2xl shadow-black/60">{isLoading || !quote ? <div className="flex h-full items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-cyan-300" /></div> : <div className="p-5 md:p-7"><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-cyan-300">{quote.number}</span><StatusBadge status={quote.status} kind="quote" /></div><h2 className="mt-3 text-2xl font-semibold text-white">{quote.title}</h2><p className="mt-2 text-sm text-slate-400">{quote.customer?.name ?? t('crmWorkspace.quotes.noCustomer')}</p></div><button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs text-cyan-200">{t('crmWorkspace.quotes.amount')}</p><p className="mt-2 text-2xl font-semibold text-white">{makeCurrencyFormatter(quote.currency).format(quote.current_version.grand_total)}</p></div><div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">{t('crmWorkspace.quotes.validUntil')}</p><p className="mt-2 text-lg font-semibold text-white">{formatDate(quote.valid_until)}</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"><label><span className="mb-1.5 block text-xs font-medium text-slate-400">{t('crmWorkspace.quotes.customer')}</span><select className={`${inputClass} py-2`} value={quote.customer_id ?? ''} disabled={busy} onChange={(event) => onCustomer(event.target.value ? Number(event.target.value) : null)}><option value="">{t('crmWorkspace.quotes.noCustomer')}</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.inn ? ` · ${customer.inn}` : ''}</option>)}</select></label><div className="flex flex-wrap items-end gap-2"><StatusSelect value={quote.status} options={QUOTE_TRANSITIONS[quote.status]} label={(status) => t(`crmWorkspace.status.quote.${status}`)} onChange={onStatus} disabled={busy} /><button type="button" onClick={() => onPdf(quote)} disabled={!quote.current_version.html_content} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-35"><CloudDownload className="h-4 w-4" />{t('crmWorkspace.actions.pdf')}</button><button type="button" onClick={onShare} disabled={busy || !quote.current_version.html_content} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-35"><Copy className="h-4 w-4" />{t('crmWorkspace.actions.share')}</button></div></div><section className="mt-7"><div className="flex items-center justify-between"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.positionsTitle')}</h3><span className="text-xs text-slate-500">v{quote.current_version.version_number}</span></div><div className="mt-3 space-y-2">{quote.current_version.lines.map((line) => <div key={line.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-white">{line.position}. {line.title}</p>{line.details.length > 0 && <p className="mt-1 text-xs leading-5 text-slate-400">{line.details.join(' · ')}</p>}</div><p className="shrink-0 text-sm font-semibold text-white">{makeCurrencyFormatter(quote.currency).format(line.total_price)}</p></div><p className="mt-2 text-xs text-slate-500">{line.quantity} × {makeCurrencyFormatter(quote.currency).format(line.unit_price)}</p></div>)}</div></section><section className="mt-7"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.history')}</h3><div className="mt-3 space-y-3 border-l border-white/10 pl-4">{quote.events.slice().reverse().map((event) => <div key={event.id} className="relative"><span className="absolute -left-[1.3rem] top-1.5 h-2 w-2 rounded-full bg-cyan-300" /><p className="text-sm text-slate-200">{t(`crmWorkspace.events.${event.event_type}`)}{event.event_type === 'status_changed' && event.to_status ? ` → ${t(`crmWorkspace.status.quote.${event.to_status}`)}` : ''}</p><p className="mt-0.5 text-xs text-slate-500">{formatDate(event.created_at)}</p></div>)}</div></section>{quote.versions.length > 1 && <section className="mt-7"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.versions')}</h3><div className="mt-3 flex flex-wrap gap-2">{quote.versions.map((version) => <span key={version.id} className={`rounded-xl border px-3 py-2 text-xs ${version.id === quote.current_version.id ? 'border-cyan-400/25 bg-cyan-400/10 text-cyan-100' : 'border-white/10 bg-white/5 text-slate-300'}`}>v{version.version_number} · {makeCurrencyFormatter(quote.currency).format(version.grand_total)}</span>)}</div></section>}</div>}</aside></ModalOverlay>;
+  return <ModalOverlay onClose={onClose} contentClassName="flex h-[100dvh] min-h-0 items-stretch justify-end"><aside className="h-full min-h-0 w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-slate-950 shadow-2xl shadow-black/60">{isLoading || !quote ? <div className="flex h-full items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-cyan-300" /></div> : <div className="p-5 md:p-7">{editingDraft ? <DraftQuoteEditor key={`${quote.id}-${quote.current_version.version_number}`} quote={quote} busy={busy} onCancel={() => setEditingDraft(false)} onSave={onSaveDraft} /> : <><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-cyan-300">{quote.number}</span><StatusBadge status={quote.status} kind="quote" /></div><h2 className="mt-3 text-2xl font-semibold text-white">{quote.title}</h2><p className="mt-2 text-sm text-slate-400">{quote.customer?.name ?? t('crmWorkspace.quotes.noCustomer')}</p></div><button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs text-cyan-200">{t('crmWorkspace.quotes.amount')}</p><p className="mt-2 text-2xl font-semibold text-white">{makeCurrencyFormatter(quote.currency).format(quote.current_version.grand_total)}</p></div><div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">{t('crmWorkspace.quotes.validUntil')}</p><p className="mt-2 text-lg font-semibold text-white">{formatDate(quote.valid_until)}</p></div></div><div className="mt-5 grid gap-3"><label><span className="mb-1.5 block text-xs font-medium text-slate-400">{t('crmWorkspace.quotes.customer')}</span><select className={`${inputClass} py-2`} value={quote.customer_id ?? ''} disabled={busy} onChange={(event) => onCustomer(event.target.value ? Number(event.target.value) : null)}><option value="">{t('crmWorkspace.quotes.noCustomer')}</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.inn ? ` · ${customer.inn}` : ''}</option>)}</select></label><div className="flex flex-wrap items-end gap-2">{quote.status === 'draft' && <button type="button" onClick={() => setEditingDraft(true)} disabled={busy || !quote.current_version.html_content} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-40"><FileText className="h-4 w-4" />{t('crmWorkspace.quotes.editDraft')}</button>}<QuoteStatusActions status={quote.status} onChange={onStatus} disabled={busy} /><button type="button" onClick={() => onPdf(quote)} disabled={!quote.current_version.html_content} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-35"><CloudDownload className="h-4 w-4" />{t(isPluginEmbed() ? 'profilePage.calculator.quoteSavePdfAction' : 'crmWorkspace.actions.pdf')}</button><button type="button" onClick={onShare} disabled={busy || !quote.current_version.html_content} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-35"><Copy className="h-4 w-4" />{t('crmWorkspace.actions.share')}</button></div></div><p className="mt-3 text-xs leading-5 text-slate-400">{t('crmWorkspace.quotes.workflowHint')}</p><section className="mt-7"><div className="flex items-center justify-between"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.positionsTitle')}</h3><span className="text-xs text-slate-500">v{quote.current_version.version_number}</span></div><div className="mt-3 space-y-2">{quote.current_version.lines.map((line) => <div key={line.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-start justify-between gap-4"><div><p className="font-medium text-white">{line.position}. {line.title}</p>{line.details.length > 0 && <p className="mt-1 text-xs leading-5 text-slate-400">{line.details.join(' · ')}</p>}</div><p className="shrink-0 text-sm font-semibold text-white">{makeCurrencyFormatter(quote.currency).format(line.total_price)}</p></div><p className="mt-2 text-xs text-slate-500">{line.quantity} × {makeCurrencyFormatter(quote.currency).format(line.unit_price)}</p></div>)}</div></section><section className="mt-7"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.history')}</h3><div className="mt-3 space-y-3 border-l border-white/10 pl-4">{quote.events.slice().reverse().map((event) => <div key={event.id} className="relative"><span className="absolute -left-[1.3rem] top-1.5 h-2 w-2 rounded-full bg-cyan-300" /><p className="text-sm text-slate-200">{t(`crmWorkspace.events.${event.event_type}`)}{event.event_type === 'status_changed' && event.to_status ? ` → ${t(`crmWorkspace.status.quote.${event.to_status}`)}` : ''}</p><p className="mt-0.5 text-xs text-slate-500">{formatDate(event.created_at)}</p></div>)}</div></section>{quote.versions.length > 1 && <section className="mt-7"><h3 className="font-semibold text-white">{t('crmWorkspace.quotes.versions')}</h3><div className="mt-3 space-y-2">{quote.versions.map((version) => <div key={version.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"><span className={`rounded-lg px-2 py-1 ${version.id === quote.current_version.id ? 'bg-cyan-400/10 text-cyan-100' : 'text-slate-300'}`}>v{version.version_number} · {makeCurrencyFormatter(quote.currency).format(version.grand_total)}</span><button type="button" onClick={() => version.html_content && onPdf({ ...quote, current_version: version })} disabled={!version.html_content} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1.5 text-slate-200 hover:bg-white/10 disabled:opacity-40"><CloudDownload className="h-3.5 w-3.5" />{t('crmWorkspace.quotes.versionPdf', { version: version.version_number })}</button></div>)}</div></section>}</>}</div>}</aside></ModalOverlay>;
 };

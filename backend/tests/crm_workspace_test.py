@@ -50,6 +50,84 @@ def quote_payload() -> dict:
 
 
 @pytest.mark.asyncio
+async def test_draft_quote_edit_creates_immutable_version_and_guards_stale_or_non_draft_writes(
+    auth_client,
+    db_session: AsyncSession,
+) -> None:
+    await subscription_service.set_paywall_enforced(db_session, False)
+    created = await auth_client.post("/api/v1/crm/quotes", json=quote_payload())
+    assert created.status_code == 201, created.text
+    original = created.json()
+    quote_id = original["id"]
+    first_version = original["current_version"]
+
+    edit_payload = {
+        "expected_version_number": 1,
+        "title": "Corrected quote title",
+        "valid_until": "2026-08-15",
+        "source_history_id": first_version["source_history_id"],
+        "seller_snapshot": first_version["seller_snapshot"],
+        "customer_snapshot": first_version["customer_snapshot"],
+        "calculation_snapshot": first_version["calculation_snapshot"],
+        "payment_terms": first_version["payment_terms"],
+        "disclaimer_mode": "not_offer",
+        "tax_total": 200,
+        "html_content": "<html><body>Edited document</body></html>",
+        "lines": [
+            {
+                "title": "Corrected line",
+                "details": first_version["lines"][0]["details"],
+                "quantity": 1.5,
+                "unit": first_version["lines"][0]["unit"],
+                "unit_price": 1000.11,
+                "source_data": first_version["lines"][0]["source_data"],
+            },
+            {
+                "title": "Second line",
+                "details": [],
+                "quantity": 2,
+                "unit": "pcs",
+                "unit_price": 10.005,
+                "source_data": None,
+            },
+        ],
+    }
+    saved_response = await auth_client.put(f"/api/v1/crm/quotes/{quote_id}/draft", json=edit_payload)
+    assert saved_response.status_code == 201, saved_response.text
+    saved = saved_response.json()
+    assert saved["status"] == "draft"
+    assert saved["title"] == "Corrected quote title"
+    assert saved["valid_until"] == "2026-08-15"
+    assert saved["current_version"]["version_number"] == 2
+    assert saved["current_version"]["subtotal"] == 1520.19
+    assert saved["current_version"]["tax_total"] == 200
+    assert saved["current_version"]["grand_total"] == 1720.19
+    assert saved["current_version"]["lines"][0]["quantity"] == 1.5
+    assert [line["total_price"] for line in saved["current_version"]["lines"]] == [1500.17, 20.02]
+    assert saved["versions"][0]["html_content"] == first_version["html_content"]
+    assert saved["versions"][0]["lines"][0]["details"] == first_version["lines"][0]["details"]
+
+    stale_payload = {**edit_payload, "expected_version_number": 1}
+    stale_response = await auth_client.put(f"/api/v1/crm/quotes/{quote_id}/draft", json=stale_payload)
+    assert stale_response.status_code == 409
+    assert stale_response.json()["detail"]["code"] == "ERR_CRM_QUOTE_DRAFT_CHANGED"
+
+    sent_response = await auth_client.post(
+        f"/api/v1/crm/quotes/{quote_id}/status", json={"status": "sent"}
+    )
+    assert sent_response.status_code == 200, sent_response.text
+    non_draft_response = await auth_client.put(
+        f"/api/v1/crm/quotes/{quote_id}/draft",
+        json={**edit_payload, "expected_version_number": 2},
+    )
+    assert non_draft_response.status_code == 409
+    assert non_draft_response.json()["detail"]["code"] == "ERR_CRM_QUOTE_DRAFT_CHANGED"
+    unchanged = (await auth_client.get(f"/api/v1/crm/quotes/{quote_id}")).json()
+    assert unchanged["current_version"]["version_number"] == 2
+    assert len(unchanged["versions"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_order_reservation_reduces_preflight_stock_until_production_starts(
     auth_client,
     auth_user,

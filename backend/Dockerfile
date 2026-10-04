@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
     libcairo2 libgdk-pixbuf-2.0-0 libglib2.0-0 libffi-dev \
-    fonts-liberation fonts-dejavu-core \
+    fonts-liberation fonts-dejavu-core fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the dependency manifest alone: the layer below must depend only on

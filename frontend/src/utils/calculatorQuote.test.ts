@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildEstimateRequest, buildQuoteLineItems } from '../pages/CalculatorPage';
 import type { CalculatorEstimateResponse, CalculatorGcodeParseResponse } from '../types/api';
-import { allocateRoundedTotal, quoteTitleFromFileName } from './calculatorQuote';
+import { allocateRoundedTotal, normalizeQuoteLineUnitPrice, quoteTitleFromFileName } from './calculatorQuote';
 
 describe('quoteTitleFromFileName', () => {
   it('removes supported G-code suffixes without leaking slicer file syntax', () => {
@@ -180,6 +180,32 @@ describe('buildQuoteLineItems', () => {
     expect(items[0].quantity).toBe(200);
     expect(items[0].unitPrice).toBe(0.5);
     expect(items[0].totalPrice).toBe(100);
+  });
+
+  it('normalizes quantity-three total to API-cent-priced rows used by the estimate HTML', () => {
+    const items = buildQuoteLineItems(
+      t,
+      { quantity: 3 } as never,
+      estimate({ quantity: 3, cost_final: 100, cost_total: 100 }),
+      null,
+      null,
+    );
+    const serialized = items.map((item) => ({
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice.toFixed(2)),
+      apiTotal: Math.round(item.quantity * Number(item.unitPrice.toFixed(2)) * 100) / 100,
+      htmlTotal: item.totalPrice,
+    }));
+
+    expect(serialized).toEqual([
+      { quantity: 2, unitPrice: 33.33, apiTotal: 66.66, htmlTotal: 66.66 },
+      { quantity: 1, unitPrice: 33.34, apiTotal: 33.34, htmlTotal: 33.34 },
+    ]);
+    expect(serialized.reduce((sum, line) => sum + line.apiTotal, 0)).toBe(100);
+  });
+
+  it('rejects a fractional-quantity amount that cannot be represented at cent precision', () => {
+    expect(normalizeQuoteLineUnitPrice({ quantity: 1.5, unitPrice: 10 / 1.5, totalPrice: 10 })).toBeNull();
   });
 
   it('keeps a mixed plate as one set until the user explicitly splits groups', () => {

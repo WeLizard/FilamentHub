@@ -2332,10 +2332,12 @@ export const calculatorAPI = {
   },
 
   downloadQuotePdf: async (data: import('../types/api').SharedQuoteCreate) => {
-    const response = await api.post('/calculator/quote/pdf', data, {
-      responseType: 'blob',
-    });
-    downloadBlob(response.data as Blob, `${data.title || 'quote'}.pdf`);
+    downloadBlob(await calculatorAPI.getQuotePdfBlob(data), `${data.title || 'quote'}.pdf`);
+  },
+
+  getQuotePdfBlob: async (data: import('../types/api').SharedQuoteCreate): Promise<Blob> => {
+    const response = await api.post('/calculator/quote/pdf', data, { responseType: 'blob' });
+    return response.data as Blob;
   },
 };
 
@@ -2382,6 +2384,11 @@ export const crmAPI = {
 
   createQuoteVersion: async (quoteId: number, data: import('../types/api').CrmQuoteVersionPayload) => {
     const response = await api.post<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}/versions`, data);
+    return response.data;
+  },
+
+  updateDraftQuote: async (quoteId: number, data: import('../types/api').CrmDraftQuoteUpdate) => {
+    const response = await api.put<import('../types/api').CrmQuoteDetail>(`/crm/quotes/${quoteId}/draft`, data);
     return response.data;
   },
 

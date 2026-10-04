@@ -1708,6 +1708,76 @@ export function openSitePathInBrowser(path: string): boolean {
   return true;
 }
 
+export interface PluginPdfSaveResult {
+  ok: boolean;
+  fileName?: string;
+  error?: string;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : '';
+      resolve(text.slice(text.indexOf(',') + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * The embedded page cannot download files, so a PDF is handed to the plugin,
+ * which saves it to the Downloads folder and opens it. Returns null when the
+ * page is not in the plugin or the installed version cannot do this, so the
+ * caller keeps its own fallback.
+ */
+export function savePdfInPlugin(blob: Blob, fileName: string): Promise<PluginPdfSaveResult> | null {
+  if (!isPluginEmbed() || !activePluginCapabilities.has('quote-pdf-save-v1')) {
+    return null;
+  }
+  const requestId = pluginRequestId('quote-pdf');
+  return new Promise<PluginPdfSaveResult>((resolve) => {
+    let timeoutId: number | null = null;
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Record<string, unknown> | undefined;
+      if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'quote-pdf-saved') return;
+      if (data.requestId !== requestId) return;
+      cleanup();
+      resolve({
+        ok: data.ok === true,
+        ...(typeof data.fileName === 'string' ? { fileName: data.fileName } : {}),
+        ...(typeof data.error === 'string' ? { error: data.error } : {}),
+      });
+    };
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve({ ok: false, error: 'timeout' });
+    }, 30_000);
+    blobToBase64(blob).then(
+      (data) => {
+        postToPlugin({
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'save-quote-pdf',
+          requestId,
+          fileName,
+          data,
+        });
+      },
+      () => {
+        cleanup();
+        resolve({ ok: false, error: 'invalid-data' });
+      },
+    );
+  });
+}
+
 export interface PluginAuthRestore {
   accessToken: string;
   refreshToken: string;

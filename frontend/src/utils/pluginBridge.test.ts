@@ -23,6 +23,7 @@ import {
   requestPluginCapabilities,
   requestPluginDiagnosticLog,
   requestPluginRecovery,
+  savePdfInPlugin,
   requestPendingPluginSliceReports,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
@@ -1094,6 +1095,50 @@ describe('pluginBridge inbound messages', () => {
       await expect(pending).resolves.toEqual({ ok: false, code: 'cancelled' });
     } finally {
       vi.useRealTimers();
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+    }
+  });
+  it('saves a quote PDF through the plugin only when it advertises the capability', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+    const reply = (data: Record<string, unknown>) => window.dispatchEvent(new MessageEvent('message', {
+      data: { source: PLUGIN_MESSAGE_SOURCE, ...data },
+      origin: window.location.origin,
+      source: parent as unknown as Window,
+    }));
+    const pdf = new Blob(['%PDF-1.4 test'], { type: 'application/pdf' });
+
+    try {
+      reply({ type: 'plugin-capabilities', capabilities: [] });
+      expect(savePdfInPlugin(pdf, 'quote.pdf')).toBeNull();
+
+      reply({ type: 'plugin-capabilities', capabilities: ['quote-pdf-save-v1'] });
+      const pending = savePdfInPlugin(pdf, 'quote.pdf');
+      expect(pending).not.toBeNull();
+      await vi.waitFor(() => expect(postMessage).toHaveBeenCalled());
+      const request = postMessage.mock.calls.at(-1)?.[0];
+      expect(request).toEqual({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'save-quote-pdf',
+        requestId: expect.any(String),
+        fileName: 'quote.pdf',
+        data: btoa('%PDF-1.4 test'),
+      });
+
+      let settled = false;
+      void pending!.then(() => { settled = true; });
+      reply({ type: 'quote-pdf-saved', requestId: 'someone-else', ok: true, fileName: 'x.pdf' });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      reply({ type: 'quote-pdf-saved', requestId: request.requestId, ok: true, fileName: 'quote (2).pdf' });
+      await expect(pending).resolves.toEqual({ ok: true, fileName: 'quote (2).pdf' });
+    } finally {
       unsubscribe();
       Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');

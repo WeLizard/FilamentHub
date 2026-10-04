@@ -62,6 +62,7 @@ the account access/refresh credentials never cross the plugin bridge. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
 
+import base64
 import codecs
 import csv
 import ftplib
@@ -434,6 +435,7 @@ PLUGIN_CAPABILITIES = (
     "printer-setup-v1",
     "printer-discovery-v1",
     "open-external",
+    "quote-pdf-save-v1",
 )
 PROD_SITE_URL = "https://filamenthub.ru"
 PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
@@ -694,6 +696,106 @@ def _write_bytes_atomic_unchecked(path, payload, mode=None):
 def write_bytes_atomic(path, payload, mode=None):
     with side_effect_transaction():
         _write_bytes_atomic_unchecked(path, payload, mode=mode)
+
+
+QUOTE_PDF_MAX_BYTES = 20 * 1024 * 1024
+_WINDOWS_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + ["COM%d" % i for i in range(1, 10)]
+    + ["LPT%d" % i for i in range(1, 10)]
+)
+
+
+def sanitize_pdf_file_name(name):
+    """A safe .pdf base name for any OS; never a path, never reserved."""
+    text = name if isinstance(name, str) else ""
+    text = text.replace("\\", "/").rsplit("/", 1)[-1]
+    text = "".join(
+        "_" if (ord(ch) < 32 or ord(ch) == 127 or ch in '<>:"|?*') else ch
+        for ch in text
+    )
+    text = text.strip(" .")
+    if text.lower().endswith(".pdf"):
+        text = text[:-4]
+    text = text.strip(" .")[:120].rstrip(" .")
+    if not text.strip("_ "):
+        text = "quote"
+    if text.split(".")[0].upper() in _WINDOWS_RESERVED_NAMES:
+        text = "_" + text
+    return text + ".pdf"
+
+
+def downloads_folder():
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _Guid(ctypes.Structure):
+                _fields_ = [
+                    ("Data1", wintypes.DWORD),
+                    ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD),
+                    ("Data4", ctypes.c_ubyte * 8),
+                ]
+
+            folder_id = _Guid(
+                0x374DE290, 0x123F, 0x4565,
+                (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B),
+            )
+            raw = ctypes.c_wchar_p()
+            get_path = ctypes.windll.shell32.SHGetKnownFolderPath
+            get_path.argtypes = [
+                ctypes.POINTER(_Guid), wintypes.DWORD, wintypes.HANDLE,
+                ctypes.POINTER(ctypes.c_wchar_p),
+            ]
+            if get_path(ctypes.byref(folder_id), 0, None, ctypes.byref(raw)) == 0 and raw.value:
+                try:
+                    return raw.value
+                finally:
+                    ctypes.windll.ole32.CoTaskMemFree(raw)
+        except Exception:
+            pass
+    elif platform.system() != "Darwin":
+        configured = os.environ.get("XDG_DOWNLOAD_DIR", "")
+        if configured and os.path.isabs(configured):
+            return configured
+    return os.path.join(os.path.expanduser("~"), "Downloads")
+
+
+def _free_pdf_path(folder, file_name):
+    stem = file_name[:-4]
+    for index in range(1, 1000):
+        candidate = file_name if index == 1 else "%s (%d).pdf" % (stem, index)
+        path = os.path.join(folder, candidate)
+        if not os.path.exists(path):
+            return path
+    raise FileExistsError(file_name)
+
+
+def save_quote_pdf(file_name, encoded):
+    """Validate and store a quote PDF. Returns (ok, saved_path_or_None, error)."""
+    if not isinstance(encoded, str) or not encoded:
+        return False, None, "invalid-data"
+    if len(encoded) > QUOTE_PDF_MAX_BYTES * 4 // 3 + 8:
+        return False, None, "too-large"
+    try:
+        payload = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError):
+        return False, None, "invalid-data"
+    if len(payload) > QUOTE_PDF_MAX_BYTES:
+        return False, None, "too-large"
+    if not payload.startswith(b"%PDF-"):
+        return False, None, "invalid-data"
+    try:
+        folder = downloads_folder()
+        os.makedirs(folder, exist_ok=True)
+        path = _free_pdf_path(folder, sanitize_pdf_file_name(file_name))
+        write_bytes_atomic(path, payload)
+    except Exception as exc:
+        fh_log("Quote PDF save failed: %s" % type(exc).__name__)
+        return False, None, "write-failed"
+    return True, path, ""
 
 
 def write_json_atomic(path, payload, mode=None):
@@ -11046,6 +11148,22 @@ class FilamentHubCatalog(
             return self._deliver_local(message_type, **payload)
         self._deliver(message_type, **payload)
 
+    def _do_save_quote_pdf(self, request_id, file_name, encoded):
+        ok, path, error = save_quote_pdf(file_name, encoded)
+        if ok:
+            fh_log("Quote PDF saved: %d characters of base64" % len(encoded))
+            open_in_system_browser(path)
+        else:
+            fh_log("Quote PDF rejected: %s" % error)
+        self._deliver(
+            "quote-pdf-saved",
+            requestId=request_id,
+            ok=ok,
+            fileName=os.path.basename(path) if ok else "",
+            folder=os.path.basename(os.path.dirname(path)) if ok else "",
+            error=error,
+        )
+
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
         self._deliver("slices-alive", keys=alive, hook=hook)
@@ -12809,6 +12927,16 @@ class FilamentHubCatalog(
                 msg.get("provider"),
                 msg.get("path"),
                 msg.get("requestId"),
+            )
+        elif msg_type == "save-quote-pdf":
+            request_id = msg.get("requestId")
+            if not isinstance(request_id, str) or not request_id or len(request_id) > 100:
+                return
+            BACKGROUND_WORKER.submit(
+                self._do_save_quote_pdf,
+                request_id,
+                msg.get("fileName"),
+                msg.get("data"),
             )
         elif msg_type == "open-external":
             self._open_site_path(msg.get("path"))
