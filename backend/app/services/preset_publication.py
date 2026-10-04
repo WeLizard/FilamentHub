@@ -9,13 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.preset import Preset
-from app.services.orcaslicer_preset_contract import MANUAL_OVERRIDES_KEY, manual_overrides
 from app.services.orca_transport import (
     FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS,
     ORCA_SCALAR_FIELDS,
     ORCA_VECTOR_FIELDS,
     project_orca_setting,
 )
+from app.services.orcaslicer_preset_contract import MANUAL_OVERRIDES_KEY, manual_overrides
 
 _PRIVATE_EXACT_KEYS = frozenset(
     {
