@@ -30,6 +30,7 @@ BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
 REVISION="origin/main"
 ASSUME_YES=false
 DRY_RUN=false
+REBUILD_ALL=false
 ACTION="deploy"
 LATEST_BACKUP=""
 PREVIOUS_REVISION=""
@@ -44,7 +45,7 @@ fail() { printf "%b\n" "${RED}$*${NC}" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 Usage:
-  bash scripts/deploy.sh [--revision <commit>] [--yes] [--dry-run]
+  bash scripts/deploy.sh [--revision <commit>] [--yes] [--dry-run] [--rebuild-all]
   bash scripts/deploy.sh --rollback [--yes]
   bash scripts/deploy.sh --status
   bash scripts/deploy.sh --backup-only
@@ -56,6 +57,8 @@ Options:
   --yes             Skip the server-side confirmation. Use only after an
                     owner-side preflight and exact-SHA confirmation.
   --dry-run         Fetch and validate the target without changing anything.
+  --rebuild-all     Rebuild both images even if their code is unchanged, e.g.
+                    after changing VITE_* build arguments in the server .env.
   --rollback        Put the images kept before the last release back in service.
                     Code only: a migration that already ran stays applied.
   --status          Show container, migration and public health status.
@@ -381,9 +384,59 @@ resolve_target() {
 
     printf 'Current: %s\nTarget : %s\n' "$PREVIOUS_REVISION" "$TARGET_REVISION"
     if [[ "$PREVIOUS_REVISION" == "$TARGET_REVISION" ]]; then
-        warn "The requested revision is already checked out; containers will still be rebuilt after confirmation."
+        warn "The requested revision is already checked out; only images built from another revision are rebuilt (--rebuild-all forces both)."
     else
         git log --oneline --no-decorate "$PREVIOUS_REVISION..$TARGET_REVISION" | sed 's/^/  /'
+    fi
+    printf 'Rebuild: %s\n' "$(services_to_build | paste -sd ' ' - | sed 's/^$/nothing/')"
+}
+
+image_revision() {
+    docker image inspect --format '{{ index .Config.Labels "org.filamenthub.revision" }}' \
+        "filamenthub-$1:latest" 2>/dev/null || true
+}
+
+# Whether the image of a service must be rebuilt for TARGET_REVISION. The base is
+# the revision the running image was built from, not HEAD: after a rollback or a
+# failed build HEAD is ahead of the image, and diffing from it would skip a
+# needed rebuild. Tests and Markdown never reach a running image.
+service_needs_build() {
+    local service="$1" base changed exclude
+
+    base="$(image_revision "$service")"
+    if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+        return 0
+    fi
+    changed="$(git diff --name-only --no-renames "$base" "$TARGET_REVISION")"
+    # docker-compose.yml carries build arguments and labels.
+    grep -qx 'docker-compose.yml' <<<"$changed" && return 0
+    case "$service" in
+        backend) exclude='^backend/tests/|\.md$' ;;
+        frontend) exclude='^frontend/src/tests/|\.test\.tsx?$|\.md$' ;;
+    esac
+    # No -q: under pipefail an early exit would SIGPIPE the producer and read as "unchanged".
+    grep -E "^${service}/" <<<"$changed" | grep -vE "$exclude" >/dev/null
+}
+
+services_to_build() {
+    local service
+
+    for service in backend frontend; do
+        if [[ "$REBUILD_ALL" == true ]] || service_needs_build "$service"; then
+            printf '%s\n' "$service"
+        fi
+    done
+    return 0
+}
+
+build_service_if_needed() {
+    local service="$1" planned="$2"
+
+    if grep -qx "$service" <<<"$planned"; then
+        info "Building the $service image while the current containers keep serving traffic..."
+        FH_BUILD_REVISION="$TARGET_REVISION" COMPOSE_BAKE=false docker compose build "$service"
+    else
+        info "The $service image was already built from this code; keeping it."
     fi
 }
 
@@ -536,7 +589,7 @@ rollback_release() {
 }
 
 deploy() {
-    local migration_heads head_count schema_before schema_after
+    local migration_heads head_count schema_before schema_after planned_builds
     local failed=false
 
     resolve_target
@@ -554,10 +607,10 @@ deploy() {
 
     tag_release_images
 
-    info "Building the backend image while the current containers keep serving traffic..."
-    COMPOSE_BAKE=false docker compose build backend
-    info "Building the frontend image after the backend to keep peak VDS memory bounded..."
-    COMPOSE_BAKE=false docker compose build frontend
+    planned_builds="$(services_to_build)"
+    # Sequential, backend first, to keep peak VDS memory bounded.
+    build_service_if_needed backend "$planned_builds"
+    build_service_if_needed frontend "$planned_builds"
 
     info "Checking the migration graph in the newly built backend image..."
     migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"
@@ -610,6 +663,10 @@ while (( $# > 0 )); do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --rebuild-all)
+            REBUILD_ALL=true
             shift
             ;;
         --rollback)

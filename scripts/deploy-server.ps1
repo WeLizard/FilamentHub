@@ -276,11 +276,20 @@ function Invoke-DurableDeployCommand {
 }
 
 function Invoke-DurableProductionDeploy {
-    param([Parameter(Mandatory)][string]$Revision)
+    param(
+        [Parameter(Mandatory)][string]$Revision,
+        [switch]$RebuildAll
+    )
 
     Assert-Command ssh
     $target = Get-ServerTarget
     $runId = "deploy-$Revision"
+    $workerArguments = @('--revision', $Revision, '--yes')
+    if ($RebuildAll) {
+        # A finished job with the same id is reported, not rerun, so a forced rebuild gets its own id.
+        $runId = "deploy-$Revision-rebuild-$(Get-Date -Format 'yyyyMMddHHmm')"
+        $workerArguments += '--rebuild-all'
+    }
     $startCommand = "set -o pipefail && cd '$RemoteProjectDirectory' && git fetch --no-recurse-submodules origin main && git cat-file -e '$($Revision)^{commit}' && git merge-base --is-ancestor '$Revision' origin/main"
 
     $response = $null
@@ -295,10 +304,10 @@ function Invoke-DurableProductionDeploy {
             )
             $response = Invoke-DurableDeployCommand `
                 -Target $target -Revision $Revision `
-                -RunnerArguments @(
+                -RunnerArguments (@(
                     '--start', '--run-id', $runId, '--worker-revision', $Revision,
-                    '--', '--revision', $Revision, '--yes'
-                )
+                    '--'
+                ) + $workerArguments)
         } catch {
             if ((Get-Date) -ge $startDeadline) {
                 throw "Не удалось запустить или обнаружить durable deploy за $script:DeployReconnectGraceSeconds секунд. Повторный запуск безопасно проверит ту же задачу. Последняя ошибка: $($_.Exception.Message)"
@@ -313,10 +322,10 @@ function Invoke-DurableProductionDeploy {
         }
         $response = Invoke-DurableDeployCommand `
             -Target $target -Revision $Revision `
-            -RunnerArguments @(
+            -RunnerArguments (@(
                 '--start', '--run-id', $runId, '--worker-revision', $Revision,
-                '--restart-failed', '--', '--revision', $Revision, '--yes'
-            )
+                '--restart-failed', '--'
+            ) + $workerArguments)
     }
 
     $fromLine = 0
@@ -606,14 +615,21 @@ function Show-Preflight {
 }
 
 function Start-ProductionDeploy {
+    param([switch]$RebuildAll)
+
     $Candidate = Show-Preflight
     Write-Host ''
-    if (-not (Confirm-Action "Задеплоить $($Candidate.ShortSha) в production?")) {
+    $question = if ($RebuildAll) {
+        "Задеплоить $($Candidate.ShortSha) в production с полной пересборкой backend и frontend?"
+    } else {
+        "Задеплоить $($Candidate.ShortSha) в production?"
+    }
+    if (-not (Confirm-Action $question)) {
         Write-Host 'Деплой отменён.' -ForegroundColor Yellow
         return
     }
 
-    Invoke-DurableProductionDeploy -Revision $Candidate.Sha
+    Invoke-DurableProductionDeploy -Revision $Candidate.Sha -RebuildAll:$RebuildAll
 }
 
 function Show-ProductionStatus {
@@ -975,6 +991,7 @@ function Show-ProductionMenu {
         Write-Host '  3. Проверить состояние production'
         Write-Host '  4. Создать зашифрованный backup production-базы'
         Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
+        Write-Host '  6. Задеплоить с полной пересборкой (после правки .env на VDS)'
         Write-Host '  0. Назад'
 
         try {
@@ -984,6 +1001,7 @@ function Show-ProductionMenu {
                 '3' { Show-ProductionStatus }
                 '4' { Start-ProductionBackup }
                 '5' { Start-BuildCacheCleanup }
+                '6' { Start-ProductionDeploy -RebuildAll }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
