@@ -38,6 +38,7 @@ const observation = {
   scope: 'process',
   field_name: 'future_orca_field',
   value_shape: 'array:string',
+  sample_value: { value: ['actual value'] },
   status: 'new',
   occurrences: 3,
   registry_version: 'bundle-sha256:test-registry',
@@ -53,7 +54,11 @@ function makeObservation(id: number) {
   return { ...observation, id, field_name: `future_orca_field_${id}` };
 }
 
-function listResponse(items = [observation], page = 1, size = 25, total = items.length) {
+type TestObservation = Omit<typeof observation, 'sample_value'> & {
+  sample_value: { value: unknown } | null;
+};
+
+function listResponse(items: TestObservation[] = [observation], page = 1, size = 25, total = items.length) {
   return {
     items,
     total,
@@ -100,7 +105,7 @@ describe('AdminOrcaSchemaObservations', () => {
     mocks.writeText.mockResolvedValue(undefined);
   });
 
-  it('copies every matching page with filters and bounded metadata only', async () => {
+  it('copies every matching page with filters and the latest JSON sample', async () => {
     const records = Array.from({ length: 101 }, (_, index) => makeObservation(index + 1));
     mocks.list.mockImplementation(async ({ page, size, status, scope, search }) => {
       expect(status).toBe('reviewed');
@@ -125,6 +130,7 @@ describe('AdminOrcaSchemaObservations', () => {
         field_name: item.field_name,
         scope: item.scope,
         value_shape: item.value_shape,
+        sample_value: item.sample_value,
         status: item.status,
         occurrences: item.occurrences,
         first_source: item.first_source,
@@ -142,6 +148,23 @@ describe('AdminOrcaSchemaObservations', () => {
     expect(screen.queryByRole('button', { name: 'adminOrcaSchema.copyData' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'adminOrcaSchema.markReviewed' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'adminOrcaSchema.reopen' })).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a captured JSON null from an unavailable legacy sample', async () => {
+    const captured = { ...makeObservation(1), sample_value: { value: null } };
+    const legacy = { ...makeObservation(2), sample_value: null };
+    mocks.list.mockImplementation(async ({ page, size }) => (
+      listResponse([captured, legacy], page, size, 2)
+    ));
+    renderObservations();
+
+    await clickCopyList();
+
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledOnce());
+    const copied = JSON.parse(mocks.writeText.mock.calls[0][0]);
+    expect(copied.observations.map((item: { sample_value: unknown }) => item.sample_value)).toEqual([
+      { value: null }, null,
+    ]);
   });
 
   it('does not copy or claim success after a later page fails', async () => {

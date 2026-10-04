@@ -71,11 +71,11 @@ def test_every_current_bundle_field_is_accepted_by_the_registry() -> None:
     } == {"filament": [], "process": [], "machine": []}
 
 
-def test_detector_reports_only_unknown_top_level_field_metadata() -> None:
+def test_detector_captures_unknown_json_values() -> None:
     settings = {
         "filament_type": ["PLA"],
         "filament_plugin_config_overrides": {"secret_nested_value": "must-not-be-inspected"},
-        "future_orca_field": ["sensitive value"],
+        "future_orca_field": ["actual value"],
     }
 
     detected = detect_unknown_orca_fields(settings, "filament")
@@ -83,8 +83,34 @@ def test_detector_reports_only_unknown_top_level_field_metadata() -> None:
     assert [(item.field_name, item.value_shape) for item in detected] == [
         ("future_orca_field", "array:string"),
     ]
-    assert all("sensitive" not in repr(item) for item in detected)
-    assert all("secret_nested_value" not in item.field_name for item in detected)
+    assert detected[0].sample_value == {"value": ["actual value"]}
+
+
+@pytest.mark.parametrize("value", ["text", ["a", 2], {"x": [True, None]}, None])
+def test_detector_preserves_json_types_in_sample(value) -> None:
+    detected = detect_unknown_orca_fields({"future_orca_field": value}, "process")
+
+    assert detected[0].sample_value == {"value": value}
+
+
+def test_detector_excludes_credentials_and_oversized_samples() -> None:
+    detected = detect_unknown_orca_fields(
+        {
+            "future_nested": {"items": [{"apiKey": "private"}]},
+            "future_password": "private",
+            "future_large": "x" * 4096,
+            "future_safe": {"items": [1, None]},
+            "printhost_apikey": "private",
+        },
+        "machine",
+    )
+    samples = {item.field_name: item.sample_value for item in detected}
+
+    assert "printhost_apikey" not in samples
+    assert samples["future_nested"] is None
+    assert samples["future_password"] is None
+    assert samples["future_large"] is None
+    assert samples["future_safe"] == {"value": {"items": [1, None]}}
 
 
 def test_detector_accepts_reviewed_orca_fields_exposed_by_the_editors() -> None:
@@ -239,13 +265,11 @@ def test_detector_is_bounded_and_ignores_filamenthub_private_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_observer_aggregates_repeated_field_shapes(db_session) -> None:
-    settings = {"future_orca_field": ["value"]}
-
     await observe_orca_schema_fields(
-        db=db_session, settings=settings, scope="machine", source="test_sync"
+        db=db_session, settings={"future_orca_field": ["first"]}, scope="machine", source="test_sync"
     )
     await observe_orca_schema_fields(
-        db=db_session, settings=settings, scope="machine", source="test_sync"
+        db=db_session, settings={"future_orca_field": ["latest"]}, scope="machine", source="test_sync"
     )
     await db_session.commit()
 
@@ -255,7 +279,7 @@ async def test_observer_aggregates_repeated_field_shapes(db_session) -> None:
     assert row.value_shape == "array:string"
     assert row.occurrences == 2
     assert row.status == "new"
-    assert not hasattr(row, "sample_value")
+    assert row.sample_value == {"value": ["latest"]}
 
 
 @pytest.mark.asyncio
@@ -283,6 +307,7 @@ async def test_observer_reopens_reviewed_field_when_shape_changes(db_session) ->
     rows = (await db_session.execute(select(OrcaSchemaObservation))).scalars().all()
     assert len(rows) == 1
     assert rows[0].value_shape == "number"
+    assert rows[0].sample_value == {"value": 42}
     assert rows[0].status == "new"
     assert rows[0].reviewed_at is None
     assert rows[0].reviewed_by_user_id is None
@@ -354,6 +379,7 @@ async def test_admin_can_filter_and_review_observations(admin_client, db_session
                 scope="process",
                 field_name="future_process_field",
                 value_shape="number",
+                sample_value={"value": 42},
                 registry_version="test-registry",
                 first_source="test",
                 last_source="test",
@@ -372,6 +398,13 @@ async def test_admin_can_filter_and_review_observations(admin_client, db_session
     assert payload["total"] == 1
     assert payload["new_count"] == 1
     assert payload["items"][0]["field_name"] == "future_filament_field"
+    assert payload["items"][0]["sample_value"] is None
+    all_items = await admin_client.get("/api/v1/admin/orca-schema-observations")
+    assert all_items.status_code == 200
+    assert next(
+        item for item in all_items.json()["items"]
+        if item["field_name"] == "future_process_field"
+    )["sample_value"] == {"value": 42}
     observation_id = payload["items"][0]["id"]
 
     update = await admin_client.patch(

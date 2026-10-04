@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +17,10 @@ from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.services.orca_field_registry import (
     ORCA_FIELD_REGISTRY_VERSION,
     ORCA_PRESET_FIELDS,
+)
+from app.services.orca_settings_security import (
+    ORCA_MACHINE_CONNECTION_KEYS,
+    sanitize_orca_settings_for_storage,
 )
 from app.services.orca_transport import FILAMENTHUB_INTERNAL_KEYS
 
@@ -38,12 +43,49 @@ _KNOWN_RUNTIME_FIELDS = frozenset(
 )
 _MAX_FIELD_NAME_LENGTH = 200
 _MAX_UNKNOWN_FIELDS_PER_PAYLOAD = 64
+_MAX_SAMPLE_BYTES = 4 * 1024
+_CREDENTIAL_KEY_MARKERS = ("password", "token", "apikey", "secret", "authorization", "accesscode")
+_CONNECTION_KEYS_NORMALIZED = frozenset(
+    "".join(char for char in key.lower() if char.isalnum())
+    for key in ORCA_MACHINE_CONNECTION_KEYS
+)
 
 
 @dataclass(frozen=True)
 class UnknownOrcaField:
     field_name: str
     value_shape: str
+    sample_value: dict | None
+
+
+def _contains_connection_data(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (isinstance(key, str) and _credential_key(key)) or _contains_connection_data(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_connection_data(item) for item in value)
+    return False
+
+
+def _credential_key(key: str) -> bool:
+    normalized = "".join(char for char in key.lower() if char.isalnum())
+    return normalized in _CONNECTION_KEYS_NORMALIZED or any(
+        marker in normalized for marker in _CREDENTIAL_KEY_MARKERS
+    )
+
+
+def _sample_value(field_name: str, value: Any) -> dict | None:
+    try:
+        if _credential_key(field_name) or _contains_connection_data(value):
+            return None
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) <= _MAX_SAMPLE_BYTES:
+            return {"value": value}
+    except (TypeError, ValueError, OverflowError, UnicodeError, RecursionError):
+        pass
+    return None
 
 
 def _known_fields(scope: str) -> frozenset[str]:
@@ -76,8 +118,9 @@ def _value_shape(value: Any) -> str:
 def detect_unknown_orca_fields(
     settings: dict[str, Any], scope: OrcaPresetScope
 ) -> list[UnknownOrcaField]:
-    """Return bounded top-level metadata only; values are never retained."""
+    """Return bounded top-level observations with one JSON sample per field."""
 
+    settings = sanitize_orca_settings_for_storage(settings, scope)
     known_fields = _known_fields(scope)
     unknown: list[UnknownOrcaField] = []
     field_names = sorted(name for name in settings if isinstance(name, str))
@@ -90,6 +133,7 @@ def detect_unknown_orca_fields(
             UnknownOrcaField(
                 field_name=field_name,
                 value_shape=_value_shape(settings[field_name]),
+                sample_value=_sample_value(field_name, settings[field_name]),
             )
         )
         if len(unknown) >= _MAX_UNKNOWN_FIELDS_PER_PAYLOAD:
@@ -129,7 +173,7 @@ async def observe_orca_schema_fields(
     scope: OrcaPresetScope,
     source: str = "orcaslicer_sync",
 ) -> None:
-    """Aggregate unknown field metadata without ever making sync depend on it."""
+    """Aggregate unknown fields without ever making sync depend on observation."""
 
     unknown = detect_unknown_orca_fields(settings, scope)
     if not unknown:
@@ -144,6 +188,7 @@ async def observe_orca_schema_fields(
                     "scope": scope,
                     "field_name": item.field_name,
                     "value_shape": item.value_shape,
+                    "sample_value": item.sample_value,
                     "status": "new",
                     "occurrences": 1,
                     "registry_version": ORCA_FIELD_REGISTRY_VERSION,
@@ -167,6 +212,7 @@ async def observe_orca_schema_fields(
                     index_elements=["scope", "field_name"],
                     set_={
                         "value_shape": incoming_shape,
+                        "sample_value": insert_statement.excluded.sample_value,
                         "status": case(
                             (shape_changed, "new"),
                             else_=OrcaSchemaObservation.status,
@@ -210,6 +256,7 @@ async def observe_orca_schema_fields(
                             row.status = "new"
                             row.reviewed_at = None
                             row.reviewed_by_user_id = None
+                        row.sample_value = item.sample_value
                         row.occurrences += 1
                         row.last_seen_at = now
                         row.last_source = source

@@ -1,7 +1,7 @@
 """Admin API schemas for OrcaSlicer schema observations."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -16,6 +16,7 @@ class OrcaSchemaObservationResponse(BaseModel):
     scope: OrcaPresetScope
     field_name: str
     value_shape: str
+    sample_value: dict[str, Any] | None
     status: OrcaSchemaObservationStatus
     occurrences: int
     registry_version: str

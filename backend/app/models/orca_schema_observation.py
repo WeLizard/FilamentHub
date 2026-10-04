@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -18,6 +18,7 @@ class OrcaSchemaObservation(Base):
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     field_name: Mapped[str] = mapped_column(String(200), nullable=False)
     value_shape: Mapped[str] = mapped_column(String(40), nullable=False)
+    sample_value: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), default="new", server_default="new", nullable=False
     )

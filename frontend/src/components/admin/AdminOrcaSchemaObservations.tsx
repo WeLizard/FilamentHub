@@ -32,6 +32,7 @@ function metadata(item: Observation) {
     field_name: item.field_name,
     scope: item.scope,
     value_shape: item.value_shape,
+    sample_value: item.sample_value,
     status: item.status,
     occurrences: item.occurrences,
     first_source: item.first_source,

@@ -2545,6 +2545,7 @@ export interface OrcaSchemaObservation {
   first_seen_at: string;
   last_seen_at: string;
   reviewed_at: string | null;
+  sample_value: { value: unknown } | null;
   reviewed_by_user_id: number | null;
 }
 
