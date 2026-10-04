@@ -79,6 +79,13 @@ describe('new quote documents', () => {
     expect(html).toContain('Print studio');
   });
 
+  it('omits the customer block when no customer details are provided', () => {
+    const html = render('ru', { buyerName: '', buyerInn: '', buyerAddress: '' });
+    const document = new DOMParser().parseFromString(html, 'text/html');
+
+    expect(document.querySelector('.quote-buyer-block')).toBeNull();
+  });
+
   it.each(['ru', 'en', 'zh'] as const)('uses the %s interface language and shared non-offer wording', (language) => {
     const html = render(language);
     const t = translator(language);

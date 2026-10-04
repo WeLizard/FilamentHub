@@ -3391,6 +3391,8 @@
       "detailedResults": "Detailed estimate",
       "addToQuote": "Add to quote draft",
       "addedToQuote": "Item saved to the quote draft",
+      "addedToQuoteAndHistory": "Item added to the quote draft and estimate saved to history.",
+      "addedToQuoteHistoryError": "Item added to the quote draft, but the estimate could not be saved to history.",
       "quoteDraftActionHint": "Keep this estimate and continue adding other line items",
       "quoteItemsCount": "Items in quote",
       "quoteItemsList": "Quote items",

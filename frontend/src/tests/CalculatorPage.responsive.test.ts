@@ -32,4 +32,34 @@ describe('CalculatorPage mobile responsive structure', () => {
     expect(calculatorPageSource).not.toContain('w-[13rem] shrink-0');
     expect(calculatorPageSource).not.toContain('grid w-[19rem] grid-cols-3');
   });
+
+  it('raises the floating calculate action in Orca to clear the notification bell', () => {
+    expect(calculatorPageSource).toContain(
+      "insidePlugin ? 'bottom-24 right-6' : 'bottom-5 right-5 lg:bottom-8 lg:right-8'",
+    );
+  });
+
+  it('places calculator settings before the calculation results', () => {
+    expect(calculatorPageSource).toContain(
+      '<div className="order-1 min-w-0 space-y-5">',
+    );
+    expect(calculatorPageSource).toContain(
+      '<div ref={resultsRef} data-testid="calculator-result" className="order-2 min-w-0 scroll-mt-6">',
+    );
+  });
+
+  it('dismisses the calculator feedback banner after ten seconds', () => {
+    expect(calculatorPageSource).toContain('const HISTORY_FEEDBACK_DISMISS_MS = 10_000;');
+    expect(calculatorPageSource).toContain(
+      'const timer = window.setTimeout(() => setHistoryFeedback(null), HISTORY_FEEDBACK_DISMISS_MS);',
+    );
+  });
+
+  it('reports cloud quote profile save and load outcomes in the page feedback banner', () => {
+    expect(calculatorPageSource).toContain("setQuoteProfileFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });");
+    expect(calculatorPageSource).toContain("tc('cloudSaveError')");
+    expect(calculatorPageSource).toContain("setQuoteProfileFeedback({ kind: 'success', message: tc('cloudLoadSuccess') });");
+    expect(calculatorPageSource).toContain("tc('cloudLoadError')");
+    expect(calculatorPageSource).toContain('quoteProfileFeedback.kind === \'error\' ? \'alert\' : \'status\'');
+  });
 });

@@ -3386,6 +3386,8 @@
       "detailedResults": "详细估算",
       "addToQuote": "加入报价草稿",
       "addedToQuote": "项目已保存到报价草稿",
+      "addedToQuoteAndHistory": "项目已加入报价草稿，估算也已保存到历史记录。",
+      "addedToQuoteHistoryError": "项目已加入报价草稿，但估算未能保存到历史记录。",
       "quoteDraftActionHint": "保存当前估算并继续添加其他项目",
       "quoteItemsCount": "报价中的项目",
       "quoteItemsList": "报价项目",

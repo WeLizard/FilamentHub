@@ -154,6 +154,7 @@ const inputClass =
 const compactNumericInputClass = `${inputClass} ${numberInputResetClass} w-full sm:max-w-[15rem]`;
 const ghostButtonClass =
   'inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/10';
+const HISTORY_FEEDBACK_DISMISS_MS = 10_000;
 
 type CalculatorTab = 'calculator' | 'history';
 type QuoteDisclaimerMode = 'not_offer' | 'offer';
@@ -2098,12 +2099,13 @@ export const buildQuoteDocumentHtml = ({
             ? `<p>${escapeHtml(t('quoteMarket.sellerBank'))}: ${escapeHtml(sellerBankDetails)}</p>`
             : ''}
           </div>
+          ${buyerName || buyerInn || buyerAddress ? `
           <div class="quote-buyer-block">
             <p class="party-label">${escapeHtml(t('profilePage.calculator.quoteCustomer'))}:</p>
             ${buyerName ? `<p class="box-line">${escapeHtml(buyerName)}</p>` : ''}
             ${buyerInn ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteInn'))}: ${escapeHtml(buyerInn)}</p>` : ''}
             ${buyerAddress ? `<p class="box-muted">${escapeHtml(t('profilePage.calculator.quoteAddress'))}: ${escapeHtml(buyerAddress)}</p>` : ''}
-          </div>
+          </div>` : ''}
         </div>
       </div>
       <div class="quote-meta-row"><p data-quote-issue-date>${escapeHtml(today)}</p><p data-quote-validity>${escapeHtml(t('profilePage.calculator.quoteValidUntil'))}: <strong>${escapeHtml(validUntil)}</strong></p></div>
@@ -2202,6 +2204,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [approximatePriceLabels, setApproximatePriceLabels] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  useEffect(() => {
+    if (!historyFeedback) return;
+    const timer = window.setTimeout(() => setHistoryFeedback(null), HISTORY_FEEDBACK_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [historyFeedback]);
+  const [quoteProfileFeedback, setQuoteProfileFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  useEffect(() => {
+    if (!quoteProfileFeedback) return;
+    const timer = window.setTimeout(() => setQuoteProfileFeedback(null), HISTORY_FEEDBACK_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [quoteProfileFeedback]);
   const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntrySummary | null>(null);
   const [restoringHistoryEntryId, setRestoringHistoryEntryId] = useState<number | null>(null);
   const [failedRestoreHistoryEntryId, setFailedRestoreHistoryEntryId] = useState<number | null>(null);
@@ -2221,8 +2234,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [accountEconomicsSaving, setAccountEconomicsSaving] = useState(false);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
-  useEffect(() => () => {
-    if (quotePdfPreview?.url) URL.revokeObjectURL(quotePdfPreview.url);
+  useEffect(() => {
+    const previewUrl = quotePdfPreview?.url;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
   }, [quotePdfPreview?.url]);
   const [quoteCustomerSelection, setQuoteCustomerSelection] = useState('new');
   const [quoteCustomerDelivery, setQuoteCustomerDelivery] = useState('');
@@ -2239,6 +2255,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
   const lastBuiltMaterialJobsKeyRef = useRef<string | null>(null);
   const quoteSequenceRef = useRef(0);
+  const lastSavedHistoryPayloadRef = useRef<string | null>(null);
   const gcodeAbortControllerRef = useRef<AbortController | null>(null);
   const gcodeOperationSequenceRef = useRef(0);
   const lastGcodeFilesRef = useRef<File[]>([]);
@@ -3358,29 +3375,40 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     await handleGcodeFiles(selectedFiles);
   };
 
-  const handleSaveToHistory = async () => {
-    if (!result) {
-      return;
-    }
+  const saveCurrentResultToHistory = async (): Promise<boolean> => {
+    if (!result) return false;
 
     setHistoryFeedback(null);
+    let payload: CalculatorHistoryEntryCreate;
+    try {
+      payload = buildHistoryPayload(
+        form,
+        result,
+        parsedGcode,
+        selectedMaterial,
+        materialLines,
+        parsedJobs,
+        jobConfigs,
+        printerEconomics,
+        quoteProfile.currency,
+      );
+    } catch (error) {
+      setHistoryFeedback({
+        kind: 'error',
+        message: error instanceof Error && error.message === 'quoteQuantityPriceUnrepresentable'
+          ? tc('quoteQuantityPriceUnrepresentable')
+          : tc('historySaveError'),
+      });
+      return false;
+    }
+
+    const fingerprint = JSON.stringify(payload);
+    if (lastSavedHistoryPayloadRef.current === fingerprint) return true;
 
     try {
-      await saveHistoryMutation.mutateAsync(
-        buildHistoryPayload(
-          form,
-          result,
-          parsedGcode,
-          selectedMaterial,
-          materialLines,
-          parsedJobs,
-          jobConfigs,
-          printerEconomics,
-          quoteProfile.currency,
-        ),
-      );
-      setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
-      setActiveTab('history');
+      await saveHistoryMutation.mutateAsync(payload);
+      lastSavedHistoryPayloadRef.current = fingerprint;
+      return true;
     } catch (error) {
       const errorWithResponse = error as {
         response?: { data?: { detail?: unknown } };
@@ -3394,6 +3422,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           tc('historySaveError'),
         ),
       });
+      return false;
+    }
+  };
+
+  const handleSaveToHistory = async () => {
+    const saved = await saveCurrentResultToHistory();
+    if (saved) {
+      setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
+      setActiveTab('history');
     }
   };
 
@@ -3628,7 +3665,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
 
-  const handleAddToQuote = () => {
+  const handleAddToQuote = async () => {
     if (!result) return;
     let lineItems: QuoteLineItem[];
     try {
@@ -3657,7 +3694,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       calculationSnapshot,
     }));
     setQuoteItems((prev) => [...prev, ...newItems]);
-    setHistoryFeedback({ kind: 'success', message: tc('addedToQuote') });
+    const historySaved = await saveCurrentResultToHistory();
+    setHistoryFeedback({
+      kind: historySaved ? 'success' : 'error',
+      message: historySaved ? tc('addedToQuoteAndHistory') : tc('addedToQuoteHistoryError'),
+    });
   };
 
   const handleRemoveFromQuote = (id: string) => {
@@ -3959,9 +4000,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
         currency: normalizeCurrency(profile.currency),
       });
-      toast.success(tc('cloudSaveSuccess'));
+      setQuoteProfileFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });
     } catch (error) {
-      toast.error(translateApiError(t, error, tc('cloudSaveError')));
+      setQuoteProfileFeedback({
+        kind: 'error',
+        message: translateApiError(t, error, tc('cloudSaveError')),
+      });
     } finally {
       setIsCloudBusy(false);
     }
@@ -4007,9 +4051,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         showCostBreakdown: quoteProfile.showCostBreakdown,
         costBreakdownNote: quoteProfile.costBreakdownNote,
       });
-      toast.success(tc('cloudLoadSuccess'));
+      setQuoteProfileFeedback({ kind: 'success', message: tc('cloudLoadSuccess') });
     } catch (error) {
-      toast.error(translateApiError(t, error, tc('cloudLoadError')));
+      setQuoteProfileFeedback({
+        kind: 'error',
+        message: translateApiError(t, error, tc('cloudLoadError')),
+      });
     } finally {
       setIsCloudBusy(false);
     }
@@ -4566,6 +4613,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onSaveToHistory={handleSaveToHistory}
           onCloudSave={handleCloudSave}
           onCloudLoad={handleCloudLoad}
+          quoteProfileFeedback={quoteProfileFeedback}
           onPlatformDefaultsReset={handlePlatformDefaultsReset}
           isCloudBusy={isCloudBusy}
           formatCurrency={formatCurrency}
@@ -4739,6 +4787,7 @@ interface CalculatorViewProps {
   onSaveToHistory: () => Promise<void>;
   onCloudSave: () => Promise<void>;
   onCloudLoad: () => Promise<void>;
+  quoteProfileFeedback: { kind: 'success' | 'error'; message: string } | null;
   onPlatformDefaultsReset: () => Promise<void>;
   isCloudBusy: boolean;
   formatCurrency: (value: number | null | undefined) => string;
@@ -4826,6 +4875,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onSaveToHistory,
   onCloudSave,
   onCloudLoad,
+  quoteProfileFeedback,
   onPlatformDefaultsReset,
   isCloudBusy,
   formatCurrency,
@@ -5395,7 +5445,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
   return (
     <div className={`flex flex-col gap-5 ${showCalculateAction ? 'pb-20' : ''}`}>
-      <div className="order-2 min-w-0 space-y-5">
+      <div className="order-1 min-w-0 space-y-5">
         {(!embedded || staticSettingsOpen || quoteProfileOpen) && <SurfaceCard className="p-4 md:p-5">
           {!embedded && <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <SectionHeading icon={<Settings2 className="h-5 w-5 text-cyan-300" />} title={tc('staticSettingsTitle')} compact />
@@ -5863,9 +5913,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       placeholder="14"
                     />
                   </FieldBlock>
-                  <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
-                    <p className="text-sm text-slate-200">{tc('quoteDisclaimerNotOffer')}</p>
-                  </FieldBlock>
+                  <div className="md:col-span-2">
+                    <FieldBlock label={tc('quoteLegalStatus')} hint={tc('quoteDisclaimerHint')}>
+                      <p className="text-sm text-slate-200">{tc('quoteDisclaimerNotOffer')}</p>
+                    </FieldBlock>
+                  </div>
                   <FieldBlock label={tc('quoteNumberPrefix')} hint={tc('quoteNumberPrefixHint')}>
                     <TextInput
                       value={quoteProfile.quoteNumberPrefix}
@@ -5941,6 +5993,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       {tc('cloudLoad')}
                     </button>
                   </div>
+                  {quoteProfileFeedback ? (
+                    <div
+                      role={quoteProfileFeedback.kind === 'error' ? 'alert' : 'status'}
+                      className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                        quoteProfileFeedback.kind === 'success'
+                          ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                          : 'border-red-400/25 bg-red-500/10 text-red-100'
+                      }`}
+                    >
+                      {quoteProfileFeedback.message}
+                    </div>
+                  ) : null}
                 </div>
                 </div>
               ) : null}
@@ -7320,7 +7384,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       </div>
 
       {result || estimateError ? (
-      <div ref={resultsRef} data-testid="calculator-result" className="order-1 min-w-0 scroll-mt-6">
+      <div ref={resultsRef} data-testid="calculator-result" className="order-2 min-w-0 scroll-mt-6">
         <SurfaceCard className="p-5 md:p-6">
           <div className="flex items-center justify-between gap-4">
             <SectionHeading icon={<Calculator className="h-5 w-5 text-cyan-300" />} title={tc('resultsTitle')} compact />
@@ -7523,8 +7587,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <button
                   type="button"
                   onClick={onAddToQuote}
+                  disabled={isSavingHistory}
                   title={tc('quoteDraftActionHint')}
-                  className={`${ghostButtonClass} w-full`}
+                  className={`${ghostButtonClass} w-full disabled:cursor-wait disabled:opacity-60`}
                 >
                   <Plus className="h-4 w-4" />
                   {tc('addToQuote')}
@@ -7566,7 +7631,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       {/* Rendered outside <main>: it sits in its own stacking context, so a floating
           button inside it always slides under the footer no matter how high its z-index. */}
       {showCalculateAction ? createPortal(
-        <div className={`fixed z-[70] max-w-[calc(100vw-2.5rem)] ${embedded ? 'bottom-24 right-6' : 'bottom-5 right-5 lg:bottom-8 lg:right-8'}`}>
+        <div className={`fixed z-[70] max-w-[calc(100vw-2.5rem)] ${insidePlugin ? 'bottom-24 right-6' : 'bottom-5 right-5 lg:bottom-8 lg:right-8'}`}>
           <button
             type="button"
             data-testid="calculator-floating-action"
@@ -7850,18 +7915,18 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
         className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(15,23,42,0.9))] shadow-[0_40px_120px_-60px_rgba(15,23,42,1)]"
         onClick={(event) => event.stopPropagation()}
       >
-          <div className="flex items-center justify-between gap-4 border-b border-white/10 px-6 py-5 md:px-7">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-3.5 md:px-6 md:py-4">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
                 {source === 'gcode' ? tc('sourceGcode') : tc('sourceManual')}
               </div>
-              <h2 className="mt-3 text-xl font-semibold text-white md:text-2xl">{tc('quoteBuilderTitle')}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{tc('quoteBuilderDescription')}</p>
+              <h2 className="mt-1.5 text-xl font-semibold text-white md:text-2xl">{tc('quoteBuilderTitle')}</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-300">{tc('quoteBuilderDescription')}</p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
             >
               <X className="h-5 w-5" />
             </button>
@@ -7871,7 +7936,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
             <div className="space-y-6">
               <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
+                  <div className="flex h-11 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
                     <Printer3DIcon className="h-5 w-5 text-cyan-300" />
                   </div>
                   <div>
@@ -8102,7 +8167,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
               )}
 
               <div className="space-y-3">
-                {!embedded && <button
+                <button
                   type="button"
                   onClick={onSaveToWorkspace}
                   disabled={isSavingToWorkspace}
@@ -8110,7 +8175,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                 >
                   {isSavingToWorkspace ? <Loader2 className="h-4 w-4 animate-spin" /> : <BriefcaseBusiness className="h-4 w-4" />}
                   {tc('quoteSaveWorkspaceAction')}
-                </button>}
+                </button>
                 {!insidePluginEmbed && <button
                   type="button"
                   onClick={onPrint}
