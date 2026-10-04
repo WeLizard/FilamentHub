@@ -67,6 +67,18 @@ const render = (
 });
 
 describe('new quote documents', () => {
+  it('builds the document when a profile saved by an older version lacks newer fields', () => {
+    const html = render('ru', {
+      sellerRegistrationId: undefined,
+      sellerTaxCode: undefined,
+      sellerAddress: undefined,
+      sellerBankDetails: undefined,
+      paymentTerms: undefined,
+    });
+
+    expect(html).toContain('Print studio');
+  });
+
   it.each(['ru', 'en', 'zh'] as const)('uses the %s interface language and shared non-offer wording', (language) => {
     const html = render(language);
     const t = translator(language);

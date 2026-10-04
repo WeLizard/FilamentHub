@@ -1054,7 +1054,7 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
       return {};
     }
 
-    return {
+    const stored: Partial<QuoteProfileState> = {
       sellerName: typeof parsed.sellerName === 'string' ? parsed.sellerName : undefined,
       sellerInn: typeof parsed.sellerInn === 'string' ? parsed.sellerInn : undefined,
       sellerPhone: typeof parsed.sellerPhone === 'string' ? parsed.sellerPhone : undefined,
@@ -1077,6 +1077,10 @@ const loadStoredQuoteProfile = (): Partial<QuoteProfileState> => {
       showCostBreakdown: typeof parsed.showCostBreakdown === 'boolean' ? parsed.showCostBreakdown : undefined,
       costBreakdownNote: typeof parsed.costBreakdownNote === 'string' ? parsed.costBreakdownNote : undefined,
     };
+    // An absent key must not override the default with undefined when spread over it.
+    return Object.fromEntries(
+      Object.entries(stored).filter(([, value]) => value !== undefined),
+    ) as Partial<QuoteProfileState>;
   } catch {
     return {};
   }
@@ -1972,11 +1976,19 @@ export const buildQuoteDocumentHtml = ({
     ? createQuoteBreakdownHtml(t('profilePage.calculator.quoteBreakdownLabel'), breakdownEntries, costBreakdownNote)
     : '';
 
-  const buyerName = parties.buyerName.trim();
-  const buyerInn = parties.buyerInn.trim();
-  const buyerAddress = parties.buyerAddress.trim();
-  const paymentTerms = parties.paymentTerms.trim();
-  const sellerName = parties.sellerName.trim() || '—';
+  // A profile saved by an older version can lack fields added since; absent means empty.
+  const field = (value: string | undefined) => (value ?? '').trim();
+  const buyerName = field(parties.buyerName);
+  const buyerInn = field(parties.buyerInn);
+  const buyerAddress = field(parties.buyerAddress);
+  const paymentTerms = field(parties.paymentTerms);
+  const sellerName = field(parties.sellerName) || '—';
+  const sellerInn = field(parties.sellerInn);
+  const sellerRegistrationId = field(parties.sellerRegistrationId);
+  const sellerTaxCode = field(parties.sellerTaxCode);
+  const sellerAddress = field(parties.sellerAddress);
+  const sellerPhone = field(parties.sellerPhone);
+  const sellerBankDetails = field(parties.sellerBankDetails);
 
 
   return `<!doctype html>
@@ -2071,19 +2083,19 @@ export const buildQuoteDocumentHtml = ({
           <div class="quote-seller-block">
           <p class="party-label">${escapeHtml(t('profilePage.calculator.quoteExecutor'))}:</p>
           <p>${escapeHtml(sellerName)}</p>
-          ${parties.sellerInn.trim() ? `<p>${escapeHtml(t(sellerTaxIdLabelKey))}: ${escapeHtml(parties.sellerInn.trim())}</p>` : ''}
-          ${sellerRegistrationLabelKey && parties.sellerRegistrationId.trim()
-            ? `<p>${escapeHtml(t(sellerRegistrationLabelKey))}: ${escapeHtml(parties.sellerRegistrationId.trim())}</p>`
+          ${sellerInn ? `<p>${escapeHtml(t(sellerTaxIdLabelKey))}: ${escapeHtml(sellerInn)}</p>` : ''}
+          ${sellerRegistrationLabelKey && sellerRegistrationId
+            ? `<p>${escapeHtml(t(sellerRegistrationLabelKey))}: ${escapeHtml(sellerRegistrationId)}</p>`
             : ''}
-          ${rules.showTaxCode && parties.sellerTaxCode.trim()
-            ? `<p>${escapeHtml(t('quoteMarket.ru.taxCode'))}: ${escapeHtml(parties.sellerTaxCode.trim())}</p>`
+          ${rules.showTaxCode && sellerTaxCode
+            ? `<p>${escapeHtml(t('quoteMarket.ru.taxCode'))}: ${escapeHtml(sellerTaxCode)}</p>`
             : ''}
-          ${parties.sellerAddress.trim()
-            ? `<p>${escapeHtml(t('quoteMarket.sellerAddress'))}: ${escapeHtml(parties.sellerAddress.trim())}</p>`
+          ${sellerAddress
+            ? `<p>${escapeHtml(t('quoteMarket.sellerAddress'))}: ${escapeHtml(sellerAddress)}</p>`
             : ''}
-          ${parties.sellerPhone.trim() ? `<p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(parties.sellerPhone.trim())}</p>` : ''}
-          ${rules.showBankDetails && parties.sellerBankDetails.trim()
-            ? `<p>${escapeHtml(t('quoteMarket.sellerBank'))}: ${escapeHtml(parties.sellerBankDetails.trim())}</p>`
+          ${sellerPhone ? `<p>${escapeHtml(t('profilePage.calculator.quotePhone'))}: ${escapeHtml(sellerPhone)}</p>` : ''}
+          ${rules.showBankDetails && sellerBankDetails
+            ? `<p>${escapeHtml(t('quoteMarket.sellerBank'))}: ${escapeHtml(sellerBankDetails)}</p>`
             : ''}
           </div>
           <div class="quote-buyer-block">
