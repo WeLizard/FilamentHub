@@ -495,7 +495,8 @@
     "plugin_sync": "同步",
     "plugin_recover": "恢复",
     "plugin_report_problem": "报告问题",
-    "plugin_open_printers": "打开“我的打印机”"
+    "plugin_open_printers": "打开“我的打印机”",
+    "plugin_nav_spools": "我的线轴"
   },
   "legalDocument": {
     "backHome": "返回首页",

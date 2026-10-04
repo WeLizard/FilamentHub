@@ -495,7 +495,8 @@
     "plugin_sync": "Синхронизация",
     "plugin_recover": "Восстановить",
     "plugin_report_problem": "Сообщить о проблеме",
-    "plugin_open_printers": "Открыть «Мои принтеры»"
+    "plugin_open_printers": "Открыть «Мои принтеры»",
+    "plugin_nav_spools": "Мои катушки"
   },
   "legalDocument": {
     "backHome": "Вернуться на главную",

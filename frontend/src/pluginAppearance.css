@@ -1,0 +1,118 @@
+/* Only the embedded Orca appearance changes these site tokens. The host owns
+   --orca-* and updates them when its light/dark mode changes. */
+html[data-fh-plugin-appearance="orca"] {
+  color-scheme: dark;
+  --color-white: var(--orca-fg, #e8e8ef);
+  --color-black: var(--orca-bg, #171724);
+  --color-slate-950: var(--orca-bg, #171724);
+  --color-slate-900: var(--orca-bg, #171724);
+  --color-slate-800: color-mix(in srgb, var(--orca-bg, #171724) 88%, var(--orca-fg, #e8e8ef));
+  --color-gray-950: var(--orca-bg, #171724);
+  --color-gray-900: var(--orca-bg, #171724);
+  --color-gray-800: color-mix(in srgb, var(--orca-bg, #171724) 88%, var(--orca-fg, #e8e8ef));
+  --color-gray-700: color-mix(in srgb, var(--orca-bg, #171724) 76%, var(--orca-fg, #e8e8ef));
+  --color-gray-600: color-mix(in srgb, var(--orca-bg, #171724) 55%, var(--orca-fg, #e8e8ef));
+  --color-gray-500: var(--orca-muted, #aaaab4);
+  --color-gray-400: var(--orca-muted, #aaaab4);
+  --color-gray-300: color-mix(in srgb, var(--orca-fg, #e8e8ef) 78%, var(--orca-bg, #171724));
+  --color-gray-200: color-mix(in srgb, var(--orca-fg, #e8e8ef) 88%, var(--orca-bg, #171724));
+  --color-gray-100: var(--orca-fg, #e8e8ef);
+  --color-purple-900: var(--orca-bg, #171724);
+  --color-purple-800: color-mix(in srgb, var(--orca-bg, #171724) 75%, var(--orca-accent, #009688));
+  --color-purple-700: color-mix(in srgb, var(--orca-bg, #171724) 35%, var(--orca-accent, #009688));
+  --color-purple-600: var(--orca-accent, #009688);
+  --color-purple-500: var(--orca-accent, #009688);
+  --color-purple-400: var(--orca-accent, #009688);
+  --color-pink-600: var(--orca-accent, #009688);
+  --color-pink-500: var(--orca-accent, #009688);
+  --fh-scrollbar-thumb: var(--orca-border, #55556a);
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] {
+  color-scheme: light;
+  --color-purple-100: color-mix(in srgb, var(--orca-accent, #009688) 65%, black);
+  --color-purple-200: color-mix(in srgb, var(--orca-accent, #009688) 75%, black);
+  --color-green-200: #166534;
+  --color-yellow-200: #854d0e;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-amber-100"],
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-amber-200"] {
+  color: #92400e;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-cyan-100"],
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-cyan-200"] {
+  color: #155e75;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-red-100"],
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] [class~="text-red-200"] {
+  color: #991b1b;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] :is(
+  [class~="text-sky-100"],
+  [class~="text-sky-100/65"],
+  [class~="text-sky-200"],
+  [class~="text-sky-200/80"],
+  [class~="text-sky-300"]
+) {
+  color: #075985;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="light"] :is(
+  [class~="text-emerald-100"],
+  [class~="text-emerald-100/70"],
+  [class~="text-emerald-100/75"],
+  [class~="text-emerald-200"],
+  [class~="text-emerald-200/75"],
+  [class~="text-emerald-200/80"],
+  [class~="text-emerald-300"],
+  [class~="text-emerald-300/80"],
+  [class~="text-emerald-300/90"]
+) {
+  color: #065f46;
+}
+
+html[data-fh-plugin-appearance="orca"][data-orca-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-fh-plugin-appearance="orca"] body,
+html[data-fh-plugin-appearance="orca"] .app-shell {
+  background: var(--orca-bg, #171724);
+  color: var(--orca-fg, #e8e8ef);
+  font-family: var(--orca-font, system-ui, sans-serif);
+}
+
+html[data-fh-plugin-appearance="orca"] .app-shell > [aria-hidden="true"].fixed {
+  display: none;
+}
+
+html[data-fh-plugin-appearance="orca"] .glass-panel,
+html[data-fh-plugin-appearance="orca"] .glass-panel-subtle {
+  background-color: color-mix(in srgb, var(--orca-bg, #171724) 92%, var(--orca-fg, #e8e8ef));
+  border-color: var(--orca-border, #55556a);
+}
+
+html[data-fh-plugin-appearance="orca"] :is(input, textarea, select):not([type="color"]) {
+  color: var(--orca-fg, #e8e8ef);
+  caret-color: var(--orca-fg, #e8e8ef);
+}
+
+html[data-fh-plugin-appearance="orca"] :is(input, textarea, select):focus-visible,
+html[data-fh-plugin-appearance="orca"] button:focus-visible {
+  outline-color: var(--orca-accent, #009688);
+}
+
+html[data-fh-plugin-appearance="orca"] option {
+  background: var(--orca-bg, #171724);
+  color: var(--orca-fg, #e8e8ef);
+}
+
+html[data-fh-plugin-appearance="orca"] [class~="bg-purple-600"],
+html[data-fh-plugin-appearance="orca"] [class~="bg-purple-500"],
+html[data-fh-plugin-appearance="orca"] [class~="from-purple-600"] {
+  color: var(--orca-accent-fg, #fff);
+}

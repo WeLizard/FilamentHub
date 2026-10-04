@@ -63,7 +63,7 @@ import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
 import { currencySymbol, normalizeCurrency } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
-import { notifyProfileChanged } from '../utils/pluginBridge';
+import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import {
   readUiChoice,
   readUiPreference,
@@ -75,6 +75,7 @@ import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
 import { mergeSpoolFeedPages, spoolQueryKeys } from '../utils/spoolQueries';
+import { spoolViewPreferenceKey } from '../utils/spoolViewPreference';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -108,6 +109,7 @@ import { GuidedEmptyState } from '../components/GuidedEmptyState';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { ViewModeToggle } from '../components/ViewModeToggle';
 import type { ViewMode } from '../components/ViewModeToggle';
+import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import { SpoolLabelButton } from '../components/SpoolLabelButton';
@@ -243,6 +245,8 @@ export const ProfilePage: React.FC = () => {
     }
   };
   const location = useLocation();
+  const pluginEmbedded = isPluginEmbed();
+  const dedicatedSpools = pluginEmbedded && location.pathname === '/embed';
   const navigate = useNavigate();
   const profileSearchParams = useMemo(
     () => new URLSearchParams(location.search),
@@ -263,20 +267,26 @@ export const ProfilePage: React.FC = () => {
       ? 'shelf'
       : 'ask';
   const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(() => {
+    if (dedicatedSpools) return false;
     const requested = (location.state as { brandCabinet?: boolean } | null)?.brandCabinet;
     if (typeof requested === 'boolean') return requested;
     return readUiPreference(uiScopeForUser(user?.id), 'brandCabinet') === '1';
   }); // Показывать ли кабинет производителя
   const [isAddBrandFlowActive, setIsAddBrandFlowActive] = useState(false);
   const uiScope = uiScopeForUser(user?.id);
+  const profileTabPreferenceKey = pluginEmbedded ? 'plugin.profileTab' : 'profileTab';
   const [userTab, setUserTab] = useState<ProfileTab>(() => {
+    if (dedicatedSpools) return 'spools';
     // Deep-link на конкретную вкладку: navigate('/profile', { state: { tab } })
     const requested = profileSearchParams.get('tab')
       ?? (location.state as { tab?: string } | null)?.tab;
     if (PROFILE_TABS.includes(requested as ProfileTab)) {
       return requested as ProfileTab;
     }
-    return readUiChoice(uiScopeForUser(user?.id), 'profileTab', PROFILE_TABS, 'dashboard');
+    if (pluginEmbedded && location.pathname === '/embed') {
+      return 'spools';
+    }
+    return readUiChoice(uiScopeForUser(user?.id), profileTabPreferenceKey, PROFILE_TABS, 'dashboard');
   });
   const [calculatorWorkspaceMode, setCalculatorWorkspaceMode] = useState<CalculatorWorkspaceMode>(
     () => readUiChoice(
@@ -323,7 +333,9 @@ export const ProfilePage: React.FC = () => {
 
   useEffect(() => {
     const requestedTab = profileSearchParams.get('tab');
-    if (PROFILE_TABS.includes(requestedTab as ProfileTab)) {
+    if (dedicatedSpools) {
+      setUserTab('spools');
+    } else if (PROFILE_TABS.includes(requestedTab as ProfileTab)) {
       setUserTab(requestedTab as ProfileTab);
     }
     const requestedPresetFilter = profileSearchParams.get('preset_filter');
@@ -340,21 +352,26 @@ export const ProfilePage: React.FC = () => {
       nextParams.delete('tab');
       nextParams.delete('preset_filter');
       const nextSearch = nextParams.toString();
-      navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+      navigate(
+        `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash}`,
+        { replace: true },
+      );
     }
-  }, [profileSearchParams, spoolIntakeFilamentId, navigate, location.pathname]);
+  }, [profileSearchParams, spoolIntakeFilamentId, navigate, location.pathname, dedicatedSpools]);
 
   useEffect(() => {
-    writeUiPreference(uiScope, 'profileTab', userTab);
-  }, [uiScope, userTab]);
+    if (dedicatedSpools) return;
+    writeUiPreference(uiScope, profileTabPreferenceKey, userTab);
+  }, [uiScope, profileTabPreferenceKey, userTab, dedicatedSpools]);
 
   useEffect(() => {
     writeUiPreference(uiScope, 'calculatorView', calculatorWorkspaceMode);
   }, [uiScope, calculatorWorkspaceMode]);
 
   useEffect(() => {
+    if (dedicatedSpools) return;
     writeUiPreference(uiScope, 'brandCabinet', showBrandCabinet ? '1' : '0');
-  }, [uiScope, showBrandCabinet]);
+  }, [uiScope, showBrandCabinet, dedicatedSpools]);
 
   useEffect(() => {
     writeUiPreference(uiScope, 'presetFilter', presetFilter);
@@ -935,7 +952,7 @@ export const ProfilePage: React.FC = () => {
   }
 
   // Если выбран профиль компании, показываем BrandProfilePage
-  if (showBrandCabinet) {
+  if (showBrandCabinet && !dedicatedSpools) {
     return (
       <div>
         <div>
@@ -961,7 +978,7 @@ export const ProfilePage: React.FC = () => {
   return (
     <div className="space-y-6 md:space-y-10">
       {user && !user.email_verified && <UnverifiedEmailNotice />}
-      <div className="space-y-3 md:space-y-4">
+      {!dedicatedSpools && <div className="space-y-3 md:space-y-4">
         <div className="grid min-w-0 gap-3 min-[1140px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1140px]:items-start min-[1140px]:gap-x-6">
           <div className="flex justify-center min-[1140px]:col-start-2 min-[1140px]:row-start-1">
             <ProfileModeSwitch showBrandCabinet={false} onChange={setShowBrandCabinet} />
@@ -1064,7 +1081,7 @@ export const ProfilePage: React.FC = () => {
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Dashboard Tab */}
       {userTab === 'dashboard' && (
@@ -3322,6 +3339,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   onResolveImport,
 }) => {
   const { t } = useTranslation();
+  const pluginEmbedded = isPluginEmbed();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const spoolUiScope = uiScopeForUser(user?.id);
@@ -3338,8 +3356,14 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [spoolsViewMode, setSpoolsViewMode] = useStoredViewMode(
-    'profile.spoolsView',
+    spoolViewPreferenceKey(pluginEmbedded),
     user?.id,
+  );
+  const [spoolSlotsSection, setSpoolSlotsSection] = useStoredUiChoice(
+    pluginEmbedded ? 'plugin.spoolsPrinterSlotsSection' : 'profile.spoolsPrinterSlotsSection',
+    user?.id,
+    ['collapsed', 'expanded'] as const,
+    'collapsed',
   );
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
@@ -3592,7 +3616,20 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         ) : spoolTab === 'active' ? (
           <div className="space-y-4 md:space-y-5">
             <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5">
-              <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
+              <button
+                type="button"
+                onClick={() => setSpoolSlotsSection(spoolSlotsSection === 'collapsed' ? 'expanded' : 'collapsed')}
+                aria-expanded={spoolSlotsSection === 'expanded'}
+                className="flex items-center gap-2 text-sm font-semibold text-white"
+              >
+                <span>{t('profilePage.deviceSetup.title')}</span>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${spoolSlotsSection === 'expanded' ? 'rotate-180' : ''}`} />
+              </button>
+              {spoolSlotsSection === 'expanded' && (
+                <div className="mt-3">
+                  <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">

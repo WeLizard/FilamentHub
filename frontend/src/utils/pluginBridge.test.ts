@@ -38,6 +38,51 @@ import {
   startPluginOAuth,
 } from './pluginBridge';
 
+describe('plugin appearance negotiation', () => {
+  it('does not accept a capability message on the normal website', () => {
+    window.history.pushState({}, '', '/');
+    const unsubscribe = subscribeToPluginCapabilities(vi.fn());
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'plugin-capabilities', capabilities: [], appearance: 'orca' },
+        origin: window.location.origin,
+        source: window,
+      }));
+      expect(document.documentElement.dataset.fhPluginAppearance).toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+  it('applies only the trusted plugin capability response', () => {
+    const originalParent = window.parent;
+    const parent = { postMessage: vi.fn() };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed');
+    const unsubscribe = subscribeToPluginCapabilities(vi.fn());
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'plugin-capabilities', capabilities: [], appearance: 'orca' },
+        origin: 'https://untrusted.example',
+        source: window,
+      }));
+      expect(document.documentElement.dataset.fhPluginAppearance).toBeUndefined();
+
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'plugin-capabilities', capabilities: [], appearance: 'orca' },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      expect(document.documentElement.dataset.fhPluginAppearance).toBe('orca');
+    } finally {
+      unsubscribe();
+      document.documentElement.removeAttribute('data-fh-plugin-appearance');
+      sessionStorage.removeItem('fh_plugin_appearance');
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+    }
+  });
+});
+
 describe('pluginBridge inbound messages', () => {
   it('opens a bounded browser path and polls the server without exposing the poll secret', async () => {
     const originalParent = window.parent;
@@ -230,8 +275,17 @@ describe('pluginBridge inbound messages', () => {
         source: 'filamenthub-host',
         type: 'plugin-capabilities',
         capabilities: ['profile-sync'],
+        appearance: 'orca',
       });
       expect(onCapabilities).toHaveBeenCalledWith(new Set(['profile-sync']));
+      expect(window.location.hash).toBe(`#fh_bridge=${bridgeSession}&fh_appearance=orca`);
+      deliver?.({
+        source: 'filamenthub-host',
+        type: 'plugin-capabilities',
+        capabilities: ['profile-sync'],
+        appearance: 'filamenthub',
+      });
+      expect(window.location.hash).toBe(`#fh_bridge=${bridgeSession}&fh_appearance=filamenthub`);
 
       const requestId = `slice-report-${'a'.repeat(32)}`;
       deliver?.({
@@ -257,6 +311,8 @@ describe('pluginBridge inbound messages', () => {
     } finally {
       unsubscribeSliceReports();
       unsubscribe();
+      document.documentElement.removeAttribute('data-fh-plugin-appearance');
+      sessionStorage.removeItem('fh_plugin_appearance');
       Object.defineProperty(window, 'orca', { configurable: true, value: originalOrca });
       window.history.pushState({}, '', '/');
     }

@@ -195,7 +195,8 @@ describe('Layout', () => {
     expect(accountGroup).toHaveClass('mr-auto');
     expect(accountGroup).toContainElement(screen.getByText('return-user'));
     expect(accountGroup).toContainElement(screen.getByRole('button', { name: /layout.nav_logout/ }));
-    expect(accountGroup.nextElementSibling).toBe(screen.getByRole('button', { name: /layout.nav_catalog/ }));
+    expect(accountGroup.nextElementSibling).toBe(screen.getByRole('button', { name: /layout.plugin_nav_spools/ }));
+    expect(screen.getByRole('button', { name: /layout.nav_catalog/ })).toBeInTheDocument();
   });
 
   it('offers a problem report to signed-in users in plugin developer mode', () => {

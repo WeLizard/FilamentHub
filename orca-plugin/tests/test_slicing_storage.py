@@ -801,13 +801,26 @@ def test_plugin_settings_switch_the_server_at_load_but_keep_one_account_origin(m
     page.on_load()
 
     assert module.API_BASE == "https://filamenthub.club/api/v1"
-    assert module.EMBED_URL == "https://filamenthub.club/embed/catalog"
+    assert module.EMBED_URL == "https://filamenthub.club/embed"
     assert module.account_origin() == module.PROD_SITE_URL
     assert module.plugin_setting("developer_mode") is False
     settings_page = page.get_config_ui()
     assert "__" not in settings_page
     assert '"club"' in settings_page
     assert module.ui_text("settingsDeveloperModeHint") in settings_page
+    assert module.ui_text("settingsAppearanceHint") in settings_page
+
+
+def test_plugin_appearance_is_bounded_and_bound_to_the_embed_page():
+    module, _ = _module_with_pages()
+    assert module.normalize_plugin_settings({"appearance": "unexpected"})["appearance"] == "filamenthub"
+    assert module.localized_embed_url("en") == module.SITE_URL + "/embed?fh_appearance=filamenthub&lng=en"
+
+    module.apply_plugin_settings(module.normalize_plugin_settings({"appearance": "orca"}))
+    url = module.direct_embed_url("b" * 32, "en")
+    assert url.startswith(module.SITE_URL + "/embed?fh_appearance=orca&lng=en#")
+    assert url.endswith("fh_bridge=" + "b" * 32 + "&fh_appearance=orca")
+    assert module.localized_embed_url("") == module.SITE_URL + "/embed?fh_appearance=orca"
 
 
 def test_plugin_settings_gate_automatic_sync_and_the_problem_log(monkeypatch):
@@ -1311,6 +1324,7 @@ def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch)
         "pluginVersion": module.PLUGIN_VERSION,
         "capabilities": list(module.PLUGIN_CAPABILITIES),
         "developerMode": False,
+        "appearance": "filamenthub",
     }]
 
 def test_page_icon_materializes_for_a_single_file_install(

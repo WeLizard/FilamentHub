@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.3"
+# version = "0.2.4"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -17,7 +17,7 @@
 """FilamentHub plugin for OrcaSlicer's Python plugin system.
 
 Current Pages hosts receive a small bootstrap from ``get_ui`` and navigate the
-top-level plugin WebView to the real React catalog. The catalog renders the
+top-level plugin WebView to the React spool workspace. The embedded page renders the
 compact plugin toolbar and talks to Python through OrcaSlicer's official injected
 ``window.orca`` bridge. Every command carries a random per-tab binding and the
 plugin never starts a local HTTP server. LAN addresses and credentials are
@@ -418,7 +418,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.3"
+PLUGIN_VERSION = "0.2.4"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -439,13 +439,14 @@ PROD_SITE_URL = "https://filamenthub.ru"
 PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL not in PROD_SITE_URLS.values()
-EMBED_URL = SITE_URL + "/embed/catalog"
+EMBED_URL = SITE_URL + "/embed"
 API_BASE = SITE_URL + "/api/v1"
 PLUGIN_SETTINGS_DEFAULTS = {
     "server": "ru",
     "auto_sync": True,
     "sync_success_notice": True,
     "developer_mode": False,
+    "appearance": "filamenthub",
 }
 _PLUGIN_SETTINGS = dict(PLUGIN_SETTINGS_DEFAULTS)
 HTTP_TIMEOUT = 20
@@ -474,6 +475,8 @@ def normalize_plugin_settings(raw):
     for key in ("auto_sync", "sync_success_notice", "developer_mode"):
         if isinstance(raw.get(key), bool):
             settings[key] = raw[key]
+    if raw.get("appearance") in ("filamenthub", "orca"):
+        settings["appearance"] = raw["appearance"]
     return settings
 
 
@@ -495,7 +498,7 @@ def apply_plugin_settings(settings, apply_server=False):
     _PLUGIN_SETTINGS = dict(settings)
     if apply_server and not DEV_CONTOUR and "FILAMENTHUB_SITE_URL" not in os.environ:
         SITE_URL = PROD_SITE_URLS[settings["server"]]
-        EMBED_URL = SITE_URL + "/embed/catalog"
+        EMBED_URL = SITE_URL + "/embed"
         API_BASE = SITE_URL + "/api/v1"
 
 
@@ -627,8 +630,9 @@ def ui_text(key, **values):
 
 def localized_embed_url(language=None):
     language = host_ui_language() if language is None else language
+    parameters = {"fh_appearance": plugin_setting("appearance")}
     if not language:
-        return EMBED_URL
+        return EMBED_URL + "?" + urllib.parse.urlencode(parameters)
     locale = normalize_ui_language(language)
     if locale == "ru":
         site_language = "ru"
@@ -636,8 +640,9 @@ def localized_embed_url(language=None):
         site_language = "zh"
     else:
         site_language = "en"
+    parameters["lng"] = site_language
     separator = "&" if "?" in EMBED_URL else "?"
-    return EMBED_URL + separator + urllib.parse.urlencode({"lng": site_language})
+    return EMBED_URL + separator + urllib.parse.urlencode(parameters)
 
 
 def open_in_system_browser(url):
@@ -7270,7 +7275,11 @@ retry.textContent=copy.retry;retry.addEventListener('click',connect);connect();
 def direct_embed_url(bridge_session, language=None):
     """Bind the official injected bridge to this one plugin-page navigation."""
     url = localized_embed_url(language)
-    fragment = urllib.parse.urlencode({"fh_bridge": bridge_session})
+    fragment_params = {
+        "fh_bridge": bridge_session,
+        "fh_appearance": plugin_setting("appearance"),
+    }
+    fragment = urllib.parse.urlencode(fragment_params)
     return urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:4], fragment))
 
 
@@ -7316,6 +7325,11 @@ legend{margin-bottom:6px;font-weight:600}
 <p class="note" id="server-note"></p>
 <p class="note restart" id="server-restart" hidden></p>
 </fieldset>
+<fieldset><legend data-copy="settingsAppearance"></legend>
+<div class="servers">
+<label class="row"><input type="radio" name="appearance" value="filamenthub"><span data-copy="settingsAppearanceFilamentHub"></span></label>
+<label class="row"><input type="radio" name="appearance" value="orca"><span data-copy="settingsAppearanceOrca"></span></label>
+</div><p class="note" data-copy="settingsAppearanceHint"></p></fieldset>
 <label class="row"><input type="checkbox" data-key="auto_sync"><span><span data-copy="settingsAutoSync"></span><span class="hint" data-copy="settingsAutoSyncHint"></span></span></label>
 <label class="row"><input type="checkbox" data-key="sync_success_notice"><span><span data-copy="settingsSuccessNotice"></span><span class="hint" data-copy="settingsSuccessNoticeHint"></span></span></label>
 <label class="row"><input type="checkbox" data-key="developer_mode"><span><span data-copy="settingsDeveloperMode"></span><span class="hint" data-copy="settingsDeveloperModeHint"></span></span></label>
@@ -7338,9 +7352,14 @@ legend{margin-bottom:6px;font-weight:600}
       if (config && typeof config[key] === typeof defaults[key]) settings[key] = config[key];
     });
     if (settings.server !== "ru" && settings.server !== "club") settings.server = defaults.server;
+    if (settings.appearance !== "filamenthub" && settings.appearance !== "orca") settings.appearance = defaults.appearance;
     var readOnly = !!(window.orca.getContext() || {}).readOnly;
     document.querySelectorAll("input[name=server]").forEach(function (input) {
       input.checked = input.value === settings.server;
+      input.disabled = readOnly;
+    });
+    document.querySelectorAll("input[name=appearance]").forEach(function (input) {
+      input.checked = input.value === settings.appearance;
       input.disabled = readOnly;
     });
     document.querySelectorAll("input[data-key]").forEach(function (input) {
@@ -7356,6 +7375,9 @@ legend{margin-bottom:6px;font-weight:600}
   document.querySelectorAll("input[name=server]").forEach(function (input) {
     input.addEventListener("change", function () { settings.server = input.value; save(); });
   });
+  document.querySelectorAll("input[name=appearance]").forEach(function (input) {
+    input.addEventListener("change", function () { settings.appearance = input.value; save(); });
+  });
   document.querySelectorAll("input[data-key]").forEach(function (input) {
     input.addEventListener("change", function () { settings[input.getAttribute("data-key")] = input.checked; save(); });
   });
@@ -7367,6 +7389,10 @@ SETTINGS_COPY_KEYS = (
     "settingsServer",
     "settingsServerNote",
     "settingsServerRestart",
+    "settingsAppearance",
+    "settingsAppearanceFilamentHub",
+    "settingsAppearanceOrca",
+    "settingsAppearanceHint",
     "settingsAutoSync",
     "settingsAutoSyncHint",
     "settingsSuccessNotice",
@@ -9381,11 +9407,13 @@ def _buffer_bambu_usage_report(stream, report, observed_at):
             "reported_capacity_g",
         )} for slot in feed.get("slots", [])],
     ], sort_keys=True)
-    if signature == stream.get("usage_signature"):
+    if signature == stream.get("usage_signature") and not stream.get("usage_gap_pending"):
         return
     stream["usage_signature"] = signature
     pending = stream.setdefault("usage_reports", [])
     observation = {"report": json.loads(json.dumps(report)), "observed_at": observed_at}
+    if stream.pop("usage_gap_pending", False):
+        observation["report"]["_fh_observation_gap"] = True
     if len(pending) >= 256:
         # Do not infer consumption across a lost observation interval. Already
         # journaled deltas remain intact, and the newest point starts a baseline.
@@ -9449,7 +9477,16 @@ class BambuBridgeRuntime:
                 with bind_lifecycle_generation(_BambuStreamLifecycle(self, stream["stop"]), generation):
                     while not self._stop.is_set() and not stream["stop"].is_set():
                         try:
-                            read_bambu_lan_snapshot(config, timeout=3600, on_report=receive)
+                            try:
+                                read_bambu_lan_snapshot(config, timeout=3600, on_report=receive)
+                            finally:
+                                with stream["lock"]:
+                                    stream.pop("report", None)
+                                    stream.pop("serial", None)
+                                    stream.pop("at", None)
+                                    stream.pop("usage_signature", None)
+                                    stream["usage_gap_pending"] = True
+                                    stream["ready"].clear()
                         except Exception as exc:
                             if self._stop.is_set() or stream["stop"].is_set():
                                 break
@@ -12303,6 +12340,7 @@ class FilamentHubCatalog(
                 pluginVersion=PLUGIN_VERSION,
                 capabilities=list(PLUGIN_CAPABILITIES),
                 developerMode=plugin_setting("developer_mode"),
+                appearance=plugin_setting("appearance"),
             )
         elif msg_type in {"printer-setup", "printer-setup-local"}:
             request_id = msg.get("requestId")

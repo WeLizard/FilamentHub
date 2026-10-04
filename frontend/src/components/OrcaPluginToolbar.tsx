@@ -51,15 +51,52 @@ export function OrcaPluginToolbar({
   }, []);
 
   const destinations = [
-    { path: '/', label: t('layout.nav_catalog'), icon: Package, authenticated: false },
-    { path: '/profile', label: t('layout.nav_profile'), icon: User, authenticated: true },
-    { path: '/wiki', label: t('layout.nav_wiki'), icon: BookOpen, authenticated: false },
+    {
+      path: '/embed',
+      search: '?tab=spools',
+      label: t('layout.plugin_nav_spools'),
+      icon: Package,
+      authenticated: true,
+    },
+    {
+      path: '/embed/catalog',
+      search: '',
+      label: t('layout.nav_catalog'),
+      icon: Package,
+      authenticated: false,
+    },
+    {
+      path: '/profile',
+      search: '?tab=dashboard',
+      label: t('layout.nav_profile'),
+      icon: User,
+      authenticated: true,
+    },
+    { path: '/wiki', search: '', label: t('layout.nav_wiki'), icon: BookOpen, authenticated: false },
   ];
 
-  const navigateInsidePlugin = (path: string) => {
+  const navigateInsidePlugin = (path: string, search: string) => {
     // Keep the per-tab bridge binding in the URL. A hard reload on Profile or
     // Wiki must reopen the same direct plugin surface instead of site chrome.
-    navigate({ pathname: path, hash: location.hash });
+    const nextParams = new URLSearchParams(search);
+    const hostLanguage = new URLSearchParams(location.search).get('lng');
+    if (hostLanguage && !nextParams.has('lng')) {
+      nextParams.set('lng', hostLanguage);
+    }
+    const nextSearch = nextParams.toString();
+    navigate({
+      pathname: path,
+      search: nextSearch ? `?${nextSearch}` : '',
+      hash: location.hash,
+    });
+  };
+
+  const isActiveDestination = (path: string) => {
+    if (path === '/embed') {
+      return location.pathname === '/embed';
+    }
+    if (location.pathname !== path) return false;
+    return true;
   };
 
   const runSync = async () => {
@@ -108,18 +145,21 @@ export function OrcaPluginToolbar({
 
         {destinations
           .filter((item) => !item.authenticated || authenticated)
-          .map(({ path, label, icon: Icon }) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => navigateInsidePlugin(path)}
-              className={buttonClass(location.pathname === path)}
-              aria-current={location.pathname === path ? 'page' : undefined}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
+          .map(({ path, search, label, icon: Icon }) => {
+            const active = isActiveDestination(path);
+            return (
+              <button
+                key={`${path}${search}`}
+                type="button"
+                onClick={() => navigateInsidePlugin(path, search)}
+                className={buttonClass(active)}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            );
+          })}
 
         {authenticated && (
           <>

@@ -62,7 +62,7 @@ def test_direct_page_uses_orca_ui_language(
 
     rendered = plugin_module.render_direct_page("b" * 32)
 
-    assert f"?lng={site_language}" in rendered
+    assert f"&lng={site_language}" in rendered
     assert "fh_bridge=" in rendered
     assert json.dumps(
         plugin_module.resolved_ui_catalog(expected)["unavailableTitle"],
@@ -338,7 +338,7 @@ def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
             else "zh" if locale in {"zh_CN", "zh_TW"}
             else "en"
         )
-        assert f"?lng={site_language}" in rendered
+        assert f"&lng={site_language}" in rendered
         assert json.dumps(
             plugin_module.resolved_ui_catalog(locale)["unavailableTitle"],
             ensure_ascii=False,
@@ -382,7 +382,7 @@ def test_embedded_site_is_limited_to_supported_languages(
     plugin_module, host_language, site_language
 ):
     assert plugin_module.localized_embed_url(host_language).endswith(
-        f"?lng={site_language}"
+        f"&lng={site_language}"
     )
 
 def test_invalid_optional_catalog_cannot_break_plugin_startup(plugin_module, tmp_path):

@@ -495,7 +495,8 @@
     "plugin_sync": "Sync",
     "plugin_recover": "Recover",
     "plugin_report_problem": "Report a problem",
-    "plugin_open_printers": "Open My Printers"
+    "plugin_open_printers": "Open My Printers",
+    "plugin_nav_spools": "My Spools"
   },
   "legalDocument": {
     "backHome": "Back to home",

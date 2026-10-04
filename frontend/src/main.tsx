@@ -6,12 +6,15 @@ import { i18nReady } from './i18n';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+import './pluginAppearance.css';
 import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
-import { stripOrcaHostTheme } from './utils/pluginBridge';
+import { isPluginEmbed, stripOrcaHostTheme } from './utils/pluginBridge';
+import { initializePluginAppearance } from './utils/pluginAppearance';
 import { getLocaleBasename } from './utils/siteLocale';
 
 clearLegacyLocalAuthStateIfNeeded();
 stripOrcaHostTheme();
+initializePluginAppearance(isPluginEmbed());
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -438,8 +438,22 @@ function AppContent() {
         />
         {/* Current Pages hosts render their compact toolbar directly. Installed
             iframe-shell builds keep using the same catalog route. */}
-        <Route path="/embed" element={<Layout><CatalogPage /></Layout>} />
-        <Route path="/embed/catalog" element={<Layout><CatalogPage /></Layout>} />
+        <Route
+          path="/embed"
+          element={
+            <Layout>
+              <ProtectedRoute>
+                <Suspense fallback={<PageLoader />}>
+                  <ProfilePage />
+                </Suspense>
+              </ProtectedRoute>
+            </Layout>
+          }
+        />
+        <Route
+          path="/embed/catalog"
+          element={<Layout><CatalogPage /></Layout>}
+        />
         <Route path="/about" element={<Layout><Suspense fallback={<PageLoader />}><AboutPage /></Suspense></Layout>} />
         <Route path="/user-agreement" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />

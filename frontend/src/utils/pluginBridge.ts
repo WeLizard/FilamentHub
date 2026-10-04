@@ -10,6 +10,7 @@
  */
 
 import { stripLocalePrefix } from './siteLocale';
+import { applyPluginAppearance } from './pluginAppearance';
 import type { PrinterSetupConnection } from '../api/client';
 import type { OrcaSliceReportInput } from '../types/api';
 
@@ -51,12 +52,20 @@ export function preserveDirectPluginBridgeBinding(): void {
   if (!isDirectPluginHost()) return;
   const session = directBridgeSession();
   if (!session) return;
-  const expectedHash = `#fh_bridge=${encodeURIComponent(session)}`;
-  if (window.location.hash === expectedHash) return;
+  const appearance = document.documentElement.dataset.fhPluginAppearance
+    ?? new URLSearchParams(window.location.hash.slice(1)).get('fh_appearance');
+  const expectedHash = `#fh_bridge=${encodeURIComponent(session)}${appearance === 'orca' || appearance === 'filamenthub' ? `&fh_appearance=${appearance}` : ''}`;
+  const query = new URLSearchParams(window.location.search);
+  if (query.has('fh_appearance') && (appearance === 'orca' || appearance === 'filamenthub')) {
+    query.set('fh_appearance', appearance);
+  }
+  const search = query.toString();
+  const expectedUrl = `${window.location.pathname}${search ? `?${search}` : ''}${expectedHash}`;
+  if (`${window.location.pathname}${window.location.search}${window.location.hash}` === expectedUrl) return;
   window.history.replaceState(
     window.history.state,
     '',
-    `${window.location.pathname}${window.location.search}${expectedHash}`,
+    expectedUrl,
   );
 }
 
@@ -754,6 +763,10 @@ export function subscribeToPluginCapabilities(
       capabilities.filter((item): item is string => typeof item === 'string'),
     );
     activePluginDeveloperMode = (data as { developerMode?: unknown }).developerMode === true;
+    if (isDirectPluginHost() || (window.parent !== window && isPluginEmbed())) {
+      applyPluginAppearance((data as { appearance?: unknown }).appearance ?? 'filamenthub');
+      preserveDirectPluginBridgeBinding();
+    }
     onCapabilities(new Set(activePluginCapabilities));
   };
   window.addEventListener('message', handler);

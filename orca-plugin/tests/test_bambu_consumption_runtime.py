@@ -437,6 +437,128 @@ def test_stream_queue_overflow_marks_gap_without_inventing_consumption(plugin_mo
     assert stream["usage_reports"][0]["report"]["_fh_observation_gap"] is True
 
 
+@pytest.mark.parametrize("disconnect_raises", [False, True])
+def test_stream_reconnect_discards_stale_snapshot_and_preserves_terminal(
+    plugin_module, monkeypatch, disconnect_raises,
+):
+    runtime = plugin_module.BambuBridgeRuntime()
+    config = {"host": "192.168.1.44", "serial": "LAB", "access_code": "code",
+              "bridge_token": "token"}
+    disconnected = threading.Event()
+    reconnecting = threading.Event()
+    resume = threading.Event()
+    send_full = threading.Event()
+    full_received = threading.Event()
+    send_delta = threading.Event()
+    delta_received = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def read(_config, *, timeout, on_report):
+        calls.append(timeout)
+        if len(calls) == 1:
+            on_report("LAB", _report("FAILED", remaining=990))
+            assert disconnected.wait(2)
+            if disconnect_raises:
+                raise ConnectionError("LAN stream closed")
+            return
+        reconnecting.set()
+        assert resume.wait(2)
+        on_report("LAB", {"nozzle_temper": 220})
+        assert send_full.wait(2)
+        on_report("LAB", _report("RUNNING", remaining=980))
+        full_received.set()
+        assert send_delta.wait(2)
+        on_report("LAB", {"ams": {"ams": [{"id": "0", "tray": [
+            {"id": "0", "remain_g": 975},
+        ]}]}})
+        delta_received.set()
+        assert release.wait(2)
+
+    def backoff(_timeout):
+        reconnecting.set()
+        return resume.wait(2)
+
+    monkeypatch.setattr(plugin_module, "read_bambu_lan_snapshot", read)
+    monkeypatch.setattr(plugin_module, "BAMBU_MQTT_TIMEOUT", 0.1)
+    monkeypatch.setattr(runtime._stop, "wait", backoff)
+    try:
+        assert runtime._stream_observation(config)[1]["gcode_state"] == "FAILED"
+        stream = runtime._streams[plugin_module._bambu_stream_key(config)]
+        assert [item["report"]["gcode_state"] for item in stream["usage_reports"]] == ["FAILED"]
+        disconnected.set()
+        assert reconnecting.wait(2)
+        with pytest.raises(TimeoutError, match="unavailable"):
+            runtime._stream_observation(config)
+
+        resume.set()
+        partial = runtime._stream_observation(config)[1]
+        assert partial == {"nozzle_temper": 220}
+        assert [item["report"].get("gcode_state") for item in stream["usage_reports"]] == [
+            "FAILED", None,
+        ]
+        assert stream["usage_reports"][1]["report"]["_fh_observation_gap"] is True
+        assert "_fh_observation_gap" not in partial
+
+        send_full.set()
+        assert full_received.wait(2)
+        fresh = runtime._stream_observation(config)[1]
+        assert fresh["gcode_state"] == "RUNNING"
+        assert fresh["nozzle_temper"] == 220
+        assert "_fh_observation_gap" not in fresh
+        assert "_fh_observation_gap" not in stream["usage_reports"][2]["report"]
+
+        send_delta.set()
+        assert delta_received.wait(2)
+        updated = runtime._stream_observation(config)[1]
+        assert updated["gcode_state"] == "RUNNING"
+        assert updated["nozzle_temper"] == 220
+        assert updated["ams"]["ams"][0]["tray"][0]["remain_g"] == 975
+        assert updated["ams"]["ams"][0]["tray"][0]["tray_uuid"] == "TAG-A"
+        assert stream["usage_reports"][0]["report"]["gcode_state"] == "FAILED"
+    finally:
+        disconnected.set()
+        resume.set()
+        send_full.set()
+        send_delta.set()
+        release.set()
+        runtime.stop()
+        stream = runtime._streams.get(plugin_module._bambu_stream_key(config))
+        if stream is not None:
+            stream["thread"].join(2)
+            assert not stream["thread"].is_alive()
+
+
+def test_first_post_gap_usage_report_starts_a_new_baseline(
+    plugin_module, tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin_module, "read_bambu_consumption_file", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (
+        200, json.dumps(_desired()).encode(),
+    ))
+    uploads = []
+
+    def post(_path, _token, payload):
+        uploads.extend(payload["events"])
+        return 200, json.dumps({"accepted": True, "ack_sequence": payload["sequence"]}).encode(), None
+
+    monkeypatch.setattr(plugin_module, "http_post_bridge_json", post)
+    runtime = plugin_module.BambuBridgeRuntime()
+    config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"}
+    assert runtime._record_usage(config, "source", _report(remaining=1000),
+                                 "2026-09-19T10:00:00+00:00") is True
+    resumed = _report(remaining=950)
+    resumed["_fh_observation_gap"] = True
+    assert runtime._record_usage(config, "source", resumed,
+                                 "2026-09-19T10:02:00+00:00") is True
+    assert runtime._record_usage(config, "source", _report("FINISH", remaining=940),
+                                 "2026-09-19T10:03:00+00:00") is True
+    assert len(uploads) == 1
+    assert uploads[0]["outcome"] == "completed"
+    assert uploads[0]["items"][0]["used_weight_g"] == pytest.approx(10)
+
+
 def test_serial_discovery_keeps_original_stream_and_binding_isolation(plugin_module, monkeypatch):
     runtime = plugin_module.BambuBridgeRuntime()
     original = {"host": "192.168.1.44", "serial": "", "bridge_token": "token",
