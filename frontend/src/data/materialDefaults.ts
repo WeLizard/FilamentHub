@@ -334,7 +334,7 @@ export function applyMaterialDefaults(
     setTempRangeLow: (value: number | '') => void;
     setTempRangeHigh: (value: number | '') => void;
     setNozzleTempInitialLayer: (value: number | '') => void;
-    setBedTempInitialLayer: (value: number | '') => void;
+    setBedTempInitialDefault: (value: number | '') => void;
     setIdleTemperature: (value: number | '') => void;
     setChamberTemp: (value: number | '') => void;
     setEnableChamberControl: (value: boolean) => void;
@@ -376,7 +376,7 @@ export function applyMaterialDefaults(
     setters.setNozzleTempInitialLayer(settings.nozzle_temperature_initial_layer);
   }
   if (settings.bed_temperature_initial_layer !== undefined) {
-    setters.setBedTempInitialLayer(settings.bed_temperature_initial_layer);
+    setters.setBedTempInitialDefault(settings.bed_temperature_initial_layer);
   }
   if (settings.idle_temperature !== undefined) {
     setters.setIdleTemperature(settings.idle_temperature);

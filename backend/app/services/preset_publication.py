@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.preset import Preset
+from app.services.orcaslicer_preset_contract import MANUAL_OVERRIDES_KEY, manual_overrides
 from app.services.orca_transport import (
     FILAMENT_MANAGED_PRINTER_COMPATIBILITY_KEYS,
     ORCA_SCALAR_FIELDS,
@@ -101,6 +102,9 @@ def public_orca_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(settings, dict):
         return {}
     published: dict[str, Any] = {}
+    overrides = manual_overrides(settings)
+    if overrides:
+        published[MANUAL_OVERRIDES_KEY] = sorted(overrides)
     for key, value in settings.items():
         if (
             not isinstance(key, str)

@@ -195,6 +195,18 @@ def test_raw_validation_checks_every_extruder_and_bed_type():
         extract_structured_filament_values({"fan_max_speed": ["50.5"]})
 
 
+def test_main_bed_temperature_follows_orca_plates_not_the_legacy_key():
+    settings = {
+        "bed_temperature": ["95"],
+        "hot_plate_temp": ["0"],
+        "textured_plate_temp": ["55"],
+        "cool_plate_temp": ["35"],
+    }
+
+    assert extract_structured_filament_values(settings)["bed_temp"] == 55
+    assert extract_structured_filament_values({"hot_plate_temp": ["0"]})["bed_temp"] == 0
+
+
 def test_raw_projection_updates_structured_values_and_preserves_explicit_nil():
     assert extract_structured_filament_values({
         "filament_flow_ratio": ["0.92"],

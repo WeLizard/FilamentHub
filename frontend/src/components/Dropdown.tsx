@@ -20,6 +20,7 @@ interface DropdownProps {
   onChange: (value: string | number) => void;
   placeholder?: string;
   label?: ReactNode;
+  labelClassName?: string;
   className?: string;
   disabled?: boolean;
   clearable?: boolean;
@@ -41,6 +42,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   onChange,
   placeholder: placeholderProp,
   label,
+  labelClassName = 'block text-gray-300 mb-2 text-sm font-medium',
   className = '',
   disabled = false,
   clearable = true,
@@ -202,7 +204,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   return (
     <div className={`relative ${className}`} ref={containerRef}>
       {label && (
-        <label htmlFor={inputId} className="block text-gray-300 mb-2 text-sm font-medium">
+        <label htmlFor={inputId} className={labelClassName}>
           {label}
         </label>
       )}

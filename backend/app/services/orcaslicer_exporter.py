@@ -16,6 +16,7 @@ from app.services.orca_transport import build_orca_transport_settings
 from app.services.orcaslicer_preset_contract import (
     format_orca_flow_ratio,
     format_orca_number,
+    manual_overrides,
 )
 from app.services.profile_validator import (
     log_validation_result,
@@ -274,9 +275,12 @@ async def preset_to_orcaslicer_json(
     if filament.diameter is not None:
         profile["filament_diameter"] = to_array(filament.diameter)
 
-    # Стоимость филамента (OrcaSlicer ожидает money/kg)
-    if filament.price_per_kg is not None:
-        profile["filament_cost"] = to_array(str(filament.price_per_kg))
+    # Рекомендуемый производителем диапазон сопла; свой диапазон пресета ниже его перекрывает
+    if filament.recommended_nozzle_temp_min is not None:
+        profile["nozzle_temperature_range_low"] = to_array(int(filament.recommended_nozzle_temp_min))
+    if filament.recommended_nozzle_temp_max is not None:
+        profile["nozzle_temperature_range_high"] = to_array(int(filament.recommended_nozzle_temp_max))
+
 
     # Тип материала
     profile["filament_type"] = to_array(filament.material_type)
@@ -314,6 +318,13 @@ async def preset_to_orcaslicer_json(
         else preset.orcaslicer_settings
     )
     profile.update(_filament_transport(source_settings, preset.id))
+    # A price stored in the preset is its author's own purchase price; only the catalogue price is shared.
+    profile.pop("filament_cost", None)
+    if filament.price_per_kg is not None:
+        profile["filament_cost"] = to_array(str(filament.price_per_kg))
+    # Density is a manufacturer fact: a card value outranks the preset copy unless set by hand.
+    if filament.density is not None and "filament_density" not in manual_overrides(source_settings):
+        profile["filament_density"] = to_array(round(filament.density, 2))
 
     # Material identity from FilamentHub is authoritative over imported raw
     # metadata. Preset values remain represented in both structured columns and

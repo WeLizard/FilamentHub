@@ -50,7 +50,8 @@ export const NozzleHardnessField: React.FC<{
   effects?: string[];
   additives?: FilamentAdditive[];
   materialType?: string | null;
-}> = ({ value, onChange, filler, effects = [], additives = [], materialType }) => {
+  compact?: boolean;
+}> = ({ value, onChange, filler, effects = [], additives = [], materialType, compact = false }) => {
   const { t } = useTranslation();
 
   const options = [
@@ -59,6 +60,9 @@ export const NozzleHardnessField: React.FC<{
       value: String(o.hrc),
       label: `${t(`nozzleHardness.${o.key}`)} · HRC ${o.hrc}`,
     })),
+    ...(value !== null && !NOZZLE_TYPE_OPTIONS.some((o) => o.hrc === value)
+      ? [{ value: String(value), label: `HRC ${value}` }]
+      : []),
   ];
 
   const abrasive = (!!filler && ABRASIVE_FILLERS.has(filler))
@@ -72,7 +76,7 @@ export const NozzleHardnessField: React.FC<{
       <label className="block text-gray-300 mb-1 text-sm font-medium">
         {t('nozzleHardness.label')} <InfoHint text={t('paramHints.nozzleHardness')} />
       </label>
-      <p className="text-gray-400 text-xs mb-2">{t('nozzleHardness.hint')}</p>
+      {!compact && <p className="text-gray-400 text-xs mb-2">{t('nozzleHardness.hint')}</p>}
       {abrasive && (
         <p className="mb-2 text-xs text-amber-200/90">{t('nozzleHardness.abrasiveRecommend')}</p>
       )}

@@ -50,15 +50,38 @@ import {
   cloneOrcaSettings,
   firstOrcaSetting,
   formatOrcaFlowRatio,
-  isOrcaBedTemperatureSentinel,
   normalizeOrcaSettingsForUi,
+  ORCA_EXTRA_FIELD_KEYS,
+  orcaExtraFieldKind,
   ORCA_MAX_BED_TEMPERATURE,
   ORCA_MAX_NOZZLE_TEMPERATURE,
+  readOrcaExtraFields,
+  readManualOverrides,
+  applyManualOverride,
   readOrcaNumber,
+  readOrcaPlateTemperatures,
   readOrcaText,
 } from '../utils/orcaPresetSettings';
+import { loadFilamentPresetSchema } from '../utils/orcaPresetSchema';
+import {
+  applyOrcaSerializedText,
+  buildBedPlateTable,
+  readOrcaSerializedText,
+  humanizeOrcaKey,
+  schemaEntryLabel,
+  schemaEnumOptions,
+  schemaGroupTitle,
+  schemaOptionMode,
+  schemaOptionText,
+  schemaPageTitle,
+  schemaRowTextForKey,
+  type SchemaOptionText,
+  type ViewLanguage,
+} from '../utils/orcaSchemaView';
+import { normalizeSiteLocale } from '../utils/siteLocale';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
+import { OrcaSchemaField } from './OrcaSchemaField';
 import { printerCatalogLabel } from '../utils/printerLabel';
 import {
   FilamentHandlingEditor,
@@ -91,6 +114,30 @@ const MATERIAL_TYPES = [
   'PLA+',
   'PETG+',
   'ABS+',
+];
+
+const IRONING_FIELD_KEYS = [
+  'filament_ironing_flow',
+  'filament_ironing_spacing',
+  'filament_ironing_inset',
+  'filament_ironing_speed',
+];
+
+const WIPE_TOWER_FIELD_KEYS = [
+  'filament_tower_interface_pre_extrusion_dist',
+  'filament_tower_interface_pre_extrusion_length',
+  'filament_tower_ironing_area',
+  'filament_tower_interface_purge_volume',
+  'filament_tower_interface_print_temp',
+];
+
+// Plate keys the per-plate table does not show; they follow the top «Bed» field only.
+const HIDDEN_BED_TEMPERATURE_KEYS = [
+  'bed_temperature',
+  'customized_plate_temp',
+  'customized_plate_temp_initial_layer',
+  'epoxy_resin_plate_temp',
+  'epoxy_resin_plate_temp_initial_layer',
 ];
 
 interface CreatePresetModalProps {
@@ -179,7 +226,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   createFromPreset = false,
 }) => {
   const { user } = useAuth();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // Определяем, является ли пресет черновиком (заготовкой)
   // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @fh в имени
@@ -204,12 +251,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [tempRangeLow, setTempRangeLow] = useState<number | ''>('');
   const [tempRangeHigh, setTempRangeHigh] = useState<number | ''>('');
   const [nozzleTempInitialLayer, setNozzleTempInitialLayer] = useState<number | ''>('');
-  const [bedTempInitialLayer, setBedTempInitialLayer] = useState<number | ''>('');
+  // Only values that belong to the preset: loaded from it or typed by a person.
+  const [plateTemps, setPlateTemps] = useState<Record<string, number | ''>>({});
+  const [bedTempInitialDefault, setBedTempInitialDefault] = useState<number | ''>('');
+  // Set only by a person typing in the top «Bed» field; programmatic defaults never set it.
+  const [bedTempEdited, setBedTempEdited] = useState(false);
+  const [orcaExtraFields, setOrcaExtraFields] = useState<Record<string, string>>({});
+  const [manualDensity, setManualDensity] = useState(false);
   const [idleTemperature, setIdleTemperature] = useState<number | ''>(''); // Температура ожидания
   const [softeningTemperature, setSofteningTemperature] = useState<number | ''>(''); // Температура размягчения
   const [volumetricSpeed, setVolumetricSpeed] = useState<number | ''>('');
   const [adaptiveVolumetricSpeed, setAdaptiveVolumetricSpeed] = useState(false);
-  const [volumetricSpeedCoefficients, setVolumetricSpeedCoefficients] = useState('');
+  const [adaptivePressureAdvanceModel, setAdaptivePressureAdvanceModel] = useState('');
   const [filamentShrink, setFilamentShrink] = useState('');
   const [filamentShrinkageCompensationZ, setFilamentShrinkageCompensationZ] = useState('');
   const [defaultFilamentColour, setDefaultFilamentColour] = useState('');
@@ -320,7 +373,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     else onClose();
   };
   // Уровень сложности (как в OrcaSlicer: Simple/Advanced/Expert). Прячет продвинутые
-  // вкладки/поля для новичков; классификация полей — из Orca (orcaFieldModes).
+  // вкладки/поля для новичков; уровни полей — из схемы Orca.
   // Выбор сохраняется — при следующем открытии не нужно переключать заново.
   const [settingMode, setSettingMode] = useState<SettingMode>(() => {
     const saved = safeStorage.get('fh_preset_setting_mode');
@@ -407,6 +460,66 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     enabled: isOpen && !!user?.id,
     staleTime: 60_000,
   });
+
+  const lang: ViewLanguage = normalizeSiteLocale(i18n.language) ?? 'en';
+  const { data: orcaSchema, isLoading: orcaSchemaLoading } = useQuery({
+    queryKey: ['orca-preset-schema', 'filament'],
+    queryFn: loadFilamentPresetSchema,
+    staleTime: Infinity,
+    enabled: isOpen,
+  });
+  const bedPlateTable = useMemo(
+    () => (orcaSchema ? buildBedPlateTable(orcaSchema, lang) : null),
+    [orcaSchema, lang],
+  );
+  const plateKeys = useMemo(
+    () => bedPlateTable?.rows.flatMap((row) => row.cells.map((cell) => cell.key)) ?? [],
+    [bedPlateTable],
+  );
+  const showAtMode = (...keys: string[]) =>
+    keys.some((key) => isVisibleAtMode(schemaOptionMode(orcaSchema, key), settingMode));
+  // The tabs render only once the schema is loaded, so the fallbacks below are never shown.
+  const orcaText = (key: string): SchemaOptionText =>
+    orcaSchema ? schemaOptionText(orcaSchema, key, lang) : { label: humanizeOrcaKey(key) };
+  const orcaUnit = (key: string, fallback?: string) => orcaText(key).unit ?? fallback;
+  const orcaKeyHint = (key: string) => {
+    const { tooltip } = orcaText(key);
+    return tooltip ? <InfoHint text={tooltip} /> : null;
+  };
+  const orcaLabel = (key: string) => {
+    const { label, tooltip } = orcaText(key);
+    return <>{label}{tooltip && <> <InfoHint text={tooltip} /></>}</>;
+  };
+  const orcaRowText = (key: string) => (orcaSchema ? schemaRowTextForKey(orcaSchema, key, lang) : {});
+  const orcaRowLabel = (key: string) => {
+    const { label, tooltip } = orcaRowText(key);
+    return <>{label}{tooltip && <> <InfoHint text={tooltip} /></>}</>;
+  };
+  const orcaEnumOptions = (key: string) => (orcaSchema ? schemaEnumOptions(orcaSchema, key, lang) : []);
+  const orcaEntryLabel = (key: string) =>
+    orcaSchema ? schemaEntryLabel(orcaSchema, key, lang) : humanizeOrcaKey(key);
+  const orcaGroup = (page: string, group: string) =>
+    (orcaSchema ? schemaGroupTitle(orcaSchema, page, group, lang) : undefined) ?? group;
+  const orcaPage = (page: string) =>
+    (orcaSchema ? schemaPageTitle(orcaSchema, page, lang) : undefined) ?? page;
+  // A setting the filament card also holds shows the card value until the preset sets its own.
+  const orcaExtraField = (
+    key: string,
+    cardValue?: number | string | null,
+    placeholder?: number | string | null,
+    disabled = false,
+  ) => (orcaSchema && showAtMode(key) ? (
+    <OrcaSchemaField
+      schema={orcaSchema}
+      lang={lang}
+      key={key}
+      fieldKey={key}
+      value={(disabled ? '' : orcaExtraFields[key]) || (cardValue == null ? '' : String(cardValue))}
+      placeholder={placeholder == null || placeholder === '' ? undefined : String(placeholder)}
+      disabled={disabled}
+      onChange={(value) => setOrcaExtraFields((prev) => ({ ...prev, [key]: value }))}
+    />
+  ) : null);
 
   const refreshAchievements = async () => {
     if (!user?.id) return;
@@ -661,6 +774,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     };
 
     resetCatalogForm();
+    setPlateTemps({});
+    setBedTempInitialDefault('');
+    setBedTempEdited(false);
+    setOrcaExtraFields({});
+    setManualDensity(false);
     
     if (preset) {
       setName(preset.name);
@@ -775,20 +893,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           return Number.isNaN(parsed) ? '' : parsed;
         };
         setNozzleTempInitialLayer(parseNumericSetting(settings.nozzle_temperature_initial_layer?.[0]));
-        const bedInitialLayerValue =
-          settings.bed_temperature_initial_layer?.[0] ??
-          settings.hot_plate_temp_initial_layer?.[0] ??
-          settings.cool_plate_temp_initial_layer?.[0] ??
-          settings.eng_plate_temp_initial_layer?.[0] ??
-          settings.textured_plate_temp_initial_layer?.[0] ??
-          settings.supertack_plate_temp_initial_layer?.[0] ??
-          settings.textured_cool_plate_temp_initial_layer?.[0] ??
-          settings.customized_plate_temp_initial_layer?.[0] ??
-          settings.epoxy_resin_plate_temp_initial_layer?.[0] ??
-          '';
-        setBedTempInitialLayer(parseNumericSetting(bedInitialLayerValue));
+        setPlateTemps(readOrcaPlateTemperatures(rawSettings));
+        setOrcaExtraFields(readOrcaExtraFields(rawSettings));
+        setManualDensity(readManualOverrides(rawSettings).includes('filament_density'));
         setAdaptiveVolumetricSpeed(settings.filament_adaptive_volumetric_speed?.[0] === '1' || settings.filament_adaptive_volumetric_speed?.[0] === 1);
-        setVolumetricSpeedCoefficients(textSetting('volumetric_speed_coefficients'));
+        setAdaptivePressureAdvanceModel(readOrcaSerializedText(rawSettings, 'adaptive_pressure_advance_model'));
         // Процентные значения (убираем % при загрузке)
         setFilamentShrink(percentSetting('filament_shrink'));
         setFilamentShrinkageCompensationZ(percentSetting('filament_shrinkage_compensation_z'));
@@ -900,7 +1009,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFilamentNotes('');
         setNozzleTempInitialLayer('');
         setAdaptiveVolumetricSpeed(false);
-        setVolumetricSpeedCoefficients('');
+        setAdaptivePressureAdvanceModel('');
         setFilamentShrink('');
         setFilamentShrinkageCompensationZ('');
         setDefaultFilamentColour('');
@@ -1006,12 +1115,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setTempRangeLow('');
       setTempRangeHigh('');
       setNozzleTempInitialLayer('');
-      setBedTempInitialLayer('');
       setIdleTemperature('');
       setSofteningTemperature('');
       setVolumetricSpeed('');
       setAdaptiveVolumetricSpeed(false);
-      setVolumetricSpeedCoefficients('');
+      setAdaptivePressureAdvanceModel('');
       setFilamentShrink('');
       setFilamentShrinkageCompensationZ('');
       setDefaultFilamentColour('');
@@ -1177,6 +1285,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
   }, [filamentColorHex, filamentVisualColors]); // Добавили filamentVisualColors для отслеживания изменений
 
+  // A new preset's untouched cell follows the recommended values; an edited preset's
+  // untouched cell stays as stored.
+  const effectivePlateTemp = (key: string, isInitialLayer: boolean): number | '' => {
+    const own = plateTemps[key];
+    if (own !== undefined) return own;
+    return isInitialLayer && bedTempInitialDefault !== '' ? bedTempInitialDefault : bedTemp;
+  };
+
   const applyDefaultsByMaterialType = (materialTypeValue?: string | null) => {
     if (!materialTypeValue) {
       return;
@@ -1192,7 +1308,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setTempRangeLow,
       setTempRangeHigh,
       setNozzleTempInitialLayer,
-      setBedTempInitialLayer,
+      setBedTempInitialDefault,
       setIdleTemperature,
       setChamberTemp,
       setEnableChamberControl,
@@ -1689,51 +1805,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('nozzle_temperature_range_low', tempRangeLow);
     addParam('nozzle_temperature_range_high', tempRangeHigh);
     addParam('nozzle_temperature_initial_layer', nozzleTempInitialLayer);
-    const bedKeys = [
-      'bed_temperature',
-      'hot_plate_temp',
-      'cool_plate_temp',
-      'eng_plate_temp',
-      'textured_plate_temp',
-      'supertack_plate_temp',
-      'textured_cool_plate_temp',
-      'customized_plate_temp',
-      'epoxy_resin_plate_temp',
-    ];
-    const hasRawBedTemperature = bedKeys.some(
-      (key) => firstOrcaSetting(sourceSettings, key) != null,
-    );
-    if (!preset || preset.bed_temp !== bedTemp || !hasRawBedTemperature) {
-      bedKeys.forEach((key) => addParam(key, bedTemp));
-    }
-    const bedInitialTemp =
-      bedTempInitialLayer !== '' && bedTempInitialLayer !== null ? bedTempInitialLayer : bedTemp;
-    const originalBedInitial = [
-      'bed_temperature_initial_layer',
-      'hot_plate_temp_initial_layer',
-      'cool_plate_temp_initial_layer',
-      'eng_plate_temp_initial_layer',
-      'textured_plate_temp_initial_layer',
-      'supertack_plate_temp_initial_layer',
-      'textured_cool_plate_temp_initial_layer',
-      'customized_plate_temp_initial_layer',
-      'epoxy_resin_plate_temp_initial_layer',
-    ].map((key) => firstOrcaSetting(sourceSettings, key)).find((value) => value != null && value !== '');
-    const preserveInheritedBedInitial = bedTempInitialLayer === ''
-      && isOrcaBedTemperatureSentinel(originalBedInitial);
-    if (
-      !preserveInheritedBedInitial
-      && (originalBedInitial == null || String(originalBedInitial) !== String(bedInitialTemp))
-    ) {
+    bedPlateTable?.rows.forEach((row) => row.cells.forEach((cell, index) => {
+      const value = effectivePlateTemp(cell.key, index === 0);
+      // A plate the preset never stored is exported with the top «Bed» value, so it stays unwritten until edited.
+      const owned = Object.prototype.hasOwnProperty.call(plateTemps, cell.key);
+      if ((owned || !preset) && value !== (readOrcaNumber(sourceSettings, cell.key) ?? '')) addParam(cell.key, value);
+    }));
+    if (!preset || bedTempEdited) {
+      HIDDEN_BED_TEMPERATURE_KEYS.forEach((key) => addParam(key, bedTemp));
       delete settings.bed_temperature_initial_layer;
-      addParam('hot_plate_temp_initial_layer', bedInitialTemp);
-      addParam('cool_plate_temp_initial_layer', bedInitialTemp);
-      addParam('eng_plate_temp_initial_layer', bedInitialTemp);
-      addParam('textured_plate_temp_initial_layer', bedInitialTemp);
-      addParam('supertack_plate_temp_initial_layer', bedInitialTemp);
-      addParam('textured_cool_plate_temp_initial_layer', bedInitialTemp);
-      addParam('customized_plate_temp_initial_layer', bedInitialTemp);
-      addParam('epoxy_resin_plate_temp_initial_layer', bedInitialTemp);
     }
     addParam('idle_temperature', idleTemperature); // Температура ожидания
     addParam('temperature_vitrification', softeningTemperature); // Температура витрификации (размягчения)
@@ -1751,7 +1831,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     addParam('filament_max_volumetric_speed', volumetricSpeed);
     addBoolParam('filament_adaptive_volumetric_speed', adaptiveVolumetricSpeed);
-    addParam('volumetric_speed_coefficients', volumetricSpeedCoefficients);
+    applyOrcaSerializedText(settings, sourceSettings, 'adaptive_pressure_advance_model', adaptivePressureAdvanceModel);
     addPercentParam('filament_shrink', filamentShrink);
     addPercentParam('filament_shrinkage_compensation_z', filamentShrinkageCompensationZ);
     // Цвет по умолчанию - используем из defaultFilamentColour или из данных филамента
@@ -1960,6 +2040,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     addParam('compatible_prints_condition', compatiblePrintsCondition);
 
+    const originalExtraFields = readOrcaExtraFields(sourceSettings);
+    ORCA_EXTRA_FIELD_KEYS.forEach((key) => {
+      const value = orcaExtraFields[key] ?? '';
+      if (value === originalExtraFields[key]) return;
+      if (orcaExtraFieldKind(orcaSchema?.options[key]) === 'percent') addPercentParam(key, value);
+      else addParam(key, value);
+    });
+    applyManualOverride(settings, sourceSettings, 'filament_density', manualDensity);
+
     // === ВКЛАДКА "ЗАМЕТКИ" ===
     addLinesParam('filament_notes', filamentNotes);
 
@@ -2114,7 +2203,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               name: string;
               description?: string;
               extruder_temp?: number;
-              bed_temp?: number;
               flow_rate?: number;
               fan_speed?: number;
               retraction_length?: number;
@@ -2133,7 +2221,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               active: isDraft ? true : undefined,
             };
             if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
-            if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
             if (originalFlowRate !== flowRate) updateData.flow_rate = flowRate;
             if (originalFanSpeed !== fanSpeed) updateData.fan_speed = fanSpeed;
             if (originalRetractionLength !== retractionLength) updateData.retraction_length = retractionLength;
@@ -2201,7 +2288,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         name: string;
         description?: string;
         extruder_temp?: number;
-        bed_temp?: number;
         flow_rate?: number;
         fan_speed?: number;
         retraction_length?: number;
@@ -2217,7 +2303,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
       };
       if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
-      if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
       if (originalFlowRate !== flowRate) updateData.flow_rate = flowRate;
       if (originalFanSpeed !== fanSpeed) updateData.fan_speed = fanSpeed;
       if (originalRetractionLength !== retractionLength) updateData.retraction_length = retractionLength;
@@ -2251,6 +2336,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       });
     }
   };
+
+  const cardFilament: Filament | null = selectedFilament ?? editingFilament ?? null;
+  const cardDiameter = cardFilament?.diameter ?? (showFilamentForm ? filamentDiameter : null);
+  const cardDensity = cardFilament?.density ?? (showFilamentForm && filamentDensity !== '' ? filamentDensity : null);
+  const cardNozzleHrc = cardFilament?.required_nozzle_hrc ?? (showFilamentForm ? filamentNozzleHrc : null);
+  const cardNozzleRangeMin = cardFilament?.recommended_nozzle_temp_min ?? (showFilamentForm ? filamentRecTemps.nozzleMin : null);
+  const cardNozzleRangeMax = cardFilament?.recommended_nozzle_temp_max ?? (showFilamentForm ? filamentRecTemps.nozzleMax : null);
 
   const isLoading =
     createMutation.isPending ||
@@ -2665,7 +2757,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             setTempRangeLow,
                             setTempRangeHigh,
                             setNozzleTempInitialLayer,
-                            setBedTempInitialLayer,
+                            setBedTempInitialDefault,
                             setIdleTemperature,
                             setChamberTemp,
                             setEnableChamberControl,
@@ -3205,8 +3297,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-1 text-sm font-medium">{t('presetModal.printers')}</label>
-              <p className="mb-2 text-xs leading-4 text-gray-400">{t('presetModal.printersHint')}</p>
+              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.printers')}</label>
           <Dropdown
             label=""
             value=""
@@ -3235,6 +3326,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             onFilterChange={setPrinterSearch}
             emptyMessage={t('presetModal.printerNotFound')}
           />
+              <p className="mt-1 text-xs leading-4 text-gray-400">{t('presetModal.printersHint')}</p>
           {selectedPrinterIds.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {selectedPrinterIds.slice(0, 3).map((printerId) => {
@@ -3297,7 +3389,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           )}
 
           {/* Основные настройки */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
                 {t('presetModal.nozzleTemp')} *
@@ -3325,7 +3417,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <input
                 type="number"
                 value={bedTemp}
-                onChange={(e) => { setBedTemp(Number(e.target.value)); }}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  setBedTemp(value);
+                  setBedTempEdited(true);
+                  setPlateTemps((prev) => ({
+                    ...prev,
+                    ...Object.fromEntries(plateKeys.map((key) => [key, value])),
+                  }));
+                }}
                 required
                 min={0}
                 max={ORCA_MAX_BED_TEMPERATURE}
@@ -3376,6 +3476,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <SettingModeSelector mode={settingMode} onChange={setSettingMode} />
             </div>
 
+            {!orcaSchema ? <Loader2 className="h-5 w-5 animate-spin text-gray-400" /> : (<>
             {/* Вкладки */}
             <div className="flex flex-wrap gap-2 mb-4 border-b border-white/20">
               <button
@@ -3387,7 +3488,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.profile')}
+                {orcaPage('Filament')}
               </button>
               <button
                 type="button"
@@ -3398,7 +3499,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.cooling')}
+                {orcaPage('Cooling')}
               </button>
               <button
                 type="button"
@@ -3409,7 +3510,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.override')}
+                {orcaPage('Setting Overrides')}
               </button>
               {isVisibleAtMode('advanced', settingMode) && (
               <button
@@ -3421,7 +3522,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.advanced')}
+                {orcaPage('Advanced')}
               </button>
               )}
               {isVisibleAtMode('advanced', settingMode) && (
@@ -3434,7 +3535,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.extruder')}
+                {orcaPage('Multimaterial')}
               </button>
               )}
               <button
@@ -3446,7 +3547,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {t('presetModal.tabs.notes')}
+                {orcaPage('Notes')}
               </button>
             </div>
 
@@ -3456,13 +3557,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <div className="space-y-6">
                 {/* Общая информация */}
                 <div>
-                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.generalInfo')}</h4>
+                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Filament', 'Basic information')}</h4>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Тип материала - показываем информацию о типе из данных филамента */}
                     {((preset && editingFilament) || selectedFilament) && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.type')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('filament_type').label}</label>
                         <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm">
                           {(preset && editingFilament) ? editingFilament.material_type : selectedFilament?.material_type || t('presetModal.notSelected')}
                         </div>
@@ -3473,7 +3574,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* Производитель - показываем информацию о производителе из данных филамента */}
                     {((preset && editingFilament) || selectedFilament) && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.brandLabel')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('filament_vendor').label}</label>
                         <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm">
                           {(preset && editingFilament) ? editingFilament.brand_name : selectedFilament?.brand_name || t('presetModal.notSelected')}
                         </div>
@@ -3482,7 +3583,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Растворимый материал */}
-                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
+                    <div className={`flex items-center space-x-3 ${showAtMode('filament_soluble') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="filamentSoluble"
@@ -3491,13 +3592,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="filamentSoluble" className="text-gray-300 text-sm">
-                        {t('presetModal.solubleMaterial')}
+                        {orcaText('filament_soluble').label}
                       </label>
-                      <InfoHint text={t('paramHints.soluble')} />
+                      {orcaKeyHint('filament_soluble')}
                     </div>
 
                     {/* Поддержка */}
-                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
+                    <div className={`flex items-center space-x-3 ${showAtMode('filament_is_support') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="filamentIsSupport"
@@ -3506,14 +3607,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="filamentIsSupport" className="text-gray-300 text-sm">
-                        {t('presetModal.supportMaterial')}
+                        {orcaText('filament_is_support').label}
                       </label>
-                      <InfoHint text={t('paramHints.supportMaterial')} />
+                      {orcaKeyHint('filament_is_support')}
                     </div>
 
-                    {/* Группа адгезивности (свойство материала; в Orca comDevelop → expert) */}
-                    <div className={isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adhesivenessCategory')} <InfoHint text={t('paramHints.adhesiveness')} /></label>
+                    {/* Группа адгезивности */}
+                    <div className={showAtMode('filament_adhesiveness_category') ? '' : 'hidden'}>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_adhesiveness_category')}</label>
                       <input
                         type="number"
                         value={filamentAdhesivenessCategory}
@@ -3525,27 +3626,27 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       />
                     </div>
 
-                    {/* Filament ramming length — MMU-параметр (advanced) */}
-                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentRammingLength')} <InfoHint text={t('paramHints.multitoolRammingVolume')} /></label>
+                    {/* Filament ramming length */}
+                    <div className={showAtMode('filament_change_length') ? '' : 'hidden'}>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_change_length')}</label>
                       <div className="relative">
                         <input
                           type="number"
-                          value={filamentMultitoolRammingVolume !== '' ? filamentMultitoolRammingVolume : ''}
-                          onChange={(e) => { setFilamentMultitoolRammingVolume(e.target.value === '' ? '' : Number(e.target.value)); }}
+                          value={filamentChangeLength}
+                          onChange={(e) => { setFilamentChangeLength(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={0}
-                          step="1"
-                          placeholder="10"
+                          step="0.1"
+                          placeholder="0"
                           className="w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_change_length')}</span>
                       </div>
                     </div>
 
                     {/* Цвет по умолчанию - показываем только если редактируем существующий пресет и есть цвет в филаменте */}
                     {preset && editingFilament && editingFilament.color_hex && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.defaultColor')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('default_filament_colour').label}</label>
                         <div className="flex items-center space-x-3">
                           <div
                             className="w-10 h-10 rounded-lg border-2 border-white/30 shadow-md flex-shrink-0"
@@ -3569,7 +3670,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* При создании нового филамента - цвет задаётся в форме создания филамента выше */}
                     {!preset && showFilamentForm && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.defaultColor')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('default_filament_colour').label}</label>
                         <div className="flex items-center space-x-3">
                           <div
                             className="w-10 h-10 rounded-lg border-2 border-white/30 shadow-md flex-shrink-0"
@@ -3593,7 +3694,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {/* При выборе существующего филамента - показываем только информацию */}
                     {!preset && !showFilamentForm && selectedFilament && selectedFilament.color_hex && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.defaultColor')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('default_filament_colour').label}</label>
                         <div className="flex items-center space-x-3">
                           <div
                             className="w-10 h-10 rounded-lg border-2 border-white/30 shadow-md flex-shrink-0"
@@ -3615,8 +3716,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Компенсация усадки по XY */}
-                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkXY')} <InfoHint text={t('paramHints.shrinkXY')} /></label>
+                    <div className={showAtMode('filament_shrink') ? '' : 'hidden'}>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_shrink')}</label>
                       <div className="relative">
                         <input
                           type="text"
@@ -3625,13 +3726,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="99.8"
                           className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_shrink')}</span>
                       </div>
                     </div>
 
                     {/* Компенсация усадки по Z */}
-                    <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.shrinkZ')} <InfoHint text={t('paramHints.shrinkZ')} /></label>
+                    <div className={showAtMode('filament_shrinkage_compensation_z') ? '' : 'hidden'}>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_shrinkage_compensation_z')}</label>
                       <div className="relative">
                         <input
                           type="text"
@@ -3640,13 +3741,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="100"
                           className="w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_shrinkage_compensation_z')}</span>
                       </div>
                     </div>
 
                     {/* Температура размягчения */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.softeningTemp')} <InfoHint text={t('paramHints.softeningTemp')} /></label>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('temperature_vitrification')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3658,13 +3759,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="110"
                           className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('temperature_vitrification')}</span>
                       </div>
                     </div>
 
                     {/* Температура ожидания */}
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.idleTemp')} <InfoHint text={t('paramHints.idleTemp')} /></label>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('idle_temperature')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3673,24 +3774,79 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           min={0}
                           max={255}
                           step="1"
-                          placeholder="2"
+                          placeholder="0"
                           className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('idle_temperature')}</span>
                       </div>
                     </div>
+
+                    {orcaSchema && showAtMode('filament_diameter') && (
+                      <Dropdown
+                        label={schemaOptionText(orcaSchema, 'filament_diameter', lang).label}
+                        labelClassName="block text-gray-300 mb-1 text-sm"
+                        value={orcaExtraFields.filament_diameter || (cardDiameter == null ? '' : String(cardDiameter))}
+                        options={[
+                          ...new Set([
+                            ...DIAMETER_OPTIONS,
+                            orcaExtraFields.filament_diameter,
+                            cardDiameter == null ? '' : String(cardDiameter),
+                          ].filter(Boolean)),
+                        ].map((d) => ({ value: d, label: `${d} mm` }))}
+                        onChange={(val) => setOrcaExtraFields((prev) => ({ ...prev, filament_diameter: String(val) }))}
+                        placeholder={t('presetModal.selectDiameter')}
+                      />
+                    )}
+                    {cardDensity != null ? (
+                      <div>
+                        {orcaExtraField('filament_density', cardDensity, null, !manualDensity)}
+                        {showAtMode('filament_density') && (
+                          <label className="mt-2 flex items-center gap-2 text-sm text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={manualDensity}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setManualDensity(checked);
+                                if (checked && !orcaExtraFields.filament_density) {
+                                  setOrcaExtraFields((prev) => ({ ...prev, filament_density: String(cardDensity) }));
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                            />
+                            {t('presetModal.setManually')}
+                          </label>
+                        )}
+                      </div>
+                    ) : orcaExtraField(
+                      'filament_density',
+                      densityForMaterial(cardFilament?.material_type ?? materialType) ?? 1.24,
+                    )}
+                    {showAtMode('required_nozzle_HRC') && (
+                      <NozzleHardnessField
+                        value={orcaExtraFields.required_nozzle_HRC
+                          ? Number(orcaExtraFields.required_nozzle_HRC)
+                          : cardNozzleHrc}
+                        onChange={(value) => setOrcaExtraFields((prev) => ({
+                          ...prev,
+                          required_nozzle_HRC: value == null ? '' : String(value),
+                        }))}
+                        materialType={cardFilament?.material_type ?? materialType}
+                        compact
+                      />
+                    )}
                   </div>
                 </div>
 
                 {/* Рекомендуемая температура сопла */}
-                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                  <h4 className="text-sm font-semibold text-white mb-3">{t('presetModal.recommendedNozzleTemp')}</h4>
+                <div className={showAtMode('nozzle_temperature_range_low', 'nozzle_temperature_range_high') ? '' : 'hidden'}>
+                  <h4 className="text-sm font-semibold text-white mb-3">{orcaRowText('nozzle_temperature_range_low').label}</h4>
                   <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.min')} (°C)</label>
+                        <label className="block text-gray-400 mb-1 text-xs">{orcaText('nozzle_temperature_range_low').label} ({orcaUnit('nozzle_temperature_range_low')})</label>
                         <input
                           type="number"
-                          value={tempRangeLow}
+                          value={tempRangeLow !== '' ? tempRangeLow : (cardNozzleRangeMin ?? '')}
                           onChange={(e) => { setTempRangeLow(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={150}
                           max={ORCA_MAX_NOZZLE_TEMPERATURE}
@@ -3700,10 +3856,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.max')} (°C)</label>
+                        <label className="block text-gray-400 mb-1 text-xs">{orcaText('nozzle_temperature_range_high').label} ({orcaUnit('nozzle_temperature_range_high')})</label>
                         <input
                           type="number"
-                          value={tempRangeHigh}
+                          value={tempRangeHigh !== '' ? tempRangeHigh : (cardNozzleRangeMax ?? '')}
                           onChange={(e) => { setTempRangeHigh(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={150}
                           max={ORCA_MAX_NOZZLE_TEMPERATURE}
@@ -3716,13 +3872,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   </div>
 
                 {/* Коэффициент потока и Pressure Advance */}
-                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.flowAndPA')}</h4>
+                <div className={showAtMode('filament_flow_ratio', 'enable_pressure_advance', 'pressure_advance', 'adaptive_pressure_advance', 'adaptive_pressure_advance_overhangs', 'adaptive_pressure_advance_bridges', 'adaptive_pressure_advance_model') ? '' : 'hidden'}>
+                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Filament', 'Flow ratio and Pressure Advance')}</h4>
                   
                   <div className="space-y-4">
                     {/* Коэф. потока модели */}
-                    <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.modelFlowRatio')} <InfoHint text={t('paramHints.flow')} /></label>
+                    <div className={showAtMode('filament_flow_ratio') ? '' : 'hidden'}>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_flow_ratio')}</label>
                       <input
                         type="number"
                         value={parseFloat((flowRate / 100).toFixed(6))}
@@ -3736,7 +3892,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     {/* Включить Pressure advance */}
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${showAtMode('enable_pressure_advance') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="enablePA"
@@ -3745,15 +3901,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="enablePA" className="text-gray-300 text-sm">
-                        {t('presetModal.enablePA')}
+                        {orcaText('enable_pressure_advance').label}
                       </label>
-                      <InfoHint text={t('paramHints.pressureAdvance')} />
+                      {orcaKeyHint('enable_pressure_advance')}
                     </div>
 
                     {/* Коэф. Pressure advance */}
-                    {enablePressureAdvance && (
+                    {enablePressureAdvance && showAtMode('pressure_advance') && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paCoefficient')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('pressure_advance').label}</label>
                         <input
                           type="number"
                           value={pressureAdvance}
@@ -3768,7 +3924,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Включить адаптивное Pressure advance (beta) */}
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${showAtMode('adaptive_pressure_advance') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="adaptivePA"
@@ -3777,13 +3933,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptivePA" className="text-gray-300 text-sm">
-                        {t('presetModal.enableAdaptivePA')}
+                        {orcaText('adaptive_pressure_advance').label}
                       </label>
-                      <InfoHint text={t('paramHints.adaptivePA')} />
+                      {orcaKeyHint('adaptive_pressure_advance')}
                     </div>
 
                     {/* Включить адаптивное Pressure advance на нависаниях (beta) */}
-                    <div className="flex items-center space-x-3">
+                    <div className={`flex items-center space-x-3 ${showAtMode('adaptive_pressure_advance_overhangs') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="adaptivePAOverhangs"
@@ -3792,15 +3948,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptivePAOverhangs" className="text-gray-300 text-sm">
-                        {t('presetModal.enableAdaptivePAOverhangs')}
+                        {orcaText('adaptive_pressure_advance_overhangs').label}
                       </label>
-                      <InfoHint text={t('paramHints.adaptivePAOverhangs')} />
+                      {orcaKeyHint('adaptive_pressure_advance_overhangs')}
                     </div>
 
                     {/* Коэф. Pressure advance для мостов */}
-                    {adaptivePressureAdvance && (
+                    {adaptivePressureAdvance && showAtMode('adaptive_pressure_advance_bridges') && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.paBridges')} <InfoHint text={t('paramHints.adaptivePABridges')} /></label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('adaptive_pressure_advance_bridges')}</label>
                         <input
                           type="number"
                           value={adaptivePABridges}
@@ -3815,13 +3971,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
 
                     {/* Измеренные значения адаптивного Pressure advance (beta) */}
-                    {adaptivePressureAdvance && isVisibleAtMode('expert', settingMode) && (
+                    {adaptivePressureAdvance && showAtMode('adaptive_pressure_advance_model') && (
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.adaptivePAMeasured')} <InfoHint text={t('paramHints.adaptivePAMeasured')} /></label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('adaptive_pressure_advance_model')}</label>
                         <textarea
-                          value={volumetricSpeedCoefficients || ''}
-                          onChange={(e) => { setVolumetricSpeedCoefficients(e.target.value); }}
-                          placeholder="0,0,00,0,0"
+                          value={adaptivePressureAdvanceModel}
+                          onChange={(e) => { setAdaptivePressureAdvanceModel(e.target.value); }}
                           rows={3}
                           className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none `}
                         />
@@ -3832,11 +3987,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                 {/* Температура в термокамере при печати */}
                 <div>
-                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.chamberTempSection')}</h4>
+                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Filament', 'Print chamber temperature')}</h4>
                   
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.chamberTargetTemp')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaEntryLabel('chamber_temperature')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3848,14 +4003,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="45"
                           className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('chamber_temperature')}</span>
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-gray-300 mb-1 text-sm">
-                        {t('presetModal.chamberMinimalTemp')}{' '}
-                        <InfoHint text={t('paramHints.chamberMinimalTemp')} />
+                        {orcaEntryLabel('chamber_minimal_temperature')}{' '}
+                        {orcaKeyHint('chamber_minimal_temperature')}
                       </label>
                       <div className="relative">
                         <input
@@ -3868,7 +4023,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="0"
                           className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-10 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">°C</span>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('chamber_minimal_temperature')}</span>
                       </div>
                     </div>
 
@@ -3881,24 +4036,24 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="enableChamber" className="text-gray-300 text-sm whitespace-nowrap">
-                        {t('presetModal.enableTempControl')}
+                        {orcaText('activate_chamber_temp_control').label}
                       </label>
-                      <InfoHint text={t('paramHints.chamberTemp')} />
+                      {orcaKeyHint('activate_chamber_temp_control')}
                     </div>
                   </div>
                 </div>
 
                 {/* Температура печати */}
                 <div>
-                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.printTemp')}</h4>
+                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Filament', 'Print temperature')}</h4>
                   
                   <div className="grid grid-cols-2 gap-4">
                     {/* Слева: Сопло */}
                     <div>
-                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.nozzle')} <InfoHint text={t('paramHints.extruderTemp')} /></label>
+                      <label className="block text-gray-300 mb-2 text-sm">{orcaRowLabel('nozzle_temperature_initial_layer')}</label>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')} <InfoHint text={t('paramHints.extruderTempFirst')} /></label>
+                          <label className="block text-gray-400 mb-1 text-xs">{orcaLabel('nozzle_temperature_initial_layer')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -3910,45 +4065,68 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="250"
                               className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('nozzle_temperature_initial_layer')}</span>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Справа: Стол */}
-                    <div>
-                      <label className="block text-gray-300 mb-2 text-sm">{t('presetModal.bed')} <InfoHint text={t('paramHints.bedTemp')} /></label>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.firstLayer')} <InfoHint text={t('paramHints.bedTempFirst')} /></label>
-                          <div className="relative">
-                          <input
-                            type="number"
-                            value={bedTempInitialLayer !== '' ? bedTempInitialLayer : bedTemp}
-                            onChange={(e) => {
-                              setBedTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value));
-                            }}
-                            min={0}
-                            max={ORCA_MAX_BED_TEMPERATURE}
-                            step="1"
-                            placeholder="90"
-                            className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                          />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
-                          </div>
+                    {/* Стол: температура по каждой пластине */}
+                    <div className="col-span-2">
+                      <label className="block text-gray-300 mb-2 text-sm">{orcaGroup('Filament', 'Bed temperature')}</label>
+                      {orcaSchemaLoading && <Loader2 className="h-5 w-5 animate-spin text-gray-400" />}
+                      {bedPlateTable && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 items-center gap-x-4 gap-y-2 text-sm">
+                          <div className="hidden sm:block" />
+                          {bedPlateTable.columns.map((column) => (
+                            <div key={column} className="text-xs text-gray-400">
+                              {column}
+                            </div>
+                          ))}
+                          {bedPlateTable.rows
+                            .filter((row) => row.cells.some((cell) => isVisibleAtMode(cell.mode, settingMode)))
+                            .map((row) => (
+                              <React.Fragment key={row.cells[0].key}>
+                                <div className="col-span-2 sm:col-span-1 pt-2 sm:pt-0 text-sm text-gray-300">
+                                  {row.label}
+                                  {row.tooltip && <> <InfoHint text={row.tooltip} /></>}
+                                </div>
+                                {row.cells.map((cell, index) => (
+                                  <div key={cell.key}>
+                                    {isVisibleAtMode(cell.mode, settingMode) && (
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          aria-label={`${row.label} ${bedPlateTable.columns[index]}`}
+                                          value={effectivePlateTemp(cell.key, index === 0)}
+                                          onChange={(e) => {
+                                            const value = e.target.value === '' ? '' : Number(e.target.value);
+                                            setPlateTemps((prev) => ({ ...prev, [cell.key]: value }));
+                                          }}
+                                          min={0}
+                                          max={ORCA_MAX_BED_TEMPERATURE}
+                                          step="1"
+                                          className="w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </React.Fragment>
+                            ))}
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Ограничение объёмного расхода */}
-                <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.volumetricLimit')}</h4>
+                <div className={showAtMode('filament_adaptive_volumetric_speed', 'filament_max_volumetric_speed') ? '' : 'hidden'}>
+                  <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Filament', 'Volumetric speed limitation')}</h4>
                   
                   <div className="space-y-3">
-                    <div className={`flex items-center space-x-3 ${isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}`}>
+                    <div className={`flex items-center space-x-3 ${showAtMode('filament_adaptive_volumetric_speed') ? '' : 'hidden'}`}>
                       <input
                         type="checkbox"
                         id="adaptiveVolumetricSpeed"
@@ -3957,13 +4135,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                       />
                       <label htmlFor="adaptiveVolumetricSpeed" className="text-gray-300 text-sm">
-                        {t('presetModal.adaptiveVolumetricSpeed')}
+                        {orcaText('filament_adaptive_volumetric_speed').label}
                       </label>
-                      <InfoHint text={t('paramHints.adaptiveFlow')} />
+                      {orcaKeyHint('filament_adaptive_volumetric_speed')}
                     </div>
 
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.maxVolumetricSpeed')} <InfoHint text={t('paramHints.maxVolumetricSpeed')} /></label>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_max_volumetric_speed')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3975,7 +4153,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="12"
                           className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³/s</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_max_volumetric_speed')}</span>
                       </div>
                     </div>
                   </div>
@@ -3987,12 +4165,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 <div className="space-y-6">
                   {/* Обдув определенного слоя */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.layerFanControl')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Cooling', 'Cooling for specific layer')}</h4>
                     
                     <div className="grid gap-4 md:grid-cols-2">
                       {/* Не включать вентилятор на первых */}
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.disableFanFirstLayers')} <InfoHint text={t('paramHints.closeFanFirstLayers')} /></label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('close_fan_the_first_x_layers')}</label>
                         <div className="relative">
                           <input
                             type="number"
@@ -4003,14 +4181,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="3"
                             className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.layers')}</span>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('close_fan_the_first_x_layers')}</span>
                         </div>
                       </div>
 
-                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
+                      <div className={showAtMode('initial_layer_fan_speed') ? '' : 'hidden'}>
                         <label className="block text-gray-300 mb-1 text-sm">
-                          {t('presetModal.initialLayerFanSpeed')}{' '}
-                          <InfoHint text={t('paramHints.initialLayerFanSpeed')} />
+                          {orcaLabel('initial_layer_fan_speed')}
                         </label>
                         <div className="relative">
                           <input
@@ -4024,13 +4201,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             disabled={Number(closeFanFirstXLayers) > 0}
                             className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
                           />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('initial_layer_fan_speed')}</span>
                         </div>
                       </div>
 
                       {/* Полная скорость вентилятора на слое */}
-                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fullFanSpeedLayer')} <InfoHint text={t('paramHints.fullFanSpeedLayer')} /></label>
+                      <div className={showAtMode('full_fan_speed_layer') ? '' : 'hidden'}>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('full_fan_speed_layer')}</label>
                         <div className="relative">
                           <input
                             type="number"
@@ -4041,7 +4218,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="0"
                             className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.layer')}</span>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('full_fan_speed_layer')}</span>
                         </div>
                       </div>
                     </div>
@@ -4049,15 +4226,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Обдув модели */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.partCooling')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Cooling', 'Part cooling fan')}</h4>
                     
                     <div className="space-y-4">
                       {/* Порог мин. скорости вентилятора */}
                       <div>
-                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.minFanThreshold')} <InfoHint text={t('paramHints.minFanThreshold')} /></label>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{orcaRowLabel('fan_min_speed')}</label>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.fanSpeedLabel')}</label>
+                            <label className="block text-gray-400 mb-1 text-xs">{orcaText('fan_min_speed').label}</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -4073,11 +4250,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="10"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('fan_min_speed')}</span>
                             </div>
                           </div>
                           <div>
-                            <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.layerTime')}</label>
+                            <label className="block text-gray-400 mb-1 text-xs">{orcaText('fan_cooling_layer_time').label}</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -4088,7 +4265,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="30"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.units.sec')}</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('fan_cooling_layer_time')}</span>
                             </div>
                           </div>
                         </div>
@@ -4096,10 +4273,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Порог макс. скорости вентилятора */}
                       <div>
-                        <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.maxFanThreshold')} <InfoHint text={t('paramHints.maxFanThreshold')} /></label>
+                        <label className="block text-gray-300 mb-2 text-sm font-medium">{orcaRowLabel('fan_max_speed')}</label>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.fanSpeedLabel')}</label>
+                            <label className="block text-gray-400 mb-1 text-xs">{orcaText('fan_max_speed').label}</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -4111,11 +4288,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="80"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('fan_max_speed')}</span>
                             </div>
                           </div>
                           <div>
-                            <label className="block text-gray-400 mb-1 text-xs">{t('presetModal.layerTime')}</label>
+                            <label className="block text-gray-400 mb-1 text-xs">{orcaText('slow_down_layer_time').label}</label>
                             <div className="relative">
                                 <input
                                 type="number"
@@ -4126,7 +4303,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="3"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.units.sec')}</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('slow_down_layer_time')}</span>
                             </div>
                           </div>
                         </div>
@@ -4142,9 +4319,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="reduceFanStopStartFreq" className="text-gray-300 text-sm">
-                          {t('presetModal.fanAlwaysOn')}
+                          {orcaText('reduce_fan_stop_start_freq').label}
                         </label>
-                        <InfoHint text={t('paramHints.fanAlwaysOn')} />
+                        {orcaKeyHint('reduce_fan_stop_start_freq')}
                       </div>
 
                       {/* Замедлять печать для лучшего охлаждения слоёв */}
@@ -4157,9 +4334,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="slowDownForLayerCooling" className="text-gray-300 text-sm">
-                          {t('presetModal.slowDownForCooling')}
+                          {orcaText('slow_down_for_layer_cooling').label}
                         </label>
-                        <InfoHint text={t('paramHints.slowForCooling')} />
+                        {orcaKeyHint('slow_down_for_layer_cooling')}
                       </div>
 
                       {/* Не замедляться на внешнем периметре */}
@@ -4172,15 +4349,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="dontSlowDownOuterWall" className="text-gray-300 text-sm">
-                          {t('presetModal.dontSlowOuterWall')}
+                          {orcaText('dont_slow_down_outer_wall').label}
                         </label>
-                        <InfoHint text={t('paramHints.dontSlowOuterWall')} />
+                        {orcaKeyHint('dont_slow_down_outer_wall')}
                       </div>
 
                       {/* Минимальная скорость печати */}
-                      {slowDownForLayerCooling && isVisibleAtMode('advanced', settingMode) && (
+                      {slowDownForLayerCooling && showAtMode('slow_down_min_speed') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPrintSpeed')} <InfoHint text={t('paramHints.minPrintSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('slow_down_min_speed')}</label>
                           <input
                             type="number"
                             value={slowDownMinSpeed}
@@ -4190,12 +4367,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="10"
                             className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('slow_down_min_speed')}</span>
                         </div>
                       )}
 
                       {/* Принудительный обдув нависаний и мостов */}
-                      <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
+                      <div className={`flex items-center space-x-3 ${showAtMode('enable_overhang_bridge_fan') ? '' : 'hidden'}`}>
                         <input
                           type="checkbox"
                           id="enableOverhangBridgeFan"
@@ -4204,15 +4381,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="enableOverhangBridgeFan" className="text-gray-300 text-sm">
-                          {t('presetModal.forceOverhangBridgeFan')}
+                          {orcaText('enable_overhang_bridge_fan').label}
                         </label>
-                        <InfoHint text={t('paramHints.overhangFan')} />
+                        {orcaKeyHint('enable_overhang_bridge_fan')}
                       </div>
 
                       {/* Порог нависания для включения обдува */}
-                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
+                      {enableOverhangBridgeFan && showAtMode('overhang_fan_threshold') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangFanThreshold')} <InfoHint text={t('paramHints.overhangThreshold')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('overhang_fan_threshold')}</label>
                           <div className="relative">
                             <input
                               type="text"
@@ -4221,15 +4398,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="25"
                               className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('overhang_fan_threshold', '%')}</span>
                           </div>
                         </div>
                       )}
 
                       {/* Скорость вентилятора для нависаний и внешних мостов */}
-                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
+                      {enableOverhangBridgeFan && showAtMode('overhang_fan_speed') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.overhangBridgeFanSpeed')} <InfoHint text={t('paramHints.overhangFanSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('overhang_fan_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4241,16 +4418,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="80"
                               className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('overhang_fan_speed')}</span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.minusOneDefault')}</p>
                         </div>
                       )}
 
                       {/* Скорость вентилятора для внутренних мостов */}
-                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
+                      {enableOverhangBridgeFan && showAtMode('internal_bridge_fan_speed') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.internalBridgeFanSpeed')} <InfoHint text={t('paramHints.internalBridgeFanSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('internal_bridge_fan_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4262,16 +4439,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="-1"
                               className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('internal_bridge_fan_speed')}</span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.minusOneDefault')}</p>
                         </div>
                       )}
 
                       {/* Скорость вентилятора на связующем слое */}
-                      {enableOverhangBridgeFan && isVisibleAtMode('advanced', settingMode) && (
+                      {enableOverhangBridgeFan && showAtMode('support_material_interface_fan_speed') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.supportInterfaceFanSpeed')} <InfoHint text={t('paramHints.supportInterfaceFanSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('support_material_interface_fan_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4283,15 +4460,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="-1"
                               className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('support_material_interface_fan_speed')}</span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.minusOneDefault')}</p>
                         </div>
                       )}
 
                       {/* Ironing fan speed */}
-                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.ironingFanSpeed')} <InfoHint text={t('paramHints.ironingFanSpeed')} /></label>
+                      <div className={showAtMode('ironing_fan_speed') ? '' : 'hidden'}>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('ironing_fan_speed')}</label>
                         <div className="relative">
                           <input
                             type="number"
@@ -4303,7 +4480,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="-1"
                             className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('ironing_fan_speed')}</span>
                         </div>
                         <p className="text-xs text-gray-500 mt-1">{t('presetModal.defaultMinusOne')}</p>
                       </div>
@@ -4312,10 +4489,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Вспомогательный вентилятор модели */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.auxiliaryFan')} <InfoHint text={t('paramHints.auxiliaryFan')} /></h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Cooling', 'Auxiliary part cooling fan')} {orcaKeyHint('additional_cooling_fan_speed')}</h4>
                     
                     <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.fanSpeedLabel')}</label>
+                      <label className="block text-gray-300 mb-1 text-sm">{orcaText('additional_cooling_fan_speed').label}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -4327,14 +4504,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           placeholder="0"
                           className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('additional_cooling_fan_speed')}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Вытяжной вентилятор */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.exhaustFan')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Cooling', 'Exhaust fan')}</h4>
                     
                     <div className="space-y-3">
                       <div className="flex items-center space-x-3">
@@ -4346,9 +4523,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="enableExhaustFan" className="text-gray-300 text-sm">
-                          {t('presetModal.enableExhaustFan')}
+                          {orcaText('activate_air_filtration').label}
                         </label>
-                        <InfoHint text={t('paramHints.exhaustFan')} />
+                        {orcaKeyHint('activate_air_filtration')}
                       </div>
 
                       {enableExhaustFan && (
@@ -4362,7 +4539,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   onChange={(e) => { setActivateAirFiltrationDuringPrint(e.target.checked); }}
                                   className="h-4 w-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                                 />
-                                {t('presetModal.exhaustFanDuringPrint')}
+                                {orcaRowText('activate_air_filtration_during_print').label}
                               </label>
                               <div className="relative">
                                 <input
@@ -4376,7 +4553,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   disabled={!activateAirFiltrationDuringPrint}
                                   className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 />
-                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('during_print_exhaust_fan_speed')}</span>
                               </div>
                             </div>
 
@@ -4388,7 +4565,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   onChange={(e) => { setActivateAirFiltrationOnCompletion(e.target.checked); }}
                                   className="h-4 w-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                                 />
-                                {t('presetModal.exhaustFanAfterPrint')}
+                                {orcaRowText('activate_air_filtration_on_completion').label}
                               </label>
                               <div className="relative">
                                 <input
@@ -4402,7 +4579,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   disabled={!activateAirFiltrationOnCompletion}
                                   className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 />
-                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('complete_print_exhaust_fan_speed')}</span>
                               </div>
                             </div>
                           </div>
@@ -4418,13 +4595,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 <div className="space-y-6">
                   {/* Откат */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.retraction')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Setting Overrides', 'Retraction')}</h4>
                     
                     <div className="space-y-4">
                       {/* Первая строка: Длина / Скорость извлечения */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.length')} <InfoHint text={t('paramHints.retractionLength')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retraction_length')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4436,11 +4613,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0.8"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retraction_length')}</span>
                           </div>
                         </div>
-                        <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionExtractSpeed')} <InfoHint text={t('paramHints.retractionSpeed')} /></label>
+                        <div className={showAtMode('filament_retraction_speed') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retraction_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4452,7 +4629,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="30"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retraction_speed')}</span>
                           </div>
                         </div>
                       </div>
@@ -4460,7 +4637,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Вторая строка: Высота поднятия оси Z / Скорость заправки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopHeight')} <InfoHint text={t('paramHints.zHop')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_z_hop')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4472,11 +4649,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0.4"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_z_hop')}</span>
                           </div>
                         </div>
-                        <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.deretractionSpeed')} <InfoHint text={t('paramHints.deretractionSpeed')} /></label>
+                        <div className={showAtMode('filament_deretraction_speed') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_deretraction_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4488,47 +4665,43 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="30"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_deretraction_speed')}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Третья строка: Тип подъёма оси Z / На поверхностях (advanced) */}
-                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.zHopType')} <InfoHint text={t('paramHints.zHopType')} /></label>
+                      {/* Третья строка: Тип подъёма оси Z / На поверхностях */}
+                      <div className={`grid grid-cols-2 gap-4 ${showAtMode('filament_z_hop_types', 'filament_retract_lift_enforce') ? '' : 'hidden'}`}>
+                        <div className={showAtMode('filament_z_hop_types') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_z_hop_types')}</label>
                           <CustomSelect
                             value={filamentZHopTypes || null}
                             onChange={(value: string | number | null) => {  setFilamentZHopTypes(value as string || ''); }}
                             options={[
                               { value: '', label: t('presetModal.default') },
-                              { value: 'Normal', label: t('presetModal.zHopNormal') },
-                              { value: 'Spiral', label: t('presetModal.zHopSpiral') },
-                              { value: 'AutoLift', label: t('presetModal.zHopAutoLift') },
+                              ...orcaEnumOptions('filament_z_hop_types'),
                             ]}
                             placeholder={t('presetModal.default')}
                           />
                         </div>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.onSurfaces')} <InfoHint text={t('paramHints.liftEnforce')} /></label>
+                        <div className={showAtMode('filament_retract_lift_enforce') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retract_lift_enforce')}</label>
                           <CustomSelect
                             value={retractLiftEnforce || null}
                             onChange={(value: string | number | null) => {  setRetractLiftEnforce(value as string || ''); }}
                             options={[
                               { value: '', label: t('presetModal.default') },
-                              { value: 'All', label: t('presetModal.allTop') },
-                              { value: 'TopOnly', label: t('presetModal.topOnly') },
-                              { value: 'None', label: t('presetModal.none') },
+                              ...orcaEnumOptions('filament_retract_lift_enforce'),
                             ]}
                             placeholder={t('presetModal.default')}
                           />
                         </div>
                       </div>
 
-                      {/* Четвертая строка: Приподнимать ось Z только выше / Приподнимать ось Z только ниже (advanced) */}
-                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZAbove')} <InfoHint text={t('paramHints.liftAbove')} /></label>
+                      {/* Четвертая строка: Приподнимать ось Z только выше / Приподнимать ось Z только ниже */}
+                      <div className={`grid grid-cols-2 gap-4 ${showAtMode('filament_retract_lift_above', 'filament_retract_lift_below') ? '' : 'hidden'}`}>
+                        <div className={showAtMode('filament_retract_lift_above') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retract_lift_above')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4539,11 +4712,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retract_lift_above')}</span>
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.liftZBelow')} <InfoHint text={t('paramHints.liftBelow')} /></label>
+                        <div className={showAtMode('filament_retract_lift_below') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retract_lift_below')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4554,15 +4727,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retract_lift_below')}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Пятая строка: Доп. длина подачи / Порог перемещения (advanced) */}
-                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.extraRestartLength')} <InfoHint text={t('paramHints.retractRestartExtra')} /></label>
+                      {/* Пятая строка: Доп. длина подачи / Порог перемещения */}
+                      <div className={`grid grid-cols-2 gap-4 ${showAtMode('filament_retract_restart_extra', 'filament_retraction_minimum_travel') ? '' : 'hidden'}`}>
+                        <div className={showAtMode('filament_retract_restart_extra') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retract_restart_extra')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4573,11 +4746,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retract_restart_extra')}</span>
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractionMinTravel')} <InfoHint text={t('paramHints.retractMinTravel')} /></label>
+                        <div className={showAtMode('filament_retraction_minimum_travel') ? '' : 'hidden'}>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retraction_minimum_travel')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4588,14 +4761,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="1"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retraction_minimum_travel')}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Чекбоксы: Откат при смене слоя / Очистка сопла (advanced) */}
-                      <div className={`grid grid-cols-2 gap-4 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
-                        <div className="flex items-center space-x-3">
+                      {/* Чекбоксы: Откат при смене слоя / Очистка сопла */}
+                      <div className={`grid grid-cols-2 gap-4 ${showAtMode('filament_retract_when_changing_layer', 'filament_wipe') ? '' : 'hidden'}`}>
+                        <div className={`flex items-center space-x-3 ${showAtMode('filament_retract_when_changing_layer') ? '' : 'hidden'}`}>
                           <input
                             type="checkbox"
                             id="retractWhenChangingLayerOverride"
@@ -4604,11 +4777,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                           />
                           <label htmlFor="retractWhenChangingLayerOverride" className="text-gray-300 text-sm">
-                            {t('presetModal.retractOnLayerChange')}
+                            {orcaText('filament_retract_when_changing_layer').label}
                           </label>
-                          <InfoHint text={t('paramHints.retractOnLayerChange')} />
+                          {orcaKeyHint('filament_retract_when_changing_layer')}
                         </div>
-                        <div className="flex items-center space-x-3">
+                        <div className={`flex items-center space-x-3 ${showAtMode('filament_wipe') ? '' : 'hidden'}`}>
                           <input
                             type="checkbox"
                             id="filamentWipeOverride"
@@ -4617,17 +4790,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                           />
                           <label htmlFor="filamentWipeOverride" className="text-gray-300 text-sm">
-                            {t('presetModal.wipeOnRetract')}
+                            {orcaText('filament_wipe').label}
                           </label>
-                          <InfoHint text={t('paramHints.wipe')} />
+                          {orcaKeyHint('filament_wipe')}
                         </div>
                       </div>
 
-                      {/* Расстояние очистки / Величина отката перед очисткой (advanced) */}
-                      {filamentWipe && isVisibleAtMode('advanced', settingMode) && (
+                      {/* Расстояние очистки / Величина отката перед очисткой */}
+                      {filamentWipe && showAtMode('filament_wipe_distance', 'filament_retract_before_wipe', 'filament_retract_after_wipe') && (
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.wipeDistance')} <InfoHint text={t('paramHints.wipeDistance')} /></label>
+                          <div className={showAtMode('filament_wipe_distance') ? '' : 'hidden'}>
+                            <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_wipe_distance')}</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -4638,11 +4811,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="1"
                                 className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_wipe_distance')}</span>
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractBeforeWipe')} <InfoHint text={t('paramHints.retractBeforeWipe')} /></label>
+                          <div className={showAtMode('filament_retract_before_wipe') ? '' : 'hidden'}>
+                            <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retract_before_wipe')}</label>
                             <div className="relative">
                               <input
                                 type="text"
@@ -4651,13 +4824,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="70"
                                 className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_retract_before_wipe')}</span>
                             </div>
                           </div>
-                          <div className={isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}>
+                          <div className={showAtMode('filament_retract_after_wipe') ? '' : 'hidden'}>
                             <label className="block text-gray-300 mb-1 text-sm">
-                              {t('presetModal.retractAfterWipe')}{' '}
-                              <InfoHint text={t('paramHints.retractAfterWipe')} />
+                              {orcaLabel('filament_retract_after_wipe')}
                             </label>
                             <div className="relative">
                               <input
@@ -4670,7 +4842,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 placeholder="0"
                                 className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
                               />
-                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('filament_retract_after_wipe')}</span>
                             </div>
                           </div>
                         </div>
@@ -4678,15 +4850,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
                   </div>
 
-                  <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
+                  <div className={showAtMode('filament_retract_length_toolchange', 'filament_retract_restart_extra_toolchange') ? '' : 'hidden'}>
                     <h4 className="mb-3 border-b border-white/10 pb-2 text-sm font-semibold text-white">
-                      {t('presetModal.retractionOnMaterialChange')}
+                      {orcaGroup('Setting Overrides', 'Retraction when switching material')}
                     </h4>
                     <div className="grid gap-4 md:grid-cols-2">
-                      <div>
+                      <div className={showAtMode('filament_retract_length_toolchange') ? '' : 'hidden'}>
                         <label className="block text-gray-300 mb-1 text-sm">
-                          {t('presetModal.retractLengthToolchange')}{' '}
-                          <InfoHint text={t('paramHints.retractLengthToolchange')} />
+                          {orcaLabel('filament_retract_length_toolchange')}
                         </label>
                         <div className="relative">
                           <input
@@ -4698,13 +4869,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="10"
                             className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
                           />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">mm</span>
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('filament_retract_length_toolchange')}</span>
                         </div>
                       </div>
-                      <div>
+                      <div className={showAtMode('filament_retract_restart_extra_toolchange') ? '' : 'hidden'}>
                         <label className="block text-gray-300 mb-1 text-sm">
-                          {t('presetModal.retractRestartExtraToolchange')}{' '}
-                          <InfoHint text={t('paramHints.retractRestartExtraToolchange')} />
+                          {orcaLabel('filament_retract_restart_extra_toolchange')}
                         </label>
                         <div className="relative">
                           <input
@@ -4715,7 +4885,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             placeholder="0"
                             className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
                           />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">mm</span>
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{orcaUnit('filament_retract_restart_extra_toolchange')}</span>
                         </div>
                       </div>
                     </div>
@@ -4729,7 +4899,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Первая строка: Расстояния при обрезке / Длинные ретракты при обрезке */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceCut')} <InfoHint text={t('paramHints.retractDistanceCut')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_retraction_distances_when_cut')}</label>
                           <input
                             type="text"
                             value={retractionDistancesWhenCut}
@@ -4740,7 +4910,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           <p className="text-xs text-gray-500 mt-1">{t('presetModal.commaSeparatedValues')}</p>
                         </div>
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.longRetractsCut')} <InfoHint text={t('paramHints.longRetractCut')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_long_retractions_when_cut')}</label>
                           <input
                             type="text"
                             value={longRetractionsWhenCut}
@@ -4751,8 +4921,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Длинные ретракты при смене экструдера (advanced) */}
-                      <div className={`flex items-center space-x-3 ${isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}`}>
+                      {/* Длинные ретракты при смене экструдера */}
+                      <div className={`flex items-center space-x-3 ${showAtMode('long_retractions_when_ec') ? '' : 'hidden'}`}>
                         <input
                           type="checkbox"
                           id="longRetractionsWhenEC"
@@ -4761,15 +4931,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="longRetractionsWhenEC" className="text-gray-300 text-sm">
-                          {t('presetModal.longRetractsEC')}
+                          {orcaText('long_retractions_when_ec').label}
                         </label>
-                        <InfoHint text={t('paramHints.longRetractEC')} />
+                        {orcaKeyHint('long_retractions_when_ec')}
                       </div>
 
-                      {/* Расстояния ретракта при смене экструдера (advanced) */}
-                      {longRetractionsWhenEC && isVisibleAtMode('advanced', settingMode) && (
+                      {/* Расстояния ретракта при смене экструдера */}
+                      {longRetractionsWhenEC && showAtMode('retraction_distances_when_ec') && (
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.retractDistanceEC')} <InfoHint text={t('paramHints.retractDistanceEC')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('retraction_distances_when_ec')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -4780,12 +4950,23 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('retraction_distances_when_ec')}</span>
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
+
+                  {orcaSchema && showAtMode(...IRONING_FIELD_KEYS) && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">
+                        {schemaGroupTitle(orcaSchema, 'Setting Overrides', 'Ironing', lang)}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        {IRONING_FIELD_KEYS.map((key) => orcaExtraField(key))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4795,7 +4976,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div>
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10 flex items-center space-x-2">
                       <span className="text-gray-400">&lt; &gt;</span>
-                      <span>{t('presetModal.startGcode')}</span>
+                      <span>{orcaGroup('Advanced', 'Filament start G-code')}</span>
                     </h4>
                     
                     <div 
@@ -4847,7 +5028,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div>
                     <h4 className="mb-3 flex items-center space-x-2 border-b border-white/10 pb-2 text-sm font-semibold text-white">
                       <span className="text-gray-400">&lt; &gt;</span>
-                      <span>{t('presetModal.changeExtrusionRoleGcode')}</span>
+                      <span>{orcaGroup('Advanced', 'Change extrusion role G-code')}</span>
                     </h4>
                     <div
                       className="flex min-w-0 flex-col items-stretch gap-3 md:flex-row md:items-start"
@@ -4892,7 +5073,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div>
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10 flex items-center space-x-2">
                       <span className="text-gray-400">&lt; &gt;</span>
-                      <span>{t('presetModal.endGcode')}</span>
+                      <span>{orcaGroup('Advanced', 'Filament end G-code')}</span>
                     </h4>
                     
                     <div 
@@ -4968,34 +5149,37 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Параметры черновой башни */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.wipeTowerParams')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Multimaterial', 'Wipe tower parameters')}</h4>
                     
-                    <div>
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.minPurgeVolume')} <InfoHint text={t('paramHints.minPurge')} /></label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          value={filamentMinimalPurgeOnWipeTower}
-                          onChange={(e) => { setFilamentMinimalPurgeOnWipeTower(e.target.value === '' ? '' : Number(e.target.value)); }}
-                          min={0}
-                          step="0.1"
-                          placeholder="15"
-                          className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_minimal_purge_on_wipe_tower')}</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={filamentMinimalPurgeOnWipeTower}
+                            onChange={(e) => { setFilamentMinimalPurgeOnWipeTower(e.target.value === '' ? '' : Number(e.target.value)); }}
+                            min={0}
+                            step="0.1"
+                            placeholder="15"
+                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_minimal_purge_on_wipe_tower')}</span>
+                        </div>
                       </div>
+                      {WIPE_TOWER_FIELD_KEYS.map((key) => orcaExtraField(key))}
                     </div>
                   </div>
 
                   {/* Параметры смены инструмента в одноэкструдерных мультиматериальных принтерах */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.singleExtruderToolchange')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Multimaterial', 'Tool change parameters with single extruder MM printers')}</h4>
                     
                     <div className="space-y-4">
                       {/* Первая строка: Начальная скорость загрузки / Скорость загрузки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeedStart')} <InfoHint text={t('paramHints.loadSpeedStart')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_loading_speed_start')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5006,12 +5190,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="3"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_loading_speed_start')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.loadingSpeed')} <InfoHint text={t('paramHints.loadSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_loading_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5022,7 +5206,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="28"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_loading_speed')}</span>
                           </div>
                         </div>
                       </div>
@@ -5030,7 +5214,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Вторая строка: Начальная скорость выгрузки / Скорость выгрузки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeedStart')} <InfoHint text={t('paramHints.unloadSpeedStart')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_unloading_speed_start')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5041,12 +5225,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="100"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_unloading_speed_start')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.unloadingSpeed')} <InfoHint text={t('paramHints.unloadSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_unloading_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5057,7 +5241,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="90"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_unloading_speed')}</span>
                           </div>
                         </div>
                       </div>
@@ -5065,7 +5249,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Третья строка: Задержка после выгрузки / Количество охлаждающих движений */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.toolchangeDelay')} <InfoHint text={t('paramHints.toolchangeDelay')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_toolchange_delay')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5076,12 +5260,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_toolchange_delay')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingMoves')} <InfoHint text={t('paramHints.coolingMoves')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_cooling_moves')}</label>
                           <input
                             type="number"
                             value={filamentCoolingMoves}
@@ -5097,7 +5281,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Четвертая строка: Скорость первого охлаждающего движения / Скорость последнего охлаждающего движения */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingInitialSpeed')} <InfoHint text={t('paramHints.coolingInitialSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_cooling_initial_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5108,12 +5292,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="2.2"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_cooling_initial_speed')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.coolingFinalSpeed')} <InfoHint text={t('paramHints.coolingFinalSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_cooling_final_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5124,7 +5308,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="3.4"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_cooling_final_speed')}</span>
                           </div>
                         </div>
                       </div>
@@ -5132,7 +5316,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {/* Пятая строка: Скорость загрузки при утрамбовке / Расстояние утрамбовки */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingLoadSpeed')} <InfoHint text={t('paramHints.stampingLoadSpeed')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_stamping_loading_speed')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5143,12 +5327,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_stamping_loading_speed', 'mm/s')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.stampingDistance')} <InfoHint text={t('paramHints.stampingDistance')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_stamping_distance')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5159,16 +5343,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="0"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_stamping_distance', 'mm')}</span>
                           </div>
                         </div>
                       </div>
+
+                      {orcaExtraField('filament_ramming_parameters')}
                     </div>
                   </div>
 
                   {/* Параметры смены инструмента в многоэкструдерных мультиматериальных принтерах */}
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.multiExtruderToolchange')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Multimaterial', 'Tool change parameters with multi extruder MM printers')}</h4>
                     
                     <div className="space-y-4">
                       {/* Включить рэмминг для многоинструментального принтера */}
@@ -5181,15 +5367,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
                         />
                         <label htmlFor="filamentMultitoolRammingExtruder" className="text-gray-300 text-sm">
-                          {t('presetModal.enableMultitoolRamming')}
+                          {orcaText('filament_multitool_ramming').label}
                         </label>
-                        <InfoHint text={t('paramHints.multitoolRamming')} />
+                        {orcaKeyHint('filament_multitool_ramming')}
                       </div>
 
                       {/* Объём рэмминга многоинструментального принтера / Поток рэмминга многоинструментального принтера */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingVolume')} <InfoHint text={t('paramHints.multitoolRammingVolume')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_multitool_ramming_volume')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5200,12 +5386,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="10"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_multitool_ramming_volume')}</span>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.multitoolRammingFlow')} <InfoHint text={t('paramHints.multitoolRammingFlow')} /></label>
+                          <label className="block text-gray-300 mb-1 text-sm">{orcaLabel('filament_multitool_ramming_flow')}</label>
                           <div className="relative">
                             <input
                               type="number"
@@ -5216,7 +5402,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               placeholder="10"
                               className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm³/s</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{orcaUnit('filament_multitool_ramming_flow')}</span>
                           </div>
                         </div>
                       </div>
@@ -5228,26 +5414,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.additionalParams')}</h4>
                     
                     <div className="grid grid-cols-2 gap-4">
-                      {/* Длина смены филамента */}
-                      <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.filamentChangeLength')} <InfoHint text={t('paramHints.filamentChangeLength')} /></label>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            value={filamentChangeLength}
-                            onChange={(e) => { setFilamentChangeLength(e.target.value === '' ? '' : Number(e.target.value)); }}
-                            min={0}
-                            step="0.1"
-                            placeholder="0"
-                            className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">mm</span>
-                        </div>
-                      </div>
-
                       {/* Коэффициент потока пеллет */}
                       <div>
-                        <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.pelletFlowCoeff')}</label>
+                        <label className="block text-gray-300 mb-1 text-sm">{orcaText('pellet_flow_coefficient').label}</label>
                         <input
                           type="number"
                           value={pelletFlowCoefficient}
@@ -5267,7 +5436,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               {activeTab === 'notes' && (
                 <div className="space-y-4">
                   <div>
-                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.notes')}</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{orcaGroup('Notes', 'Notes')}</h4>
                     <textarea
                       value={filamentNotes}
                       onChange={(e) => { setFilamentNotes(e.target.value); }}
@@ -5280,6 +5449,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 </div>
               )}
             </div>
+            </>)}
           </div>
 
           {/* Actions */}

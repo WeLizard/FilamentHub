@@ -9,6 +9,10 @@ from typing import Any
 
 ORCA_INVALID_PRESET_NAME_CHARS = frozenset('<>[]:/\\|?*"')
 
+# Settings a person explicitly set by hand for this preset over the filament card value.
+MANUAL_OVERRIDES_KEY = "fhub_manual_overrides"
+MANUALLY_OVERRIDABLE_KEYS = frozenset({"filament_density"})
+
 _ORCA_NUMERIC_RANGES = {
     "nozzle_temperature": (0, 1500),
     "nozzle_temperature_initial_layer": (0, 1500),
@@ -106,12 +110,27 @@ def _append_numeric_value(parsed: list[float], item: Any, key: str) -> None:
     parsed.append(value)
 
 
+def manual_overrides(settings: Mapping[str, Any] | None) -> frozenset[str]:
+    """Keys the preset deliberately sets over the filament card; tolerant of malformed data."""
+    raw = settings.get(MANUAL_OVERRIDES_KEY) if isinstance(settings, Mapping) else None
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(key for key in raw if key in MANUALLY_OVERRIDABLE_KEYS)
+
+
 def validate_orca_filament_settings(settings: Mapping[str, Any] | None) -> None:
     """Validate every numeric entry that FH maps into structured columns."""
     if settings is None:
         return
     if not isinstance(settings, Mapping):
         raise ValueError("OrcaSlicer settings must be an object")
+
+    overrides = settings.get(MANUAL_OVERRIDES_KEY)
+    if overrides is not None and (
+        not isinstance(overrides, list)
+        or any(key not in MANUALLY_OVERRIDABLE_KEYS for key in overrides)
+    ):
+        raise ValueError(f"OrcaSlicer setting {MANUAL_OVERRIDES_KEY} is malformed")
 
     for key, (minimum, maximum) in _ORCA_NUMERIC_RANGES.items():
         if key not in settings:
@@ -156,17 +175,26 @@ def extract_structured_filament_values(settings: Mapping[str, Any] | None) -> di
     if extruder_temp is not None:
         result["extruder_temp"] = extruder_temp
 
-    bed_temp = first((
-        "bed_temperature",
-        "hot_plate_temp",
-        "cool_plate_temp",
-        "eng_plate_temp",
-        "textured_plate_temp",
-        "supertack_plate_temp",
-        "textured_cool_plate_temp",
-        "customized_plate_temp",
-        "epoxy_resin_plate_temp",
-    ))
+    # Orca's own plates come before keys Orca no longer reads, and 0 marks a
+    # plate the filament does not support, so it is never the main temperature.
+    bed_candidates = [
+        values[0]
+        for key in (
+            "hot_plate_temp",
+            "textured_plate_temp",
+            "cool_plate_temp",
+            "eng_plate_temp",
+            "supertack_plate_temp",
+            "textured_cool_plate_temp",
+            "bed_temperature",
+            "customized_plate_temp",
+            "epoxy_resin_plate_temp",
+        )
+        if (values := _numeric_values(settings, key))
+    ]
+    bed_temp = next((value for value in bed_candidates if value > 0), None)
+    if bed_temp is None and bed_candidates:
+        bed_temp = bed_candidates[0]
     if bed_temp is not None:
         result["bed_temp"] = bed_temp
 

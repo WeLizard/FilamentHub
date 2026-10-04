@@ -16,6 +16,8 @@ from app.models.filament import Filament
 from app.models.preset import Preset
 from app.services.orca_transport import merge_orca_roundtrip_settings
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
+from app.services.orcaslicer_preset_contract import validate_orca_filament_settings
+from app.services.preset_publication import public_orca_settings
 from app.services.profile_validator import (
     orca_transport_violations,
     validate_orca_transport_shapes,
@@ -314,6 +316,72 @@ async def test_required_nozzle_hrc_exported_from_material():
     fil.required_nozzle_hrc = 50
     profile = await preset_to_orcaslicer_json(_preset({}), fil)
     assert profile.get("required_nozzle_HRC") == ["50"]
+
+
+@pytest.mark.asyncio
+async def test_nozzle_range_comes_from_the_filament_unless_the_preset_has_its_own():
+    fil = _filament()
+    fil.recommended_nozzle_temp_min = 220
+    fil.recommended_nozzle_temp_max = 260
+    profile = await preset_to_orcaslicer_json(_preset({}), fil)
+    assert profile["nozzle_temperature_range_low"] == ["220"]
+    assert profile["nozzle_temperature_range_high"] == ["260"]
+
+    own = _preset({"nozzle_temperature_range_low": ["230"], "nozzle_temperature_range_high": ["250"]})
+    profile = await preset_to_orcaslicer_json(own, fil)
+    assert profile["nozzle_temperature_range_low"] == ["230"]
+    assert profile["nozzle_temperature_range_high"] == ["250"]
+
+
+@pytest.mark.asyncio
+async def test_a_price_stored_in_the_preset_is_never_shared():
+    preset = _preset({"filament_cost": ["24.99"]})
+    fil = _filament()
+    fil.price_per_kg = None
+    profile = await preset_to_orcaslicer_json(preset, fil)
+    assert "filament_cost" not in profile
+
+    fil.price_per_kg = 30.0
+    profile = await preset_to_orcaslicer_json(preset, fil)
+    assert profile["filament_cost"] == ["30.0"]
+
+
+@pytest.mark.asyncio
+async def test_card_density_outranks_the_preset_copy():
+    preset = _preset({"filament_density": ["1.26"]})
+    fil = _filament()
+    fil.density = 1.27
+    profile = await preset_to_orcaslicer_json(preset, fil)
+    assert profile["filament_density"] == ["1.27"]
+
+    fil.density = None
+    profile = await preset_to_orcaslicer_json(preset, fil)
+    assert profile["filament_density"] == ["1.26"]
+
+
+@pytest.mark.asyncio
+async def test_a_density_set_by_hand_outranks_the_card_and_survives_sharing_and_sync():
+    stored = {"filament_density": ["1.26"], "fhub_manual_overrides": ["filament_density"]}
+    fil = _filament()
+    fil.density = 1.27
+
+    profile = await preset_to_orcaslicer_json(_preset(stored), fil)
+    assert profile["filament_density"] == ["1.26"]
+    assert "fhub_manual_overrides" not in profile
+
+    shared = public_orca_settings(stored)
+    assert shared["fhub_manual_overrides"] == ["filament_density"]
+    profile = await preset_to_orcaslicer_json(_preset({}), fil, settings_override=shared)
+    assert profile["filament_density"] == ["1.26"]
+
+    merged = merge_orca_roundtrip_settings(stored, {"filament_density": ["1.26"]}, "filament")
+    assert merged["fhub_manual_overrides"] == ["filament_density"]
+
+
+def test_a_malformed_manual_override_marker_is_rejected():
+    for marker in ("filament_density", ["nozzle_temperature"], [1]):
+        with pytest.raises(ValueError, match="fhub_manual_overrides"):
+            validate_orca_filament_settings({"fhub_manual_overrides": marker})
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,5 @@
+import type { OrcaSchemaOption } from './orcaPresetSchema';
+
 export type OrcaPresetSettings = Record<string, unknown>;
 
 export const ORCA_MAX_NOZZLE_TEMPERATURE = 1500;
@@ -32,6 +34,16 @@ export const readOrcaNumber = (
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+export const ORCA_PLATE_TEMPERATURE_KEY = /_plate_temp(_initial_layer)?$/;
+
+export const readOrcaPlateTemperatures = (
+  source: OrcaPresetSettings | null | undefined,
+): Record<string, number | ''> => Object.fromEntries(
+  Object.keys(source ?? {})
+    .filter((key) => ORCA_PLATE_TEMPERATURE_KEY.test(key))
+    .map((key) => [key, readOrcaNumber(source, key) ?? '']),
+);
+
 export const readOrcaText = (
   source: OrcaPresetSettings | null | undefined,
   key: string,
@@ -41,6 +53,55 @@ export const readOrcaText = (
   const normalized = String(value);
   return normalized.trim().toLowerCase() === 'nil' ? '' : normalized;
 };
+
+export type OrcaExtraFieldKind = 'number' | 'percent' | 'text';
+
+export const orcaExtraFieldKind = (option: OrcaSchemaOption | undefined): OrcaExtraFieldKind => {
+  if (option?.type === 'percent') return 'percent';
+  return option?.type === 'int' || option?.type === 'float' ? 'number' : 'text';
+};
+
+export const ORCA_EXTRA_FIELD_KEYS = [
+  'filament_diameter',
+  'filament_density',
+  'required_nozzle_HRC',
+  'filament_ironing_flow',
+  'filament_ironing_spacing',
+  'filament_ironing_inset',
+  'filament_ironing_speed',
+  'filament_tower_interface_pre_extrusion_dist',
+  'filament_tower_interface_pre_extrusion_length',
+  'filament_tower_ironing_area',
+  'filament_tower_interface_purge_volume',
+  'filament_tower_interface_print_temp',
+  'filament_ramming_parameters',
+];
+
+export const MANUAL_OVERRIDES_KEY = 'fhub_manual_overrides';
+
+export const readManualOverrides = (source: OrcaPresetSettings | null | undefined): string[] => {
+  const raw = source?.[MANUAL_OVERRIDES_KEY];
+  return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
+};
+
+export const applyManualOverride = (
+  target: OrcaPresetSettings,
+  source: OrcaPresetSettings,
+  key: string,
+  manual: boolean,
+): void => {
+  const current = readManualOverrides(source);
+  if (current.includes(key) === manual) return;
+  const next = manual ? [...current, key].sort() : current.filter((entry) => entry !== key);
+  if (next.length > 0) target[MANUAL_OVERRIDES_KEY] = next;
+  else delete target[MANUAL_OVERRIDES_KEY];
+};
+
+export const readOrcaExtraFields = (
+  source: OrcaPresetSettings | null | undefined,
+): Record<string, string> => Object.fromEntries(
+  ORCA_EXTRA_FIELD_KEYS.map((key) => [key, readOrcaText(source, key)]),
+);
 
 export const readOrcaBoolean = (
   source: OrcaPresetSettings | null | undefined,

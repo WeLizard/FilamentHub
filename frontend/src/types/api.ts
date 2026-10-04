@@ -2537,6 +2537,7 @@ export interface OrcaSchemaObservation {
   scope: OrcaPresetScope;
   field_name: string;
   value_shape: string;
+  sample_value: { value: unknown } | null;
   status: OrcaSchemaObservationStatus;
   occurrences: number;
   registry_version: string;
@@ -2545,7 +2546,6 @@ export interface OrcaSchemaObservation {
   first_seen_at: string;
   last_seen_at: string;
   reviewed_at: string | null;
-  sample_value: { value: unknown } | null;
   reviewed_by_user_id: number | null;
 }
 

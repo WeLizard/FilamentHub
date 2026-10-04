@@ -30,7 +30,7 @@ from decimal import Decimal
 from math import isfinite
 from typing import Any
 
-from app.services.orcaslicer_preset_contract import format_orca_number
+from app.services.orcaslicer_preset_contract import MANUAL_OVERRIDES_KEY, format_orca_number
 from app.services.profile_validator import is_orca_transportable_value
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ FILAMENTHUB_INTERNAL_KEYS = frozenset(
         # export account-local identifiers.
         "derived_from_external_id",
         "derived_from_draft_id",
+        MANUAL_OVERRIDES_KEY,
     }
 )
 

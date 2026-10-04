@@ -128,64 +128,69 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
 
         {/* Визуальное превью прутка - кликабельная кнопка для выбора цвета */}
         {/* Масштабируем FilamentPreview до 48px (medium = 60px, scale = 48/60 = 0.8) */}
-        <div 
-          className="flex-shrink-0 relative flex items-center justify-center"
-          style={{ height: fieldHeight }}
-        >
-          {isEditMode ? (
-            <div className="relative flex items-center justify-center h-full">
-              {/* Filament Preview - кликабельная кнопка для открытия пикера */}
-              <div className="relative z-10">
-                <button
-                  ref={buttonRef}
-                  type="button"
-                  disabled={colorAppearanceDisabled}
-                  onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
-                  className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full disabled:cursor-not-allowed disabled:opacity-60"
-                  title={t('createFilament.clickToPickColor')}
-                >
-                  <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
-                    <FilamentPreview
-                      colorHex={colorHex}
-                      visualSettings={visualSettings}
-                      size={previewSize}
-                    />
-                  </div>
-                </button>
-                {/* HSL Color Picker - рендерим через portal вне модального окна */}
-                {isColorPickerOpen && pickerPosition && createPortal(
-                  <div
-                    ref={modalPortalRef}
-                    data-modal-portal=""
-                    className="fixed z-[10000]"
-                    style={{
-                      bottom: `${pickerPosition.bottom}px`,
-                      left: `${pickerPosition.left}px`,
-                      transform: 'translateX(-50%)',
-                    }}
-                  >
-                  <HSLColorPicker
-                    color={colorHex}
-                    onChange={(hex) => onColorHexChange?.(hex)}
-                    isOpen={isColorPickerOpen}
-                    onToggle={setIsColorPickerOpen}
-                  />
-                  </div>,
-                  document.body
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
-                <FilamentPreview
-                  colorHex={colorHex}
-                  visualSettings={visualSettings}
-                  size={previewSize}
-                />
-              </div>
-            </div>
+        <div className="flex-shrink-0">
+          {isEditMode && (
+            <label className="block text-gray-400 mb-1 text-xs font-medium text-center">{t('colorMaterial.pickColor')}</label>
           )}
+          <div 
+            className="relative flex items-center justify-center"
+            style={{ height: fieldHeight }}
+          >
+            {isEditMode ? (
+              <div className="relative flex items-center justify-center h-full">
+                {/* Filament Preview - кликабельная кнопка для открытия пикера */}
+                <div className="relative z-10">
+                  <button
+                    ref={buttonRef}
+                    type="button"
+                    disabled={colorAppearanceDisabled}
+                    onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
+                    className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full disabled:cursor-not-allowed disabled:opacity-60"
+                    title={t('createFilament.clickToPickColor')}
+                  >
+                    <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
+                      <FilamentPreview
+                        colorHex={colorHex}
+                        visualSettings={visualSettings}
+                        size={previewSize}
+                      />
+                    </div>
+                  </button>
+                  {/* HSL Color Picker - рендерим через portal вне модального окна */}
+                  {isColorPickerOpen && pickerPosition && createPortal(
+                    <div
+                      ref={modalPortalRef}
+                      data-modal-portal=""
+                      className="fixed z-[10000]"
+                      style={{
+                        bottom: `${pickerPosition.bottom}px`,
+                        left: `${pickerPosition.left}px`,
+                        transform: 'translateX(-50%)',
+                      }}
+                    >
+                    <HSLColorPicker
+                      color={colorHex}
+                      onChange={(hex) => onColorHexChange?.(hex)}
+                      isOpen={isColorPickerOpen}
+                      onToggle={setIsColorPickerOpen}
+                    />
+                    </div>,
+                    document.body
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
+                  <FilamentPreview
+                    colorHex={colorHex}
+                    visualSettings={visualSettings}
+                    size={previewSize}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Инпут HEX (справа) */}
