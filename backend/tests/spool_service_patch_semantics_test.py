@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -17,7 +17,13 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolCreateRequest, SpoolUpdateRequest
-from app.services.spool_service import create_spool, update_spool, use_spool
+from app.services.spool_service import (
+    create_spool,
+    latest_price_per_kg,
+    latest_price_per_kg_by_filament,
+    update_spool,
+    use_spool,
+)
 
 
 async def _seed_spool_for_patch_test(db: AsyncSession) -> tuple[User, UserSpool, Filament]:
@@ -313,3 +319,44 @@ async def test_finished_spool_moves_to_archive_group_and_clears_gate(
     assert result.remaining_weight_g == 0
     assert result.last_used_at is not None
     assert gate_spool_id is None
+
+
+@pytest.mark.asyncio
+async def test_latest_price_per_kg_uses_newest_priced_spool_of_that_user(
+    db_session: AsyncSession,
+):
+    user, _, filament = await _seed_spool_for_patch_test(db_session)
+    other = User(
+        email="spool-price-other@example.com",
+        username="spool_price_other",
+        password_hash="not-used",
+        active=True,
+    )
+    db_session.add(other)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+
+    def spool(owner: User, age_days: int, **fields) -> UserSpool:
+        return UserSpool(
+            user_id=owner.id,
+            filament_id=filament.id,
+            created_at=now - timedelta(days=age_days),
+            **fields,
+        )
+
+    db_session.add_all([
+        spool(user, 30, initial_weight_g=1000.0, price=20.0),
+        spool(user, 10, initial_weight_g=750.0, price=15.0),  # newest priced: 20.00/kg
+        spool(user, 5, initial_weight_g=1000.0, price=None),
+        spool(user, 4, initial_weight_g=1000.0, price=0.0),
+        spool(user, 3, initial_weight_g=0.0, price=99.0),
+        spool(other, 1, initial_weight_g=1000.0, price=50.0),
+    ])
+    await db_session.commit()
+
+    assert await latest_price_per_kg(db_session, user.id, filament.id) == 20.0
+    assert await latest_price_per_kg_by_filament(
+        db_session, other.id, [filament.id]
+    ) == {filament.id: 50.0}
+    assert await latest_price_per_kg_by_filament(db_session, user.id, []) == {}
+    assert await latest_price_per_kg(db_session, user.id, filament.id + 999) is None

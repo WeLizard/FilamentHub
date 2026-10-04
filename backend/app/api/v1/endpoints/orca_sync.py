@@ -3896,6 +3896,14 @@ async def batch_export_presets(
     )
     presets_by_id: dict[int, Preset] = {p.id: p for p in result.scalars().all()}
 
+    from app.services.spool_service import latest_price_per_kg_by_filament
+
+    own_prices = await latest_price_per_kg_by_filament(
+        db,
+        current_user.id,
+        [p.filament_id for p in presets_by_id.values() if p.filament_id is not None],
+    )
+
     items: list[BatchExportItem] = []
 
     for preset_id in request.preset_ids:
@@ -3947,6 +3955,7 @@ async def batch_export_presets(
                 preset,
                 preset.filament,
                 settings_override=settings_override,
+                filament_cost_per_kg=own_prices.get(preset.filament_id),
             )
             info = preset_to_orcaslicer_info(preset)
             items.append(BatchExportItem(

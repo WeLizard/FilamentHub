@@ -170,6 +170,7 @@ async def preset_to_orcaslicer_json(
     *,
     settings_override: dict[str, Any] | None = None,
     structured_override: dict[str, Any] | None = None,
+    filament_cost_per_kg: float | None = None,
 ) -> dict[str, Any]:
     """
     Конвертировать Preset из FilamentHub в формат профиля OrcaSlicer.
@@ -318,10 +319,11 @@ async def preset_to_orcaslicer_json(
         else preset.orcaslicer_settings
     )
     profile.update(_filament_transport(source_settings, preset.id))
-    # A price stored in the preset is its author's own purchase price; only the catalogue price is shared.
+    # Cost is personal: only the exporting user's own spool price is written; neither a
+    # price stored in the preset nor the catalogue price is ever shared.
     profile.pop("filament_cost", None)
-    if filament.price_per_kg is not None:
-        profile["filament_cost"] = to_array(str(filament.price_per_kg))
+    if filament_cost_per_kg is not None:
+        profile["filament_cost"] = to_array(f"{filament_cost_per_kg:.2f}")
     # Density is a manufacturer fact: a card value outranks the preset copy unless set by hand.
     if filament.density is not None and "filament_density" not in manual_overrides(source_settings):
         profile["filament_density"] = to_array(round(filament.density, 2))

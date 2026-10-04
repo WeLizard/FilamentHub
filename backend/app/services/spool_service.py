@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, case, func, or_, select, update
@@ -430,6 +431,36 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         last_used_at=spool.last_used_at,
         extra=spool.extra,
     )
+
+
+async def latest_price_per_kg_by_filament(
+    db: AsyncSession, user_id: int, filament_ids: Iterable[int]
+) -> dict[int, float]:
+    """Price per kg of the user's most recently added priced spool, per filament."""
+    ids = {fid for fid in filament_ids if fid is not None}
+    if not ids:
+        return {}
+    rows = await db.execute(
+        select(UserSpool.filament_id, UserSpool.price, UserSpool.initial_weight_g)
+        .where(
+            UserSpool.user_id == user_id,
+            UserSpool.filament_id.in_(ids),
+            UserSpool.price > 0,
+            UserSpool.initial_weight_g > 0,
+        )
+        .order_by(UserSpool.created_at.desc(), UserSpool.id.desc())
+    )
+    prices: dict[int, float] = {}
+    for filament_id, price, weight_g in rows:
+        if filament_id not in prices:
+            prices[filament_id] = round(price / weight_g * 1000, 2)
+    return prices
+
+
+async def latest_price_per_kg(
+    db: AsyncSession, user_id: int, filament_id: int
+) -> float | None:
+    return (await latest_price_per_kg_by_filament(db, user_id, [filament_id])).get(filament_id)
 
 
 async def list_spools(

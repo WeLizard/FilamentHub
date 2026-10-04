@@ -24,6 +24,7 @@ from app.models.filament import Filament
 from app.models.filament_country_cell import FilamentCountryCell
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from app.models.user_spool import UserSpool
 from tests.conftest import registration_payload
 
 IMPORT_URL = "/api/v1/orcaslicer/filaments/import"
@@ -1324,3 +1325,63 @@ async def test_plugin_header_counts_only_what_reaches_the_slicer(
 
     listed = await client.get("/api/v1/auth/my-presets", headers=headers)
     assert [item["id"] for item in listed.json()["items"]] == []
+
+
+@pytest.mark.asyncio
+async def test_exported_cost_is_the_requesting_users_latest_spool_price(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand = Brand(name="Cost Vendor", slug="cost-vendor", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Cost PLA",
+        slug="cost-pla",
+        material_type="PLA",
+        diameter=1.75,
+        price_per_kg=40.0,
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    owner_headers, owner = await _signed_in(client, db_session, "cost-owner")
+    reader_headers, reader = await _signed_in(client, db_session, "cost-reader")
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=owner.id,
+        name="Cost PLA tuned",
+        extruder_temp=210,
+        bed_temp=60,
+        active=True,
+        moderation_status=PresetModerationStatus.APPROVED,
+        orcaslicer_settings={
+            "filament_type": ["PLA"],
+            "nozzle_temperature": ["210"],
+            "filament_cost": ["99"],
+        },
+    )
+    db_session.add_all([
+        preset,
+        UserSpool(user_id=reader.id, filament_id=filament.id, initial_weight_g=800.0, price=20.0),
+    ])
+    await db_session.commit()
+
+    batch = await client.post(
+        "/api/v1/orcaslicer/presets/batch-export",
+        headers=reader_headers,
+        json={"preset_ids": [preset.id]},
+    )
+    assert batch.json()["profiles"][0]["config"]["filament_cost"] == ["25.00"]
+
+    single = await client.get(
+        f"/api/v1/presets/{preset.id}/export/orcaslicer.json", headers=reader_headers
+    )
+    assert single.json()["filament_cost"] == ["25.00"]
+
+    owner_batch = await client.post(
+        "/api/v1/orcaslicer/presets/batch-export",
+        headers=owner_headers,
+        json={"preset_ids": [preset.id]},
+    )
+    assert "filament_cost" not in owner_batch.json()["profiles"][0]["config"]

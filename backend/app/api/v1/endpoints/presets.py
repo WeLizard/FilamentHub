@@ -1177,12 +1177,17 @@ async def export_preset_json(
                 if settings_override is not None
                 else preset.orcaslicer_settings
             )
+        from app.services.spool_service import latest_price_per_kg
+
         profile_dict = await preset_to_orcaslicer_json(
             preset,
             preset.filament,
             target_profiles=target_profiles,
             settings_override=settings_override,
             structured_override=structured_override,
+            filament_cost_per_kg=await latest_price_per_kg(
+                db, current_user.id, preset.filament.id
+            ),
         )
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)

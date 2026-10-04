@@ -334,16 +334,16 @@ async def test_nozzle_range_comes_from_the_filament_unless_the_preset_has_its_ow
 
 
 @pytest.mark.asyncio
-async def test_a_price_stored_in_the_preset_is_never_shared():
+async def test_cost_is_only_the_exporting_users_own_price():
     preset = _preset({"filament_cost": ["24.99"]})
     fil = _filament()
-    fil.price_per_kg = None
+    fil.price_per_kg = 30.0
+
     profile = await preset_to_orcaslicer_json(preset, fil)
     assert "filament_cost" not in profile
 
-    fil.price_per_kg = 30.0
-    profile = await preset_to_orcaslicer_json(preset, fil)
-    assert profile["filament_cost"] == ["30.0"]
+    profile = await preset_to_orcaslicer_json(preset, fil, filament_cost_per_kg=18.5)
+    assert profile["filament_cost"] == ["18.50"]
 
 
 @pytest.mark.asyncio
