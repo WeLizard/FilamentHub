@@ -77,11 +77,11 @@
       <path class="draw" style="--t: 1s; --d: .5s" pathLength="1" stroke-width="16"
             d="M129.76 84.07 A62.16 62.16 0 0 0 91.52 179.11"/>
       <path class="draw" style="--t: 1.3s; --d: .3s" pathLength="1" stroke-width="16"
-            d="M81.16 144.72 H129.62"/>
+            d="M89.2 144.72 H129.62"/>
       <path class="draw" style="--t: 1.4s; --d: .4s" pathLength="1" stroke-width="18"
             d="M151.25 83.76 L151.4 205.32"/>
       <path class="draw" style="--t: 1.62s; --d: .25s" pathLength="1" stroke-width="18"
-            d="M151.3 144.72 H205.34"/>
+            d="M151.3 144.72 H197.3"/>
       <path class="draw" style="--t: 1.5s; --d: .5s" pathLength="1" stroke-width="16"
             d="M197.14 113.85 A62.02 62.02 0 0 1 194.95 179.1"/>
     </g>
