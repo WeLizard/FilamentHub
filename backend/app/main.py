@@ -14,7 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.config import settings
+from app.core.config import PLUGIN_API_LEVEL, settings
 from app.core.errors import ERR_PROTECTED_DATA_UNREADABLE
 from app.core.field_encryption import FieldDecryptionError
 from app.core.limiter import limiter
@@ -311,6 +311,7 @@ async def health_check() -> dict[str, object]:
     return {
         "status": "ok",
         "version": settings.VERSION,
+        "plugin_api_level": PLUGIN_API_LEVEL,
         "project": settings.PROJECT_NAME,
         "maintenance_mode": maintenance_info["enabled"],
         "maintenance_message": maintenance_info["message"] if maintenance_info["enabled"] else None,

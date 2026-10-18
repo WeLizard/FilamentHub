@@ -44,6 +44,7 @@ def run_offline_publication(tmp_path: Path, mode: str, scenario: str) -> dict:
     runner = tmp_path / "exercise-release.ps1"
     runner.write_text(
         r"""
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:Remote = 'origin'
@@ -61,7 +62,6 @@ foreach ($statement in $ast.EndBlock.Statements) {
 }
 $script:edits = [System.Collections.Generic.List[string]]::new()
 $global:offlinePrompts = [System.Collections.Generic.List[string]]::new()
-$global:menuCalls = [System.Collections.Generic.List[object]]::new()
 $script:waits = 0
 $script:release = [pscustomobject]@{
     tagName = 'v1.2.3'; isDraft = ($env:RELEASE_MODE -eq 'normal')
@@ -140,7 +140,7 @@ if ($env:RELEASE_SCENARIO -ne 'missing_approval') {
 $failure = $null
 $script:candidates = @()
 try {
-    if ($env:RELEASE_MODE -in @('preflight', 'menu')) {
+    if ($env:RELEASE_MODE -in @('preflight', 'prompt')) {
         $script:candidates = @(
             [pscustomobject]@{
                 Id = 'orcaslicer'; Name = 'Normal fixture'; Needed = $true; Repair = $false
@@ -167,43 +167,9 @@ try {
                 }
             }
         }
-        if ($env:RELEASE_MODE -eq 'menu') {
-            # Use the real parameter and approval entry-point statements, omitting
-            # unrelated repository discovery, network calls and publication.
-            $approvalStatement = @($ast.EndBlock.Statements | Where-Object {
-                $_.Extent.Text -like 'Assert-OwnerApprovedCandidates -Plans*'
-            })
-            if ($approvalStatement.Count -ne 1) { throw 'Missing canonical approval entry point' }
-            $dryRunStatement = @($ast.EndBlock.Statements | Where-Object {
-                $_.Extent.Text.StartsWith('if ($DryRun)')
-            })
-            $global:offlineCandidates = $script:candidates
-            $entryPoint = $ast.ParamBlock.Extent.Text + @'
-
-$global:menuCalls.Add([pscustomobject]@{
-    dryRun = [bool]$DryRun
-    prompt = [bool]$PSBoundParameters['PromptForOwnerApproval']
-    components = @($Component)
-})
-$plans = $global:offlineCandidates
-
-'@ + $dryRunStatement[0].Extent.Text + "`n" + $approvalStatement[0].Extent.Text
-            $entryPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
-            [System.IO.File]::WriteAllText($entryPath, $entryPoint, [System.Text.UTF8Encoding]::new($true))
-            $menuAst = [System.Management.Automation.Language.Parser]::ParseFile(
-                $env:MENU_SCRIPT, [ref]$tokens, [ref]$parseErrors
-            )
-            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-            $menuFunction = $menuAst.EndBlock.Statements | Where-Object {
-                $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                $_.Name -eq 'Invoke-PluginReleasePreparation'
-            }
-            $menuSlicePath = Join-Path $PSScriptRoot 'menu-slice.ps1'
-            [System.IO.File]::WriteAllText($menuSlicePath, $menuFunction.Extent.Text, [System.Text.UTF8Encoding]::new($true))
-            . $menuSlicePath
-            function Confirm-Action { param($Question) return $true }
-            function Test-DownloadPageRelease { return $true }
-            Invoke-PluginReleasePreparation
+        if ($env:RELEASE_MODE -eq 'prompt') {
+            # A direct owner run without known hashes asks one key per plan.
+            Assert-OwnerApprovedCandidates -Plans $script:candidates -ApprovedSha256 @{} -PromptForOwnerApproval
         } else {
             Assert-OwnerApprovedCandidates -Plans $script:candidates -ApprovedSha256 $approvals
         }
@@ -221,7 +187,7 @@ $plans = $global:offlineCandidates
 [pscustomobject]@{
     error = $failure; edits = @($script:edits.ToArray()); waits = $script:waits
     candidates = @($script:candidates)
-    prompts = @($global:offlinePrompts.ToArray()); menuCalls = @($global:menuCalls.ToArray())
+    prompts = @($global:offlinePrompts.ToArray())
 } | ConvertTo-Json -Compress -Depth 4
 """,
         encoding="utf-8-sig",
@@ -229,7 +195,6 @@ $plans = $global:offlineCandidates
     env = dict(os.environ)
     env.update(
         RELEASE_SCRIPT=str(ROOT / "scripts/publish-plugin-releases.ps1"),
-        MENU_SCRIPT=str(ROOT / "scripts/deploy-server.ps1"),
         RELEASE_FIXTURES=str(fixture_dir),
         RELEASE_MODE=mode,
         RELEASE_SCENARIO=scenario,
@@ -295,13 +260,10 @@ def test_owner_preflight_rejects_missing_or_changed_approval(tmp_path, scenario)
 @pytest.mark.parametrize("scenario", [
     "approved", "russian_approval", "other_layout_y_approval", "other_layout_d_approval", "noop",
 ])
-def test_release_menu_computes_hashes_and_requests_one_key_for_actionable_plans(tmp_path, scenario):
-    result = run_offline_publication(tmp_path, "menu", scenario)
+def test_direct_run_computes_hashes_and_requests_one_key_for_actionable_plans(tmp_path, scenario):
+    result = run_offline_publication(tmp_path, "prompt", scenario)
 
     assert result["error"] is None, result
-    assert result["menuCalls"] == [
-        {"dryRun": False, "prompt": True, "components": ["all"]},
-    ]
     assert len(result["prompts"]) == (0 if scenario == "noop" else 2)
     if scenario != "noop":
         for candidate in result["candidates"]:
@@ -311,8 +273,8 @@ def test_release_menu_computes_hashes_and_requests_one_key_for_actionable_plans(
 
 
 @pytest.mark.parametrize("scenario", ["wrong_approval", "malformed_approval", "empty_approval"])
-def test_release_menu_does_not_publish_without_explicit_acceptance(tmp_path, scenario):
-    result = run_offline_publication(tmp_path, "menu", scenario)
+def test_direct_run_does_not_publish_without_explicit_acceptance(tmp_path, scenario):
+    result = run_offline_publication(tmp_path, "prompt", scenario)
 
     assert result["error"], result
     assert len(result["prompts"]) == 1, result
@@ -321,8 +283,8 @@ def test_release_menu_does_not_publish_without_explicit_acceptance(tmp_path, sce
 
 
 @pytest.mark.parametrize("scenario,prompts", [("manifest_mismatch", 0), ("changed_during_approval", 1)])
-def test_release_menu_checks_manifest_before_acceptance_and_identity_after_it(tmp_path, scenario, prompts):
-    result = run_offline_publication(tmp_path, "menu", scenario)
+def test_direct_run_checks_manifest_before_acceptance_and_identity_after_it(tmp_path, scenario, prompts):
+    result = run_offline_publication(tmp_path, "prompt", scenario)
 
     assert result["error"], result
     assert len(result["prompts"]) == prompts
@@ -381,6 +343,9 @@ def test_orcacloud_publish_uses_only_the_release_oidc_event() -> None:
     assert "GitHub wheel does not match SHA256SUMS" in workflow
     assert "Runtime plugin version does not match the GitHub release" in workflow
     assert "Wheel metadata version does not match the GitHub release" in workflow
+    # A moderation hold is an accepted upload; failing it invites a duplicate.
+    assert """jq -e '.status == "held_for_review"' response.json""" in workflow
+    assert workflow.rstrip().endswith("exit 1")
 
 
 def test_owner_script_publishes_after_asset_validation_and_waits_for_oidc() -> None:

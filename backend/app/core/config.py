@@ -6,6 +6,11 @@ from urllib.parse import quote_plus
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Raise when a plugin starts relying on a server feature older deployments lack,
+# together with that plugin's entry in scripts/plugin-required-api-level.json.
+# The owner release script refuses such a plugin until /health reports this level.
+PLUGIN_API_LEVEL = 1
+
 
 class Settings(BaseSettings):
     """Application settings."""

@@ -32,12 +32,26 @@ param(
     [Parameter()]
     [switch]$DryRun,
 
+    [Parameter()]
+    [string]$PublicBaseUrl = 'https://filamenthub.ru',
+
+    # Plugin API level of the site revision the owner is about to deploy. Used
+    # only by -DryRun; a real release always reads the live site.
+    [Parameter()]
+    [ValidateRange(0, 1000)]
+    [int]$PlannedSiteApiLevel = 0,
+
+    [Parameter()]
+    [ValidatePattern('^([0-9a-f]{40})?$')]
+    [string]$ExpectedReleaseCommit = '',
+
     [Parameter(DontShow)]
     [switch]$EmitComponentResult
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:OrcaCloudOutcome = $null
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
@@ -45,6 +59,221 @@ function Assert-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Не найдена обязательная команда '$Name' в PATH."
     }
+}
+
+function Stop-WithFix {
+    param(
+        [Parameter(Mandatory)][string]$Problem,
+        [Parameter(Mandatory)][string]$Fix
+    )
+
+    throw "$Problem`nИсправить: $Fix"
+}
+
+function Get-GitConfigValue {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Key
+    )
+
+    $value = & git -C $RepositoryPath config --get $Key 2>$null
+    if ($LASTEXITCODE -ne 0) { return '' }
+    return "$value".Trim()
+}
+
+function Assert-GitIdentity {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath
+    )
+
+    # An annotated version tag records its author; without one git refuses
+    # to create the tag, which used to happen only after the owner's approval.
+    foreach ($key in @('user.name', 'user.email')) {
+        if (-not (Get-GitConfigValue -RepositoryPath $RepositoryPath -Key $key)) {
+            $suggested = Get-GitConfigValue -RepositoryPath $script:MainRepositoryRoot -Key $key
+            if (-not $suggested) {
+                $suggested = if ($key -eq 'user.name') { 'Твоё имя' } else { 'твоя@почта' }
+            }
+            Stop-WithFix `
+                -Problem "${Name}: в git не записано, от чьего имени ставить метку версии ($key)." `
+                -Fix "git -C `"$RepositoryPath`" config $key `"$suggested`""
+        }
+    }
+}
+
+function Get-RequiredPluginApiLevel {
+    param([Parameter(Mandatory)][string]$Id)
+
+    $path = Join-Path $script:MainRepositoryRoot 'scripts/plugin-required-api-level.json'
+    $requirements = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $property = $requirements.PSObject.Properties[$Id]
+    if (-not $property) { return $null }
+    if ($property.Value -isnot [long] -and $property.Value -isnot [int] -or [int]$property.Value -lt 1) {
+        throw "plugin-required-api-level.json: для '$Id' нужен целый уровень от 1."
+    }
+    return [int]$property.Value
+}
+
+function Get-SitePluginApiLevel {
+    param([Parameter(Mandatory)][string]$BaseUrl)
+
+    $endpoint = "$($BaseUrl.TrimEnd('/'))/health"
+    try {
+        $health = Invoke-RestMethod -Uri $endpoint -Method Get -TimeoutSec 20
+    } catch {
+        Stop-WithFix `
+            -Problem "Сайт не ответил на проверку ($endpoint), поэтому нельзя убедиться, что он подходит плагину." `
+            -Fix "проверь сайт и повтори; состояние сервера: .\scripts\deploy-server.ps1 -Action Status"
+    }
+    if ("$($health.status)" -ne 'ok') {
+        Stop-WithFix `
+            -Problem "Сайт отвечает, но сообщает status=$($health.status) вместо ok." `
+            -Fix '.\scripts\deploy-server.ps1 -Action Status'
+    }
+    $property = $health.PSObject.Properties['plugin_api_level']
+    # Deployments made before the level existed serve level 1.
+    if (-not $property) { return 1 }
+    $level = 0
+    if (-not [int]::TryParse("$($property.Value)", [ref]$level) -or $level -lt 1) {
+        throw "Сайт вернул некорректный plugin_api_level: $($property.Value)"
+    }
+    return $level
+}
+
+function Test-SiteServesPlugin {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][int]$Required,
+        [Parameter(Mandatory)][int]$Live,
+        [int]$Planned = 0
+    )
+
+    if ($Live -ge $Required) { return $false }
+    if ($Planned -ge $Required) { return $true }
+    if ($Planned -gt 0) {
+        Stop-WithFix `
+            -Problem "${Name}: плагину нужен сайт уровня $Required, а даже выкатываемая версия сайта даёт уровень $Planned." `
+            -Fix 'передай агенту: уровень сайта для плагинов не поднят (backend/app/core/config.py, PLUGIN_API_LEVEL)'
+    }
+    Stop-WithFix `
+        -Problem "${Name}: плагину нужен сайт уровня $Required, а на сервере уровень $Live. Сначала нужно выкатить сайт." `
+        -Fix ".\scripts\release.ps1 -Item site,$Id   (сайт выйдет первым, плагин — после него)"
+}
+
+function Assert-TagAvailable {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$ReleaseCommit
+    )
+
+    $remoteCommit = Get-RemoteTagCommit -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
+    if ($remoteCommit -and $remoteCommit -ne $ReleaseCommit) {
+        Stop-WithFix `
+            -Problem "${Name}: метка $Tag на GitHub уже стоит на другом коммите ($($remoteCommit.Substring(0, 8))). Эту версию выпустить нельзя." `
+            -Fix 'передай агенту: нужна следующая версия плагина'
+    }
+    $local = Invoke-Checked git @('-C', $RepositoryPath, 'tag', '--list', $Tag) -Capture
+    if ($local) {
+        $localCommit = Invoke-Checked git @('-C', $RepositoryPath, 'rev-list', '-n', '1', $Tag) -Capture
+        if ($localCommit -ne $ReleaseCommit) {
+            $fix = if ($remoteCommit) {
+                "git -C `"$RepositoryPath`" fetch --force $Remote `"refs/tags/${Tag}:refs/tags/$Tag`""
+            } else {
+                "git -C `"$RepositoryPath`" tag -d $Tag"
+            }
+            Stop-WithFix `
+                -Problem "${Name}: на компьютере осталась старая метка $Tag на другом коммите ($($localCommit.Substring(0, 8)))." `
+                -Fix $fix
+        }
+    }
+    return $remoteCommit
+}
+
+function Assert-TagPushAllowed {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$ReleaseCommit
+    )
+
+    # A dry-run push authenticates and asks the remote to accept the tag
+    # without creating anything.
+    $output = & git -C $RepositoryPath push --dry-run --porcelain $Remote "${ReleaseCommit}:refs/tags/$Tag" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithFix `
+            -Problem "${Name}: GitHub не даёт отправить метку версии (пробная отправка не прошла): $(@($output)[-1])" `
+            -Fix 'gh auth login   (затем: gh auth setup-git)'
+    }
+}
+
+function Assert-ReleaseRights {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Repository
+    )
+
+    $canPush = & gh api "repos/$Repository" --jq '.permissions.push' 2>$null
+    if ($LASTEXITCODE -ne 0 -or "$canPush".Trim() -ne 'true') {
+        Stop-WithFix `
+            -Problem "${Name}: у текущего входа в GitHub нет права публиковать в $Repository." `
+            -Fix 'gh auth login'
+    }
+}
+
+function Assert-CandidateMatchesSource {
+    param([Parameter(Mandatory)]$Plan)
+
+    if (-not (Test-Path -LiteralPath $Plan.CandidateWheel -PathType Leaf)) {
+        Stop-WithFix `
+            -Problem "$($Plan.Name): пакет $($Plan.Version) ещё не собран." `
+            -Fix "передай агенту: собрать и проверить пакет (cd `"$($Plan.RepositoryPath)`"; python $($Plan.Builder))"
+    }
+    & python -m build --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithFix `
+            -Problem 'Для сверки пакета нужен сборщик Python, он не установлен.' `
+            -Fix 'python -m pip install build'
+    }
+    $systemTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $buildDir = Join-Path $systemTemp ("filamenthub-candidate-check-" + [guid]::NewGuid().ToString('N'))
+    try {
+        Invoke-Checked python @($Plan.Builder, '--output', $buildDir) `
+            -WorkingDirectory $Plan.RepositoryPath -Capture | Out-Null
+        $rebuilt = Join-Path $buildDir $Plan.BuiltWheelRelative
+        if (-not (Test-Path -LiteralPath $rebuilt -PathType Leaf)) {
+            throw "$($Plan.Name): сборщик не создал '$($Plan.BuiltWheelRelative)'."
+        }
+        $expected = (Get-FileHash -LiteralPath $rebuilt -Algorithm SHA256).Hash
+        $actual = (Get-FileHash -LiteralPath $Plan.CandidateWheel -Algorithm SHA256).Hash
+        if ($expected -ne $actual) {
+            Stop-WithFix `
+                -Problem "$($Plan.Name): собранный пакет устарел — он не совпадает с текущим кодом плагина." `
+                -Fix "передай агенту: пересобрать пакет $($Plan.Version); новый пакет снова нужно проверить в приложении"
+        }
+    } finally {
+        $resolved = [System.IO.Path]::GetFullPath($buildDir)
+        if ($resolved.StartsWith($systemTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Test-OrcaCloudHeldForReview {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$RunId
+    )
+
+    # OrcaCloud accepts a flagged upload and queues it for moderation; another
+    # upload of the same version would only duplicate it.
+    $log = & gh run view $RunId --repo $Repository --log 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return [bool](@($log) -match '"status"\s*:\s*"held_for_review"')
 }
 
 function Assert-OrcaCloudPublishWorkflowContent {
@@ -340,7 +569,9 @@ function Test-ComponentNeedsRelease {
             Write-Host ($changedPaths -join "`n")
             return $true
         }
-        throw "$Name изменён после $($Published.Tag), но версия осталась $CurrentVersion. Обнови версию и changelog:`n$($changedPaths -join "`n")"
+        Stop-WithFix `
+            -Problem "$Name изменён после выпуска $($Published.Tag), но версия осталась $CurrentVersion." `
+            -Fix 'передай агенту: подготовить новую версию плагина (версия, список изменений, пакет)'
     }
     return $false
 }
@@ -371,6 +602,10 @@ function Test-TrustedPublishNeedsRepair {
     if (-not $needsRepair) {
         return $false
     }
+    if (Test-OrcaCloudHeldForReview -Repository $Repository -RunId ([string]$run.databaseId)) {
+        Write-Host "${Name}: $($Published.Tag) загружен в OrcaCloud и ждёт их модерации. Повторять загрузку не нужно." -ForegroundColor Yellow
+        return $false
+    }
     Assert-TrustedPublishRepairable `
         -Name $Name -RepositoryPath $RepositoryPath -Tag $Published.Tag `
         -WorkflowPath ".github/workflows/$Workflow"
@@ -389,7 +624,9 @@ function Assert-CleanPaths {
         throw "Не удалось проверить рабочее дерево $Name."
     }
     if ($changes) {
-        throw "Перед релизом закоммить изменения ${Name}:`n$($changes -join "`n")"
+        Stop-WithFix `
+            -Problem "${Name}: есть незакоммиченные изменения ($(@($changes).Count) шт.), выпускать можно только закоммиченный код." `
+            -Fix "передай агенту: закоммитить или убрать их (список: git -C `"$RepositoryPath`" status --short -- $($Paths -join ' '))"
     }
 }
 
@@ -401,7 +638,9 @@ function Assert-Branch {
 
     $current = Invoke-Checked git @('-C', $RepositoryPath, 'branch', '--show-current') -Capture
     if ($current -ne $ExpectedBranch) {
-        throw "В $RepositoryPath выбрана ветка '$current', ожидалась '$ExpectedBranch'."
+        Stop-WithFix `
+            -Problem "В $RepositoryPath выбрана ветка '$current', выпускать можно только из '$ExpectedBranch'." `
+            -Fix "git -C `"$RepositoryPath`" switch $ExpectedBranch"
     }
 }
 
@@ -542,7 +781,17 @@ function Wait-ForWorkflowRun {
         throw "Workflow $Workflow для '$Tag' не появился за $RunDiscoveryTimeoutSeconds секунд."
     }
     Write-Host "Ожидаю trusted publishing: $($run.url)"
-    Invoke-Checked gh @('run', 'watch', [string]$run.databaseId, '--repo', $Repository, '--exit-status')
+    & gh run watch ([string]$run.databaseId) --repo $Repository --exit-status
+    $watchExitCode = $LASTEXITCODE
+    if (Test-OrcaCloudHeldForReview -Repository $Repository -RunId ([string]$run.databaseId)) {
+        $script:OrcaCloudOutcome = 'held_for_review'
+        Write-Host "Пакет загружен в OrcaCloud и ждёт их модерации. Повторять загрузку не нужно." -ForegroundColor Yellow
+        return
+    }
+    if ($watchExitCode -ne 0) {
+        throw "Загрузка в OrcaCloud не прошла: $($run.url)"
+    }
+    $script:OrcaCloudOutcome = 'accepted'
 }
 
 function Assert-ReleaseAssets {
@@ -637,7 +886,10 @@ function Assert-ReleaseCommitPublished {
         '-C', $RepositoryPath, 'diff', '--name-only', $remote, '--'
     ) + $ReleasePaths) -Capture
     if ($unpublishedPaths) {
-        throw "$Name`: изменения этого плагина ещё не опубликованы в $RemoteName/${BranchName}:`n$unpublishedPaths`nСначала отправь подготовленный plugin-коммит, дождись зелёного CI и повтори проверку."
+        $publishAction = if ($RepositoryPath -eq $script:MainRepositoryRoot) { 'Publish' } else { 'PublishPluginCommits' }
+        Stop-WithFix `
+            -Problem "$Name`: коммиты с этим плагином ещё не отправлены в GitHub ($RemoteName/$BranchName)." `
+            -Fix ".\scripts\deploy-server.ps1 -Action $publishAction   (потом дождись зелёных проверок GitHub и повтори)"
     }
     if (-not $RequiredCiWorkflow) { return $remote }
 
@@ -651,10 +903,19 @@ function Assert-ReleaseCommitPublished {
         Sort-Object { [datetime]$_.createdAt } -Descending |
         Select-Object -First 1
     if (-not $run) {
-        throw "$Name`: для опубликованного commit $remote не найден обязательный CI '$RequiredCiWorkflow'."
+        Stop-WithFix `
+            -Problem "$Name`: проверки GitHub для последнего коммита ($($remote.Substring(0, 8))) ещё не запускались." `
+            -Fix 'подожди пару минут и повтори: .\scripts\release.ps1'
     }
-    if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
-        throw "$Name`: обязательный CI '$RequiredCiWorkflow' для $remote не зелёный (status=$($run.status), result=$($run.conclusion)): $($run.url)"
+    if ($run.status -ne 'completed') {
+        Stop-WithFix `
+            -Problem "ОЖИДАНИЕ: $Name`: проверки GitHub ещё идут: $($run.url)" `
+            -Fix 'дождись окончания и повтори: .\scripts\release.ps1'
+    }
+    if ($run.conclusion -ne 'success') {
+        Stop-WithFix `
+            -Problem "$Name`: проверки GitHub красные ($($run.conclusion)): $($run.url)" `
+            -Fix 'передай агенту ссылку выше: нужно починить проверки'
     }
     return $remote
 }
@@ -1057,10 +1318,13 @@ if ($selected -contains 'orcaslicer') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         RequiredCiWorkflow = 'ci.yml'
-        ReleasePaths = $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
+        ReleasePaths = $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml', 'scripts/plugin-required-api-level.json')
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
+        Builder = 'orca-plugin/build_package.py'
+        BuiltWheelRelative = "wheels/filamenthub-$version-py3-none-any.whl"
+        RequiredApiLevel = Get-RequiredPluginApiLevel -Id 'orcaslicer'
     }
 }
 if ($selected -contains 'octoprint') {
@@ -1079,10 +1343,13 @@ if ($selected -contains 'octoprint') {
         Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         RequiredCiWorkflow = 'ci.yml'
-        ReleasePaths = @('octoprint-plugin', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-octoprint.yml')
+        ReleasePaths = @('octoprint-plugin', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-octoprint.yml', 'scripts/plugin-required-api-level.json')
         Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
         CandidateWheel = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/SHA256SUMS"
+        Builder = 'octoprint-plugin/build_package.py'
+        BuiltWheelRelative = "octoprint_filamenthubbridge-$version-py3-none-any.whl"
+        RequiredApiLevel = Get-RequiredPluginApiLevel -Id 'octoprint'
     }
 }
 if ($selected -contains 'print-farm') {
@@ -1120,6 +1387,9 @@ if ($selected -contains 'print-farm') {
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/print-farm/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/print-farm/dist/release-$version/SHA256SUMS"
+        Builder = 'plugins/print-farm/build_package.py'
+        BuiltWheelRelative = "wheels/printers-$version-py3-none-any.whl"
+        RequiredApiLevel = Get-RequiredPluginApiLevel -Id 'print-farm'
     }
 }
 
@@ -1150,21 +1420,29 @@ if ($CheckVersions) {
     Write-Host 'Проверка версий завершена. Это не проверка сборки или готовности к публикации.'
     return
 }
-if (-not $HideReleaseNotes) {
-    foreach ($plan in @($plans | Where-Object Needed)) {
-        if ($plan.Id -in @('orcaslicer', 'octoprint')) {
-            $componentName = if ($plan.Id -eq 'orcaslicer') { 'orca' } else { 'bridge' }
+foreach ($plan in @($plans | Where-Object Needed)) {
+    if ($plan.Id -in @('orcaslicer', 'octoprint')) {
+        $componentName = if ($plan.Id -eq 'orcaslicer') { 'orca' } else { 'bridge' }
+        # The release workflow renders the same notes after the tag is pushed.
+        try {
+            $releaseNotes = Invoke-Checked python @(
+                'scripts/render_plugin_release_notes.py', '--component', $componentName
+            ) -WorkingDirectory $script:MainRepositoryRoot -Capture
+        } catch {
+            Stop-WithFix `
+                -Problem "$($plan.Name): не собирается текст выпуска $($plan.Version) из списка изменений." `
+                -Fix 'передай агенту: дополнить список изменений (CHANGELOG) для этой версии'
+        }
+        if (-not $HideReleaseNotes) {
             Write-Host ''
             Write-Host "$($plan.Name) — release notes:" -ForegroundColor Cyan
-            Write-Host (Invoke-Checked python @(
-                'scripts/render_plugin_release_notes.py', '--component', $componentName
-            ) -WorkingDirectory $script:MainRepositoryRoot -Capture)
+            Write-Host $releaseNotes
         }
     }
 }
 
 $mainReleasePaths = @(
-    'scripts/render_plugin_release_notes.py'
+    'scripts/render_plugin_release_notes.py', 'scripts/plugin-required-api-level.json'
 )
 if ($selected -contains 'orcaslicer') {
     $mainReleasePaths += $orcaSourcePaths + @('scripts/publish-plugin-releases.ps1', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
@@ -1202,8 +1480,35 @@ foreach ($repositoryGroup in @($plans | Where-Object { $_.Needed -or $_.Repair }
     }
 }
 
+# Everything that can stop a release is checked here, before the owner is
+# asked anything and before any tag or release exists.
+$actionablePlans = @($plans | Where-Object { $_.Needed -or $_.Repair })
+foreach ($plan in $actionablePlans) {
+    $plan | Add-Member -NotePropertyName NeedsSiteDeploy -NotePropertyValue $false
+    if ($ExpectedReleaseCommit -and $plan.ReleaseCommit -ne $ExpectedReleaseCommit) {
+        Stop-WithFix `
+            -Problem "$($plan.Name): после проверки на GitHub появились новые коммиты; выпуск остановлен, чтобы не выпустить непроверенное." `
+            -Fix '.\scripts\release.ps1'
+    }
+    Assert-ReleaseRights -Name $plan.Name -Repository $plan.Repository
+    if (-not $plan.Needed) { continue }
+    Assert-GitIdentity -Name $plan.Name -RepositoryPath $plan.RepositoryPath
+    $existingRemoteTag = Assert-TagAvailable `
+        -Name $plan.Name -RepositoryPath $plan.RepositoryPath -Tag $plan.Tag -ReleaseCommit $plan.ReleaseCommit
+    if (-not $existingRemoteTag) {
+        Assert-TagPushAllowed `
+            -Name $plan.Name -RepositoryPath $plan.RepositoryPath -Tag $plan.Tag -ReleaseCommit $plan.ReleaseCommit
+    }
+    Assert-CandidateMatchesSource -Plan $plan
+    if ($null -ne $plan.RequiredApiLevel) {
+        $liveSiteLevel = Get-SitePluginApiLevel -BaseUrl $PublicBaseUrl
+        $plan.NeedsSiteDeploy = Test-SiteServesPlugin `
+            -Id $plan.Id -Name $plan.Name -Required $plan.RequiredApiLevel -Live $liveSiteLevel `
+            -Planned $(if ($DryRun) { $PlannedSiteApiLevel } else { 0 })
+    }
+}
+
 if ($DryRun) {
-    $actionablePlans = @($plans | Where-Object { $_.Needed -or $_.Repair })
     foreach ($plan in $actionablePlans) {
         if (-not (Test-Path -LiteralPath $plan.CandidateWheel -PathType Leaf)) {
             throw "$($plan.Name): не найден собранный пакет '$($plan.CandidateWheel)'. Агент должен сначала собрать и проверить release candidate."
@@ -1215,10 +1520,22 @@ if ($DryRun) {
     }
     $actionable = $actionablePlans.Count
     $componentResult = if ($actionable) {
+        $plan = $actionablePlans[0]
         [pscustomobject]@{
             FilamentHubPluginReleaseResult = $true
             Status = 'READY'
-            Detail = 'commit опубликован, CI зелёный; пакет готов к отдельному выпуску'
+            Detail = if ($plan.NeedsSiteDeploy) {
+                'всё проверено; выйдет только после выкатки сайта'
+            } elseif ($plan.Repair) {
+                "всё проверено; нужно повторить загрузку $($plan.Published.Tag) в OrcaCloud"
+            } else {
+                'commit опубликован, CI зелёный; пакет готов к отдельному выпуску'
+            }
+            Id = $plan.Id; Name = $plan.Name; Version = $plan.Version; Tag = $plan.Tag
+            Repair = [bool]$plan.Repair; NeedsSiteDeploy = [bool]$plan.NeedsSiteDeploy
+            ReleaseCommit = $plan.ReleaseCommit
+            CandidateWheel = $plan.CandidateWheel; CandidateChecksums = $plan.CandidateChecksums
+            Sha256 = (Get-FileHash -LiteralPath $plan.CandidateWheel -Algorithm SHA256).Hash.ToLowerInvariant()
         }
     } else {
         [pscustomobject]@{
@@ -1228,7 +1545,7 @@ if ($DryRun) {
         }
     }
     Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
-    Write-Host 'Owner approval and release asset identity were not verified.'
+    Write-Host 'Приёмка пакета и файлы на GitHub на этом шаге не проверялись.' -ForegroundColor DarkGray
     if ($EmitComponentResult) {
         $componentResult
     }
@@ -1335,7 +1652,11 @@ if (-not ($plans | Where-Object { $_.Needed -or $_.Repair })) {
     $componentResult = [pscustomobject]@{
         FilamentHubPluginReleaseResult = $true
         Status = 'RELEASED'
-        Detail = 'независимый релиз завершён'
+        Detail = if ($script:OrcaCloudOutcome -eq 'held_for_review') {
+            'выпущен; OrcaCloud принял пакет и проверяет его вручную, повторять не нужно'
+        } else {
+            'независимый релиз завершён'
+        }
     }
 }
 if ($EmitComponentResult) {

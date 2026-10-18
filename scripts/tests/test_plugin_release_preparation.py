@@ -11,6 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LOAD_FUNCTIONS = r"""
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $tokens = $null
@@ -246,14 +247,35 @@ def test_plugin_menu_exposes_push_check_and_release_as_separate_actions() -> Non
     )[0]
 
     assert "Отправить подготовленные коммиты плагинов в GitHub" in menu
-    assert "Проверить готовность релизов" in menu
-    assert "Опубликовать все готовые плагины" in menu
+    assert "Проверить готовность к выпуску" in menu
+    assert "Выпустить выбранные плагины" in menu
     assert "'4' { Publish-PluginCommits }" in menu
-    assert "'5' { Test-PluginReleaseReadiness }" in menu
-    assert "'6' { Invoke-PluginReleasePreparation }" in menu
+    assert "'5' { Invoke-Release -CheckOnly }" in menu
+    assert "'6' { Invoke-Release }" in menu
+    # Every plugin action asks which plugins, so an unselected one is never read.
+    assert "-CheckVersions }" not in menu
+    assert "-Component $chosen -CheckVersions" in menu
 
     publisher = script.split("function Publish-PluginCommits", 1)[1].split(
-        "function Test-PluginReleaseReadiness", 1
+        "\nfunction ", 1
     )[0]
     assert "Publish-RepositoryCommits" in publisher
-    assert "Invoke-PluginReleasePreparation" not in publisher
+    assert "Invoke-Release" not in publisher
+
+
+def test_every_owner_release_entry_goes_through_the_guarded_release() -> None:
+    script = (ROOT / "scripts/deploy-server.ps1").read_text(encoding="utf-8")
+    entry = script.split("\nswitch ($Action) {", 1)[1]
+
+    for retired in ("Show-Preflight", "Start-ProductionDeploy", "Invoke-PluginReleasePreparation", "Test-PluginReleaseReadiness"):
+        assert retired not in script
+    assert "'Deploy' { Invoke-Release -Items @('site') }" in entry
+    assert "'Preflight' { Invoke-Release -Items @('site') -CheckOnly }" in entry
+    assert "'PublishRelease' { Invoke-Release" in entry
+    assert "'PrepareRelease' { Invoke-Release" in entry
+    production = script.split("function Show-ProductionMenu", 1)[1].split("\nfunction ", 1)[0]
+    assert "'2' { Invoke-Release -Items @('site') }" in production
+    assert "'6' { Invoke-Release -Items @('site') -RebuildAll }" in production
+    assert script.count("Invoke-DurableProductionDeploy -Revision") == 1
+    wrapper = (ROOT / "scripts/release.ps1").read_text(encoding="utf-8")
+    assert "-Action Release -Item $Item -CheckOnly:$CheckOnly" in wrapper

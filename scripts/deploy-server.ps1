@@ -11,8 +11,16 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource', 'PublishCatalogSource')]
+    [ValidateSet('Menu', 'Release', 'Publish', 'PublishPluginCommits', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource', 'PublishCatalogSource')]
     [string]$Action = 'Menu',
+
+    # What -Action Release releases; without it the owner picks from a menu.
+    [Parameter()]
+    [ValidateSet('site', 'orcaslicer', 'octoprint', 'print-farm')]
+    [string[]]$Item = @(),
+
+    [Parameter()]
+    [switch]$CheckOnly,
 
     # Деплой всегда идёт на один и тот же VDS через алиас SSH config, поэтому
     # адрес не спрашивается: переменная окружения и -Server остаются для
@@ -46,6 +54,15 @@ function Assert-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Не найдена обязательная команда '$Name' в PATH."
     }
+}
+
+function Stop-WithFix {
+    param(
+        [Parameter(Mandatory)][string]$Problem,
+        [Parameter(Mandatory)][string]$Fix
+    )
+
+    throw "$Problem`nИсправить: $Fix"
 }
 
 function Confirm-Action {
@@ -141,13 +158,19 @@ function Get-VerifiedPublishedMain {
         Sort-Object { [datetime]$_.createdAt } -Descending |
         Select-Object -First 1
     if (-not $run) {
-        throw "Для точного коммита $remoteHead не найден CI, запущенный после push."
+        Stop-WithFix `
+            -Problem "Проверки GitHub для последнего коммита ($($remoteHead.Substring(0, 8))) ещё не запускались." `
+            -Fix 'подожди пару минут и повтори: .\scripts\release.ps1'
     }
     if ($run.status -ne 'completed') {
-        throw "$script:WaitingPrefix CI для $remoteHead ещё выполняется (статус=$($run.status)): $($run.url)"
+        Stop-WithFix `
+            -Problem "$script:WaitingPrefix проверки GitHub для $($remoteHead.Substring(0, 8)) ещё идут: $($run.url)" `
+            -Fix 'дождись окончания и повтори: .\scripts\release.ps1'
     }
     if ($run.conclusion -ne 'success') {
-        throw "CI для $remoteHead не зелёный (результат=$($run.conclusion)): $($run.url)"
+        Stop-WithFix `
+            -Problem "Проверки GitHub для $($remoteHead.Substring(0, 8)) красные ($($run.conclusion)): $($run.url)" `
+            -Fix 'передай агенту ссылку выше: нужно починить проверки'
     }
 
     return [pscustomobject]@{
@@ -278,7 +301,10 @@ function Invoke-DurableDeployCommand {
 function Invoke-DurableProductionDeploy {
     param(
         [Parameter(Mandatory)][string]$Revision,
-        [switch]$RebuildAll
+        [switch]$RebuildAll,
+        # Decided by the owner before the release starts, so the run itself
+        # never stops to ask.
+        [switch]$RestartFailed
     )
 
     Assert-Command ssh
@@ -317,8 +343,10 @@ function Invoke-DurableProductionDeploy {
         }
     } while (-not $response)
     if ($response.Status -in @('failed', 'stale')) {
-        if (-not (Confirm-Action "Предыдущая попытка $($Revision.Substring(0, 8)) завершилась неуспешно. Запустить заново?")) {
-            throw "Повторный деплой отменён. Журнал на VDS: $($response.LogPath)"
+        if (-not $RestartFailed) {
+            Stop-WithFix `
+                -Problem "Прошлая выкладка $($Revision.Substring(0, 8)) не удалась (журнал на сервере: $($response.LogPath))." `
+                -Fix '.\scripts\release.ps1 -Item site   (скрипт спросит, запустить ли её заново)'
         }
         $response = Invoke-DurableDeployCommand `
             -Target $target -Revision $Revision `
@@ -593,43 +621,7 @@ function Publish-PluginCommits {
     }
 
     Write-Host ''
-    Write-Host 'Перед релизом выбери «Проверить готовность релизов»: она проверит опубликованный код и CI.' -ForegroundColor DarkGray
-}
-
-function Test-PluginReleaseReadiness {
-    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
-    & $scriptPath -Component all -DryRun
-    if (-not $?) {
-        throw 'Проверка готовности релизов завершилась с ошибкой.'
-    }
-}
-
-function Show-Preflight {
-    $candidate = Get-DeploymentCandidate
-    Write-Host ''
-    Write-Host 'Кандидат на деплой готов' -ForegroundColor Green
-    Write-Host "  Репозиторий: $($candidate.Repository)"
-    Write-Host "  Коммит:      $($candidate.Sha)"
-    Write-Host "  CI:         $($candidate.CiUrl)"
-    return $candidate
-}
-
-function Start-ProductionDeploy {
-    param([switch]$RebuildAll)
-
-    $Candidate = Show-Preflight
-    Write-Host ''
-    $question = if ($RebuildAll) {
-        "Задеплоить $($Candidate.ShortSha) в production с полной пересборкой backend и frontend?"
-    } else {
-        "Задеплоить $($Candidate.ShortSha) в production?"
-    }
-    if (-not (Confirm-Action $question)) {
-        Write-Host 'Деплой отменён.' -ForegroundColor Yellow
-        return
-    }
-
-    Invoke-DurableProductionDeploy -Revision $Candidate.Sha -RebuildAll:$RebuildAll
+    Write-Host 'Дальше, когда проверки GitHub станут зелёными: .\scripts\release.ps1' -ForegroundColor DarkGray
 }
 
 function Show-ProductionStatus {
@@ -748,6 +740,8 @@ function Get-PluginReleaseAssets {
 }
 
 function Test-DownloadPageRelease {
+    param([string[]]$Plugins = @('orcaslicer', 'octoprint', 'print_farm'))
+
     $endpoint = "$($PublicBaseUrl.TrimEnd('/'))/api/v1/downloads/plugins"
     try {
         $response = Invoke-RestMethod -Uri $endpoint -Method Get -TimeoutSec 20
@@ -756,7 +750,7 @@ function Test-DownloadPageRelease {
     }
 
     $packages = @($response.packages)
-    $expectedPlugins = @('orcaslicer', 'octoprint', 'print_farm')
+    $expectedPlugins = @($Plugins)
     foreach ($plugin in $expectedPlugins) {
         $matches = @($packages | Where-Object { $_.plugin -eq $plugin })
         if ($matches.Count -ne 1) {
@@ -795,34 +789,333 @@ function Test-DownloadPageRelease {
     }
 
     $filenames = @($packages | Where-Object { $_.plugin -in $expectedPlugins } | ForEach-Object { $_.filename })
-    Write-Host "Страница Download раздаёт все три пакета ($($filenames -join ', '))." -ForegroundColor Green
+    Write-Host "Страница Download раздаёт: $($filenames -join ', ')." -ForegroundColor Green
     return $true
 }
 
-function Invoke-PluginReleasePreparation {
-    param([switch]$ChooseComponent)
+function Get-ReleaseCatalogue {
+    return @(
+        [pscustomobject]@{ Id = 'site'; Key = '1'; Name = 'Сайт'; DownloadId = $null }
+        [pscustomobject]@{ Id = 'orcaslicer'; Key = '2'; Name = 'FilamentHub для OrcaSlicer'; DownloadId = 'orcaslicer' }
+        [pscustomobject]@{ Id = 'octoprint'; Key = '3'; Name = 'Мост для OctoPrint'; DownloadId = 'octoprint' }
+        [pscustomobject]@{ Id = 'print-farm'; Key = '4'; Name = 'Print Farm'; DownloadId = 'print_farm' }
+    )
+}
 
-    $components = @('all')
-    if ($ChooseComponent) {
-        Write-Host '  1. FilamentHub for OrcaSlicer'
-        Write-Host '  2. FilamentHub Bridge for OctoPrint'
-        Write-Host '  3. Print Farm'
-        $components = switch ((Read-Host 'Выбери компонент').Trim()) {
-            '1' { @('orcaslicer') }
-            '2' { @('octoprint') }
-            '3' { @('print-farm') }
-            default { throw 'Неизвестный компонент.' }
+function Read-ReleaseSelection {
+    $catalogue = Get-ReleaseCatalogue
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Что выпускаем?' -ForegroundColor Cyan
+        foreach ($entry in $catalogue) {
+            Write-Host "  $($entry.Key). $($entry.Name)"
+        }
+        Write-Host '  0. Отмена'
+        Write-Host '  Можно несколько через запятую, например: 2 или 1,2' -ForegroundColor DarkGray
+        $answer = (Read-Host 'Выбери').Trim()
+        if ($answer -in @('', '0')) {
+            return @()
+        }
+        $keys = @($answer -split '[,;\s]+' | Where-Object { $_ })
+        $unknown = @($keys | Where-Object { $_ -notin @($catalogue.Key) })
+        if ($unknown.Count -eq 0) {
+            return @($catalogue | Where-Object { $_.Key -in $keys } | ForEach-Object Id)
+        }
+        Write-Host "Не понимаю: $($unknown -join ', '). Введи номера из списка." -ForegroundColor Yellow
+    }
+}
+
+function Set-ReleaseState {
+    param(
+        [Parameter(Mandatory)]$State,
+        [Parameter(Mandatory)][ValidateSet('READY', 'CURRENT', 'ERROR', 'SKIPPED', 'DONE')][string]$Status,
+        [string]$Detail = '',
+        [string]$Fix = ''
+    )
+
+    $State.Status = $Status
+    $State.Detail = $Detail
+    $State.Fix = $Fix
+}
+
+function Set-ReleaseFailure {
+    param(
+        [Parameter(Mandatory)]$State,
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $lines = @("$($ErrorRecord.Exception.Message)" -split "`r?`n" |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $problem = if ($lines.Count) { $lines[0] } else { 'неизвестная ошибка' }
+    $fix = @($lines | Where-Object { $_.StartsWith('Исправить:') } | Select-Object -First 1)
+    Set-ReleaseState -State $State -Status ERROR -Detail $problem `
+        -Fix $(if ($fix.Count) { $fix[0].Substring('Исправить:'.Length).Trim() } else { '' })
+    Write-Host "$($State.Name): СТОП — $problem" -ForegroundColor Red
+}
+
+function Show-ReleaseSummary {
+    param(
+        [Parameter(Mandatory)][object[]]$States,
+        [Parameter(Mandatory)][string]$Title
+    )
+
+    Write-Host ''
+    Write-Host $Title -ForegroundColor Cyan
+    foreach ($state in $States) {
+        $label, $colour = switch ($state.Status) {
+            'READY' { 'можно выпускать', 'Green' }
+            'CURRENT' { 'уже актуально', 'DarkGray' }
+            'DONE' { 'готово', 'Green' }
+            'SKIPPED' { 'не выпускается', 'Yellow' }
+            default { 'СТОП', 'Red' }
+        }
+        Write-Host "  $($state.Name): $label — $($state.Detail)" -ForegroundColor $colour
+        if ($state.Fix) {
+            Write-Host "      Исправить: $($state.Fix)" -ForegroundColor Yellow
         }
     }
+}
+
+function Get-FileSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Read-OwnerKey {
+    if ([Console]::IsInputRedirected) {
+        throw 'Для подтверждения нужен интерактивный терминал.'
+    }
+    return [Console]::ReadKey($true).KeyChar
+}
+
+function Confirm-OwnerTestedPackage {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Version,
+        [Parameter(Mandatory)][string]$WheelPath,
+        [Parameter(Mandatory)][string]$Sha256
+    )
+
+    Write-Host ''
+    Write-Host "$Name $Version — пакет для выпуска:" -ForegroundColor Cyan
+    Write-Host $WheelPath
+    Write-Host "SHA-256 проверен автоматически: $Sha256" -ForegroundColor DarkGray
+    Write-Host 'Этот пакет проверен в приложении и принят? Y / Д — да (в любой раскладке); любая другая клавиша — пропустить.'
+    # Y and Д are meant as keys, not letters: in the other layout the same keys give Н and L.
+    return (Read-OwnerKey) -cin @('y', 'Y', 'н', 'Н', 'д', 'Д', 'l', 'L')
+}
+
+function Get-SitePluginApiLevelAt {
+    param([Parameter(Mandatory)][string]$Revision)
+
+    $config = Invoke-Checked git @('show', "${Revision}:backend/app/core/config.py") -Capture
+    # Revisions from before the level existed serve level 1.
+    if ($config -notmatch '(?m)^PLUGIN_API_LEVEL\s*=\s*(?<level>\d+)\s*$') {
+        return 1
+    }
+    return [int]$Matches.level
+}
+
+function Get-SiteReleasePlan {
+    param([switch]$RebuildAll)
+
+    $candidate = Get-DeploymentCandidate
+    # The worker's dry run checks on the server what the real deploy checks
+    # first: clean checkout, main branch, fast-forward and certificates.
+    try {
+        Invoke-RemoteWorker -Arguments @('--revision', $candidate.Sha, '--dry-run') -WorkerRevision $candidate.Sha
+    } catch {
+        Stop-WithFix `
+            -Problem 'Сервер не готов принять выкладку или недоступен (причина в строках выше).' `
+            -Fix '.\scripts\deploy-server.ps1 -Action Status'
+    }
+
+    $previousAttemptFailed = $false
+    $alreadyDeployed = $false
+    if (-not $RebuildAll) {
+        $job = Invoke-DurableDeployCommand -Target (Get-ServerTarget) -Revision $candidate.Sha `
+            -RunnerArguments @('--status', '--run-id', "deploy-$($candidate.Sha)", '--from-line', '0')
+        $previousAttemptFailed = $job.Status -in @('failed', 'stale')
+        $alreadyDeployed = $job.Status -eq 'succeeded'
+    }
+
+    [pscustomobject]@{
+        Sha = $candidate.Sha
+        ShortSha = $candidate.ShortSha
+        CiUrl = $candidate.CiUrl
+        PluginApiLevel = Get-SitePluginApiLevelAt -Revision $candidate.Sha
+        PreviousAttemptFailed = $previousAttemptFailed
+        AlreadyDeployed = $alreadyDeployed
+    }
+}
+
+function Invoke-PluginReleaseScript {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [hashtable]$Arguments = @{}
+    )
+
     $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
-    Write-Host 'Каждый плагин проверяется отдельно. Контрольные суммы сверяются автоматически; приёмка пакета подтверждается одной клавишей.' -ForegroundColor DarkGray
-    & $scriptPath -Component $components -PromptForOwnerApproval
-    if (-not $?) {
-        throw 'Скрипт публикации плагинов завершился с ошибкой.'
+    $output = @(& $scriptPath -Component $Id -EmitComponentResult @Arguments)
+    $results = @($output | Where-Object { $_ -and $_.PSObject.Properties['FilamentHubPluginReleaseResult'] })
+    @($output | Where-Object { -not ($_ -and $_.PSObject.Properties['FilamentHubPluginReleaseResult']) }) | Out-Host
+    if ($results.Count -ne 1) {
+        throw "Скрипт плагина '$Id' вернул результатов: $($results.Count) вместо одного."
     }
-    if (-not (Test-DownloadPageRelease)) {
-        Write-Host 'GitHub Releases готовы, но Download ещё не обновился. Повтори пункт 3 этого меню после деплоя backend или истечения 15-минутного кеша.' -ForegroundColor Yellow
+    return $results[0]
+}
+
+function Invoke-Release {
+    param(
+        [string[]]$Items = @(),
+        [switch]$CheckOnly,
+        [switch]$RebuildAll
+    )
+
+    $catalogue = Get-ReleaseCatalogue
+    if ($Items.Count -eq 0) {
+        $Items = @(Read-ReleaseSelection)
     }
+    if ($Items.Count -eq 0) {
+        Write-Host 'Выпуск отменён.' -ForegroundColor Yellow
+        return
+    }
+    $states = @(foreach ($entry in $catalogue) {
+        if ($entry.Id -in $Items) {
+            [pscustomobject]@{
+                Id = $entry.Id; Name = $entry.Name; DownloadId = $entry.DownloadId
+                Status = 'READY'; Detail = ''; Fix = ''; Plan = $null
+            }
+        }
+    })
+    $siteState = @($states | Where-Object Id -eq 'site') | Select-Object -First 1
+    $pluginStates = @($states | Where-Object Id -ne 'site')
+
+    Write-Host ''
+    Write-Host 'Проверяю только выбранное. Пока ничего не меняется и ни о чём не спрашиваю.' -ForegroundColor Cyan
+    $Candidate = $null
+    if ($siteState) {
+        Write-Host "`n— $($siteState.Name): проверка" -ForegroundColor Cyan
+        try {
+            $Candidate = Get-SiteReleasePlan -RebuildAll:$RebuildAll
+            $siteState.Plan = $Candidate
+            if ($Candidate.AlreadyDeployed) {
+                Set-ReleaseState -State $siteState -Status CURRENT -Detail "коммит $($Candidate.ShortSha) уже выкачен"
+            } else {
+                $detail = "коммит $($Candidate.ShortSha), проверки GitHub зелёные, сервер готов"
+                if ($Candidate.PreviousAttemptFailed) {
+                    $detail += '; прошлая попытка выкладки не удалась'
+                }
+                Set-ReleaseState -State $siteState -Status READY -Detail $detail
+            }
+        } catch {
+            Set-ReleaseFailure -State $siteState -ErrorRecord $_
+        }
+    }
+    foreach ($state in $pluginStates) {
+        Write-Host "`n— $($state.Name): проверка" -ForegroundColor Cyan
+        $arguments = @{ DryRun = $true }
+        if ($siteState -and $siteState.Status -eq 'READY') {
+            $arguments.PlannedSiteApiLevel = $Candidate.PluginApiLevel
+        }
+        try {
+            $result = Invoke-PluginReleaseScript -Id $state.Id -Arguments $arguments
+            $state.Plan = $result
+            $status = if ($result.Status -eq 'READY') { 'READY' } else { 'CURRENT' }
+            Set-ReleaseState -State $state -Status $status -Detail $result.Detail
+        } catch {
+            Set-ReleaseFailure -State $state -ErrorRecord $_
+        }
+    }
+
+    Show-ReleaseSummary -States $states -Title 'Итог проверки:'
+    $ready = @($states | Where-Object Status -eq 'READY')
+    if ($ready.Count -eq 0) {
+        Write-Host 'Выпускать нечего.' -ForegroundColor Yellow
+        return
+    }
+    if ($CheckOnly) {
+        Write-Host "Это была только проверка, ничего не выпущено. Выпустить: .\scripts\release.ps1 -Item $(@($ready.Id) -join ',')" -ForegroundColor Green
+        return
+    }
+
+    Write-Host ''
+    Write-Host 'Вопросы перед выпуском. После них скрипт работает сам и больше ничего не спрашивает.' -ForegroundColor Cyan
+    if ($siteState -and $siteState.Status -eq 'READY') {
+        $question = "Выкатить сайт (коммит $($Candidate.ShortSha))"
+        if ($RebuildAll) { $question += ' с полной пересборкой' }
+        if ($Candidate.PreviousAttemptFailed) { $question += '? Прошлая попытка не удалась, она запустится заново. Продолжить' }
+        if (-not (Confirm-Action "$($question)?")) {
+            Set-ReleaseState -State $siteState -Status SKIPPED -Detail 'ты решил не выкатывать'
+        }
+    }
+    $siteGoes = $siteState -and $siteState.Status -eq 'READY'
+    foreach ($state in @($pluginStates | Where-Object Status -eq 'READY')) {
+        $plan = $state.Plan
+        if ($plan.NeedsSiteDeploy -and -not $siteGoes) {
+            Set-ReleaseState -State $state -Status SKIPPED -Detail 'плагину нужен сайт новее, а сайт сейчас не выкатывается' `
+                -Fix ".\scripts\release.ps1 -Item site,$($state.Id)"
+            continue
+        }
+        try {
+            if ((Get-FileSha256 -Path $plan.CandidateWheel) -ne $plan.Sha256) {
+                Stop-WithFix -Problem 'пакет изменился после проверки.' -Fix ".\scripts\release.ps1 -Item $($state.Id)"
+            }
+            if (-not (Confirm-OwnerTestedPackage -Name $state.Name -Version $plan.Version `
+                    -WheelPath $plan.CandidateWheel -Sha256 $plan.Sha256)) {
+                Set-ReleaseState -State $state -Status SKIPPED -Detail 'пакет не подтверждён'
+                continue
+            }
+            if ((Get-FileSha256 -Path $plan.CandidateWheel) -ne $plan.Sha256) {
+                Stop-WithFix -Problem 'пакет изменился, пока ты подтверждал.' -Fix ".\scripts\release.ps1 -Item $($state.Id)"
+            }
+        } catch {
+            Set-ReleaseFailure -State $state -ErrorRecord $_
+        }
+    }
+
+    if ($siteGoes) {
+        Write-Host "`n— $($siteState.Name): выкладка" -ForegroundColor Cyan
+        try {
+            Invoke-DurableProductionDeploy -Revision $Candidate.Sha -RebuildAll:$RebuildAll `
+                -RestartFailed:$Candidate.PreviousAttemptFailed
+            Set-ReleaseState -State $siteState -Status DONE -Detail "выкачен и проверен ($($Candidate.ShortSha))"
+        } catch {
+            Set-ReleaseFailure -State $siteState -ErrorRecord $_
+        }
+    }
+    foreach ($state in @($pluginStates | Where-Object Status -eq 'READY')) {
+        $plan = $state.Plan
+        if ($plan.NeedsSiteDeploy -and (-not $siteState -or $siteState.Status -ne 'DONE')) {
+            Set-ReleaseState -State $state -Status SKIPPED -Detail 'сайт не выкатился, поэтому плагин не выпущен' `
+                -Fix ".\scripts\release.ps1 -Item site,$($state.Id)"
+            continue
+        }
+        Write-Host "`n— $($state.Name): выпуск" -ForegroundColor Cyan
+        try {
+            $result = Invoke-PluginReleaseScript -Id $state.Id -Arguments @{
+                OwnerApprovedSha256 = @{ $state.Id = $plan.Sha256 }
+                ExpectedReleaseCommit = $plan.ReleaseCommit
+                HideReleaseNotes = $true
+            }
+            Set-ReleaseState -State $state -Status DONE -Detail $result.Detail
+        } catch {
+            Set-ReleaseFailure -State $state -ErrorRecord $_
+        }
+    }
+
+    $released = @($pluginStates | Where-Object { $_.Status -eq 'DONE' -and -not $_.Plan.Repair } | ForEach-Object DownloadId)
+    if ($released.Count) {
+        try {
+            if (-not (Test-DownloadPageRelease -Plugins $released)) {
+                Write-Host 'Страница «Скачать» на сайте обновится в течение 15 минут (кеш). Это не ошибка.' -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "Страницу «Скачать» проверить не удалось: $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
+    }
+    Show-ReleaseSummary -States $states -Title 'Итог выпуска:'
 }
 
 function Update-CatalogSource {
@@ -986,8 +1279,8 @@ function Show-ProductionMenu {
         Write-Host ''
         Write-Host 'Production (VDS)' -ForegroundColor Cyan
         Write-Host "  Сервер: $script:Server" -ForegroundColor DarkGray
-        Write-Host '  1. Проверить готовность к деплою (точный SHA + GitHub CI)'
-        Write-Host '  2. Задеплоить production'
+        Write-Host '  1. Проверить готовность сайта к выкладке (ничего не меняет)'
+        Write-Host '  2. Выкатить сайт'
         Write-Host '  3. Проверить состояние production'
         Write-Host '  4. Создать зашифрованный backup production-базы'
         Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
@@ -996,12 +1289,12 @@ function Show-ProductionMenu {
 
         try {
             switch ((Read-Host 'Выбери действие').Trim()) {
-                '1' { Show-Preflight | Out-Null }
-                '2' { Start-ProductionDeploy }
+                '1' { Invoke-Release -Items @('site') -CheckOnly }
+                '2' { Invoke-Release -Items @('site') }
                 '3' { Show-ProductionStatus }
                 '4' { Start-ProductionBackup }
                 '5' { Start-BuildCacheCleanup }
-                '6' { Start-ProductionDeploy -RebuildAll }
+                '6' { Invoke-Release -Items @('site') -RebuildAll }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -1021,11 +1314,11 @@ function Show-PluginMenu {
         Write-Host '  3. Проверить все три плагина на странице Download'
         Write-Host '  4. Отправить подготовленные коммиты плагинов в GitHub'
         Write-Host '     Проверит всех неопубликованных предков; посторонние изменения заблокируют push.' -ForegroundColor DarkGray
-        Write-Host '  5. Проверить готовность релизов'
-        Write-Host '     Проверит GitHub Releases, версии, пакеты, опубликованный commit и CI. Ничего не публикует.' -ForegroundColor DarkGray
-        Write-Host '  6. Опубликовать все готовые плагины отдельными releases'
-        Write-Host '  7. Опубликовать один выбранный плагин отдельным release'
-        Write-Host '  8. Только проверить версии и показать, что агенту нужно подготовить'
+        Write-Host '  5. Проверить готовность к выпуску'
+        Write-Host '     Только выбранные плагины; ничего не публикует.' -ForegroundColor DarkGray
+        Write-Host '  6. Выпустить выбранные плагины'
+        Write-Host '     Каждый выходит сам по себе; все вопросы задаются до выпуска.' -ForegroundColor DarkGray
+        Write-Host '  7. Только проверить версии и показать, что агенту нужно подготовить'
         Write-Host '  0. Назад'
 
         try {
@@ -1038,10 +1331,14 @@ function Show-PluginMenu {
                     }
                 }
                 '4' { Publish-PluginCommits }
-                '5' { Test-PluginReleaseReadiness }
-                '6' { Invoke-PluginReleasePreparation }
-                '7' { Invoke-PluginReleasePreparation -ChooseComponent }
-                '8' { & (Join-Path $PSScriptRoot 'publish-plugin-releases.ps1') -CheckVersions }
+                '5' { Invoke-Release -CheckOnly }
+                '6' { Invoke-Release }
+                '7' {
+                    $chosen = @(Read-ReleaseSelection | Where-Object { $_ -ne 'site' })
+                    if ($chosen.Count) {
+                        & (Join-Path $PSScriptRoot 'publish-plugin-releases.ps1') -Component $chosen -CheckVersions
+                    }
+                }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -1083,6 +1380,7 @@ function Show-Menu {
         Write-MenuOption '3' 'Production (VDS)' 'Preflight, deploy, status, backup и очистка build-cache.'
         Write-MenuOption '4' 'Плагины и их релизы' 'GitHub Releases, wheels, Download и выпуск каждого плагина.'
         Write-MenuOption '5' 'OrcaSlicer' 'Источник каталога и проверка инструментов сборки.'
+        Write-MenuOption '6' 'Выпуск' 'Сайт и плагины: выбираешь что, скрипт всё проверит и выпустит.'
         Write-Host '  0. Выход'
 
         try {
@@ -1092,6 +1390,7 @@ function Show-Menu {
                 '3' { Show-ProductionMenu }
                 '4' { Show-PluginMenu }
                 '5' { Show-OrcaToolsMenu }
+                '6' { Invoke-Release }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -1107,9 +1406,11 @@ Set-Location -LiteralPath $repositoryRoot
 
 switch ($Action) {
     'Menu' { Show-Menu }
+    'Release' { Invoke-Release -Items $Item -CheckOnly:$CheckOnly }
     'Publish' { Publish-Commits }
-    'Preflight' { Show-Preflight | Out-Null }
-    'Deploy' { Start-ProductionDeploy }
+    'PublishPluginCommits' { Publish-PluginCommits }
+    'Preflight' { Invoke-Release -Items @('site') -CheckOnly }
+    'Deploy' { Invoke-Release -Items @('site') }
     'Status' { Show-ProductionStatus }
     'Backup' { Start-ProductionBackup }
     'PruneBuildCache' { Start-BuildCacheCleanup }
@@ -1120,8 +1421,8 @@ switch ($Action) {
             throw 'Публичная страница Download пока не прошла проверку.'
         }
     }
-    'PrepareRelease' { Invoke-PluginReleasePreparation }
-    'PublishRelease' { Invoke-PluginReleasePreparation }
+    'PrepareRelease' { Invoke-Release -Items $Item -CheckOnly:$CheckOnly }
+    'PublishRelease' { Invoke-Release -Items $Item -CheckOnly:$CheckOnly }
     'UpdateCatalogSource' { Update-CatalogSource }
     'PublishCatalogSource' { Publish-CatalogSource }
 }

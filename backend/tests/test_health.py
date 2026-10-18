@@ -13,6 +13,9 @@ async def test_health_check(client: AsyncClient):
     assert data["status"] == "ok"
     assert "version" in data
     assert "project" in data
+    # The owner release script compares this with plugin requirements.
+    assert isinstance(data["plugin_api_level"], int)
+    assert data["plugin_api_level"] >= 1
 
 
 @pytest.mark.asyncio

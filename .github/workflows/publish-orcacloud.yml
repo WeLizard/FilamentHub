@@ -173,4 +173,13 @@ jobs:
             https://api.orcaslicer.com/api/v1/plugin-publish/releases)"
           cat response.json
           echo
-          [[ "$status" == "201" ]]
+          if [[ "$status" == "201" ]]; then
+            exit 0
+          fi
+          # A flagged upload is accepted and queued for manual review; uploading
+          # the same version again would only create a duplicate.
+          if [[ "$status" == 2* ]] && jq -e '.status == "held_for_review"' response.json >/dev/null; then
+            echo "::notice::OrcaCloud accepted the upload and holds it for moderation; do not upload it again."
+            exit 0
+          fi
+          exit 1
