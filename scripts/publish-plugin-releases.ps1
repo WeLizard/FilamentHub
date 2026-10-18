@@ -256,6 +256,39 @@ function Assert-TrustedPublishRepairable {
     }
 }
 
+function Test-ContentIdenticalRelocation {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$OldRoot,
+        [Parameter(Mandatory)][string]$NewRoot
+    )
+
+    $oldPrefix = "$OldRoot/"
+    $newPrefix = "$NewRoot/"
+    if ($Path.StartsWith($oldPrefix, [StringComparison]::Ordinal)) {
+        $suffix = $Path.Substring($oldPrefix.Length)
+    } elseif ($Path.StartsWith($newPrefix, [StringComparison]::Ordinal)) {
+        $suffix = $Path.Substring($newPrefix.Length)
+    } else {
+        return $false
+    }
+
+    $previous = "$oldPrefix$suffix"
+    $current = Join-Path $RepositoryPath "$newPrefix$suffix"
+    if (-not (Test-Path -LiteralPath $current -PathType Leaf)) {
+        return $false
+    }
+    try {
+        $before = Invoke-Checked git @('-C', $RepositoryPath, 'rev-parse', "${Tag}:$previous") -Capture
+        $after = Invoke-Checked git @('-C', $RepositoryPath, 'hash-object', $current) -Capture
+        return $before.Trim() -eq $after.Trim()
+    } catch {
+        return $false
+    }
+}
+
 function Test-ComponentNeedsRelease {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -265,6 +298,8 @@ function Test-ComponentNeedsRelease {
         [Parameter(Mandatory)][string]$RemoteName,
         [Parameter(Mandatory)][string[]]$SourcePaths,
         [string[]]$IgnoredPaths = @(),
+        [string]$RelocatedFrom,
+        [string]$RelocatedTo,
         [switch]$CheckVersions
     )
 
@@ -286,10 +321,18 @@ function Test-ComponentNeedsRelease {
     $untracked = Invoke-Checked git (@('-C', $RepositoryPath, 'ls-files', '--others', '--exclude-standard', '--') + $SourcePaths) -Capture
     $changedPaths = @(
         @(("$changed`n$untracked") -split "`r?`n") | Where-Object {
-            -not [string]::IsNullOrWhiteSpace($_) -and $_ -notin $IgnoredPaths -and
+            -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '^warning: ' -and
+            $_ -notin $IgnoredPaths -and
             $_ -notmatch '(^|/)(tests?/|test_[^/]*\.py$)'
         } | Select-Object -Unique
     )
+    if ($RelocatedFrom -and $RelocatedTo) {
+        $changedPaths = @($changedPaths | Where-Object {
+            -not (Test-ContentIdenticalRelocation `
+                -RepositoryPath $RepositoryPath -Tag $Published.Tag -Path $_ `
+                -OldRoot $RelocatedFrom -NewRoot $RelocatedTo)
+        })
+    }
     if ($changedPaths.Count -gt 0) {
         if ($CheckVersions) {
             $nextVersion = '{0}.{1}.{2}' -f $current.Major, $current.Minor, ($current.Build + 1)
@@ -413,7 +456,7 @@ function Get-BridgeVersion {
 function Get-PrintFarmVersion {
     param([Parameter(Mandatory)][string]$RepositoryPath)
 
-    $source = Join-Path $RepositoryPath 'plugins/printers/printers_plugin.py'
+    $source = Join-Path $RepositoryPath 'plugins/print-farm/printers_plugin.py'
     $content = Get-Content -LiteralPath $source -Raw
     if ($content -notmatch '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>\d+\.\d+\.\d+)"\s*$') {
         throw "Не удалось прочитать версию Print Farm из $source."
@@ -1051,8 +1094,13 @@ if ($selected -contains 'print-farm') {
     $needed = Test-ComponentNeedsRelease `
         -Name 'Print Farm' -CurrentVersion $version -Published $published `
         -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
-        -SourcePaths @('plugins/printers') `
-        -IgnoredPaths @('plugins/printers/test_release_workflow.py', 'plugins/printers/build_package.py') `
+        -SourcePaths @('plugins/printers', 'plugins/print-farm') `
+        -IgnoredPaths @(
+            'plugins/printers/test_release_workflow.py', 'plugins/print-farm/test_release_workflow.py',
+            'plugins/printers/build_package.py', 'plugins/print-farm/build_package.py',
+            'plugins/printers/PUBLISHING.md', 'plugins/print-farm/PUBLISHING.md'
+        ) `
+        -RelocatedFrom 'plugins/printers' -RelocatedTo 'plugins/print-farm' `
         -CheckVersions:$CheckVersions
     $repair = if (-not $CheckVersions -and -not $needed -and $published) {
         Test-TrustedPublishNeedsRepair `
@@ -1068,10 +1116,10 @@ if ($selected -contains 'print-farm') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
         RequiredCiWorkflow = $null
-        ReleasePaths = @('plugins/printers', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml')
+        ReleasePaths = @('plugins/print-farm', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml')
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
-        CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
-        CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/SHA256SUMS"
+        CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/print-farm/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
+        CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/print-farm/dist/release-$version/SHA256SUMS"
     }
 }
 
@@ -1135,7 +1183,7 @@ if ($selected -contains 'print-farm') {
     Assert-Branch -RepositoryPath $printFarmRepositoryRoot -ExpectedBranch $Branch
     Assert-CleanPaths `
         -RepositoryPath $printFarmRepositoryRoot `
-        -Paths @('plugins/printers', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml') `
+        -Paths @('plugins/print-farm', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml') `
         -Name 'Print Farm'
 }
 

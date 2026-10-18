@@ -428,7 +428,7 @@ def test_owner_script_requires_published_commit_and_exact_owner_tested_wheel() -
     assert "'tag', '-a', $Tag, $ReleaseCommit" in script
     assert "orca-plugin/dist/release-$version/wheels/filamenthub-$version" in script
     assert "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version" in script
-    assert "plugins/printers/dist/release-$version/wheels/printers-$version" in script
+    assert "plugins/print-farm/dist/release-$version/wheels/printers-$version" in script
     assert script.count("OwnerPublishesDraft = $true") == 3
     assert "отличается от локального wheel, проверенного владельцем" in script
 
@@ -511,7 +511,17 @@ def test_print_farm_publish_contract_test_does_not_force_a_plugin_version() -> N
         encoding="utf-8"
     )
 
-    assert "-IgnoredPaths @('plugins/printers/test_release_workflow.py', 'plugins/printers/build_package.py')" in script
+    assert "-SourcePaths @('plugins/printers', 'plugins/print-farm')" in script
+    assert "-RelocatedFrom 'plugins/printers' -RelocatedTo 'plugins/print-farm'" in script
+    assert "'plugins/print-farm/test_release_workflow.py'" in script
+    assert "'plugins/print-farm/build_package.py'" in script
+    assert "'plugins/print-farm/PUBLISHING.md'" in script
+    relocation = script.split("function Test-ContentIdenticalRelocation", 1)[1].split(
+        "function Test-ComponentNeedsRelease", 1
+    )[0]
+    assert "'rev-parse', \"${Tag}:$previous\"" in relocation
+    assert "'hash-object', $current" in relocation
+    assert "Test-Path -LiteralPath $current -PathType Leaf" in relocation
 
 
 def test_owner_script_uses_the_same_trusted_release_order_for_print_farm() -> None:
