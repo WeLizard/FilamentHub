@@ -4,6 +4,8 @@ from .filamenthub_plugin_test_support import (
     _isolate_profile_identity,
     json,
     pytest,
+    remove_host_attr,
+    set_host_attr,
     SimpleNamespace,
 )
 
@@ -775,27 +777,88 @@ def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
         "state": "on_disk",
     }]
 
-def test_managed_local_bundle_reload_is_feature_detected(plugin_module, monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "reload_local_bundle",
-        lambda bundle_id: calls.append(bundle_id),
-        raising=False,
+def _install_native_bundle_reload(plugin_module, monkeypatch, reload_local):
+    set_host_attr(
+        monkeypatch, plugin_module.orca.host, "preset.bundles.reload_local",
+        reload_local,
     )
 
-    assert plugin_module.reload_managed_local_bundle_if_available()
+def test_managed_local_bundle_reload_uses_the_native_preset_api(
+    plugin_module, monkeypatch
+):
+    calls = []
+    _install_native_bundle_reload(
+        plugin_module, monkeypatch, lambda bundle_id: calls.append(bundle_id)
+    )
+
+    assert plugin_module.reload_managed_local_bundle_if_available() is True
     assert calls == [plugin_module.BUNDLE_ID]
 
-    def unavailable(_bundle_id):
-        raise RuntimeError("host unavailable")
+def test_managed_local_bundle_reload_rejected_by_host_is_not_reported_as_loaded(
+    plugin_module, monkeypatch
+):
+    logged = []
 
+    def rejected(_bundle_id):
+        raise RuntimeError("bundle manifest is invalid")
+
+    _install_native_bundle_reload(plugin_module, monkeypatch, rejected)
+    monkeypatch.setattr(plugin_module, "fh_log", logged.append)
+
+    assert plugin_module.reload_managed_local_bundle_if_available() is False
+    assert any("RuntimeError" in message for message in logged)
+
+def test_managed_local_bundle_reload_absent_api_requires_restart(
+    plugin_module, monkeypatch
+):
+    host = plugin_module.orca.host
+    remove_host_attr(monkeypatch, host, "preset.bundles.reload_local")
+
+    assert plugin_module.reload_managed_local_bundle_if_available() is False
+
+def test_strict_host_rejects_the_pre_release_reload_name(plugin_module, monkeypatch):
+    # The pre-release name exists in no official build; the strict fake cannot
+    # even be told it exists, so code can never pass tests by calling it.
+    host = plugin_module.orca.host
+    with pytest.raises(AttributeError):
+        set_host_attr(monkeypatch, host, "reload_local_bundle", pytest.fail)
+    with pytest.raises(AttributeError):
+        host.reload_local_bundle
+
+@pytest.mark.parametrize("reloaded", [True, False])
+def test_printer_bundle_install_mentions_restart_only_when_reload_did_not_happen(
+    plugin_module, monkeypatch, reloaded
+):
+    catalog = plugin_module.FilamentHubCatalog()
+    delivered = []
     monkeypatch.setattr(
-        plugin_module.orca.host, "reload_local_bundle", unavailable, raising=False
+        plugin_module, "http_get", lambda *_a, **_k: (200, b"{}")
     )
-    monkeypatch.setattr(plugin_module, "fh_log", lambda _message: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "install_printer_bundle",
+        lambda _bundle, _printer_id: {"machine": 1, "process": 2},
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "reload_managed_local_bundle_if_available",
+        lambda: reloaded,
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_printer_bundle_result",
+        lambda _request_id, message, *_args, **_kwargs: delivered.append(message),
+    )
 
-    assert not plugin_module.reload_managed_local_bundle_if_available()
+    catalog._do_install_printer_bundle("r1", 7, "token")
+
+    key = "printerBundleLoaded" if reloaded else "printerBundleInstalled"
+    assert delivered == [
+        plugin_module.ui_text(key, machines=1, processes=2)
+    ]
+    assert plugin_module.ui_text(
+        "printerBundleLoaded", machines=1, processes=2
+    ) != plugin_module.ui_text("printerBundleInstalled", machines=1, processes=2)
 
 def test_sync_reload_without_host_observation_reports_only_files_on_disk(
     plugin_module, monkeypatch, tmp_path
@@ -864,11 +927,8 @@ def test_sync_reload_without_host_observation_reports_only_files_on_disk(
         }
 
     reloaded = []
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "reload_local_bundle",
-        lambda bundle_id: reloaded.append(bundle_id),
-        raising=False,
+    _install_native_bundle_reload(
+        plugin_module, monkeypatch, lambda bundle_id: reloaded.append(bundle_id)
     )
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(catalog, "_pull_one", pull)

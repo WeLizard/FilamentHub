@@ -1,10 +1,15 @@
 # Translating the FilamentHub OrcaSlicer plugin
 
-The plugin follows `orca.host.app_language()` and accepts every locale currently
-published by OrcaSlicer:
+The plugin follows `orca.host.app_info()["language"]` and accepts every locale
+currently published by OrcaSlicer:
 
 `ca`, `cs`, `de`, `en`, `es`, `eu`, `fr`, `hu`, `it`, `ja`, `ko`, `lt`, `nl`,
 `pl`, `pt_BR`, `ru`, `sv`, `th`, `tr`, `uk`, `vi`, `zh_CN`, `zh_TW`.
+
+OrcaSlicer's `app_info()` reports only the languages that have an upstream
+translation table: Catalan, Basque, Hungarian and Traditional Chinese reach the
+plugin as `en_US` or `zh_CN`, so those catalogs apply only when OrcaSlicer starts
+reporting them.
 
 Translations live in `filamenthub_locales/<locale>.json`. A catalog may be
 partial: missing keys fall back to English, so contributors can improve one

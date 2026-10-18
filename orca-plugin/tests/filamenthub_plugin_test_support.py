@@ -5,6 +5,8 @@ import base64
 
 import csv
 
+from enum import Enum
+
 import hashlib
 
 import hmac
@@ -43,6 +45,273 @@ BUILD_PATH = PLUGIN_ROOT / "build_package.py"
 
 LOCALE_VALIDATOR_PATH = PLUGIN_ROOT / "validate_locales.py"
 
+# --------------------------------------------------------------------------- #
+# Strict fake of the official `orca.host` surface
+# --------------------------------------------------------------------------- #
+# Every attribute path below exists in the official OrcaSlicer tag
+# v2.5.0-alpha, commit 3880f2c58ec392ed2bd5938ab31c9c7c496c0eb2. The source is
+# src/slic3r/plugin/host/<file> at that commit. A path that is not listed here
+# does not exist in any official build: reading it raises AttributeError and
+# assigning it raises AttributeError, so a test cannot invent a host API (this
+# is how `orca.host.app_language` and `orca.host.reload_local_bundle` passed
+# CI while not existing). Refresh the list from upstream and update the SHA
+# together; never add a path only to make a test pass.
+UPSTREAM_ORCA_SHA = "3880f2c58ec392ed2bd5938ab31c9c7c496c0eb2"
+
+# Submodules: present on the fake by default, never reassigned.
+HOST_SUBMODULES = {
+    "plugin": 'PluginHost.cpp register_plugin: host.def_submodule("plugin")',
+    "preset": 'PluginHostPresets.cpp register_presets: host.def_submodule("preset")',
+    "preset.bundles": 'PluginHostPresets.cpp register_presets: preset.def_submodule("bundles")',
+    "ui": 'PluginHostUi.cpp PluginHostUi::RegisterBindings: host.def_submodule("ui")',
+}
+
+# Leaves: callables, classes, enums and constants. Absent until a test sets one.
+HOST_LEAVES = {
+    # PluginHost.cpp
+    "plugin.storage": 'PluginHost.cpp register_plugin: plugin_host.def("storage")',
+    # PluginHostPresets.cpp
+    "preset.bundles.reload_local": 'PluginHostPresets.cpp: bundles.def("reload_local")',
+    "preset.bundles.list_ids": 'PluginHostPresets.cpp: bundles.def("list_ids")',
+    "PresetType": "PluginHostPresets.cpp: py::enum_<Preset::Type>",
+    "Preset": "PluginHostPresets.cpp: py::class_<Preset>",
+    "PresetCollection": "PluginHostPresets.cpp: py::class_<PresetCollection>",
+    "PresetBundle": "PluginHostPresets.cpp: py::class_<PresetBundle>",
+    # PluginHostApp.cpp
+    "Plater": "PluginHostApp.cpp register_app: py::class_<GUI::Plater>",
+    "plater": 'PluginHostApp.cpp register_app: host.def("plater")',
+    "model": 'PluginHostApp.cpp register_app: host.def("model")',
+    "preset_bundle": 'PluginHostApp.cpp register_app: host.def("preset_bundle")',
+    "app_info": 'PluginHostApp.cpp register_app: host.def("app_info"), UI thread only',
+    "gl_info": 'PluginHostApp.cpp register_app: host.def("gl_info")',
+    "selected_printer": 'PluginHostApp.cpp register_app: host.def("selected_printer")',
+    # PluginHostGeometry.cpp
+    "BoundingBox": "PluginHostGeometry.cpp: py::class_<BoundingBoxf3>",
+    "Point": "PluginHostGeometry.cpp: py::class_<Point>",
+    "Polygon": "PluginHostGeometry.cpp: py::class_<Polygon>",
+    "ExPolygon": "PluginHostGeometry.cpp: py::class_<ExPolygon>",
+    # PluginHostMesh.cpp
+    "TriangleMesh": "PluginHostMesh.cpp: py::class_<TriangleMesh>",
+    # PluginHostModel.cpp
+    "ModelVolumeType": "PluginHostModel.cpp: py::enum_<ModelVolumeType>",
+    "ModelVolume": "PluginHostModel.cpp: py::class_<ModelVolume>",
+    "ModelInstance": "PluginHostModel.cpp: py::class_<ModelInstance>",
+    "ModelObject": "PluginHostModel.cpp: py::class_<ModelObject>",
+    "Model": "PluginHostModel.cpp: py::class_<Model>",
+    # PluginHostSlicing.cpp
+    "SurfaceType": "PluginHostSlicing.cpp: py::enum_<SurfaceType>",
+    "Surface": "PluginHostSlicing.cpp: py::class_<Surface>",
+    "SurfaceCollection": "PluginHostSlicing.cpp: py::class_<SurfaceCollection>",
+    "ExtrusionEntity": "PluginHostSlicing.cpp: py::class_<ExtrusionEntity>",
+    "ExtrusionPath": "PluginHostSlicing.cpp: py::class_<ExtrusionPath>",
+    "ExtrusionLoop": "PluginHostSlicing.cpp: py::class_<ExtrusionLoop>",
+    "ExtrusionMultiPath": "PluginHostSlicing.cpp: py::class_<ExtrusionMultiPath>",
+    "ExtrusionEntityCollection": "PluginHostSlicing.cpp: py::class_<ExtrusionEntityCollection>",
+    "PrintRegion": "PluginHostSlicing.cpp: py::class_<PrintRegion>",
+    "LayerRegion": "PluginHostSlicing.cpp: py::class_<LayerRegion>",
+    "Layer": "PluginHostSlicing.cpp: py::class_<Layer>",
+    "PrintObject": "PluginHostSlicing.cpp: py::class_<PrintObject>",
+    "Print": "PluginHostSlicing.cpp: py::class_<Print>",
+    # PluginHostUi.cpp (ui submodule)
+    "ui.message": 'PluginHostUi.cpp: ui.def("message")',
+    "ui.create_window": 'PluginHostUi.cpp: ui.def("create_window"); on_message runs on the UI thread',
+    "ui.create_dock_panel": 'PluginHostUi.cpp: ui.def("create_dock_panel")',
+    "ui.create_progress_dialog": 'PluginHostUi.cpp: ui.def("create_progress_dialog")',
+    "ui.push_notification": 'PluginHostUi.cpp: ui.def("push_notification")',
+    "ui.UiWindow": 'PluginHostUi.cpp: py::class_<UiWindowHandle>(ui, "UiWindow")',
+    "ui.UiDockPanel": 'PluginHostUi.cpp: py::class_<UiDockPanelHandle>(ui, "UiDockPanel")',
+    "ui.ProgressDialog": 'PluginHostUi.cpp: py::class_<UiProgressHandle>(ui, "ProgressDialog")',
+    "ui.NotificationLevel": "PluginHostUi.cpp: py::enum_<NotificationLevel>(ui, ...)",
+    **{
+        f"ui.{name}": f'PluginHostUi.cpp: ui.attr("{name}")'
+        for name in (
+            "PD_APP_MODAL", "PD_AUTO_HIDE", "PD_CAN_ABORT", "PD_CAN_SKIP",
+            "PD_ELAPSED_TIME", "PD_ESTIMATED_TIME", "PD_REMAINING_TIME",
+            "WINDOW_MODELESS", "WINDOW_MODAL",
+        )
+    },
+}
+
+class StrictHostNode:
+    """An `orca.host` module node that only accepts attribute paths seen upstream."""
+
+    def __init__(self, path=""):
+        object.__setattr__(self, "_path", path)
+
+    def _full(self, name):
+        return f"{self._path}.{name}" if self._path else name
+
+    def __setattr__(self, name, value):
+        full = self._full(name)
+        if full in HOST_SUBMODULES:
+            raise AttributeError(
+                f"orca.host.{full} is a submodule; set one of its leaves instead"
+            )
+        if full not in HOST_LEAVES:
+            raise AttributeError(
+                f"orca.host.{full} does not exist in official OrcaSlicer "
+                f"{UPSTREAM_ORCA_SHA}"
+            )
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name):
+        if name not in self.__dict__:
+            raise AttributeError(f"orca.host.{self._full(name)} is not set")
+        object.__delattr__(self, name)
+
+    def __getattr__(self, name):
+        # Only reached when normal lookup failed: the attribute is not set.
+        raise AttributeError(f"orca.host.{self._full(name)} does not exist or is not set")
+
+def make_strict_host():
+    """Build `orca.host` with its submodules present and no callables set."""
+    host = StrictHostNode()
+    for path in sorted(HOST_SUBMODULES):
+        *parents, leaf = path.split(".")
+        node = host
+        for part in parents:
+            node = getattr(node, part)
+        object.__setattr__(node, leaf, StrictHostNode(path))
+    return host
+
+def _host_leaf(host, path):
+    *parents, leaf = path.split(".")
+    node = host
+    for part in parents:
+        node = getattr(node, part)
+    return node, leaf
+
+def set_host_attr(monkeypatch, host, path, value):
+    """Install `value` at a dotted leaf path of the strict host for one test."""
+    if path not in HOST_LEAVES:
+        raise AttributeError(
+            f"orca.host.{path} does not exist in official OrcaSlicer {UPSTREAM_ORCA_SHA}"
+        )
+    node, leaf = _host_leaf(host, path)
+    monkeypatch.setattr(node, leaf, value, raising=False)
+
+def remove_host_attr(monkeypatch, host, path):
+    """Make one dotted leaf path absent, as on a host that lacks that API."""
+    node, leaf = _host_leaf(host, path)
+    if leaf in node.__dict__:
+        monkeypatch.delattr(node, leaf)
+    else:
+        assert path in HOST_LEAVES, path
+
+def fake_app_info(language, *, strict_thread=True, **overrides):
+    """`orca.host.app_info` as upstream returns it, UI thread only (PluginHostApp.cpp)."""
+    def app_info():
+        if strict_thread and threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("app_info() must be called from the UI thread")
+        info = {
+            "version": "2.5.0-alpha", "build": "", "mode": "editor",
+            "language": language, "app_config_version": "", "stealth_mode": False,
+            "is_signed_in": False, "is_bambu_signed_in": False,
+            "network_plugin_version": "", "network_plugin_error": "",
+        }
+        info.update(overrides)
+        return info
+    return app_info
+
+# Top-level `orca` enums (not `orca.host` leaves). Members and their order are
+# those registered in PythonPluginBridge.cpp at the same upstream commit:
+# py::enum_<LifecycleEvent> lines 389-423 and py::enum_<LifecycleEvtCode> lines
+# 425-429, both with export_values().
+LIFECYCLE_EVENT_NAMES = (
+    "NewProject", "ProjectOpened", "ProjectBeforeSave", "ProjectAfterSave",
+    "ProjectClosed", "ProjectDirtyChanged", "SliceStarted",
+    "SliceGeometryFinished", "GCodeExportStarted", "GCodeExportFinished",
+    "SlicingJobComplete", "ObjectAdded", "ObjectDeleted", "ObjectTransformed",
+    "ObjectChanged", "ObjectRenamed", "PlateCreated", "PlateDeleted",
+    "PlateSelected", "PlateRenamed", "PresetSelected", "PresetSaved",
+    "PrintStateChanged", "DeviceOnline", "DeviceOffline", "DeviceDiscovered",
+    "DeviceSelected", "UploadStarted", "UploadFinished", "PrintJobStarted",
+    "PrintJobFinished", "SendJobStarted", "SendJobFinished",
+)
+LIFECYCLE_EVT_CODE_NAMES = ("Ok", "Error", "Warn")
+
+
+def install_lifecycle_enums(fake_orca):
+    """Expose `orca.LifecycleEvent` / `orca.LifecycleEvtCode` as the host does.
+
+    PluginManager::dispatch_lifecycle_event (PluginManager.cpp) hands
+    on_lifecycle_event a LifecycleEvent member and a LifecycleEventContext whose
+    fields are read-only (PythonPluginBridge.cpp:441-451).
+    """
+    fake_orca.LifecycleEvent = Enum("LifecycleEvent", LIFECYCLE_EVENT_NAMES)
+    fake_orca.LifecycleEvtCode = Enum("LifecycleEvtCode", LIFECYCLE_EVT_CODE_NAMES)
+
+
+def lifecycle_context(orca_module, name="", msg="new"):
+    """A LifecycleEventContext as PresetSaved delivers it (Preset.cpp save_current_preset)."""
+    return SimpleNamespace(
+        name=name, code=orca_module.LifecycleEvtCode.Ok, msg=msg, id="",
+        previous_name="", device_id="", job_id="", source="", index=-1,
+        dirty=False,
+    )
+
+
+class FakePresetCollection:
+    """`PresetCollection.size()` / `.preset(i)` as bound in PluginHostPresets.cpp."""
+
+    def __init__(self, *names):
+        self._presets = [SimpleNamespace(name=name) for name in names]
+
+    def size(self):
+        return len(self._presets)
+
+    def preset(self, index):
+        return self._presets[index]
+
+
+def fake_preset_bundle(filaments=(), prints=(), printers=()):
+    """`orca.host.preset_bundle()` result with the three collections the plugin reads."""
+    return SimpleNamespace(
+        filaments=FakePresetCollection(*filaments),
+        prints=FakePresetCollection(*prints),
+        printers=FakePresetCollection(*printers),
+    )
+
+
+# Thread creation under OrcaSlicer 2.5.0-alpha (PluginAuditManager.cpp,
+# report_denied): a refused `_thread.start_new_thread` audit event surfaces from
+# Thread.start() as PermissionError("Plugin attempted audited operation ...").
+AUDIT_THREAD_DENIAL = (
+    'Plugin attempted audited operation "_thread.start_new_thread" without '
+    "permission: audit permission required"
+)
+
+
+class ThreadAudit:
+    """Fake of the host's thread permission for plugin-owned threads.
+
+    Only threads the plugin names (its own prefix, Timer, ThreadPoolExecutor)
+    are audited, so pytest's own threads are untouched. `allowed` is the user's
+    answer: False raises PermissionError from start(), True lets it through.
+    """
+
+    PREFIXES = ("filamenthub", "ThreadPoolExecutor")
+
+    def __init__(self, monkeypatch, allowed=False):
+        self.allowed = allowed
+        self.started = []
+        self.denied = []
+        real_start = threading.Thread.start
+        audit = self
+
+        def start(thread):
+            if thread.name.startswith(audit.PREFIXES) and not audit.allowed:
+                audit.denied.append(thread.name)
+                raise PermissionError(AUDIT_THREAD_DENIAL)
+            audit.started.append((
+                thread.name,
+                threading.current_thread() is threading.main_thread(),
+            ))
+            return real_start(thread)
+
+        monkeypatch.setattr(threading.Thread, "start", start)
+
+
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
@@ -57,7 +326,7 @@ def plugin_module():
     fake_orca.plugin = lambda cls: cls
     fake_orca.register_capability = lambda _capability: None
     fake_orca.script = SimpleNamespace(ScriptPluginCapabilityBase=object)
-    fake_orca.host = SimpleNamespace(ui=SimpleNamespace())
+    fake_orca.host = make_strict_host()
     fake_orca.ExecutionResult = SimpleNamespace(success=lambda message: message)
     previous = sys.modules.get("orca")
     sys.modules["orca"] = fake_orca
@@ -178,7 +447,7 @@ def _module_with_slicing():
     registered: list = []
     fake_orca.register_capability = registered.append
     fake_orca.script = SimpleNamespace(ScriptPluginCapabilityBase=object)
-    fake_orca.host = SimpleNamespace(ui=SimpleNamespace())
+    fake_orca.host = make_strict_host()
     fake_orca.ExecutionResult = SimpleNamespace(
         success=lambda message: ("success", message),
         skipped=lambda message: ("skipped", message),
@@ -198,8 +467,16 @@ def _module_with_slicing():
             sys.modules["orca"] = previous
     return module, registered
 
-def _module_with_pages(native_lifecycle=False):
-    """The plugin as it loads on the PR #14992 Pages artifact."""
+def _module_with_pages(
+    native_lifecycle=False, lifecycle_events=False, slicing=False, pages=True
+):
+    """The plugin as it loads on the PR #14992 Pages artifact.
+
+    `lifecycle_events` adds the top-level orca.LifecycleEvent enums and
+    `slicing` the slicing pipeline base; `pages=False` leaves out the Pages base,
+    as on a host that has lifecycle events but no Pages capability. The preset-saved event is resolved when
+    the module loads, so a test cannot add either after the import.
+    """
     class PagesCapabilityBase:
         def __init__(self):
             self.posted_messages = []
@@ -217,9 +494,20 @@ def _module_with_pages(native_lifecycle=False):
     registered: list = []
     fake_orca.register_capability = registered.append
     fake_orca.script = SimpleNamespace(ScriptPluginCapabilityBase=object)
-    fake_orca.pages = SimpleNamespace(PagesPluginCapabilityBase=PagesCapabilityBase)
-    fake_orca.host = SimpleNamespace(ui=SimpleNamespace())
-    fake_orca.ExecutionResult = SimpleNamespace(success=lambda message: message)
+    if pages:
+        fake_orca.pages = SimpleNamespace(PagesPluginCapabilityBase=PagesCapabilityBase)
+    fake_orca.host = make_strict_host()
+    fake_orca.ExecutionResult = SimpleNamespace(
+        success=lambda message: message,
+        skipped=lambda message: ("skipped", message),
+    )
+    if lifecycle_events:
+        install_lifecycle_enums(fake_orca)
+    if slicing:
+        fake_orca.slicing = SimpleNamespace(
+            SlicingPipelineCapabilityBase=object,
+            Step=SimpleNamespace(psGCodePostProcess="psGCodePostProcess"),
+        )
     previous = sys.modules.get("orca")
     sys.modules["orca"] = fake_orca
     try:

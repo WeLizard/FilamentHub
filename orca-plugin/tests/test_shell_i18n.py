@@ -1,13 +1,31 @@
 """Embedded shell, localization and filename contracts."""
 
+import threading
+
 from .filamenthub_plugin_test_support import (
+    fake_app_info,
     json,
     _load_module,
     LOCALE_VALIDATOR_PATH,
     PLUGIN_ROOT,
     pytest,
+    remove_host_attr,
+    set_host_attr,
     SimpleNamespace,
 )
+
+
+@pytest.fixture
+def host_language(plugin_module, monkeypatch):
+    """Install the strict-host app_info() and start from an empty language cache."""
+    monkeypatch.setattr(plugin_module, "_CACHED_UI_LANGUAGE", "")
+
+    def install(language):
+        set_host_attr(
+            monkeypatch, plugin_module.orca.host, "app_info", fake_app_info(language)
+        )
+
+    return install
 
 
 
@@ -40,25 +58,62 @@ def test_local_dialog_contains_only_host_owned_forms(plugin_module):
     assert "127.0.0.1" not in rendered
 
 
+# Values of GUI_App::current_language_code_safe() at OrcaSlicer 3880f2c58ec3
+# (src/slic3r/GUI/GUI_App.cpp): full locales, one fixed region per language,
+# and "en_US" for everything it has no mapping for (including ca, eu, hu).
+UPSTREAM_LANGUAGE_CODES = [
+    ("cs_CZ", "cs"), ("de_DE", "de"), ("nl_NL", "nl"), ("sv_SE", "sv"),
+    ("es_ES", "es"), ("fr_FR", "fr"), ("it_IT", "it"), ("ja_JP", "ja"),
+    ("ko_KR", "ko"), ("pl_PL", "pl"), ("uk_UA", "uk"), ("zh_CN", "zh_CN"),
+    ("ru_RU", "ru"), ("tr_TR", "tr"), ("pt_BR", "pt_BR"), ("lt_LT", "lt"),
+    ("vi_VN", "vi"), ("th_TH", "th"), ("en_US", "en"),
+]
+
+
+@pytest.mark.parametrize(("code", "locale"), UPSTREAM_LANGUAGE_CODES)
+def test_every_code_orca_reports_maps_to_a_bundled_catalog(
+    plugin_module, code, locale
+):
+    assert plugin_module.normalize_ui_language(code) == locale
+    assert locale in plugin_module.ORCA_UI_LOCALES
+    assert locale in plugin_module.UI_COPY
+
+
 @pytest.mark.parametrize(
-    ("host_language", "expected", "site_language"),
+    ("code", "locale"),
+    [
+        ("zh_TW", "zh_TW"),
+        ("zh-TW", "zh_TW"),
+        ("zh_Hant", "zh_TW"),
+        ("ca_ES", "ca"),
+        ("eu_ES", "eu"),
+        ("hu_HU", "hu"),
+        ("xx_XX", "en"),
+        ("unsupported", "en"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_other_language_spellings_keep_their_catalog_or_fall_back(
+    plugin_module, code, locale
+):
+    assert plugin_module.normalize_ui_language(code) == locale
+
+
+@pytest.mark.parametrize(
+    ("code", "expected", "site_language"),
     [
         ("ru_RU", "ru", "ru"),
         ("zh_CN", "zh_CN", "zh"),
-        ("zh-TW", "zh_TW", "zh"),
+        ("pt_BR", "pt_BR", "en"),
         ("en_US", "en", "en"),
         ("de_DE", "de", "en"),
     ],
 )
 def test_direct_page_uses_orca_ui_language(
-    plugin_module, monkeypatch, host_language, expected, site_language
+    plugin_module, host_language, code, expected, site_language
 ):
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "app_language",
-        lambda: host_language,
-        raising=False,
-    )
+    host_language(code)
 
     rendered = plugin_module.render_direct_page("b" * 32)
 
@@ -70,26 +125,87 @@ def test_direct_page_uses_orca_ui_language(
     ) in rendered
 
 
-def test_direct_page_language_falls_back_on_older_hosts(plugin_module, monkeypatch):
-    monkeypatch.delattr(plugin_module.orca.host, "app_language", raising=False)
+def test_direct_page_language_falls_back_on_older_hosts(
+    plugin_module, monkeypatch, host_language
+):
+    remove_host_attr(monkeypatch, plugin_module.orca.host, "app_info")
     rendered = plugin_module.render_direct_page("b" * 32)
-    assert "?lng=" not in rendered
+    assert "&lng=" not in rendered
 
     def unavailable():
         raise RuntimeError("OrcaSlicer application is not initialized")
 
-    monkeypatch.setattr(plugin_module.orca.host, "app_language", unavailable, raising=False)
+    set_host_attr(monkeypatch, plugin_module.orca.host, "app_info", unavailable)
     rendered = plugin_module.render_direct_page("b" * 32)
-    assert "?lng=" not in rendered
+    assert "&lng=" not in rendered
 
-def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypatch):
-    messages = []
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "app_language",
-        lambda: "ru_RU",
-        raising=False,
+
+def test_orca_never_exposes_the_language_as_a_host_function(plugin_module):
+    # Only app_info()["language"] exists upstream; the strict host refuses the rest.
+    with pytest.raises(AttributeError):
+        plugin_module.orca.host.app_language
+    assert plugin_module.host_ui_language() == ""
+
+
+def test_language_comes_from_app_info_and_ignores_malformed_answers(
+    plugin_module, monkeypatch
+):
+    host = plugin_module.orca.host
+    set_host_attr(monkeypatch, host, "app_info", fake_app_info("ru_RU"))
+    assert plugin_module.host_ui_language() == "ru"
+    set_host_attr(monkeypatch, host, "app_info", fake_app_info(""))
+    assert plugin_module.host_ui_language() == ""
+    set_host_attr(monkeypatch, host, "app_info", lambda: None)
+    assert plugin_module.host_ui_language() == ""
+    set_host_attr(monkeypatch, host, "app_info", lambda: {"language": None})
+    assert plugin_module.host_ui_language() == ""
+
+
+def test_worker_thread_reads_never_overwrite_the_cached_language(
+    plugin_module, host_language
+):
+    host_language("ru_RU")
+    assert plugin_module.refresh_ui_language() == "ru"
+
+    seen = []
+    # app_info() raises RuntimeError off the UI thread, exactly like upstream.
+    worker = threading.Thread(
+        target=lambda: seen.append(
+            (plugin_module.host_ui_language(), plugin_module.refresh_ui_language())
+        )
     )
+    worker.start()
+    worker.join(5)
+
+    assert seen == [("", "ru")]
+    assert plugin_module.ui_text("connectTitle") == (
+        plugin_module.resolved_ui_catalog("ru")["connectTitle"]
+    )
+
+
+def test_unreadable_language_keeps_the_last_good_value_on_the_ui_thread(
+    plugin_module, monkeypatch, host_language
+):
+    host_language("zh_CN")
+    assert plugin_module.refresh_ui_language() == "zh_CN"
+    set_host_attr(
+        monkeypatch, plugin_module.orca.host, "app_info", fake_app_info("")
+    )
+    assert plugin_module.refresh_ui_language() == "zh_CN"
+
+
+def test_embed_url_without_an_explicit_language_follows_the_cached_host_language(
+    plugin_module, host_language
+):
+    host_language("ru_RU")
+    assert plugin_module.localized_embed_url().endswith("&lng=ru")
+
+
+def test_native_plugin_messages_follow_orca_ui_language(
+    plugin_module, monkeypatch, host_language
+):
+    messages = []
+    host_language("ru_RU")
     plugin_module.refresh_ui_language()
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(
@@ -322,16 +438,11 @@ def test_unresolved_parent_makes_original_profile_snapshot_incomplete(
     assert complete is False
 
 def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
-    plugin_module, tmp_path, monkeypatch
+    plugin_module, tmp_path, monkeypatch, host_language
 ):
     for locale in plugin_module.ORCA_UI_LOCALES:
         assert plugin_module.normalize_ui_language(locale) == locale
-        monkeypatch.setattr(
-            plugin_module.orca.host,
-            "app_language",
-            lambda current=locale: current,
-            raising=False,
-        )
+        host_language(locale)
         rendered = plugin_module.render_direct_page("b" * 32)
         site_language = (
             "ru" if locale == "ru"

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.4"
+# version = "0.2.5"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -49,10 +49,17 @@ endpoint. No local listener or browser callback to localhost is involved.
 
 Runtime surface used (confirmed against the current upstream plugin API):
   * orca.pages.PagesPluginCapabilityBase                    — native page
-  * orca.script.ScriptPluginCapabilityBase.execute()        — old-host fallback
+  * orca.script.ScriptPluginCapabilityBase.execute()        — old-host fallback,
+                                                              and the Speed Dial
+                                                              "FilamentHub Sync" action
+  * on_lifecycle_event + orca.LifecycleEvent.PresetSaved   — sync after a preset save
   * capability on_load/on_cancelled/on_unload hooks         — runtime lifecycle
   * orca.host.ui.create_window(...)                         — fallback UI/local dialogs
-  * orca.host.plugin.storage(), app_language()              — private state/locale
+  * orca.host.plugin.storage()                              — private state
+  * orca.host.app_info()["language"|"version"|"build"]      — Orca UI locale and version
+                                                              (UI thread only)
+  * orca.host.ui.push_notification / NotificationLevel      — native sync notices
+  * orca.host.preset.bundles.list_ids / reload_local        — live local-bundle reload
   * the injected window.orca bridge (PluginWebDialog.cpp:ORCA_BRIDGE_JS)
 
 Login/token: the user signs in inside the embedded page on our own site.
@@ -125,6 +132,8 @@ class ReusableDaemonWorker:
         self._generation = 0
         self._stopping = False
         self._local = threading.local()
+        self.denial_count = 0
+        self._prime_refused = False
 
     def activate(self):
         """Accept work for a new plugin lifecycle generation."""
@@ -132,6 +141,7 @@ class ReusableDaemonWorker:
             if self._stopping:
                 self._generation += 1
                 self._stopping = False
+                self._prime_refused = False
 
     def current_job_is_active(self):
         """Whether the calling worker job still belongs to the loaded plugin."""
@@ -224,15 +234,45 @@ class ReusableDaemonWorker:
             if self._stopping:
                 return False
             generation = self._generation
+            # The thread starts before the job is queued: when the host refuses
+            # the thread, nothing is left behind to run at some later moment.
+            if not self._ensure_thread_locked():
+                self.denial_count += 1
+                return False
             self._jobs.put((generation, function, args, kwargs))
-            if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(
-                    target=self._run,
-                    name=self._name,
-                    daemon=True,
-                )
-                self._thread.start()
         return True
+
+    def _ensure_thread_locked(self):
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        thread = threading.Thread(target=self._run, name=self._name, daemon=True)
+        if not start_audited_thread(thread, "background worker"):
+            self._thread = None
+            return False
+        self._thread = thread
+        return True
+
+    def prime(self, explicit=False):
+        """Create the worker thread now from the UI thread.
+
+        Orca asks the user before a plugin creates its first thread. Asked on
+        the UI thread the question is a modal in context; asked anywhere else
+        it is denied and shown later. After a refusal only an explicit call
+        (the person opening the tab) tries again.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            return False
+        with self._lock:
+            if self._stopping:
+                return False
+            if self._thread is not None and self._thread.is_alive():
+                return True
+            if self._prime_refused and not explicit:
+                return False
+            if self._ensure_thread_locked():
+                return True
+            self._prime_refused = True
+            return False
 
     def stop(self, wait_timeout=0.25):
         """Reject new work and discard jobs that have not started yet."""
@@ -306,6 +346,64 @@ class ReusableDaemonWorker:
                     except AttributeError:
                         pass
                 self._jobs.task_done()
+
+
+# Hosts with audited thread creation (OrcaSlicer 2.5.0-alpha, PluginAuditManager)
+# ask the user before the plugin's first thread and refuse it with
+# PermissionError until the answer is "Yes". The lifecycle-event API ships in
+# the same release, so its presence marks such a host.
+_THREAD_PERMISSION_ASKED = hasattr(orca, "LifecycleEvent")
+_THREAD_GRANT_SEEN = False
+# True from a refused thread until a later one starts. Automatic work skips
+# quietly meanwhile, so a "No" is never answered by another modal; only an
+# explicit user action tries again.
+_THREADS_REFUSED = False
+_THREAD_DENIAL_LOGGED = set()
+# Background features that waited for the thread permission to exist.
+_DEFERRED_BACKGROUND = set()
+
+
+def note_thread_denied(label, exc):
+    global _THREADS_REFUSED
+    _THREADS_REFUSED = True
+    if label in _THREAD_DENIAL_LOGGED:
+        return
+    _THREAD_DENIAL_LOGGED.add(label)
+    logger = globals().get("fh_log")
+    if logger is not None:
+        logger(
+            "host did not allow the %s thread: %s: %s"
+            % (label, type(exc).__name__, str(exc)[:160])
+        )
+
+
+def start_audited_thread(thread, label):
+    """Start a plugin thread; False when the host refuses it."""
+    global _THREAD_GRANT_SEEN, _THREADS_REFUSED
+    try:
+        thread.start()
+    except Exception as exc:
+        note_thread_denied(label, exc)
+        return False
+    _THREAD_GRANT_SEEN = True
+    _THREADS_REFUSED = False
+    _THREAD_DENIAL_LOGGED.discard(label)
+    return True
+
+
+def background_threads_permitted():
+    """Whether work that needs its own thread may start without a prompt.
+
+    On an auditing host this becomes true only after a thread was started, so
+    plugin load or a slicing worker never triggers the permission question.
+    """
+    if _THREADS_REFUSED:
+        return False
+    return not _THREAD_PERMISSION_ASKED or _THREAD_GRANT_SEEN
+
+
+def worker_denial_count():
+    return getattr(globals().get("BACKGROUND_WORKER"), "denial_count", 0)
 
 
 BACKGROUND_WORKER = ReusableDaemonWorker("filamenthub-worker")
@@ -416,10 +514,114 @@ def post_window(window, payload):
         return False
 
 
+# Resolved once: on_lifecycle_event runs for every host event, many of them
+# (object edits, transforms) very often, so the handler's first statement is a
+# single comparison against this member. None on hosts without the enum.
+_PRESET_SAVED_EVENT = getattr(
+    getattr(orca, "LifecycleEvent", None), "PresetSaved", None
+)
+
+# Triggers whose result is reported through the host's native notification
+# area instead of (or in addition to) the page.
+NATIVE_NOTIFY_TRIGGERS = frozenset({"preset-saved", "speed-dial"})
+
+# Collections a preset save may sync by itself. Machine profiles are excluded:
+# their sync also talks to printers over the LAN.
+PRESET_SAVED_SYNC_SCOPES = frozenset({"filament", "process"})
+_PRESET_SAVED_LOCK = threading.Lock()
+_PRESET_SAVED_SEQUENCE = {}
+
+
+def _next_preset_saved_sequence(scope):
+    with _PRESET_SAVED_LOCK:
+        sequence = _PRESET_SAVED_SEQUENCE.get(scope, 0) + 1
+        _PRESET_SAVED_SEQUENCE[scope] = sequence
+        return sequence
+
+
+def _preset_saved_sequence_is_latest(scope, sequence):
+    with _PRESET_SAVED_LOCK:
+        return _PRESET_SAVED_SEQUENCE.get(scope) == sequence
+
+
+def native_sync_notice(trigger, status, new_warning, restart_required):
+    """The (level name, text) a finished sync shows in the host, or None.
+
+    A preset save speaks only about a failure, a warning not shown before or a
+    needed restart; the Speed Dial action, which has no page to answer on,
+    always reports.
+    """
+    if trigger == "speed-dial":
+        pass
+    elif trigger == "preset-saved":
+        if not (status == "error" or new_warning or restart_required):
+            return None
+    else:
+        return None
+    text = ui_text(
+        {
+            "success": "syncCompleteTitle",
+            "warning": "syncAttentionTitle",
+            "error": "syncPartialTitle",
+        }[status]
+    )
+    if restart_required:
+        text += "\n" + ui_text("dropdownRestart")
+    if status == "error":
+        level = "ErrorNotificationLevel"
+    elif status == "warning" or restart_required:
+        level = "WarningNotificationLevel"
+    else:
+        level = "RegularNotificationLevel"
+    return level, text
+
+
+_BACKGROUND_DENIED_PUSHED = False
+
+
+def push_background_denied_notice_once():
+    """Warn once per session that a preset save could not start its sync."""
+    global _BACKGROUND_DENIED_PUSHED
+    if _BACKGROUND_DENIED_PUSHED:
+        return False
+    _BACKGROUND_DENIED_PUSHED = True
+    return push_native_notification(
+        "WarningNotificationLevel", ui_text("backgroundDenied")
+    )
+
+
+def push_native_notification(level_name, text):
+    """Show a plater notification from a worker job. Never call this from the
+    slicing pipeline: the host marshals the call onto the UI thread and waits.
+    """
+    ui = getattr(getattr(orca, "host", None), "ui", None)
+    push = getattr(ui, "push_notification", None)
+    level = getattr(getattr(ui, "NotificationLevel", None), level_name, None)
+    if not callable(push) or level is None or not text:
+        return False
+
+    def send():
+        push(level, text)
+        return True
+
+    try:
+        worker = globals().get("BACKGROUND_WORKER")
+        run_if_current = getattr(worker, "run_if_current", None)
+        if callable(run_if_current):
+            return run_if_current(send)
+        ensure_worker_generation_active()
+        return send()
+    except PluginLifecycleStopped:
+        return False
+    except Exception as exc:
+        fh_log("native notification failed: %s" % type(exc).__name__)
+        return False
+
+
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.4"
+PLUGIN_VERSION = "0.2.5"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -513,16 +715,25 @@ def account_origin():
     return PROD_SITE_URL if SITE_URL in PROD_SITE_URLS.values() else SITE_URL
 
 
-def host_ui_language():
-    """Return Orca's canonical UI locale, or defer to the WebView."""
-    app_language = getattr(getattr(orca, "host", None), "app_language", None)
-    if not callable(app_language):
-        return ""
+def read_host_app_info():
+    """Return orca.host.app_info() as a dict, or {} when it cannot be read here.
+
+    app_info() raises RuntimeError off the UI thread, so a worker-thread call
+    yields {}.
+    """
+    app_info = getattr(getattr(orca, "host", None), "app_info", None)
+    if not callable(app_info):
+        return {}
     try:
-        language = app_language()
-    except (AttributeError, RuntimeError):
-        return ""
-    return normalize_ui_language(language)
+        info = app_info()
+    except Exception:
+        return {}
+    return info if isinstance(info, dict) else {}
+
+
+def host_ui_language():
+    """Return Orca's canonical UI locale, or "" when it cannot be read here."""
+    return normalize_ui_language(read_host_app_info().get("language"))
 
 
 ORCA_UI_LOCALES = (
@@ -613,15 +824,32 @@ def resolved_ui_catalog(language):
 UI_COPY = load_ui_catalogs()
 
 _CACHED_UI_LANGUAGE = ""
+_CACHED_HOST_VERSION = ""
+_CACHED_HOST_BUILD = ""
 
 
 def refresh_ui_language():
-    """Read the host on its UI thread and cache the result for worker messages."""
-    global _CACHED_UI_LANGUAGE
-    language = host_ui_language()
+    """Re-read the host language where that is possible and return the best known one.
+
+    Call it from UI-thread entry points (page, settings, window messages). Only a
+    non-empty read replaces the cache, so a call from a worker thread, where the
+    host refuses to answer, keeps the last good value for worker messages. The
+    same app_info() read refreshes the OrcaSlicer version shown in problem reports.
+    """
+    global _CACHED_UI_LANGUAGE, _CACHED_HOST_VERSION, _CACHED_HOST_BUILD
+    info = read_host_app_info()
+    language = normalize_ui_language(info.get("language"))
     if language:
         _CACHED_UI_LANGUAGE = language
-    return language
+    for key in ("version", "build"):
+        value = info.get(key)
+        value = value.strip()[:64] if isinstance(value, str) else ""
+        if value:
+            if key == "version":
+                _CACHED_HOST_VERSION = value
+            else:
+                _CACHED_HOST_BUILD = value
+    return _CACHED_UI_LANGUAGE
 
 
 def ui_text(key, **values):
@@ -631,7 +859,7 @@ def ui_text(key, **values):
 
 
 def localized_embed_url(language=None):
-    language = host_ui_language() if language is None else language
+    language = refresh_ui_language() if language is None else language
     parameters = {"fh_appearance": plugin_setting("appearance")}
     if not language:
         return EMBED_URL + "?" + urllib.parse.urlencode(parameters)
@@ -936,16 +1164,38 @@ def ensure_bundle_metadata():
 
 def reload_managed_local_bundle_if_available():
     """Make the completed FilamentHub bundle live when the host supports it."""
-    reload_bundle = getattr(
-        getattr(orca, "host", None), "reload_local_bundle", None
+    bundles = getattr(
+        getattr(getattr(orca, "host", None), "preset", None), "bundles", None
     )
+    reload_bundle = getattr(bundles, "reload_local", None)
     if not callable(reload_bundle):
         return False
+    list_ids = getattr(bundles, "list_ids", None)
+
     def reload_bundle_now():
+        if callable(list_ids):
+            try:
+                listed = list_ids()
+            except Exception as exc:
+                # The listing is a diagnostic; reload_local reports its own failure.
+                fh_log(
+                    "local bundle listing failed: %s: %s"
+                    % (type(exc).__name__, str(exc)[:200])
+                )
+                listed = None
+            if listed is not None and BUNDLE_ID not in listed:
+                fh_log(
+                    "managed local bundle is not offered by the host for reload "
+                    "(host lists %d bundle(s))" % len(listed)
+                )
+                return False
         try:
             reload_bundle(BUNDLE_ID)
         except Exception as exc:
-            fh_log("managed local-bundle reload failed: %s" % type(exc).__name__)
+            fh_log(
+                "managed local-bundle reload failed: %s: %s"
+                % (type(exc).__name__, str(exc)[:200])
+            )
             return False
         fh_log("managed local bundle reloaded")
         return True
@@ -1175,8 +1425,10 @@ _DIAGNOSTIC_UNSAFE_CHARACTERS = re.compile(
 
 def diagnostic_report_text():
     """The newest part of the log, prepared for a user-sent problem report."""
-    header = "FilamentHub plugin %s\nPython %s\nOS %s\nLanguage %s\n\n" % (
+    header = "FilamentHub plugin %s\nOrcaSlicer %s (%s)\nPython %s\nOS %s\nLanguage %s\n\n" % (
         PLUGIN_VERSION,
+        _CACHED_HOST_VERSION or "unknown",
+        _CACHED_HOST_BUILD or "unknown",
         platform.python_version(),
         platform.platform(terse=True),
         _CACHED_UI_LANGUAGE or "en",
@@ -3613,6 +3865,9 @@ class BambuRevokeScheduler:
         retry_at = _next_pending_bambu_revoke_at()
         if retry_at is None:
             return
+        if not background_threads_permitted():
+            _DEFERRED_BACKGROUND.add("bambu revoke retry")
+            return
         generation = self._generation
         timer = threading.Timer(
             min(
@@ -3624,8 +3879,9 @@ class BambuRevokeScheduler:
         )
         timer.name = "filamenthub-bambu-revoke"
         timer.daemon = True
+        if not start_audited_thread(timer, "Bambu revoke retry"):
+            return
         self._timer = timer
-        timer.start()
 
     def start(self):
         with self._lock:
@@ -6362,9 +6618,17 @@ def _observations_for_sync(observations, share_endpoints=False, discovery_key=""
                 )
             return _observe_moonraker_identity(connection)
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            values = pool.map(observe_identity, connections.values())
-            identities = dict(zip(connections, values))
+        try:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                values = pool.map(observe_identity, connections.values())
+                identities = dict(zip(connections, values))
+        except (PermissionError, RuntimeError) as exc:
+            # The host may refuse the pool's threads; the reads then run one by one.
+            note_thread_denied("identity reads", exc)
+            identities = {
+                host: observe_identity(connection)
+                for host, connection in connections.items()
+            }
     for observation in observations or []:
         item = dict(observation)
         host = str(item.get("print_host") or "")
@@ -9599,7 +9863,9 @@ class BambuBridgeRuntime:
 
             stream["thread"] = threading.Thread(target=run, name="filamenthub-bambu-lan", daemon=True)
             self._streams[key] = stream
-            stream["thread"].start()
+            if not start_audited_thread(stream["thread"], "Bambu LAN stream"):
+                self._streams.pop(key, None)
+                raise TimeoutError("Bambu LAN stream is unavailable")
         deadline = time.monotonic() + BAMBU_MQTT_TIMEOUT
         while not stream["ready"].wait(0.1):
             if self._stop.is_set() or stream["stop"].is_set():
@@ -9749,13 +10015,13 @@ class BambuBridgeRuntime:
         self._stop.clear()
         self._generation += 1
         generation = self._generation
-        self._thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run,
             args=(generation,),
             name="filamenthub-bambu-bridge",
             daemon=True,
         )
-        self._thread.start()
+        self._thread = thread if start_audited_thread(thread, "Bambu bridge") else None
 
     def authorize_external_operation(self, generation):
         """Linearize one observer I/O start against stop()."""
@@ -9775,6 +10041,9 @@ class BambuBridgeRuntime:
                     self._restart_requested = True
                 return
             self._restart_requested = False
+            if not background_threads_permitted():
+                _DEFERRED_BACKGROUND.add("Bambu bridge")
+                return
             self._start_locked()
 
     def stop(self, wait_timeout=0.25):
@@ -10016,6 +10285,39 @@ _PLUGIN_RUNTIME_ACTIVE = False
 _PLUGIN_RUNTIME_EPOCH = 0
 
 
+def prime_background_runtime(explicit=False):
+    """Create the worker thread from a UI-thread entry point, then resume what waited.
+
+    The first thread is the one Orca asks the user about. Doing it here, when
+    the person opens FilamentHub, puts the question in context; nothing starts
+    a thread just to ask it at plugin load.
+    """
+    if not _THREAD_PERMISSION_ASKED:
+        return False
+    worker = globals().get("BACKGROUND_WORKER")
+    prime = getattr(worker, "prime", None)
+    started = bool(callable(prime) and prime(explicit=explicit))
+    resume_deferred_background_threads()
+    return started
+
+
+def resume_deferred_background_threads():
+    """Start what waited for the thread permission, once threads work."""
+    if not _THREAD_PERMISSION_ASKED:
+        return
+    if _DEFERRED_BACKGROUND and background_threads_permitted():
+        _DEFERRED_BACKGROUND.clear()
+        with _PLUGIN_RUNTIME_LOCK:
+            active = _PLUGIN_RUNTIME_ACTIVE
+        if active:
+            try:
+                BAMBU_REVOKE_SCHEDULER.start()
+                if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
+                    BAMBU_BRIDGE_RUNTIME.start()
+            except Exception as exc:
+                fh_log("deferred background start failed: %s" % type(exc).__name__)
+
+
 def start_plugin_runtime(storage_initialized=False):
     """Start process-wide resources once after a host lifecycle load."""
     global _PLUGIN_RUNTIME_ACTIVE, _PLUGIN_RUNTIME_EPOCH
@@ -10029,6 +10331,8 @@ def start_plugin_runtime(storage_initialized=False):
             configure_plugin_storage()
         BACKGROUND_WORKER.activate()
         BAMBU_REVOKE_SCHEDULER.start()
+        # Best effort: on_load normally runs on a loader thread, where the host
+        # refuses the read and the cache is left as it was.
         refresh_ui_language()
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
@@ -10452,7 +10756,7 @@ def _push_pending_slice_reports():
     finds no page leaves the queue untouched: the page also pulls it on load,
     sign-in and when it regains focus.
     """
-    if _slice_delivery_target() is None:
+    if _slice_delivery_target() is None or not background_threads_permitted():
         return False
     return BACKGROUND_WORKER.submit(_deliver_pending_slice_reports)
 
@@ -10476,6 +10780,8 @@ def report_slice(gcode_path, output_name="", host=""):
 
 # The name the host matches against a process preset's slicing_pipeline_plugin.
 SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
+# Speed Dial identifies an action by its title, so this name never changes.
+SYNC_ACTION_NAME = "FilamentHub Sync"
 SLICE_SETTINGS_DEFAULTS = {"report_slices": False}
 SLICE_SETTINGS_COPY_KEYS = (
     "sliceSettingsTitle", "sliceSettingsPurpose", "sliceSettingsStamp",
@@ -10620,6 +10926,7 @@ class FilamentHubCatalog(
         # Idempotent: repeated Run keeps the existing host-managed window.
         if self.win is not None and self.win.is_open():
             return False
+        prime_background_runtime(explicit=True)
         self._session_sync_started = False
         self._local_window = None
         self._local_dialog_session = ""
@@ -10765,6 +11072,40 @@ class FilamentHubCatalog(
                 profiles[kind] = {"items": items, "complete": complete}
         return profiles
 
+    def _prepare_sync(self, token, scope, announce, operation_id, trigger):
+        """Read the host and disk state a sync needs. UI thread only.
+
+        Returns the positional arguments of _do_sync.
+        """
+        include_filaments = sync_scope_includes(scope, "filament")
+        include_printers = sync_scope_includes(scope, "machine")
+        known = self._known_filament_preset_names() if include_filaments else set()
+        if include_filaments:
+            refresh_user_preset_folder()
+        observations = observe_printer_presets() if include_printers else []
+        moonraker_connections = (
+            observe_local_moonraker_connections(observations)
+            if include_printers else []
+        )
+        source_instance_id = plugin_source_instance_id()
+        active_filaments = scan_active_user_filaments() if include_filaments else []
+        loaded_preset_ids = loaded_managed_preset_ids() if include_filaments else None
+        host_profiles = self._host_profiles(scope)
+        return (
+            token,
+            known,
+            announce,
+            active_filaments,
+            host_profiles,
+            observations,
+            source_instance_id,
+            moonraker_connections,
+            loaded_preset_ids,
+            scope,
+            operation_id,
+            trigger,
+        )
+
     def _start_sync(self, scope="all", announce=True, operation_id="", trigger="manual"):
         if scope not in SYNC_SCOPES:
             return False
@@ -10782,35 +11123,101 @@ class FilamentHubCatalog(
                 )
             return False
         operation_id = operation_id or ("sync-" + secrets.token_hex(8))
-        include_filaments = sync_scope_includes(scope, "filament")
-        include_printers = sync_scope_includes(scope, "machine")
-        known = self._known_filament_preset_names() if include_filaments else set()
-        if include_filaments:
-            refresh_user_preset_folder()
-        observations = observe_printer_presets() if include_printers else []
-        moonraker_connections = observe_local_moonraker_connections(observations)
-        source_instance_id = plugin_source_instance_id()
-        active_filaments = scan_active_user_filaments() if include_filaments else []
-        loaded_preset_ids = loaded_managed_preset_ids() if include_filaments else None
-        host_profiles = self._host_profiles(scope)
-        BACKGROUND_WORKER.submit(
-            self._do_sync,
-            token,
-            known,
-            announce,
-            active_filaments,
-            host_profiles,
-            observations,
-            source_instance_id,
-            moonraker_connections,
-            loaded_preset_ids,
-            scope,
-            operation_id,
-            trigger,
-        )
+        denied_before = worker_denial_count()
+        args = self._prepare_sync(token, scope, announce, operation_id, trigger)
+        if (
+            not BACKGROUND_WORKER.submit(self._do_sync, *args)
+            and worker_denial_count() > denied_before
+        ):
+            self._report_background_denied(operation_id, scope)
+            return False
         return True
 
+    def _start_background_sync(self, scope, trigger):
+        """Start a sync that answers through native notifications, not the page.
+
+        Unlike _start_sync it carries no operation id, so _do_sync treats it as
+        an automatic run and never posts to the page. UI thread only.
+        """
+        token = (load_saved_auth() or {}).get("accessToken") or ""
+        if not token or scope not in SYNC_SCOPES:
+            return False
+        return BACKGROUND_WORKER.submit(
+            self._do_sync, *self._prepare_sync(token, scope, False, "", trigger)
+        )
+
+    def _saved_preset_scope(self, name):
+        """Sync scope of the collection holding a just-saved preset, else None.
+
+        The PresetSaved context carries no preset type, so the name is looked
+        up in every user-visible collection; a name found in none or in more
+        than one is not guessed.
+        """
+        if not name:
+            return None
+        try:
+            bundle = orca.host.preset_bundle()
+            found = set()
+            for scope, attribute in (
+                ("filament", "filaments"),
+                ("process", "prints"),
+                ("machine", "printers"),
+            ):
+                collection = getattr(bundle, attribute)
+                for index in range(collection.size()):
+                    if collection.preset(index).name == name:
+                        found.add(scope)
+                        break
+        except Exception:
+            return None
+        return next(iter(found)) if len(found) == 1 else None
+
+    def _on_preset_saved(self, ctx):
+        """Sync a preset OrcaSlicer just saved. Runs on the UI thread."""
+        try:
+            refresh_ui_language()
+            if not plugin_setting("auto_sync"):
+                return
+            if not (load_saved_auth() or {}).get("accessToken"):
+                return
+            if _THREADS_REFUSED:
+                push_background_denied_notice_once()
+                return
+            scope = self._saved_preset_scope(str(getattr(ctx, "name", "") or ""))
+            # A machine sync also reads Moonraker/Happy Hare over the LAN
+            # (sync_happy_hare_topologies), which no preset save may start.
+            if scope not in PRESET_SAVED_SYNC_SCOPES:
+                return
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            sequence = _next_preset_saved_sequence(scope)
+            args = self._prepare_sync(token, scope, False, "", "preset-saved")
+            denied_before = worker_denial_count()
+            if (
+                not BACKGROUND_WORKER.submit(
+                    self._do_preset_saved_sync, scope, sequence, *args
+                )
+                and worker_denial_count() > denied_before
+            ):
+                push_background_denied_notice_once()
+        except Exception as exc:
+            fh_log("preset-saved sync not started: %s" % type(exc).__name__)
+
+    def _do_preset_saved_sync(self, scope, sequence, *sync_args):
+        # The worker is serial and must not sleep to debounce: a job queued
+        # behind a running sync drops itself once a newer save of the same
+        # kind queued its own snapshot.
+        if not _preset_saved_sequence_is_latest(scope, sequence):
+            return
+        self._do_sync(*sync_args)
+
+    def on_lifecycle_event(self, event, ctx):
+        if event != _PRESET_SAVED_EVENT:
+            return
+        self._on_preset_saved(ctx)
+
     def _auto_sync(self, announce=False, scope="all", trigger="auto"):
+        if _THREADS_REFUSED:
+            return False
         return self._start_sync(
             scope=scope,
             announce=announce,
@@ -11715,9 +12122,8 @@ class FilamentHubCatalog(
         # worker also runs sync, so the read gets its own thread; it still
         # carries the worker's lifecycle generation and stops when the plugin
         # is unloaded.
-        try:
-            threading.Thread(target=run, name="filamenthub-slice-parse", daemon=True).start()
-        except RuntimeError:
+        reader = threading.Thread(target=run, name="filamenthub-slice-parse", daemon=True)
+        if not start_audited_thread(reader, "slice parser"):
             _SLICE_PARSE_LOCK.release()
             self._deliver_slice_result({"sourceKey": key, "error": "read"})
 
@@ -12372,6 +12778,31 @@ class FilamentHubCatalog(
             } else "setup_failed")
 
     def on_message(self, msg):
+        prime_background_runtime()
+        denied_before = worker_denial_count()
+        try:
+            self._handle_message(msg)
+        finally:
+            if worker_denial_count() > denied_before:
+                self._report_background_denied()
+            else:
+                resume_deferred_background_threads()
+
+    def _report_background_denied(self, operation_id="", scope="all"):
+        """Tell the open page that the host refused the plugin's background thread."""
+        count = worker_denial_count()
+        if getattr(self, "_denial_reported", 0) == count:
+            return
+        self._denial_reported = count
+        text = ui_text("backgroundDenied")
+        if operation_id:
+            self._deliver_sync_result(
+                text, operation_id=operation_id, scope=scope, status="warning"
+            )
+        else:
+            self._deliver_notice(text, "warning")
+
+    def _handle_message(self, msg):
         original_type = type(msg).__name__
         if isinstance(msg, str):
             try:
@@ -13117,7 +13548,8 @@ class FilamentHubCatalog(
             request_id,
             message=(
                 ui_text(
-                    "printerBundleInstalled",
+                    "printerBundleLoaded" if reload_requested
+                    else "printerBundleInstalled",
                     machines=counts["machine"],
                     processes=counts["process"],
                 )
@@ -13195,13 +13627,13 @@ class FilamentHubCatalog(
                 request_id, ui_text("printerBundleInvalid"), "error"
             )
             return
-        # The host API only confirms that a reload was requested. It does not
-        # prove the new presets became selectable in the current session.
-        reload_managed_local_bundle_if_available()
+        # A completed host reload is the only case where the restart notice is
+        # dropped; a missing API or a rejected reload still needs a restart.
+        reloaded = reload_managed_local_bundle_if_available()
         self._deliver_printer_bundle_result(
             request_id,
             ui_text(
-                "printerBundleInstalled",
+                "printerBundleLoaded" if reloaded else "printerBundleInstalled",
                 machines=counts["machine"],
                 processes=counts["process"],
             ),
@@ -13500,6 +13932,10 @@ class FilamentHubCatalog(
                 self._deliver_sync_result(
                     ui_text(message_key), operation_id=operation_id,
                     scope=scope, status="warning",
+                )
+            if trigger == "speed-dial":
+                push_native_notification(
+                    "WarningNotificationLevel", ui_text(message_key)
                 )
             return
 
@@ -14027,6 +14463,12 @@ class FilamentHubCatalog(
             "sync done: scope=%s trigger=%s status=%s"
             % (scope, trigger, overall_status)
         )
+        if trigger in NATIVE_NOTIFY_TRIGGERS:
+            notice = native_sync_notice(
+                trigger, overall_status, new_warning, restart_required
+            )
+            if notice is not None:
+                push_native_notification(*notice)
         if announce or operation_id:
             # An explicit Sync always reports. An automatic run speaks only about
             # a change, a failure or a warning it has not shown before.
@@ -14098,6 +14540,7 @@ if _PAGE_CAPABILITY_BASE is not None:
 
         def get_ui(self):
             apply_plugin_settings(read_capability_settings(self))
+            prime_background_runtime(explicit=True)
             self._catalog._direct_bridge_session = secrets.token_urlsafe(32)
             return render_direct_page(self._catalog._direct_bridge_session)
 
@@ -14110,13 +14553,46 @@ if _PAGE_CAPABILITY_BASE is not None:
             apply_plugin_settings(read_capability_settings(self))
             self._catalog.on_message(message)
 
+        def on_lifecycle_event(self, event, ctx):
+            if event != _PRESET_SAVED_EVENT:
+                return
+            try:
+                apply_plugin_settings(read_capability_settings(self))
+                self._catalog._on_preset_saved(ctx)
+            except Exception as exc:
+                fh_log("preset-saved handler failed: %s" % type(exc).__name__)
+
         def on_unload(self):
             self._catalog.on_close()
             if _slice_delivery_target() is self._catalog:
                 _set_slice_delivery_target(None)
             stop_plugin_runtime()
+
+    class FilamentHubSyncAction(orca.script.ScriptPluginCapabilityBase):
+        """Speed Dial entry point. The host lists every script capability there,
+        titled by get_name(), so the name is fixed and not localized."""
+
+        def get_name(self):
+            return SYNC_ACTION_NAME
+
+        def execute(self):
+            refresh_ui_language()
+            catalog = _slice_delivery_target()
+            if catalog is None:
+                return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
+            if not (load_saved_auth() or {}).get("accessToken"):
+                return orca.ExecutionResult.skipped(ui_text("syncSignIn"))
+            prime_background_runtime(explicit=True)
+            denied_before = worker_denial_count()
+            if not catalog._start_background_sync("all", "speed-dial"):
+                if worker_denial_count() > denied_before:
+                    return orca.ExecutionResult.skipped(ui_text("backgroundDenied"))
+                return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
+            resume_deferred_background_threads()
+            return orca.ExecutionResult.success(ui_text("syncStarted"))
 else:
     FilamentHubPage = None
+    FilamentHubSyncAction = None
 
 
 def host_capability_lifecycle_available():
@@ -14145,6 +14621,7 @@ class FilamentHubPlugin(orca.base):
             start_plugin_runtime()
         if FilamentHubPage is not None:
             orca.register_capability(FilamentHubPage)
+            orca.register_capability(FilamentHubSyncAction)
         else:
             orca.register_capability(FilamentHubCatalog)
         if FilamentHubSliceReporter is not None:

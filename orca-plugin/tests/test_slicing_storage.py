@@ -7,6 +7,8 @@ import pytest
 
 from .filamenthub_plugin_test_support import (
     json,
+    remove_host_attr,
+    set_host_attr,
     _module_with_pages,
     _module_with_slicing,
     SimpleNamespace,
@@ -1377,11 +1379,9 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     monkeypatch.setattr(plugin_module, "SYNC_STATE_FILE", str(legacy / ".fh_sync.json"))
     monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(legacy / ".fh_slices.json"))
     monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(legacy / "slices"))
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "plugin",
-        SimpleNamespace(storage=lambda: str(storage)),
-        raising=False,
+    set_host_attr(
+        monkeypatch, plugin_module.orca.host, "plugin.storage",
+        lambda: str(storage),
     )
 
     plugin_module.stop_plugin_runtime()
@@ -1442,12 +1442,7 @@ def test_host_without_storage_uses_data_root_outside_replaceable_plugin_dir(
     monkeypatch.setattr(plugin_module, "SYNC_STATE_FILE", str(legacy / ".fh_sync.json"))
     monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(legacy / ".fh_slices.json"))
     monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(legacy / "slices"))
-    monkeypatch.setattr(
-        plugin_module.orca.host,
-        "plugin",
-        SimpleNamespace(),
-        raising=False,
-    )
+    remove_host_attr(monkeypatch, plugin_module.orca.host, "plugin.storage")
 
     assert plugin_module.configure_plugin_storage() is True
 

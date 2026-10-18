@@ -2,6 +2,19 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.2.5
+- On OrcaSlicer builds with the plugin preset API (2.5.0-alpha and later), imported and synchronized presets now appear in the preset selectors right away, with no restart. Your selection and unsaved edits are kept.
+- Printer and print profiles installed or recovered from FilamentHub appear right away too, on the same builds.
+- On older builds, or if OrcaSlicer rejects the reload, FilamentHub still tells you that a restart is needed.
+- FilamentHub now follows OrcaSlicer's interface language in its tab, settings and messages. Before, it could not read that language, so the page followed the system default and plugin messages were in English.
+- OrcaSlicer reports Catalan, Basque and Hungarian as English and Traditional Chinese as Simplified Chinese, so FilamentHub shows those languages the same way.
+- Saving a filament or process preset in OrcaSlicer now syncs it to FilamentHub automatically when **Sync automatically** is on. Several saves in a row are combined, and OrcaSlicer is never held up by the upload. Machine profiles are not synced by a save.
+- Sync problems and "restart needed" notices now appear as OrcaSlicer notifications, so you see them with the FilamentHub tab closed.
+- New **FilamentHub Sync** action in Speed Dial: starts a full sync and reports the result as a notification.
+- Problem reports now include the OrcaSlicer version.
+- OrcaSlicer asks once for permission to create a background thread. FilamentHub asks when you open its tab, and if you answer "No" it says so instead of silently skipping the sync. Background features such as the Bambu observer wait until the permission exists.
+- Before reloading presets, FilamentHub checks that OrcaSlicer lists the FilamentHub bundle; if not, it keeps the restart message and records why.
+
 ## 0.2.4
 - Open My Spools when the FilamentHub tab starts; the catalog remains available from its own tab.
 - Choose FilamentHub or OrcaSlicer appearance for the embedded page. OrcaSlicer appearance follows the host's light and dark colors.

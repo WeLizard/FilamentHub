@@ -317,7 +317,7 @@ def test_setup_local_form_is_not_impersonated_by_catalog_messages(plugin_module)
     assert "type:'configure-bambu-local'" in plugin_module.LOCAL_DIALOG_PAGE
     assert "type:'printer-setup-local'" in plugin_module.LOCAL_DIALOG_PAGE
     assert 'msg.get("localDialogSession")' in inspect.getsource(
-        plugin_module.FilamentHubCatalog.on_message
+        plugin_module.FilamentHubCatalog._handle_message
     )
 
 def test_setup_corrupt_local_record_fails_closed(setup_flow):

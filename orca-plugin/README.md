@@ -72,7 +72,7 @@ same direct page in their managed-window fallback.
 React /embed/catalog  ── window.orca.postMessage(... + per-tab binding) ──▶
 Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer token)──▶
    write <data_dir>/user/<active>/_local/filamenthub/filament/<name>__fh_<id>.json
-      ──▶  native "restart required" dialog
+      ──▶  orca.host.preset.bundles.reload_local (older hosts: "restart required" notice)
 
 explicit local setup ──▶ host-owned local dialog ──▶ Python LAN adapter
 external OAuth ──▶ server handoff + system browser ──▶ embedded page HTTPS poll
@@ -228,12 +228,21 @@ OrcaSlicer build exposes the same capabilities:
 - `orca.slicing.SlicingPipelineCapabilityBase` reports and annotates completed
   G-code at `psGCodePostProcess` when the host exposes it and reporting is
   explicitly enabled in that capability's settings;
+- `on_lifecycle_event` with `orca.LifecycleEvent.PresetSaved` syncs a saved
+  filament or process preset when automatic sync is on; `orca.host.ui.push_notification`
+  reports automatic and Speed Dial sync results; a second script capability,
+  "FilamentHub Sync", is the Speed Dial action, registered with the Pages tab;
 - current capability lifecycle hooks start plugin resources from `on_load` and
   stop queued work and the local Bambu observer from
   `on_cancelled`/`on_unload`; older hosts keep the registration-time fallback;
 - `orca.host.ui`, `orca.host.preset_bundle()`, optional
-  `orca.host.app_language()` and optional `orca.host.plugin.storage()` provide
-  UI, read-only preset observations, locale and private plugin state.
+  `orca.host.app_info()["language"]` (UI thread only) and optional
+  `orca.host.plugin.storage()` provide UI, read-only preset observations,
+  locale and private plugin state.
+
+### Background-thread permission
+
+FilamentHub asks OrcaSlicer once for permission to create a background thread: network and file work run in the background so OrcaSlicer does not freeze. Answer "Yes" once; the choice is remembered. A "No" is not remembered by OrcaSlicer; FilamentHub then reports that the action did not start and OrcaSlicer asks again on the next one.
 
 ### Sliced-file reporting
 
@@ -265,10 +274,14 @@ and per-part totals computed locally). Reporting failures never fail
 G-code export or printer upload, and the reporter never probes the system
 temporary directory.
 
-Preset installation is not a host capability in the reviewed API snapshot.
-Managed filament/machine/process files are therefore written atomically below
-the plugin-owned user preset folder and become selectable after OrcaSlicer
-reload/restart. The plugin never edits an unmanaged profile.
+Managed filament/machine/process files are written atomically below the
+plugin-owned user preset folder. On hosts that expose
+`orca.host.preset.bundles.reload_local` (OrcaSlicer 2.5.0-alpha and later; detected
+by capability, not by version) the plugin asks the host to reload the
+FilamentHub local bundle, so the presets become selectable at once with
+selection and unsaved edits kept. Without that API, or when the host rejects the
+reload, the files wait for an OrcaSlicer restart and the user is told so. The
+plugin never edits an unmanaged profile.
 
 Bridge commands require the random binding for the current Pages tab. Python
 rejects remote credential submissions; those require the separate local-dialog
@@ -346,10 +359,12 @@ Then, with the exact OrcaSlicer build or pull-request artifact being tested:
    socket. **Sign in** using the normal login, browse/search, and click
    **Import into OrcaSlicer** on a preset.
 5. The preset is saved to the managed FilamentHub profile and synchronized. On the
-   current host API, restart OrcaSlicer before selecting a newly created preset.
+   host API without `preset.bundles.reload_local`, restart OrcaSlicer before
+   selecting a newly created preset; with it the preset is available at once.
 6. In **Profile → Printers**, explicitly add one printer's configuration set to
    OrcaSlicer. Confirm that only FilamentHub-managed machine/process copies are
-   created, then restart OrcaSlicer before selecting them.
+   created. They are selectable at once with `preset.bundles.reload_local`;
+   otherwise restart OrcaSlicer before selecting them.
 
 To side-load into any other build: create
 `<data_dir>/orca_plugins/filamenthub/filamenthub_plugin.py` (one entry file per
@@ -374,13 +389,13 @@ HTTPS catalog and external sign-in do not require a Python socket.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
-| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Filament, machine, and process imports need an **app restart**. Not a publish blocker; rough UX. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
+| 1 | **Hot reload needs the plugin preset API (OrcaSlicer 2.5.0-alpha+).** Older hosts have no `orca.host.preset.bundles.reload_local`. | On older builds, filament, machine, and process imports need an **app restart**. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. On hosts with the API the plugin reloads the local bundle itself. |
 | 2 | **The Pages bridge is injected into the host-provided plugin page and has no public caller allow-list.** | An unbound message reaching Python would have command authority. | Bind every command to a random per-tab value generated by Python; reject missing/stale bindings and require a different binding for the host-owned credential dialog. |
 | 3 | **The Plugin API cannot declare socket permissions**, and the audit prompt for `socket.__new__` has no target that can be persisted. | A real local-printer connection can ask again after OrcaSlicer restarts; denying the prompt blocks that local operation. | Start LAN work only from an explicit user path, handle denial without losing data, and ask upstream to audit address-bearing operations or expose a network permission declaration. |
 | 4 | **The Python `Preset` binding omits read-only `filament_id` and `setting_id`.** | A loaded managed material cannot be mapped to Bambu's exact material command from the public object alone. | Walk only the host-selected backing-file inheritance chain and block when it cannot be resolved. Ask upstream to expose both fields as read-only properties. |
 
 These limitations are disclosed in the alpha listing. Gap #1
-(restart-to-see-import on stock upstream) remains the main user-visible one.
+(restart-to-see-import on builds without the preset API) remains the main user-visible one.
 
 ---
 
