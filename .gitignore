@@ -210,6 +210,5 @@ inbound-mail/
 backend/distributions/plugins/
 .last-deploy-state
 
-# Plugin Hub gallery renders: render_gallery.py rebuilds them from source/,
-# and the chosen ones already live in final/.
-orca-plugin/plugin-hub-media/output/
+# Plugin Hub gallery and promo video: sources, renders and footage stay on disk.
+orca-plugin/plugin-hub-media/
