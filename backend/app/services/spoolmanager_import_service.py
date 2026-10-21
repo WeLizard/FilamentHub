@@ -25,6 +25,7 @@ from app.core.errors import (
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEventType
+from app.models.spool_compat_resource import SpoolCompatResource
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -34,6 +35,7 @@ from app.schemas.spool import (
     SpoolManagerPreviewResponse,
     SpoolManagerPreviewRow,
 )
+from app.services.spool_compat_resource_service import resolve_import
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
 from app.services.spool_usage_service import record_spool_usage
 
@@ -216,11 +218,15 @@ async def _create_import_draft(
 async def link_imported_spools_to_preset(
     db: AsyncSession,
     preset: Preset,
+    *,
+    target_filament_id: int | None = None,
+    settings_override: dict | None = None,
 ) -> list[int]:
     """Link the physical spool(s) that produced a now-resolved import draft."""
-    if preset.user_id is None or preset.filament_id is None:
+    target_id = target_filament_id if target_filament_id is not None else preset.filament_id
+    if preset.user_id is None or target_id is None:
         return []
-    settings = preset.orcaslicer_settings
+    settings = settings_override if settings_override is not None else preset.orcaslicer_settings
     if not isinstance(settings, dict):
         return []
     import_ref = settings.get("import_external_ref")
@@ -228,31 +234,65 @@ async def link_imported_spools_to_preset(
     if not isinstance(import_ref, str) or not isinstance(import_provider, str):
         return []
 
-    spools = (
-        await db.scalars(
-            select(UserSpool).where(
+    # Inspect candidates without flushing the caller's still-unvalidated preset.
+    with db.no_autoflush:
+        candidates = (await db.scalars(select(UserSpool).where(
+            UserSpool.user_id == preset.user_id,
+            UserSpool.source == import_provider,
+        ).order_by(UserSpool.id))).all()
+        spools = [spool for spool in candidates if isinstance(spool.extra, dict)
+                  and spool.extra.get("import_external_ref") == import_ref]
+        if not spools:
+            return []
+        # Catalog merge takes this lock before transport refs. Do not wait while
+        # holding an edited preset row in the reverse order.
+        locked_target = await db.scalar(select(Filament.id).where(Filament.id == target_id)
+                                        .with_for_update(nowait=True))
+        if locked_target is None:
+            raise ValueError("target filament not found")
+        ref_ids = sorted({spool.compat_filament_ref_id for spool in spools
+                          if spool.compat_filament_ref_id is not None})
+        refs = (await db.scalars(select(SpoolCompatResource).where(
+            SpoolCompatResource.id.in_(ref_ids),
+        ).order_by(SpoolCompatResource.id).with_for_update(nowait=True)
+            .execution_options(populate_existing=True))).all() if ref_ids else []
+        by_id = {ref.id: ref for ref in refs}
+        if len(by_id) != len(ref_ids):
+            raise RuntimeError("imported spool material reference disappeared")
+        pending_ids = [ref.id for ref in refs if ref.source_kind == "import"
+                       and ref.user_id == preset.user_id and ref.filament_id is None]
+        if pending_ids:
+            await db.execute(select(UserSpool.id).where(
                 UserSpool.user_id == preset.user_id,
-                UserSpool.source == import_provider,
-            ).order_by(UserSpool.id)
-        )
-    ).all()
+                UserSpool.compat_filament_ref_id.in_(pending_ids),
+            ).order_by(UserSpool.id).with_for_update(nowait=True))
+        await db.execute(select(UserSpool.id).where(
+            UserSpool.id.in_([spool.id for spool in spools]),
+        ).order_by(UserSpool.id).with_for_update(nowait=True))
+
     linked_ids: list[int] = []
-    for spool in spools:
-        if not isinstance(spool.extra, dict):
-            continue
-        if spool.extra.get("import_external_ref") != import_ref:
-            continue
-        spool = await set_spool_filament_with_qr_guard(
-            db,
-            spool=spool,
-            filament_id=preset.filament_id,
-        )
-        spool.extra = {
-            **spool.extra,
-            "import_draft_id": str(preset.id),
-            "import_resolved_filament_id": str(preset.filament_id),
-        }
-        linked_ids.append(spool.id)
+    async with db.begin_nested():
+        for ref in refs:
+            if ref.id in pending_ids:
+                await resolve_import(db, user_id=preset.user_id, import_ref_id=ref.id,
+                                     target_catalog_id=target_id, expected_revision=ref.revision,
+                                     nowait=True)
+        for spool in spools:
+            ref = by_id.get(spool.compat_filament_ref_id)
+            # A previously resolved import linked to a different material is
+            # an individual replacement, not a remap of its entire ref group.
+            compat_id = (ref.id if ref is not None and ref.filament_id == target_id
+                         else None)
+            spool = await set_spool_filament_with_qr_guard(
+                db, spool=spool, filament_id=target_id,
+                compat_filament_ref_id=compat_id,
+            )
+            spool.extra = {
+                **spool.extra,
+                "import_draft_id": str(preset.id),
+                "import_resolved_filament_id": str(target_id),
+            }
+            linked_ids.append(spool.id)
     return linked_ids
 
 

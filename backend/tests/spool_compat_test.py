@@ -72,6 +72,23 @@ async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool, UserPr
     await db.refresh(user)
     await db.refresh(spool)
     await db.refresh(device)
+    # This fixture represents inventory present before the wire-ID migration.
+    # New catalog/import resources use the allocator instead of their catalog PK.
+    from app.models.spool_compat_resource import SpoolCompatResource, SpoolCompatWireCounter
+
+    for kind, item, target in (
+        ("vendor", brand, "brand_id"), ("filament", filament, "filament_id")
+    ):
+        ref = SpoolCompatResource(
+            kind=kind, wire_id=item.id, source_kind="catalog", **{target: item.id}
+        )
+        db.add(ref)
+        db.add(SpoolCompatWireCounter(kind=kind, next_wire_id=item.id + 1))
+        await db.flush()
+        if kind == "filament":
+            spool.compat_filament_ref_id = ref.id
+            spool.compat_filament_ref = ref
+    await db.commit()
     return user, spool, device
 
 
@@ -1596,6 +1613,7 @@ async def test_moonraker_checkpoint_is_not_reused_across_a_weighing(
     from app.services.spool_usage_service import revert_spool_usage
 
     user, spool, device = await _seed_spool_context(db_session)
+    spool.empty_spool_weight_g = 0
     await db_session.commit()
     await _set_material_system_provider(db_session, user, device, "moonraker")
     base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
@@ -1636,6 +1654,7 @@ async def test_compat_patch_stating_a_remainder_on_an_empty_spool_puts_it_on_the
     user, spool, device = await _seed_spool_context(db_session)
     spool.state = UserSpoolState.empty
     spool.used_weight_g = spool.initial_weight_g
+    spool.empty_spool_weight_g = 0
     await db_session.commit()
     base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
 
@@ -1662,6 +1681,7 @@ async def test_compat_measure_on_an_empty_spool_puts_it_on_the_shelf(
     _user, spool, device = await _seed_spool_context(db_session)
     spool.state = UserSpoolState.empty
     spool.used_weight_g = spool.initial_weight_g
+    spool.empty_spool_weight_g = 0
     await db_session.commit()
     base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
 

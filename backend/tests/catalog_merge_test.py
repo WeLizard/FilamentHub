@@ -20,6 +20,7 @@ from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.spool_compat_resource import SpoolCompatResource
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
@@ -32,6 +33,12 @@ from app.services.catalog_merge_service import (
 from app.services.legal_acceptance_service import (
     CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     CURRENT_TERMS_VERSION,
+)
+from app.services.spool_compat_resource_service import (
+    create_import_ref,
+    ensure_catalog_ref,
+    get_resource_extra,
+    patch_resource_extra,
 )
 
 
@@ -100,6 +107,19 @@ async def test_admin_merges_typo_brand_and_keeps_old_addresses(
     db_session.add_all(
         [preset, UserSpool(user_id=auth_user.id, filament_id=duplicate.id, initial_weight_g=1000)]
     )
+    source_vendor_ref = await ensure_catalog_ref(db_session, kind="vendor", catalog_id=source.id)
+    source_filament_ref = await ensure_catalog_ref(db_session, kind="filament", catalog_id=duplicate.id)
+    await ensure_catalog_ref(db_session, kind="vendor", catalog_id=target.id)
+    await ensure_catalog_ref(db_session, kind="filament", catalog_id=kept.id)
+    imported_ref = await create_import_ref(
+        db_session, user_id=auth_user.id, kind="filament",
+        payload={"name": "Imported PETG", "extra": {"flow": "1.03"}},
+    )
+    imported_ref.filament_id = duplicate.id
+    await patch_resource_extra(
+        db_session, user_id=auth_user.id, resource_id=source_filament_ref.id,
+        extra={"orca_note": "source private setting"},
+    )
     await db_session.commit()
     source_id, target_id, kept_id, duplicate_id, unique_id = (
         source.id, target.id, kept.id, duplicate.id, unique.id
@@ -107,6 +127,9 @@ async def test_admin_merges_typo_brand_and_keeps_old_addresses(
     preset_id, target_line_id, source_line_id, user_id = (
         preset.id, target_line.id, source_line.id, auth_user.id
     )
+    source_vendor_ref_id = source_vendor_ref.id
+    source_filament_ref_id = source_filament_ref.id
+    imported_ref_id = imported_ref.id
 
     preview = await admin_client.get(
         f"/api/v1/admin/brands/{source.id}/merge-preview", params={"target_id": target.id}
@@ -131,6 +154,16 @@ async def test_admin_merges_typo_brand_and_keeps_old_addresses(
 
     assert await db_session.get(Brand, source_id) is None
     assert await db_session.get(Filament, duplicate_id) is None
+    vendor_alias = await db_session.get(SpoolCompatResource, source_vendor_ref_id)
+    filament_alias = await db_session.get(SpoolCompatResource, source_filament_ref_id)
+    imported_after = await db_session.get(SpoolCompatResource, imported_ref_id)
+    assert (vendor_alias.source_kind, vendor_alias.brand_id) == ("alias", target_id)
+    assert (filament_alias.source_kind, filament_alias.filament_id) == ("alias", kept_id)
+    assert (imported_after.source_kind, imported_after.filament_id) == ("import", kept_id)
+    assert imported_after.original_payload["extra"]["flow"] == "1.03"
+    assert (await get_resource_extra(
+        db_session, user_id=user_id, resource_id=source_filament_ref_id
+    ))["orca_note"] == "source private setting"
     assert (await db_session.get(Preset, preset_id)).filament_id == kept_id
     spool = await db_session.scalar(select(UserSpool).where(UserSpool.user_id == user_id))
     assert spool.filament_id == kept_id

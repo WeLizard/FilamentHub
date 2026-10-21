@@ -48,7 +48,10 @@ from app.services.spoolmanager_import_service import (
     preview_spoolmanager_import,
 )
 
+from .spool_import_resolution import router as import_resolution_router
+
 router = APIRouter(prefix="/spools", tags=["spools"])
+router.include_router(import_resolution_router)
 MAX_SPOOLMANAGER_CSV_BYTES = 2 * 1024 * 1024
 
 

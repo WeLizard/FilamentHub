@@ -40,6 +40,10 @@ from app.services.qr_identity_service import (
     restore_user_spool_qr,
     retire_user_spool_qr,
 )
+from app.services.spool_compat_resource_service import (
+    ensure_catalog_ref,
+    get_spool_material_context,
+)
 from app.services.spoolmanager_import_service import link_imported_spools_to_preset
 from tests.conftest import accepted_legal
 
@@ -360,6 +364,10 @@ async def test_material_change_requires_atomic_qr_replacement_and_preserves_old_
     )
     assert ordinary_change.status_code == 200
     assert ordinary_change.json()["filament_id"] == first_replacement.id
+    await db_session.refresh(spool)
+    old_reference = await get_spool_material_context(db_session, user_id=auth_user.id, spool=spool)
+    old_wire_id = old_reference.wire_id
+    await db_session.commit()
 
     issued = (await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")).json()
     blocked = await auth_client.patch(
@@ -398,6 +406,12 @@ async def test_material_change_requires_atomic_qr_replacement_and_preserves_old_
     assert replay.json() == replaced.json()
     assert replaced.json()["filament_id"] == second_replacement.id
     assert replaced.json()["short_code"] != issued["short_code"]
+    await db_session.refresh(spool)
+    assert spool.compat_filament_ref_id is None
+    new_reference = await get_spool_material_context(db_session, user_id=auth_user.id, spool=spool)
+    assert new_reference.filament_id == second_replacement.id
+    assert new_reference.wire_id != old_wire_id
+    await db_session.commit()
 
     conflicting_replay = await auth_client.post(
         f"/api/v1/spools/{spool.id}/qr/replace-material",
@@ -509,9 +523,13 @@ async def test_import_resolution_and_spool_compat_use_the_material_qr_guard(
     )
     db_session.add(device)
     await db_session.commit()
+    wire_ref = await ensure_catalog_ref(
+        db_session, kind="filament", catalog_id=second_replacement_id
+    )
+    await db_session.commit()
     compatible_patch = await client.patch(
         f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool_id}",
-        json={"filament_id": second_replacement_id},
+        json={"filament_id": wire_ref.wire_id},
     )
     assert compatible_patch.status_code == 409
     assert (

@@ -874,7 +874,11 @@ async def replace_user_spool_qr_material(
 
     filament = await _filament_with_qr(db, filament_id)
     token = _new_user_token()
-    spool.filament_id = filament.id
+    from app.services.spool_material_service import apply_spool_material_identity
+
+    apply_spool_material_identity(
+        spool, filament_id=filament.id, compat_filament_ref_id=None
+    )
     binding.filament_id = filament.id
     binding.filament = filament
     binding.token_digest = _user_token_digest(token)

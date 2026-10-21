@@ -108,6 +108,12 @@ from app.models.qr_identity import (
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
+from app.models.spool_compat_resource import (
+    SpoolCompatFieldDefinition,
+    SpoolCompatResource,
+    SpoolCompatResourceExtra,
+    SpoolCompatWireCounter,
+)
 from app.models.spool_tag import SpoolTag
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
@@ -263,6 +269,10 @@ __all__ = [
     "PrintProfileFilament",
     "SharedQuote",
     "SpoolTag",
+    "SpoolCompatFieldDefinition",
+    "SpoolCompatResource",
+    "SpoolCompatResourceExtra",
+    "SpoolCompatWireCounter",
     "Subscription",
     "SubscriptionStatus",
     "SyncDevice",

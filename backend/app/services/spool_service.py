@@ -410,13 +410,27 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
             required_nozzle_hrc=filament.required_nozzle_hrc,
             qr_code=filament.qr_code,
         )
-    extra = spool.extra or {}
+    extra = dict(spool.extra or {})
+    ref = spool.compat_filament_ref
+    if filament is None and ref is not None:
+        imported = ref.latest_payload or {}
+        vendor = imported.get("vendor")
+        for key, value in {
+            "display_name": imported.get("name"),
+            "material": imported.get("material"),
+            "vendor": vendor.get("name") if isinstance(vendor, dict) else imported.get("brand_name"),
+            "color_hex": imported.get("color_hex"),
+        }.items():
+            if value is not None and not extra.get(key):
+                extra[key] = value
     raw_currency = extra.get("currency")
     currency = raw_currency if isinstance(raw_currency, str) and raw_currency else None
     return SpoolResponse(
         id=spool.id,
         user_id=spool.user_id,
         filament_id=spool.filament_id,
+        compat_import_id=spool.compat_import_id,
+        empty_spool_weight_g=spool.empty_spool_weight_g,
         filament=fil_info,
         initial_weight_g=spool.initial_weight_g,
         used_weight_g=spool.used_weight_g,
@@ -431,7 +445,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         created_at=spool.created_at,
         updated_at=spool.updated_at,
         last_used_at=spool.last_used_at,
-        extra=spool.extra,
+        extra=extra or None,
     )
 
 
@@ -658,6 +672,7 @@ async def create_spool(
         initial_weight_g=payload.initial_weight_g,
         used_weight_g=payload.used_weight_g,
         price=payload.price,
+        empty_spool_weight_g=payload.empty_spool_weight_g,
         extra={"currency": payload.currency} if payload.currency is not None else {},
         state=UserSpoolState(payload.state),
         source=payload.source,
@@ -717,6 +732,11 @@ async def update_spool(
             db,
             spool=spool,
             filament_id=payload.filament_id,
+            compat_filament_ref_id=(
+                spool.compat_filament_ref_id
+                if payload.filament_id == spool.filament_id and payload.filament_id is not None
+                else None
+            ),
         )
     else:
         filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
@@ -753,6 +773,8 @@ async def update_spool(
         spool.extra = next_extra
     if "lot_nr" in payload.model_fields_set:
         spool.lot_nr = payload.lot_nr
+    if "empty_spool_weight_g" in payload.model_fields_set:
+        spool.empty_spool_weight_g = payload.empty_spool_weight_g
     if "comment" in payload.model_fields_set:
         spool.comment = payload.comment
 

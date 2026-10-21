@@ -19,12 +19,28 @@ from app.models.qr_identity import (
 )
 from app.models.user_spool import UserSpool
 
+_UNSET_COMPAT_REF = object()
+
+
+def apply_spool_material_identity(
+    spool: UserSpool, *, filament_id: int | None, compat_filament_ref_id: int | None,
+) -> UserSpool:
+    """Set native and transport material identity in one explicit operation."""
+    spool.filament_id = filament_id
+    if compat_filament_ref_id is None:
+        # A QR-approved replacement must not leave an old import relationship
+        # available to a response serializer before the next database read.
+        spool.compat_filament_ref = None
+    spool.compat_filament_ref_id = compat_filament_ref_id
+    return spool
+
 
 async def set_spool_filament_with_qr_guard(
     db: AsyncSession,
     *,
     spool: UserSpool,
     filament_id: int | None,
+    compat_filament_ref_id: int | None | object = _UNSET_COMPAT_REF,
 ) -> UserSpool:
     """Lock a spool and reject identity-breaking ordinary material changes."""
     locked = cast(
@@ -38,7 +54,11 @@ async def set_spool_filament_with_qr_guard(
     )
     if locked is None:  # pragma: no cover - caller owns an already-loaded row
         raise RuntimeError("spool disappeared before material update")
-    if locked.filament_id == filament_id:
+    ref_unchanged = (
+        compat_filament_ref_id is _UNSET_COMPAT_REF
+        or locked.compat_filament_ref_id == compat_filament_ref_id
+    )
+    if locked.filament_id == filament_id and ref_unchanged:
         return locked
 
     manufacturer_claim = await db.scalar(
@@ -56,5 +76,11 @@ async def set_spool_filament_with_qr_guard(
     if user_binding is not None:
         raise_error(409, ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE)
 
-    locked.filament_id = filament_id
-    return locked
+    next_ref_id = (
+        locked.compat_filament_ref_id
+        if compat_filament_ref_id is _UNSET_COMPAT_REF
+        else compat_filament_ref_id
+    )
+    return apply_spool_material_identity(
+        locked, filament_id=filament_id, compat_filament_ref_id=next_ref_id
+    )

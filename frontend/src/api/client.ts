@@ -3908,6 +3908,7 @@ export interface UserSpool {
   user_id: number;
   filament_id: number | null;
   filament: SpoolFilamentInfo | null;
+  compat_import_id?: number | null;
   initial_weight_g: number;
   used_weight_g: number;
   remaining_weight_g: number;
@@ -3922,6 +3923,53 @@ export interface UserSpool {
   updated_at: string;
   last_used_at: string | null;
   extra: Record<string, string> | null;
+}
+
+export interface SpoolCompatImportMaterial {
+  name: string | null;
+  brand_name: string | null;
+  material_type: string | null;
+  color_hex: string | null;
+  diameter: number | null;
+  density: number | null;
+  weight: number | null;
+  spool_weight: number | null;
+  settings_extruder_temp: number | null;
+  settings_bed_temp: number | null;
+}
+
+export interface SpoolCompatImportDetail {
+  id: number;
+  revision: number;
+  source: string;
+  material: SpoolCompatImportMaterial;
+  spools: Array<{ id: number; name: string }>;
+  resolved_filament_id: number | null;
+}
+
+export interface SpoolCompatImportPreview extends SpoolCompatImportDetail {
+  preview_token: string;
+  target_filament: {
+    id: number;
+    name: string;
+    brand_name: string | null;
+    material_type: string;
+    color_hex: string | null;
+    diameter: number | null;
+    density: number | null;
+  };
+  differences: Array<{
+    field: string;
+    imported: string | number | null;
+    catalog: string | number | null;
+  }>;
+}
+
+export interface SpoolCompatImportResolveResult {
+  id: number;
+  revision: number;
+  filament_id: number;
+  spool_ids: number[];
 }
 
 export type SpoolStateGroup = 'available' | 'archived';
@@ -4157,6 +4205,25 @@ export const printJobsAPI = {
 };
 
 export const spoolsAPI = {
+  getImport: async (id: number): Promise<SpoolCompatImportDetail> => {
+    const response = await api.get<SpoolCompatImportDetail>(`/spools/imports/${id}`);
+    return response.data;
+  },
+
+  previewImportMatch: async (id: number, filament_id: number): Promise<SpoolCompatImportPreview> => {
+    const response = await api.post<SpoolCompatImportPreview>(`/spools/imports/${id}/preview`, { filament_id });
+    return response.data;
+  },
+
+  resolveImport: async (id: number, filament_id: number, expected_revision: number, preview_token?: string): Promise<SpoolCompatImportResolveResult> => {
+    const response = await api.post<SpoolCompatImportResolveResult>(`/spools/imports/${id}/resolve`, {
+      filament_id,
+      expected_revision,
+      ...(preview_token ? { preview_token } : {}),
+    });
+    return response.data;
+  },
+
   list: async (signal?: AbortSignal): Promise<UserSpool[]> => {
     const response = await api.get<UserSpool[]>('/spools', { signal });
     return response.data;

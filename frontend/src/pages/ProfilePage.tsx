@@ -89,6 +89,7 @@ import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { SpoolImportButton } from '../components/SpoolManagerImportButton';
+import { SpoolImportResolveModal } from '../components/SpoolImportResolveModal';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 import { MyPrintersList } from '../components/MyPrintersList';
@@ -303,6 +304,7 @@ export const ProfilePage: React.FC = () => {
   );
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
+  const [resolvingImportId, setResolvingImportId] = useState<number | null>(null);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
@@ -1291,6 +1293,7 @@ export const ProfilePage: React.FC = () => {
               queryClient.invalidateQueries({ queryKey: ['user-presets'] });
             }
           }}
+          onResolveCompatImport={setResolvingImportId}
         />
       )}
 
@@ -1775,6 +1778,17 @@ export const ProfilePage: React.FC = () => {
       )}
 
       {/* Create/Edit Preset Modal */}
+      {resolvingImportId !== null && (
+        <SpoolImportResolveModal
+          importId={resolvingImportId}
+          onClose={() => setResolvingImportId(null)}
+          onResolved={() => {
+            setResolvingImportId(null);
+            queryClient.invalidateQueries({ queryKey: spoolQueryKeys.root });
+            notifyProfileChanged();
+          }}
+        />
+      )}
       <Suspense fallback={null}>
         <CreatePresetModal
           isOpen={isCreatePresetModalOpen}
@@ -2035,10 +2049,11 @@ interface SpoolCardProps {
   onDelete?: () => void;
   onStateChange?: (state: SpoolState) => void;
   onResolveImport?: (draftId: number) => void;
+  onResolveCompatImport?: (importId: number) => void;
   viewMode?: ViewMode;
 }
 
-const SpoolCard: React.FC<SpoolCardProps> = ({
+export const SpoolCard: React.FC<SpoolCardProps> = ({
   spool,
   isBusy = false,
   onEdit,
@@ -2046,6 +2061,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   onDelete,
   onStateChange,
   onResolveImport,
+  onResolveCompatImport,
   viewMode = 'grid',
 }) => {
   const { t } = useTranslation();
@@ -2074,6 +2090,8 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   const importDraftId = Number(spool.extra?.import_draft_id);
   const canResolveImport =
     !spool.filament && Number.isInteger(importDraftId) && importDraftId > 0;
+  const compatImportId = spool.compat_import_id;
+  const canResolveCompatImport = !spool.filament && typeof compatImportId === 'number' && compatImportId > 0;
 
   const currentLocation = getSpoolCurrentLocation(spool.extra);
 
@@ -2116,6 +2134,15 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-1">
+          {canResolveCompatImport && (
+            <button
+              type="button"
+              onClick={() => onResolveCompatImport?.(compatImportId)}
+              disabled={!onResolveCompatImport || isBusy}
+              title={t('profilePage.spoolImportResolve.open')}
+              className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+            >{t('profilePage.spoolImportResolve.open')}</button>
+          )}
           <SpoolLabelButton spool={spool} compact busy={isBusy} />
           <SpoolTagsButton spool={spool} compact busy={isBusy} />
           {spool.used_weight_g > 0 && (
@@ -2296,7 +2323,15 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
           );
         })()}
 
-        {canResolveImport && (
+        {canResolveCompatImport && (
+          <button
+            type="button"
+            onClick={() => onResolveCompatImport?.(compatImportId)}
+            disabled={!onResolveCompatImport || isBusy}
+            className="inline-flex w-full items-center justify-center rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
+          >{t('profilePage.spoolImportResolve.open')}</button>
+        )}
+        {!canResolveCompatImport && canResolveImport && (
           <button
             type="button"
             onClick={() => onResolveImport?.(importDraftId)}
@@ -3324,6 +3359,7 @@ interface SpoolsTabProps {
   initialSource?: 'manual' | 'qr';
   initialPlacement?: 'ask' | 'shelf' | 'printer';
   onResolveImport: (draftId: number) => void;
+  onResolveCompatImport: (importId: number) => void;
 }
 
 const SpoolsTab: React.FC<SpoolsTabProps> = ({
@@ -3337,6 +3373,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   initialSource = 'manual',
   initialPlacement = 'ask',
   onResolveImport,
+  onResolveCompatImport,
 }) => {
   const { t } = useTranslation();
   const pluginEmbedded = isPluginEmbed();
@@ -3724,6 +3761,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 onDelete={() => handleDelete(spool.id)}
                 onStateChange={(state) => handleStateChange(spool.id, state)}
                 onResolveImport={onResolveImport}
+                onResolveCompatImport={onResolveCompatImport}
               />
             ))}
           </div>

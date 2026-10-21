@@ -74,6 +74,8 @@ class SpoolResponse(BaseModel):
     id: int
     user_id: int
     filament_id: int | None
+    compat_import_id: int | None = None
+    empty_spool_weight_g: float | None = None
     filament: SpoolFilamentInfo | None
     initial_weight_g: float
     used_weight_g: float
@@ -119,6 +121,7 @@ class SpoolCreateRequest(BaseModel):
     initial_weight_g: float = Field(..., gt=0, le=10_000)
     used_weight_g: float = Field(default=0.0, ge=0)
     price: float | None = Field(default=None, ge=0)
+    empty_spool_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     state: SpoolState = "shelf"
     source: SpoolSource = "manual"
@@ -135,6 +138,7 @@ class SpoolUpdateRequest(BaseModel):
     expected_initial_weight_g: float | None = Field(default=None, gt=0, le=10_000)
     expected_used_weight_g: float | None = Field(default=None, ge=0)
     price: float | None = Field(default=None, ge=0)
+    empty_spool_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     state: SpoolState | None = None
     lot_nr: str | None = Field(default=None, max_length=100)

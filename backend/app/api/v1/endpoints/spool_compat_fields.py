@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,7 +47,6 @@ class ExtraFieldResponse(ExtraFieldParams):
     entity_type: EntityType
 
 
-_extra_fields_cache: dict[tuple[int, str], list[dict]] = {}
 _BUILTIN_FIELDS: dict[EntityType, list[dict]] = {
     EntityType.spool: [
         {
@@ -65,23 +64,19 @@ _BUILTIN_FIELDS: dict[EntityType, list[dict]] = {
 }
 
 
-def _get_entity_fields(user_id: int, entity_type: EntityType) -> list[dict]:
+async def _get_entity_fields(
+    db: AsyncSession, user_id: int, entity_type: EntityType
+) -> list[dict]:
+    from app.services.spool_compat_resource_service import list_field_defs
+
     builtins = list(_BUILTIN_FIELDS.get(entity_type, []))
     builtin_keys = {field["key"] for field in builtins}
     custom = [
         field
-        for field in _extra_fields_cache.get((user_id, entity_type.value), [])
+        for field in await list_field_defs(db, user_id=user_id, kind=entity_type.value)
         if field.get("key") not in builtin_keys
     ]
     return builtins + custom
-
-
-def _set_entity_fields(user_id: int, entity_type: EntityType, fields: list[dict]) -> list[dict]:
-    builtin_keys = {field["key"] for field in _BUILTIN_FIELDS.get(entity_type, [])}
-    _extra_fields_cache[(user_id, entity_type.value)] = [
-        field for field in fields if field.get("key") not in builtin_keys
-    ]
-    return _get_entity_fields(user_id, entity_type)
 
 
 async def _resolve_user_id(db: AsyncSession, api_key: str | None) -> int | None:
@@ -99,11 +94,12 @@ async def get_fields(
     entity_type: EntityType,
     db: Annotated[AsyncSession, Depends(get_db)],
     api_key: str | None = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> list[dict]:
-    user_id = await _resolve_user_id(db, api_key)
+    user_id = await _resolve_user_id(db, api_key or header_api_key)
     if user_id is None:
-        return []
-    return _get_entity_fields(user_id, entity_type)
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_API_KEY)
+    return await _get_entity_fields(db, user_id, entity_type)
 
 
 @router.post("/v1/field/{entity_type}/{key}")
@@ -111,18 +107,33 @@ async def get_fields(
 @router.post("/{api_key}/api/v1/field/{entity_type}/{key}")
 async def add_or_update_field(
     entity_type: EntityType,
-    key: str,
+    key: Annotated[str, Path(min_length=1, max_length=64, pattern="^[a-z0-9_]+$")],
     body: ExtraFieldParams,
     db: Annotated[AsyncSession, Depends(get_db)],
     api_key: str | None = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> list[dict]:
-    user_id = await _resolve_user_id(db, api_key)
+    from app.services.spool_compat_resource_service import upsert_field_def
+
+    user_id = await _resolve_user_id(db, api_key or header_api_key)
     if user_id is None:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_API_KEY)
-    fields = [item for item in _get_entity_fields(user_id, entity_type) if item.get("key") != key]
-    field = ExtraFieldResponse(key=key, entity_type=entity_type, **body.model_dump()).model_dump()
-    fields.append(field)
-    return _set_entity_fields(user_id, entity_type, fields)
+    builtin = next(
+        (field for field in _BUILTIN_FIELDS.get(entity_type, []) if field["key"] == key),
+        None,
+    )
+    if builtin is not None:
+        if body.field_type.value != builtin["field_type"]:
+            raise HTTPException(status_code=400, detail="The RFID field must remain a text field.")
+    else:
+        field = ExtraFieldResponse(
+            key=key, entity_type=entity_type, **body.model_dump()
+        ).model_dump(mode="json")
+        await upsert_field_def(
+            db, user_id=user_id, kind=entity_type.value, key=key, definition=field
+        )
+        await db.commit()
+    return await _get_entity_fields(db, user_id, entity_type)
 
 
 @router.delete(
@@ -142,18 +153,31 @@ async def add_or_update_field(
 )
 async def delete_field(
     entity_type: EntityType,
-    key: str,
+    key: Annotated[str, Path(min_length=1, max_length=64, pattern="^[a-z0-9_]+$")],
     db: Annotated[AsyncSession, Depends(get_db)],
     api_key: str | None = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> list[dict]:
-    user_id = await _resolve_user_id(db, api_key)
+    from app.services.spool_compat_resource_service import (
+        CompatFieldProtected,
+        delete_field_def,
+    )
+
+    user_id = await _resolve_user_id(db, api_key or header_api_key)
     if user_id is None:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_API_KEY)
-    fields = _get_entity_fields(user_id, entity_type)
-    next_fields = [item for item in fields if item.get("key") != key]
-    if len(next_fields) == len(fields):
+    if any(field["key"] == key for field in _BUILTIN_FIELDS.get(entity_type, [])):
+        raise HTTPException(status_code=409, detail="The RFID binding field cannot be deleted.")
+    try:
+        deleted = await delete_field_def(
+            db, user_id=user_id, kind=entity_type.value, key=key
+        )
+    except CompatFieldProtected as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not deleted:
         raise HTTPException(
             status_code=404,
             detail=f"Extra field '{key}' not found for {entity_type.value}",
         )
-    return _set_entity_fields(user_id, entity_type, next_fields)
+    await db.commit()
+    return await _get_entity_fields(db, user_id, entity_type)

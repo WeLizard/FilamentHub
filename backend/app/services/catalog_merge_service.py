@@ -79,6 +79,7 @@ from app.services.catalog_duplicates import (
 )
 from app.services.catalog_url_service import choose_filament_slug
 from app.services.qr_service import backfill_brand_qr_codes
+from app.services.spool_compat_resource_service import repoint_catalog_refs_for_merge
 from app.services.weighted_preset_reconciliation import enqueue_weighted_preset_refreshes
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ FILAMENT_REFERENCES = frozenset(
         "qr_manufacturer_batch_items.filament_id",
         "qr_manufacturer_instance_states.filament_id",
         "qr_user_spool_bindings.filament_id",
+        "spool_compat_resources.filament_id",
         "user_spools.filament_id",
         "weighted_preset_refresh_jobs.filament_id",
     }
@@ -132,6 +134,7 @@ BRAND_REFERENCES = frozenset(
         "organization_brand_access.brand_id",
         "organization_label_presets.brand_id",
         "qr_manufacturer_batches.brand_id",
+        "spool_compat_resources.brand_id",
         "users.brand_id",
     }
 )
@@ -505,6 +508,9 @@ async def merge_filaments(
         db.add(FilamentQrAlias(code=source_qr_code, filament_id=target.id))
 
     source_slug = source.slug
+    await repoint_catalog_refs_for_merge(
+        db, kind="filament", source_id=source.id, target_id=target.id
+    )
     await db.execute(delete(Filament).where(Filament.id == source.id))
     db.expunge(source)
     if transferred_qr_code:
@@ -746,6 +752,9 @@ async def merge_brands(db: AsyncSession, plan: BrandMergePlan) -> None:
         )
 
     source_slug = source.slug
+    await repoint_catalog_refs_for_merge(
+        db, kind="vendor", source_id=source.id, target_id=target.id
+    )
     await db.execute(delete(Brand).where(Brand.id == source.id))
     db.expunge(source)
     db.add(BrandSlugRedirect(brand_id=target.id, old_slug=source_slug))

@@ -12,6 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
+    from app.models.spool_compat_resource import SpoolCompatResource
     from app.models.user import User
 
 
@@ -36,6 +37,9 @@ class UserSpool(Base):
     filament_id: Mapped[int | None] = mapped_column(
         ForeignKey("filaments.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    compat_filament_ref_id: Mapped[int | None] = mapped_column(
+        ForeignKey("spool_compat_resources.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     initial_weight_g: Mapped[float] = mapped_column(Float, nullable=False)
     used_weight_g: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -46,6 +50,7 @@ class UserSpool(Base):
         index=True,
     )
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     # price: фактическая цена покупки этой катушки (пользователь заполняет)
     source: Mapped[str] = mapped_column(
         String(30), default="manual", nullable=False
@@ -70,6 +75,14 @@ class UserSpool(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="spools")
     filament: Mapped["Filament | None"] = relationship("Filament")
+    compat_filament_ref: Mapped["SpoolCompatResource | None"] = relationship(
+        "SpoolCompatResource", lazy="selectin"
+    )
+
+    @property
+    def compat_import_id(self) -> int | None:
+        ref = self.compat_filament_ref
+        return ref.id if ref is not None and ref.source_kind == "import" else None
 
     @property
     def remaining_weight_g(self) -> float:

@@ -8,6 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -85,6 +86,45 @@ from app.services.preset_recommender import get_recommended_preset_values
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/presets", tags=["presets"])
+
+
+def _has_import_spool_link(settings: object) -> bool:
+    return (isinstance(settings, dict)
+            and isinstance(settings.get("import_external_ref"), str)
+            and isinstance(settings.get("import_provider"), str))
+
+
+async def _lock_import_target(db: AsyncSession, filament_id: int) -> None:
+    """Avoid waiting behind a catalog merge while a draft row is locked."""
+    try:
+        await db.scalar(select(Filament.id).where(Filament.id == filament_id)
+                        .with_for_update(nowait=True))
+    except DBAPIError as exc:
+        await db.rollback()
+        if getattr(exc.orig, "sqlstate", None) == "55P03":
+            raise HTTPException(status_code=409, detail="ERR_CONFLICT") from exc
+        raise
+
+
+async def _link_imported_spools_or_conflict(
+    db: AsyncSession, preset: Preset, *, target_filament_id: int | None = None,
+    settings_override: dict | None = None,
+) -> None:
+    from app.services.spoolmanager_import_service import link_imported_spools_to_preset
+
+    try:
+        await link_imported_spools_to_preset(
+            db, preset, target_filament_id=target_filament_id,
+            settings_override=settings_override,
+        )
+    except DBAPIError as exc:
+        await db.rollback()
+        if getattr(exc.orig, "sqlstate", None) == "55P03":
+            raise HTTPException(status_code=409, detail="ERR_CONFLICT") from exc
+        raise
+    except HTTPException:
+        await db.rollback()
+        raise
 
 
 def _serialize_moderation_reason(reason: Any) -> str | None:
@@ -797,6 +837,14 @@ async def update_preset(
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
+    target_settings = update_data.get("orcaslicer_settings", preset.orcaslicer_settings)
+    if target_filament_id is not None and _has_import_spool_link(target_settings):
+        await _lock_import_target(db, target_filament_id)
+        await _link_imported_spools_or_conflict(
+            db, preset, target_filament_id=target_filament_id,
+            settings_override=target_settings,
+        )
+
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь
     # учитываем только переход черновика в активный пресет.
@@ -813,13 +861,6 @@ async def update_preset(
     if preset.is_official:
         preset.moderation_status = PresetModerationStatus.APPROVED
         preset.moderation_reason = None
-
-    if preset.filament_id is not None:
-        from app.services.spoolmanager_import_service import (
-            link_imported_spools_to_preset,
-        )
-
-        await link_imported_spools_to_preset(db, preset)
 
     # Автоматическая модерация при обновлении (только для пользовательских пресетов с filament)
     if not preset.is_official and filament:
@@ -994,6 +1035,8 @@ async def activate_preset(
 
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_PRESET_NOT_OWNER)
+    if _has_import_spool_link(preset.orcaslicer_settings):
+        await _lock_import_target(db, body.filament_id)
     stored_draft_settings = (
         dict(preset.orcaslicer_settings)
         if isinstance(preset.orcaslicer_settings, dict)
@@ -1028,11 +1071,7 @@ async def activate_preset(
             stored_settings=stored_draft_settings,
         )
 
-        from app.services.spoolmanager_import_service import (
-            link_imported_spools_to_preset,
-        )
-
-        await link_imported_spools_to_preset(db, preset)
+        await _link_imported_spools_or_conflict(db, preset)
 
         from app.services.preset_funnel_metrics import record_preset_funnel_event
 
