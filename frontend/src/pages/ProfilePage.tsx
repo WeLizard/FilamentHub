@@ -3266,7 +3266,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       <div>
         <label className={labelCls}>{t('profilePage.spoolAddModal.comment')}</label>
         <input type="text" value={comment} onChange={e => setComment(e.target.value)}
-          placeholder="необязательно" className={inputCls} />
+          placeholder={t('profilePage.spoolAddModal.optional')} className={inputCls} />
       </div>
 
       {errorText && (

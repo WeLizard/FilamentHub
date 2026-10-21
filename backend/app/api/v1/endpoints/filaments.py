@@ -491,9 +491,9 @@ async def list_filaments(
             )
             .exists()
         )
-        query = query.order_by(fits_printer.desc(), Filament.name)
+        query = query.order_by(fits_printer.desc(), Filament.name, Filament.id)
     else:
-        query = query.order_by(Filament.name)
+        query = query.order_by(Filament.name, Filament.id)
     query = query.offset(offset).limit(size)
 
     # Execute

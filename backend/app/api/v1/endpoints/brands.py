@@ -96,7 +96,7 @@ async def list_brands(
 
     # Paginate
     offset = (page - 1) * size
-    query = query.offset(offset).limit(size).order_by(Brand.name)
+    query = query.offset(offset).limit(size).order_by(Brand.name, Brand.id)
 
     # Execute
     result = await db.execute(query)

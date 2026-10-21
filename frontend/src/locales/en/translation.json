@@ -809,33 +809,36 @@
     "working": {
       "title": "Already working",
       "items": [
-        "Material catalogue with search by brand, type, colour and properties",
-        "Print presets: official, published by the community, and your own",
-        "OrcaSlicer plugin: the catalogue inside the slicer and preset sync",
+        "Material catalogue with search by brand, type, colour and properties, with market data for your country",
+        "Brand pages and a manufacturer cabinet: product lines, colour palettes, availability, CSV import",
+        "Print presets: official, community and your own, with version history and settings editing",
+        "OrcaSlicer plugin: the catalogue and your spools inside the slicer, preset sync",
         "Spool tracking: remaining weight, price, batch and consumption history",
         "Your printers, feed systems and spool assignments to slots; automatic data exchange depends on the connection",
-        "Production costing from G-code: cost, quotations and orders",
-        "QR codes and a brand page for manufacturers",
-        "Guides in the Wiki section"
+        "Production costing from G-code or from an OrcaSlicer slice: cost on the right machine, including multi-plate projects",
+        "Quotations with a PDF and a link for the client, orders and a CRM workspace",
+        "Scanning spool and material QR codes right in the browser",
+        "Achievements, guides in the Wiki, and the interface in Russian, English and Chinese"
       ]
     },
     "progress": {
       "title": "In progress",
       "items": [
-        "Preset recommendations that explain matches and missing data for your printer configuration",
-        "Printer and process profile recovery in OrcaSlicer with a preview and explicit confirmation",
-        "A local bridge to connect to a printer without keeping OrcaSlicer open",
-        "Further Bambu and AMS integration through OrcaSlicer",
-        "Expanded analytics for manufacturers"
+        "A direct printer-to-FilamentHub link through our own Edge bridge — no open OrcaSlicer and no manufacturer cloud needed, including Bambu Lab without Bambu Cloud",
+        "Filament tracking by weight, not only by estimate: weigh-ins and empty-spool weight",
+        "Happy Hare and OctoPrint connection in a few steps",
+        "Android app"
       ]
     },
     "next": {
       "title": "Next",
       "items": [
-        "Shops with several people working together",
-        "Data exchange with external inventory systems",
-        "RFID and NFC tags",
-        "More ready-made data in the catalogue"
+        "Troubleshooting failed prints: your slice and a photo give you the settings worth suspecting and what to try first",
+        "Preset suggestions for your printer that explain why they fit",
+        "RFID and NFC tags on spools",
+        "Hints right inside OrcaSlicer: “not enough filament on this spool” and a spool panel next to filament selection",
+        "Analytics for manufacturers",
+        "Workshops with several people"
       ]
     },
     "roadmapNote": "In progress describes ongoing development, not features already available to every user. No dates promised: things ship when they are ready.",

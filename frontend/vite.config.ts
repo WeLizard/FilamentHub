@@ -35,7 +35,7 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0', // Слушать на всех интерфейсах (IPv4 и IPv6)
     watch: process.env.CHOKIDAR_USEPOLLING === 'true'
-      ? { usePolling: true, interval: 400 }
+      ? { usePolling: true, interval: 1200, ignored: ['**/.tmp/**', '**/coverage/**'] }
       : undefined,
     proxy: {
       '/api': {

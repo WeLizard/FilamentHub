@@ -118,7 +118,6 @@ backend/uploads/database_dumps/
 # Retired FilamentHub Edition artifacts may remain locally for recovery, but
 # they are not source files and must never re-enter the repository.
 backend/distributions/orcaslicer/*
-!backend/distributions/.gitkeep
 
 # SSL certificates (не коммитить!)
 certbot/
@@ -212,3 +211,15 @@ backend/distributions/plugins/
 
 # Plugin Hub gallery and promo video: sources, renders and footage stay on disk.
 orca-plugin/plugin-hub-media/
+
+# Overview videos on the download page are too large for the repository; they
+# reach the server separately. Poster and captions stay in Git.
+frontend/public/download-media/*.mp4
+
+# Raw catalog intake data and the collector that gathers it for curation.
+backend/curation_staging/
+scripts/curation_pipeline/
+
+# Local npm cache and TypeScript incremental build state.
+frontend/.npm-cache/
+frontend/tsconfig.tsbuildinfo

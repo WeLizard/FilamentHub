@@ -614,7 +614,8 @@ function Publish-PluginCommits {
     $printFarmCandidate = Join-Path (Split-Path $repositoryRoot -Parent) 'orca-plugins'
     if (Test-Path -LiteralPath (Join-Path $printFarmCandidate '.git')) {
         Publish-RepositoryCommits -Directory $printFarmCandidate -Title 'Print Farm' -AllowedPaths @(
-            'plugins/printers/', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml'
+            'plugins/printers/', 'plugins/print-farm/',
+            '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml'
         )
     } else {
         Write-Host 'Print Farm: локальный репозиторий рядом с FilamentHub не найден; этот шаг пропущен.' -ForegroundColor DarkGray
