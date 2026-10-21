@@ -53,6 +53,11 @@ export default defineConfig({
         target: proxyTarget,
         changeOrigin: true,
       },
+      '^/qr/[A-Za-z0-9_-]{3,100}/?$': {
+        target: proxyTarget,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/qr\//, '/api/v1/qr/').replace(/\/$/, ''),
+      },
     },
   },
 });
