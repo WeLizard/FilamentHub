@@ -1,0 +1,57 @@
+# Known schema drift between the migrated PostgreSQL database and the ORM models.
+# One key per line, produced by scripts/check_schema_drift.py. New drift fails the check;
+# when an entry is fixed the check fails until the entry is deleted here.
+
+# Model declares a foreign key the migrated database does not have (users.brand_id -> brands.id). Needs a migration (owner decision via fh-migrate) or removing the FK from the model.
+fk-only-in-model:users(brand_id)
+
+# Migrations apply ON DELETE SET NULL/CASCADE that the models do not declare, so the ORM schema (SQLite tests, create_all) behaves differently from production. Fix: declare ondelete on the model ForeignKey; no migration needed.
+fk-options:brand_invites(accepted_by_id)
+fk-options:brand_invites(invited_by_id)
+fk-options:brand_requests(processed_by_id)
+fk-options:feedback(responded_by)
+fk-options:filament_reviews(preset_id)
+fk-options:material_properties(created_by_id)
+fk-options:material_properties(updated_by_id)
+fk-options:material_properties(verified_by_id)
+fk-options:presets(user_id)
+fk-options:print_problems(created_by_id)
+fk-options:print_problems(updated_by_id)
+fk-options:print_problems(verified_by_id)
+fk-options:printer_requests(processed_by_id)
+fk-options:wiki_articles(category_id)
+fk-options:wiki_articles(created_by_id)
+fk-options:wiki_articles(reviewed_by_id)
+fk-options:wiki_articles(updated_by_id)
+
+# Indexes created by migrations that the models do not declare. Harmless for production queries; the models should mirror them.
+index-only-in-db:ix_filaments_brand_active
+index-only-in-db:ix_filaments_material_type_active
+index-only-in-db:ix_presets_external_id_user_id
+index-only-in-db:ix_presets_filament_status_active
+index-only-in-db:ix_presets_official_active
+index-only-in-db:ix_print_profiles_official_active
+index-only-in-db:ix_printer_profiles_official_active
+index-only-in-db:ix_printer_profiles_printer_owner
+index-only-in-db:ix_printer_requests_slug
+index-only-in-db:ix_spools_user_created_id
+index-only-in-db:ix_spools_user_fil_created_id
+index-only-in-db:ix_spools_user_state_created_id
+index-only-in-db:ix_user_printer_devices_user_created_id
+index-only-in-db:ix_users_can_edit_wiki
+index-only-in-db:ix_users_provisional_since
+index-only-in-db:ix_wiki_article_published_rev
+
+# Single-column index=True in print_profiles/printer_profiles models; migrations created only the composite (is_official, active) index. Needs a migration or dropping index=True.
+index-only-in-model:ix_print_profiles_active
+index-only-in-model:ix_print_profiles_is_official
+index-only-in-model:ix_printer_profiles_active
+index-only-in-model:ix_printer_profiles_is_official
+index-only-in-model:ix_printer_profiles_owner_user_id
+index-only-in-model:ix_printer_profiles_printer_id
+
+# Model DateTime() is timezone-naive, database is timestamptz, and brands.py:385 assigns an aware datetime: probable asyncpg DataError on PostgreSQL. Fix: DateTime(timezone=True) on the model.
+type:brands.name_corrected_at
+
+# Database column is the native enum printerrequeststatus, model is String(20): probable 'column is of type printerrequeststatus but expression is of type character varying' on insert/update on PostgreSQL. Needs an owner decision (migration to VARCHAR or Enum type in the model).
+type:printer_requests.status

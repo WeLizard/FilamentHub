@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Verify the production PostgreSQL contract against a disposable database."""
+"""Verify the production PostgreSQL contract against a disposable database.
+
+One throwaway ``postgres:15-alpine`` container is started, migrated with
+``alembic upgrade head``, and then used for, in order: the application smoke
+contract, the schema-drift check and the PostgreSQL-only pytest suites. The
+container is always removed. ``FH_TEST_POSTGRES_URL`` is only ever pointed at
+that container and never at an existing database.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +27,14 @@ POSTGRES_IMAGE = "postgres:15-alpine"
 POSTGRES_USER = "filamenthub_contract"
 POSTGRES_DB = "filamenthub_contract"
 POSTGRES_PASSWORD = "runtime-contract-only"
+
+# These suites skip themselves unless FH_TEST_POSTGRES_URL is set. They create
+# uniquely named rows and neither reset nor drop anything, so every file can
+# share the migrated database.
+POSTGRES_TEST_PATTERNS = ("postgres_*_test.py", "*_postgres_test.py")
+POSTGRES_TEST_NODES = (
+    "tests/brand_usage_test.py::test_concurrent_monthly_release_keeps_the_committed_winner",
+)
 
 
 def _run(
@@ -157,6 +173,13 @@ async def _verify_application_contract(expected_head: str) -> None:
                 "Migrated database is missing ORM tables: " + ", ".join(missing_tables)
             )
 
+        import check_schema_drift
+
+        drift = await check_schema_drift.verify(engine, Base.metadata)
+        print(check_schema_drift.render(drift), flush=True)
+        if not drift.ok:
+            raise RuntimeError("Migrated schema drifted from the ORM models")
+
         async with AsyncSessionLocal() as session:
             brand = Brand(
                 name="PostgreSQL Runtime Contract",
@@ -271,6 +294,55 @@ async def _verify_application_contract(expected_head: str) -> None:
         await engine.dispose()
 
 
+def _run_postgres_tests(port: int) -> None:
+    """Run the PostgreSQL-only pytest suites against the disposable container."""
+    url = (
+        f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+        f"@127.0.0.1:{port}/{POSTGRES_DB}"
+    )
+    files = sorted(
+        {
+            f"tests/{path.name}"
+            for pattern in POSTGRES_TEST_PATTERNS
+            for path in (BACKEND / "tests").glob(pattern)
+        }
+    )
+    if not files:
+        raise RuntimeError("No PostgreSQL-only test files were found")
+    env = _runtime_environment(port)
+    env["FH_TEST_POSTGRES_URL"] = url
+    env["PYTHONPATH"] = str(BACKEND)
+    result = _run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "--no-cov",
+            "-q",
+            "-rs",
+            *files,
+            *POSTGRES_TEST_NODES,
+        ],
+        cwd=BACKEND,
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"PostgreSQL-only tests failed with exit code {result.returncode}")
+    if re.search(r"\b\d+ skipped\b", result.stdout) or not re.search(
+        r"\b\d+ passed\b", result.stdout
+    ):
+        raise RuntimeError(
+            "PostgreSQL-only tests were skipped or none ran; FH_TEST_POSTGRES_URL was not honoured"
+        )
+
+
 def main() -> int:
     if shutil.which("docker") is None:
         raise RuntimeError("Docker is required for the PostgreSQL runtime contract")
@@ -356,6 +428,10 @@ def main() -> int:
                 # process working directory.
                 os.chdir(original_cwd)
         print("PostgreSQL 15 runtime contract passed.", flush=True)
+
+        print("Running PostgreSQL-only test suites...", flush=True)
+        _run_postgres_tests(int(env["POSTGRES_PORT"]))
+        print("PostgreSQL-only test suites passed.", flush=True)
         return 0
     finally:
         if started:

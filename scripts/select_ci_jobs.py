@@ -22,6 +22,10 @@ def select_components(paths: list[str]) -> set[str]:
     for path in paths:
         if path.startswith(("backend/", "content/")):
             selected.add("backend")
+            # The plugin slice-excerpt tests and the frontend G-code toolpath tests
+            # read the backend's shared G-code parity fixtures.
+            if path.startswith("backend/tests/fixtures/"):
+                selected.update(("frontend", "plugins"))
         elif path.startswith("frontend/"):
             selected.add("frontend")
             # The label-renderer contract compares its mark with the website's SVG,

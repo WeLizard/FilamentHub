@@ -47,6 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
       - name: Check Bash deployment worker
         run: |
           bash -n scripts/deploy.sh
@@ -67,6 +72,13 @@ jobs:
             scripts.tests.test_telegram_publish \
             scripts.tests.test_watchdog
           bash scripts/tests/test_run_deploy_job.sh
+
+      - name: Check release preparation and adapter lab contracts
+        run: |
+          python -m pip install pytest
+          python -m pytest -p no:cacheprovider -q \
+            scripts/tests/test_plugin_release_preparation.py \
+            scripts/tests/test_adapter_lab_contract.py
 
       - name: Check PowerShell owner scripts
         shell: pwsh
@@ -127,7 +139,8 @@ jobs:
       - name: Check Alembic revision graph
         run: python ../scripts/tests/test_migration_graph.py
 
-      - name: Check PostgreSQL 15 runtime contract
+      - name: Check PostgreSQL 15 runtime, schema drift and PostgreSQL-only tests
+        timeout-minutes: 15
         run: python ../scripts/check_postgres_runtime.py
 
       - name: Run tests (pytest, in-memory SQLite)

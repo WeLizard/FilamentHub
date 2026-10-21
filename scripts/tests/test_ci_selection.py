@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -27,6 +28,11 @@ class ComponentSelectionTest(unittest.TestCase):
             "frontend/src/data/orcaPresetSchema.filament.json": {"backend", "frontend"},
             "edge-agent/Dockerfile": {"edge"},
             "repository.yaml": {"edge"},
+            "backend/tests/fixtures/gcode_toolpath_parity/toolpath.gcode": {
+                "backend",
+                "frontend",
+                "plugins",
+            },
             "orca-plugin/description.md": {"plugins"},
             "octoprint-plugin/pyproject.toml": {"plugins"},
         }
@@ -191,6 +197,108 @@ class BaselineSelectionTest(unittest.TestCase):
         self.assertEqual(
             set(output_path.read_text(encoding="utf-8").splitlines()),
             {f"{name}=true" for name in ci.COMPONENTS},
+        )
+
+
+
+class CrossComponentReadTest(unittest.TestCase):
+    """A test that reads another component's files must run when those files change."""
+
+    scanned = {
+        "backend/tests": {".py"},
+        "orca-plugin/tests": {".py"},
+        "octoprint-plugin/tests": {".py"},
+        "frontend/src": {".ts", ".tsx"},
+    }
+    components = (
+        "backend",
+        "frontend",
+        "edge-agent",
+        "orca-plugin",
+        "octoprint-plugin",
+        "content",
+        "scripts",
+    )
+    file_name = re.compile(r"^[\w.-]+\.(?:json|svg|gcode|py|ts|txt|csv|zip|md|ya?ml)$")
+
+    def references(self, relative: str, text: str) -> set[str]:
+        """Return repository paths that the file reads outside its own component."""
+        depth = len(Path(relative).parts) - 1
+        own = relative.split("/", 1)[0]
+        names = "|".join(re.escape(name) for name in self.components if name != own)
+        found: set[str] = set()
+        if relative.endswith(".py"):
+            # parents[depth] is the repository root; larger indexes leave it too.
+            indexes = [int(n) for n in re.findall(r"parents\[(\d+)\]", text)]
+            if any(n >= depth for n in indexes) or "parent.parent" in text:
+                chain = re.compile(
+                    rf"""["'](?P<top>{names})["']((?:\s*/\s*["'][^"'/]+["'])*)"""
+                )
+                for match in chain.finditer(text):
+                    segments = re.findall(r"""["']([^"']+)["']""", match.group(2))
+                    found.add("/".join([match.group("top"), *segments]))
+                for match in re.finditer(rf"""["'](?:{names})/[^"']*["']""", text):
+                    found.add(match.group(0).strip("\"'").rstrip("/"))
+        up = r"(?:\.\./){%d}" % depth
+        for match in re.finditer(rf"""["']{up}((?:{names})/[^"']*)["']""", text):
+            found.add(match.group(1).split("?")[0].rstrip("/"))
+        if found:
+            literals = {
+                value
+                for value in (
+                    re.sub(r"\{[^}]*\}", "x", raw)
+                    for raw in re.findall(r"""["']([^"'/]+)["']""", text)
+                )
+                if self.file_name.match(value)
+            }
+            found |= {f"{path}/{value}" for path in set(found) for value in literals}
+        return found
+
+    def test_reference_scanner_understands_known_read_styles(self) -> None:
+        python = (
+            'FIXTURES = Path(__file__).resolve().parents[2] / "backend" / "tests"'
+            ' / "fixtures" / "gcode_toolpath_parity"\n'
+        )
+        self.assertIn(
+            "backend/tests/fixtures/gcode_toolpath_parity",
+            self.references("orca-plugin/tests/test_x.py", python),
+        )
+        own_component = 'ALEMBIC = Path(__file__).parents[1] / "alembic"\n'
+        self.assertEqual(self.references("backend/tests/x_test.py", own_component), set())
+        typescript = "import svg from '../../../../backend/tests/fixtures/mark.svg?raw';\n"
+        self.assertIn(
+            "backend/tests/fixtures/mark.svg",
+            self.references("frontend/src/components/admin/X.test.ts", typescript),
+        )
+
+    def test_selector_runs_every_reader_when_what_it_reads_changes(self) -> None:
+        failures: list[str] = []
+        checked = 0
+        for directory, suffixes in self.scanned.items():
+            for path in sorted((ci.ROOT / directory).rglob("*")):
+                if path.suffix not in suffixes or "__pycache__" in path.parts:
+                    continue
+                relative = path.relative_to(ci.ROOT).as_posix()
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                reader = ci.select_components([relative])
+                references = self.references(relative, text)
+                # A directory reference may name its files in literals elsewhere, so
+                # probe the path itself, one level below it and each file literal.
+                for target in sorted(r for r in references if "/" in r):
+                    checked += 1
+                    probes = [target, f"{target}/x"]
+                    probes += [r for r in references if r.startswith(f"{target}/")]
+                    if not any(reader <= ci.select_components([p]) for p in probes):
+                        failures.append(f"{relative} reads {target}")
+        self.assertGreater(checked, 0, "the scanner found no cross-component reads at all")
+        self.assertEqual(
+            failures,
+            [],
+            "Changing what these tests read does not select the component that runs them; "
+            "extend select_components in scripts/select_ci_jobs.py",
         )
 
 
