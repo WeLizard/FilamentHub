@@ -1,0 +1,79 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.500
+Hi, I'm Neiri, the FilamentHub AI assistant. Let's follow one spool, from the shop to a finished quote.
+
+00:00:11.500 --> 00:00:22.500
+I bought a new spool. It is already in the catalogue, and I can filter by my printer.
+
+00:00:22.500 --> 00:00:33.500
+I scan the QR code on the spool. The material is found, and the spool lands in my profile.
+
+00:00:33.500 --> 00:00:42.500
+A spool with an RFID or NFC tag? I tap it with my phone, and it opens in FilamentHub.
+
+00:00:42.500 --> 00:00:50.500
+No QR from the maker? I give the spool its own QR and print a label.
+
+00:00:50.500 --> 00:00:56.500
+In OrcaSlicer, my presets appear in their own FilamentHub group. No restart.
+
+00:00:56.500 --> 00:01:05.000
+I put my spools into the filament slots. Oh, that's me on the plate! Let's print it!
+
+00:01:05.000 --> 00:01:12.500
+Slice! OrcaSlicer shows the overall totals. FilamentHub turns them into numbers for my own spools.
+
+00:01:12.500 --> 00:01:19.000
+FilamentHub catches the slice. One click on Use, and the calculator fills itself.
+
+00:01:19.000 --> 00:01:27.500
+It knows my printer, counts grams and cost per filament, and warns me when a spool is short.
+
+00:01:27.500 --> 00:01:34.000
+Client price, production cost, profit and print time, in seconds.
+
+00:01:34.000 --> 00:01:41.000
+Then a quote for the customer. Once it is accepted, it becomes an order.
+
+00:01:41.000 --> 00:01:49.500
+Spools track themselves. Moonraker, Happy Hare and OctoPrint see FilamentHub as Spoolman, and Bambu works over LAN.
+
+00:01:49.500 --> 00:01:58.500
+With FilamentHub Edge, any printer talks to FilamentHub directly and tracks spools like Spoolman. No OrcaSlicer, no vendor cloud.
+
+00:01:58.500 --> 00:02:06.500
+Every spool shows what's left and which slot it sits in, AMS and Happy Hare included.
+
+00:02:06.500 --> 00:02:15.500
+Many people share presets for one filament. FilamentHub merges them into one generative preset.
+
+00:02:15.500 --> 00:02:25.000
+The community prints it at 213 degrees. I see the metres on the spool and the price for my market.
+
+00:02:25.000 --> 00:02:31.500
+My presets sync to OrcaSlicer, and the editor is grouped just like Orca.
+
+00:02:31.500 --> 00:02:35.500
+Wiki guides walk me through every step.
+
+00:02:35.500 --> 00:02:42.500
+Recover finds my old Orca presets on the whole computer. Tick them and import.
+
+00:02:42.500 --> 00:02:50.500
+Moving from a spreadsheet or Spoolman? I import a CSV, and the spools match the catalogue.
+
+00:02:50.500 --> 00:02:54.500
+Three languages: English, Russian and Chinese.
+
+00:02:54.500 --> 00:03:00.500
+Something broke? I report a problem, and the plugin log comes along.
+
+00:03:00.500 --> 00:03:09.500
+In the plugin, My Spools comes in the FilamentHub look or matches OrcaSlicer, as cards or as a list.
+
+00:03:09.500 --> 00:03:17.500
+Makers get a brand page, a cabinet for lines and palettes, official presets and QR labels.
+
+00:03:17.500 --> 00:03:22.500
+The core stays free. See you at filamenthub.club!

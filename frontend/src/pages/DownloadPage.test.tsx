@@ -2,9 +2,11 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getPluginDownloadsMock = vi.hoisted(() => vi.fn());
+const translationState = vi.hoisted(() => ({ language: 'en', resolvedLanguage: 'en' }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: translationState,
     t: (key: string, options?: { tag?: string; version?: string | null }) =>
       options?.tag || options?.version ? `${key}:${options.tag || options.version}` : key,
   }),
@@ -22,6 +24,8 @@ vi.mock('../api/client', () => ({
 
 describe('DownloadPage', () => {
   beforeEach(() => {
+    translationState.language = 'en';
+    translationState.resolvedLanguage = 'en';
     getPluginDownloadsMock.mockResolvedValue({
       release_url: 'https://github.com/WeLizard/FilamentHub/releases/tag/v0.1.3',
       packages: [
@@ -83,5 +87,41 @@ describe('DownloadPage', () => {
         'href',
         'https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/nightly-builds',
       );
+  });
+
+  it('selects the Russian overview video only for Russian and changes source with locale', async () => {
+    const { DownloadPage } = await import('./DownloadPage');
+
+    const { rerender } = render(<DownloadPage />);
+    await screen.findByRole('link', { name: /downloadPage\.octoOpenReleases/ });
+    let video = screen.getByLabelText('downloadPage.videoTitle');
+    expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-en.mp4');
+    expect(video.querySelector('track')).toHaveAttribute(
+      'src',
+      '/download-media/filamenthub-overview-en.vtt',
+    );
+    expect(video.querySelector('track')).toHaveAttribute('srclang', 'en');
+
+    translationState.language = 'ru';
+    translationState.resolvedLanguage = 'ru';
+    rerender(<DownloadPage />);
+    video = screen.getByLabelText('downloadPage.videoTitle');
+    expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-ru.mp4');
+    expect(video.querySelector('track')).toHaveAttribute(
+      'src',
+      '/download-media/filamenthub-overview-ru.vtt',
+    );
+    expect(video.querySelector('track')).toHaveAttribute('srclang', 'ru');
+
+    translationState.language = 'zh';
+    translationState.resolvedLanguage = 'zh';
+    rerender(<DownloadPage />);
+    video = screen.getByLabelText('downloadPage.videoTitle');
+    expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-en.mp4');
+    expect(video.querySelector('track')).toHaveAttribute(
+      'src',
+      '/download-media/filamenthub-overview-en.vtt',
+    );
+    expect(video.querySelector('track')).toHaveAttribute('srclang', 'en');
   });
 });

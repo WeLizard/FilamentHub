@@ -151,6 +151,8 @@ services:
       # SSL certificates from Let's Encrypt
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
+      # Download-page videos, uploaded by the owner console instead of Git
+      - ./media/download:/usr/share/nginx/download-media:ro
     depends_on:
       backend:
         condition: service_healthy

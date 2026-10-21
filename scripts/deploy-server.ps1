@@ -11,7 +11,7 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('Menu', 'Release', 'Publish', 'PublishPluginCommits', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource', 'PublishCatalogSource')]
+    [ValidateSet('Menu', 'Release', 'Publish', 'PublishPluginCommits', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource', 'PublishCatalogSource', 'PublishDownloadMedia')]
     [string]$Action = 'Menu',
 
     # What -Action Release releases; without it the owner picks from a menu.
@@ -1217,6 +1217,49 @@ function Publish-CatalogSource {
     Write-Host 'Теперь открой админку и запусти импорт источника каталога.'
 }
 
+function Publish-DownloadMedia {
+    Assert-Command ssh
+    Assert-Command scp
+
+    $mediaDirectory = Join-Path $repositoryRoot 'frontend\public\download-media'
+    $videos = foreach ($language in @('ru', 'en')) {
+        $path = Join-Path $mediaDirectory "filamenthub-overview-$language.mp4"
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Не найден ролик: $path"
+        }
+        [pscustomobject]@{
+            Path   = $path
+            Name   = Split-Path -Leaf $path
+            Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            SizeMb = [math]::Round((Get-Item -LiteralPath $path).Length / 1MB, 1)
+        }
+    }
+
+    foreach ($video in $videos) {
+        Write-Host "  $($video.Name): $($video.SizeMb) МБ, SHA-256 $($video.Sha256)" -ForegroundColor DarkGray
+    }
+    if (-not (Confirm-Action 'Залить ролики страницы «Скачать» на production VDS?')) {
+        Write-Host 'Заливка роликов отменена.' -ForegroundColor Yellow
+        return
+    }
+
+    $target = Get-ServerTarget
+    $remoteDirectory = "$RemoteProjectDirectory/media/download"
+    # Without the mount nginx would answer 404 even after a successful upload.
+    $mountCheck = "docker inspect filamenthub_frontend_prod --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -Fx '/usr/share/nginx/download-media' >/dev/null"
+    Invoke-Checked ssh @($target, $mountCheck)
+    Invoke-Checked ssh @($target, "mkdir -p '$remoteDirectory'")
+    foreach ($video in $videos) {
+        $remoteTemporary = "$remoteDirectory/.$($video.Name).upload-$PID"
+        Invoke-Checked scp @($video.Path, "${target}:$remoteTemporary")
+        $installCommand = "set -e && echo '$($video.Sha256)  $remoteTemporary' | sha256sum -c - && chmod 644 '$remoteTemporary' && mv -f '$remoteTemporary' '$remoteDirectory/$($video.Name)'"
+        Invoke-Checked ssh @($target, $installCommand)
+    }
+
+    Write-Host ''
+    Write-Host 'Ролики залиты на VDS без пересборки сайта.' -ForegroundColor Green
+}
+
 function Invoke-LocalDevelopmentCommand {
     param([Parameter(Mandatory)][ValidateSet('up', 'down', 'logs', 'ps')][string]$Command)
 
@@ -1286,6 +1329,7 @@ function Show-ProductionMenu {
         Write-Host '  4. Создать зашифрованный backup production-базы'
         Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
         Write-Host '  6. Задеплоить с полной пересборкой (после правки .env на VDS)'
+        Write-Host '  7. Залить ролики страницы «Скачать» (не через Git)'
         Write-Host '  0. Назад'
 
         try {
@@ -1296,6 +1340,7 @@ function Show-ProductionMenu {
                 '4' { Start-ProductionBackup }
                 '5' { Start-BuildCacheCleanup }
                 '6' { Invoke-Release -Items @('site') -RebuildAll }
+                '7' { Publish-DownloadMedia }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -1426,4 +1471,5 @@ switch ($Action) {
     'PublishRelease' { Invoke-Release -Items $Item -CheckOnly:$CheckOnly }
     'UpdateCatalogSource' { Update-CatalogSource }
     'PublishCatalogSource' { Publish-CatalogSource }
+    'PublishDownloadMedia' { Publish-DownloadMedia }
 }

@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Image as ImageIcon, Play, ExternalLink, X, Server, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Image as ImageIcon, ExternalLink, X, Server, ShieldCheck, RefreshCw } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
 import type { PluginDownload } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { SEOHead } from '../components/SEOHead';
+import { normalizeSiteLocale } from '../utils/siteLocale';
 
 // Official OrcaSlicer entry points and the FilamentHub Plugin Hub page. The release
 // link resolves to whatever is current so we never hardcode a version.
@@ -96,7 +97,11 @@ function DownloadScreenshotCardImage({
 }
 
 export function DownloadPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) ?? 'en';
+  const overviewVideoSrc = language === 'ru'
+    ? '/download-media/filamenthub-overview-ru.mp4'
+    : '/download-media/filamenthub-overview-en.mp4';
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const [orcaRelease, setOrcaRelease] = useState<{ tag: string; url: string } | null>(null);
   const [octoPrintReleaseUrl, setOctoPrintReleaseUrl] = useState(FILAMENTHUB_RELEASES_URL);
@@ -580,27 +585,29 @@ export function DownloadPage() {
           </div>
         </div>
 
-        {/* Video placeholder (optional) */}
-        <div className="mt-6 bg-gradient-to-br from-purple-900/50 to-indigo-900/50 rounded-xl p-6 border border-purple-500/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-purple-600/30 rounded-lg flex items-center justify-center">
-                <Play className="w-6 h-6 text-purple-300" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-1">{t('downloadPage.videoTitle')}</h3>
-                <p className="text-sm text-gray-300">{t('downloadPage.videoDesc')}</p>
-              </div>
-            </div>
-            <div className="aspect-video w-48 bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex items-center justify-center border-2 border-dashed border-white/20">
-              <div className="text-center">
-                <ImageIcon className="w-8 h-8 text-gray-500 mx-auto mb-1" />
-                <p className="text-xs text-gray-500">{t('downloadPage.videoLabel')}</p>
-                <p className="text-xs text-gray-600">{t('downloadPage.comingSoon')}</p>
-              </div>
-            </div>
+        {/* Product overview video */}
+        <section className="mt-6 rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-900/50 to-indigo-900/50 p-5 md:p-6">
+          <div className="mb-4">
+            <h3 className="mb-1 text-lg font-semibold text-white">{t('downloadPage.videoTitle')}</h3>
+            <p className="text-sm text-gray-300">{t('downloadPage.videoDesc')}</p>
           </div>
-        </div>
+          <video
+            key={overviewVideoSrc}
+            className="aspect-video w-full rounded-lg border border-white/10 bg-black object-contain"
+            src={overviewVideoSrc}
+            poster="/download-media/filamenthub-overview-poster.webp"
+            controls
+            preload="metadata"
+            playsInline
+            aria-label={t('downloadPage.videoTitle')}
+          >
+            <track
+              kind="captions"
+              src={`/download-media/filamenthub-overview-${language === 'ru' ? 'ru' : 'en'}.vtt`}
+              srcLang={language === 'ru' ? 'ru' : 'en'}
+            />
+          </video>
+        </section>
       </div>
 
       {previewImage && (
