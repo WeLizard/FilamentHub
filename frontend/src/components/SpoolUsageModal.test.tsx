@@ -9,6 +9,7 @@ import { SpoolUsageModal } from './SpoolUsageModal';
 const api = vi.hoisted(() => ({
   usage: vi.fn(),
   revertUsage: vi.fn(),
+  translate: vi.fn((key: string, _params?: unknown) => key),
 }));
 
 vi.mock('../api/client', async (importOriginal) => ({
@@ -21,7 +22,7 @@ vi.mock('../api/client', async (importOriginal) => ({
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, params?: unknown) => api.translate(key, params),
     i18n: { language: 'en' },
   }),
 }));
@@ -81,6 +82,7 @@ describe('SpoolUsageModal warnings', () => {
   it.each([
     ['already_in_balance', 'spoolUsage.alreadyInBalance'],
     ['needs_reconciliation', 'spoolUsage.needsReconciliation'],
+    ['prorated_after_balance', 'spoolUsage.proratedAfterBalance'],
   ])('shows the precise %s accounting warning', async (balanceAccounting, key) => {
     api.usage.mockResolvedValue([{
       id: 2, event_type: 'printer_report', delta_weight_g: 20,
@@ -92,6 +94,38 @@ describe('SpoolUsageModal warnings', () => {
 
     expect(await screen.findByText(key)).toBeInTheDocument();
     expect(screen.queryByText('spoolUsage.warnReported')).not.toBeInTheDocument();
+  });
+
+  it('formats prorated amounts with the shared weight formatter', async () => {
+    api.usage.mockResolvedValue([{
+      id: 5, event_type: 'printer_report', delta_weight_g: 0.35,
+      remaining_weight_g: 980, device_name: 'Printer', job_ref: null,
+      created_at: '2026-09-19T10:00:00Z',
+      meta: { reported_weight_g: 25.04, balance_accounting: 'prorated_after_balance' },
+    }]);
+    renderModal({});
+
+    await screen.findByText('spoolUsage.proratedAfterBalance');
+    expect(api.translate).toHaveBeenCalledWith('spoolUsage.proratedAfterBalance', {
+      reported: '25',
+      charged: '0.35',
+    });
+  });
+
+  it('explains an unreconciled report that carried no source time', async () => {
+    api.usage.mockResolvedValue([{
+      id: 4, event_type: 'printer_report', delta_weight_g: 0,
+      remaining_weight_g: 980, device_name: 'Printer', job_ref: null,
+      created_at: '2026-09-19T10:00:00Z',
+      meta: {
+        reported_weight_g: 25,
+        balance_accounting: 'needs_reconciliation',
+        source_time_known: false,
+      },
+    }]);
+    renderModal({});
+
+    expect(await screen.findByText('spoolUsage.needsReconciliationNoTime')).toBeInTheDocument();
   });
 
   it('labels an estimated printer report even when a device name is present', async () => {

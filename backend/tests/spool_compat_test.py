@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.spool_compat import (
@@ -770,6 +770,134 @@ async def test_spoolman_usage_storm_is_summed_into_a_bounded_checkpoint(
     assert len(broadcasts) == 2
 
 
+async def _age_moonraker_checkpoint(db: AsyncSession, spool: UserSpool, seconds: float):
+    """Pretend the checkpoint's last delta arrived `seconds` ago."""
+    event = await db.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    event.meta = {
+        **event.meta,
+        "checkpoint_last_reported_at": (
+            datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        ).isoformat(),
+    }
+    await db.commit()
+    return event
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("gap_s", "second_g"),
+    [
+        (20, 10),  # failed 7 g request re-sent summed with newer usage
+        (25, 7),  # identical resend well after the first attempt timed out
+        (60, 7),
+    ],
+)
+async def test_moonraker_retry_after_a_failed_request_is_flagged_but_still_applied(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    gap_s: int,
+    second_g: int,
+):
+    """Native Moonraker has no request id and re-sends a failed delta later, summed."""
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "moonraker")
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    first = await client.put(endpoint, json={"use_weight": 7})
+    event = await _age_moonraker_checkpoint(db_session, spool, gap_s)
+    await db_session.refresh(event)
+    assert "possible_repeat" not in event.meta
+    retry = await client.put(endpoint, json={"use_weight": second_g})
+
+    assert first.status_code == retry.status_code == 200
+    assert retry.json()["used_weight"] == pytest.approx(first.json()["used_weight"] + second_g)
+    await db_session.refresh(event)
+    assert event.meta["possible_repeat"] is True
+    assert event.delta_weight_g == pytest.approx(7 + second_g)
+
+
+@pytest.mark.asyncio
+async def test_identical_moonraker_delta_back_to_back_is_flagged(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "moonraker")
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    await client.put(endpoint, json={"use_weight": 3})
+    await client.put(endpoint, json={"use_weight": 3})
+
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    await db_session.refresh(event)
+    assert event.meta["possible_repeat"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("gap_s", "second_g"),
+    [
+        (5, 9),  # regular sync cadence, usage grows
+        (5, 3),
+        (60, 2),  # long pause, less than before: not a re-sent accumulation
+    ],
+)
+async def test_regular_moonraker_cadence_is_not_flagged(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    gap_s: int,
+    second_g: int,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "moonraker")
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    await client.put(endpoint, json={"use_weight": 7})
+    event = await _age_moonraker_checkpoint(db_session, spool, gap_s)
+    await client.put(endpoint, json={"use_weight": second_g})
+
+    await db_session.refresh(event)
+    assert "possible_repeat" not in event.meta
+
+
+@pytest.mark.asyncio
+async def test_compat_patch_initial_weight_alone_is_not_a_balance_check_and_clamps_used(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+    await db_session.refresh(spool)
+    used_before = spool.used_weight_g
+
+    resized = await client.patch(endpoint, json={"initial_weight": used_before + 400})
+    assert resized.status_code == 200
+    event = await db_session.scalar(
+        select(PresetUsageEvent)
+        .where(PresetUsageEvent.spool_id == spool.id)
+        .order_by(PresetUsageEvent.id.desc())
+    )
+    assert "balance_observed_at" not in (event.meta or {})
+
+    weighed = await client.patch(endpoint, json={"used_weight": 10})
+    assert weighed.status_code == 200
+    event = await db_session.scalar(
+        select(PresetUsageEvent)
+        .where(PresetUsageEvent.spool_id == spool.id)
+        .order_by(PresetUsageEvent.id.desc())
+    )
+    assert "balance_observed_at" in event.meta
+
+    shrunk = await client.patch(endpoint, json={"initial_weight": 4})
+    assert shrunk.status_code == 200
+    await db_session.refresh(spool)
+    assert spool.used_weight_g <= spool.initial_weight_g == 4
+
+
 @pytest.mark.asyncio
 async def test_inactive_happy_hare_system_does_not_enable_usage_compaction(
     client: AsyncClient,
@@ -1458,3 +1586,130 @@ async def test_tag_filter_rejects_invalid_uid_instead_of_ignoring_it(
     assert invalid.status_code == 400
     assert unknown.status_code == 200
     assert unknown.json() == []
+
+
+@pytest.mark.asyncio
+async def test_moonraker_checkpoint_is_not_reused_across_a_weighing(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    from app.services.spool_usage_service import revert_spool_usage
+
+    user, spool, device = await _seed_spool_context(db_session)
+    await db_session.commit()
+    await _set_material_system_provider(db_session, user, device, "moonraker")
+    base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+
+    await client.put(f"{base}/use", json={"use_weight": 5})
+    measured = await client.put(f"{base}/measure", json={"weight": 880})
+    after = await client.put(f"{base}/use", json={"use_weight": 3})
+
+    assert measured.status_code == after.status_code == 200
+    # Same Spoolman spool shape as a plain GET, including after a split.
+    plain = await client.get(base)
+    assert set(after.json()) == set(plain.json())
+    assert after.json()["used_weight"] == pytest.approx(123)
+    reports = list(await db_session.scalars(
+        select(PresetUsageEvent)
+        .where(
+            PresetUsageEvent.spool_id == spool.id,
+            PresetUsageEvent.event_type == "printer_report",
+        )
+        .order_by(PresetUsageEvent.id)
+    ))
+    assert [r.delta_weight_g for r in reports] == [pytest.approx(5), pytest.approx(3)]
+    await revert_spool_usage(
+        db_session, user_id=user.id, spool_id=spool.id, event_id=reports[0].id
+    )
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == pytest.approx(118)
+
+
+@pytest.mark.asyncio
+async def test_compat_patch_stating_a_remainder_on_an_empty_spool_puts_it_on_the_shelf(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    from app.schemas.spool import SpoolUpdateRequest
+    from app.services.spool_service import update_spool
+
+    user, spool, device = await _seed_spool_context(db_session)
+    spool.state = UserSpoolState.empty
+    spool.used_weight_g = spool.initial_weight_g
+    await db_session.commit()
+    base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+
+    untouched = await client.patch(base, json={"extra": {"note": "x"}})
+    assert untouched.status_code == 200
+    assert untouched.json()["archived"] is True
+
+    restored = await client.patch(base, json={"remaining_weight": 400})
+    assert restored.status_code == 200
+    assert restored.json()["archived"] is False
+    assert restored.json()["remaining_weight"] == pytest.approx(400)
+
+    await update_spool(db_session, user, spool.id, SpoolUpdateRequest(comment="edited"))
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.shelf
+    assert spool.remaining_weight_g == pytest.approx(400)
+
+
+@pytest.mark.asyncio
+async def test_compat_measure_on_an_empty_spool_puts_it_on_the_shelf(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    spool.state = UserSpoolState.empty
+    spool.used_weight_g = spool.initial_weight_g
+    await db_session.commit()
+    base = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
+
+    response = await client.put(f"{base}/measure", json={"weight": 300})
+
+    assert response.status_code == 200
+    assert response.json()["archived"] is False
+    assert response.json()["remaining_weight"] == pytest.approx(300)
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.shelf
+
+
+@pytest.mark.asyncio
+async def test_compat_delete_loses_a_race_with_a_reservation_as_a_conflict(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.models.crm import CrmOrder, CrmOrderSpoolReservation
+
+    user, spool, device = await _seed_spool_context(db_session)
+    order = CrmOrder(user_id=user.id, number="ORD-1", title="Order", currency="RUB", total=0)
+    db_session.add(order)
+    await db_session.flush()
+    db_session.add(
+        CrmOrderSpoolReservation(
+            order_id=order.id, user_id=user.id, spool_id=spool.id,
+            material_line_key="line-1", weight_g=50.0,
+        )
+    )
+    await db_session.commit()
+    spool_id = spool.id
+
+    async def not_yet_reserved(_db, _spool_id):
+        return False
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.spool_compat.spool_has_reservations", not_yet_reserved
+    )
+    # SQLite only enforces the RESTRICT foreign key on request.
+    await db_session.execute(text("PRAGMA foreign_keys=ON"))
+    try:
+        response = await client.delete(
+            f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool_id}"
+        )
+    finally:
+        await db_session.execute(text("PRAGMA foreign_keys=OFF"))
+
+    assert response.status_code == 409
+    assert "message" in response.json()
+    assert await db_session.get(UserSpool, spool_id) is not None

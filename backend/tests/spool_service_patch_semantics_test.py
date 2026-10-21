@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from app.models.crm import CrmOrder, CrmOrderSpoolReservation
 from app.models.filament import Filament
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
@@ -19,6 +20,7 @@ from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolCreateRequest, SpoolUpdateRequest
 from app.services.spool_service import (
     create_spool,
+    delete_spool,
     latest_price_per_kg,
     latest_price_per_kg_by_filament,
     update_spool,
@@ -111,7 +113,8 @@ async def test_update_spool_should_keep_nullable_fields_when_not_provided(
     assert event.meta["reason"] == "spool_edit"
     assert event.meta["previous_initial_weight_g"] == 1000.0
     assert event.meta["previous_remaining_weight_g"] == 990.0
-    assert "balance_observed_at" in event.meta
+    # Correcting the label weight is not a statement about what is left.
+    assert "balance_observed_at" not in event.meta
 
 
 @pytest.mark.asyncio
@@ -360,3 +363,75 @@ async def test_latest_price_per_kg_uses_newest_priced_spool_of_that_user(
     ) == {filament.id: 50.0}
     assert await latest_price_per_kg_by_filament(db_session, user.id, []) == {}
     assert await latest_price_per_kg(db_session, user.id, filament.id + 999) is None
+
+
+@pytest.mark.asyncio
+async def test_stating_the_used_weight_is_a_balance_check(db_session: AsyncSession):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+
+    await update_spool(db_session, user, spool.id, SpoolUpdateRequest(used_weight_g=10.0))
+
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event is not None and "balance_observed_at" in event.meta
+
+
+@pytest.mark.asyncio
+async def test_entering_a_remaining_amount_on_an_empty_spool_puts_it_back_on_the_shelf(
+    db_session: AsyncSession,
+):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+    spool.state = UserSpoolState.empty
+    spool.used_weight_g = spool.initial_weight_g
+    await db_session.commit()
+
+    result = await update_spool(
+        db_session, user, spool.id, SpoolUpdateRequest(used_weight_g=400.0)
+    )
+
+    assert result.state == "shelf"
+    assert result.used_weight_g == pytest.approx(400.0)
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_empty_state_still_wins_over_an_entered_used_weight(
+    db_session: AsyncSession,
+):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+
+    result = await update_spool(
+        db_session, user, spool.id, SpoolUpdateRequest(state="empty", used_weight_g=400.0)
+    )
+
+    assert result.state == "empty"
+    assert result.used_weight_g == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_reserved_spool_is_a_conflict_that_keeps_it(
+    db_session: AsyncSession,
+):
+    user, spool, _ = await _seed_spool_for_patch_test(db_session)
+    order = CrmOrder(
+        user_id=user.id, number="ORD-1", title="Order", currency="RUB", total=0
+    )
+    db_session.add(order)
+    await db_session.flush()
+    db_session.add(
+        CrmOrderSpoolReservation(
+            order_id=order.id,
+            user_id=user.id,
+            spool_id=spool.id,
+            material_line_key="line-1",
+            weight_g=50.0,
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await delete_spool(db_session, user, spool.id)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "ERR_SPOOL_HAS_RESERVATIONS"
+    assert await db_session.get(UserSpool, spool.id) is not None

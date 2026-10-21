@@ -191,7 +191,8 @@ def _response(job: PrintJob) -> PrintJobResponse:
                 estimated_weight_g=round(estimated_event_weight(usage_event), 4),
                 unreconciled_weight_g=(
                     float(meta.get("reported_weight_g") or 0.0)
-                    if meta.get("balance_accounting") == "needs_reconciliation" else 0.0
+                    if meta.get("balance_accounting") == "needs_reconciliation"
+                    and not meta.get("reverted") else 0.0
                 ),
             )
         )
@@ -245,6 +246,7 @@ def _response(job: PrintJob) -> PrintJobResponse:
             float((event.meta or {}).get("reported_weight_g") or 0.0)
             for event in job.usage_events
             if (event.meta or {}).get("balance_accounting") == "needs_reconciliation"
+            and not (event.meta or {}).get("reverted")
         ), 4),
         started_at=job.started_at,
         finished_at=job.finished_at,

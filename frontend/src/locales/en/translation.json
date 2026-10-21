@@ -7370,6 +7370,7 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "An already empty spool cannot be added",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
     "ERR_SPOOL_WEIGHT_CONFLICT": "The spool balance changed while this form was open. Reopen the form and check the weight before saving.",
+    "ERR_SPOOL_HAS_RESERVATIONS": "This spool is linked to orders and cannot be deleted. Archive it instead.",
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
     "ERR_MATERIAL_ASSIGNMENT_CONFLICT": "This feed position has already changed. Review the refreshed state and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently",
@@ -8313,6 +8314,8 @@
     "alreadyInBalance": "The reported {{reported}} g is already included in the recorded balance. No second debit was made.",
     "reconciledByMeasurement": "The spool balance was checked manually after the {{reported}} g report. No second debit was made.",
     "needsReconciliation": "The printer reported {{reported}} g across a manual balance check. Usage was recorded but not deducted: check the spool balance.",
+    "needsReconciliationNoTime": "The printer reported {{reported}} g without a time, so it cannot be told whether it is already in the balance. Usage was recorded but not deducted: check the spool balance.",
+    "proratedAfterBalance": "The printer reported {{reported}} g across a manual balance check. Only the part printed after the check was deducted: {{charged}} g, assuming steady flow.",
     "estimatedApplied": "Automatically deducted using an estimate",
     "driftUnder": "The measurement came out {{grams}} g below our count",
     "driftOver": "The measurement came out {{grams}} g above our count"

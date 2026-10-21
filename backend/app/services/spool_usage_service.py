@@ -23,6 +23,10 @@ from app.schemas.spool import SpoolUsageEventResponse
 
 _OCTOPRINT_IDEMPOTENCY_PREFIX = "octoprint:"
 _RETRY_REPLAY_WINDOW = timedelta(seconds=15)
+_MOONRAKER_REPEAT_WINDOW = timedelta(seconds=30)
+# Moonraker's default Spoolman sync_rate is 5 s; a failed delta is re-added to
+# its pending total and goes out again with the next cycle's delta.
+_MOONRAKER_SYNC_INTERVAL = timedelta(seconds=5)
 _SPOOLMAN_CHECKPOINT_WINDOW = timedelta(minutes=5)
 _SPOOLMAN_CHECKPOINT_AGGREGATION = "spoolman_delta_window"
 
@@ -57,9 +61,17 @@ async def latest_spool_balance_observation(
 def confirmed_event_weight(event: PresetUsageEvent) -> float:
     """A prior balance measurement can cover consumption without erasing the job fact."""
     meta = event.meta or {}
+    if meta.get("reverted"):
+        # Its reversal row carries -delta against the same job: the pair nets
+        # to zero only if the original counts what was actually applied.
+        return event.delta_weight_g or 0.0
     if meta.get("consumption_kind") == "estimated":
         return 0.0
-    if meta.get("balance_accounting") in {"already_in_balance", "reconciled_by_measurement"}:
+    if meta.get("balance_accounting") in {
+        "already_in_balance",
+        "prorated_after_balance",
+        "reconciled_by_measurement",
+    }:
         return float(meta.get("reported_weight_g") or 0.0)
     return event.delta_weight_g or 0.0
 
@@ -193,12 +205,15 @@ async def find_spoolman_usage_checkpoint(
     return None
 
 
-def spoolman_usage_checkpoint_meta(*, reported_at: datetime) -> dict:
+def spoolman_usage_checkpoint_meta(
+    *, reported_at: datetime, reported_weight_g: float
+) -> dict:
     """Initial provenance for one bounded group of Moonraker deltas."""
     return {
         "aggregation": _SPOOLMAN_CHECKPOINT_AGGREGATION,
         "report_count": 1,
         "checkpoint_last_reported_at": reported_at.isoformat(),
+        "checkpoint_last_reported_weight_g": reported_weight_g,
     }
 
 
@@ -213,6 +228,29 @@ def append_spoolman_usage_checkpoint(
 ) -> None:
     """Merge one accepted transport delta into its current history checkpoint."""
     notes = dict(event.meta or {})
+    # Moonraker keeps a delta whose request failed and sends it again, summed
+    # with newer usage, on a later cycle; the request carries no id. A repeat is
+    # flagged, never dropped: exact dedupe is impossible, and a false positive
+    # only lowers the calculator confidence.
+    last_weight = notes.get("checkpoint_last_reported_weight_g")
+    last_at_raw = notes.get("checkpoint_last_reported_at")
+    if isinstance(last_weight, (int, float)) and isinstance(last_at_raw, str):
+        last_at = datetime.fromisoformat(last_at_raw)
+        if last_at.tzinfo is None:
+            last_at = last_at.replace(tzinfo=timezone.utc)
+        gap = reported_at - last_at
+        identical_resend = (
+            abs(float(last_weight) - reported_weight_g) <= 1e-9
+            and timedelta(0) <= gap <= _MOONRAKER_REPEAT_WINDOW
+        )
+        accumulated_retry = (
+            gap > 2 * _MOONRAKER_SYNC_INTERVAL
+            and reported_weight_g >= float(last_weight)
+        )
+        if identical_resend or accumulated_retry:
+            notes["possible_repeat"] = True
+            notes["possible_repeat_count"] = int(notes.get("possible_repeat_count", 0)) + 1
+    notes["checkpoint_last_reported_weight_g"] = reported_weight_g
     previous_reported = _reported_weight(event) or 0.0
     notes["reported_weight_g"] = previous_reported + reported_weight_g
     if used_length_mm is not None:
@@ -438,8 +476,12 @@ async def revert_spool_usage(
         print_job_id=event.print_job_id,
         meta={
             "reverts_event_id": event.id,
+            # Only a spool-level correction was a weighing; a printer report that
+            # carries the key (prorated) must not turn its reversal into one.
             **({"balance_observed_at": datetime.now(timezone.utc).isoformat()}
-               if notes.get("balance_observed_at") else {}),
+               if notes.get("balance_observed_at")
+               and event.event_type == PresetUsageEventType.manual_adjust
+               else {}),
         },
     )
     await db.commit()

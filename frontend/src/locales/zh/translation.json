@@ -7363,6 +7363,7 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "无法添加已空的线轴",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_WEIGHT_CONFLICT": "此表单打开期间料卷余量已发生变化。请重新打开表单并核对重量后再保存。",
+    "ERR_SPOOL_HAS_RESERVATIONS": "此料卷已关联订单，无法删除。请改为归档。",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
     "ERR_MATERIAL_ASSIGNMENT_CONFLICT": "该供料位置已发生变化。请检查刷新后的状态并重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁",
@@ -8301,6 +8302,8 @@
     "alreadyInBalance": "上报的 {{reported}} 克已包含在录入的余量中，未重复扣除。",
     "reconciledByMeasurement": "上报 {{reported}} 克用量后，料卷余量已手动核对，未重复扣除。",
     "needsReconciliation": "打印机上报的 {{reported}} 克跨越了手动余量核对时间。用量已记录但未扣除，请核对料卷余量。",
+    "needsReconciliationNoTime": "打印机上报的 {{reported}} 克没有时间信息，无法判断是否已计入余量。用量已记录但未扣除，请核对料卷余量。",
+    "proratedAfterBalance": "打印机上报的 {{reported}} 克跨越了手动余量核对时间。仅扣除核对之后打印的部分：{{charged}} 克（按匀速估算）。",
     "estimatedApplied": "已按估算值自动扣除",
     "driftUnder": "实测比我们的计数少 {{grams}} 克",
     "driftOver": "实测比我们的计数多 {{grams}} 克"

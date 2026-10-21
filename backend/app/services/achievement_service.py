@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
-from sqlalchemy import case, distinct, func, select
+from sqlalchemy import case, distinct, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -570,6 +570,14 @@ def _quote_has_calculation() -> object:
     )
 
 
+def _not_reverted() -> object:
+    """A report the owner took back is not consumption that happened."""
+    return or_(
+        PresetUsageEvent.meta.is_(None),
+        PresetUsageEvent.meta["reverted"].as_boolean().is_not(True),
+    )
+
+
 def _material_to_print_conditions(user_id: int) -> tuple[object, ...]:
     provider_completed = (
         select(PrintJobEvent.id)
@@ -589,6 +597,7 @@ def _material_to_print_conditions(user_id: int) -> tuple[object, ...]:
             PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
             PresetUsageEvent.spool_id.is_not(None),
             PresetUsageEvent.delta_weight_g > 0,
+            _not_reverted(),
             select(PrintJobMaterial.id)
             .where(
                 PrintJobMaterial.print_job_id == PrintJob.id,
@@ -1281,6 +1290,7 @@ async def _threshold_evidence(
                     PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
                     PresetUsageEvent.spool_id.is_not(None),
                     PresetUsageEvent.delta_weight_g > 0,
+                    _not_reverted(),
                     selected_material,
                 )
                 .order_by(PresetUsageEvent.created_at.asc(), PresetUsageEvent.id.asc())

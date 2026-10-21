@@ -60,20 +60,28 @@ async def test_manual_balance_covers_delayed_usage_without_erasing_job_consumpti
     replay = await _send(auth_client, bridge, event)
     assert replay.status_code == 200 and replay.json()["deduplicated"]
     await db_session.refresh(bridge.spool_a)
-    assert bridge.spool_a.remaining_weight_g == (990 if timing == "after" else 995)
+    # "across": the 5 g spanned the weighing, so only the share printed after it
+    # (5 s of the 14 s segment) is still missing from the balance.
+    assert bridge.spool_a.remaining_weight_g == pytest.approx(
+        {"before": 995, "across": 995 - 5 * 5 / 14, "after": 990, "missing": 995}[timing]
+    )
     usage = await db_session.scalar(select(PresetUsageEvent).where(
         PresetUsageEvent.spool_id == bridge.spool_a_id,
         PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
     ))
     assert usage.meta.get("balance_accounting") == {
         "before": "already_in_balance",
-        "across": "needs_reconciliation",
+        "across": "prorated_after_balance",
         "missing": "needs_reconciliation",
         "after": None,
     }[timing]
+    if timing == "across":
+        assert usage.meta["prorated_fraction"] == pytest.approx(5 / 14, abs=1e-6)
+        assert usage.delta_weight_g == pytest.approx(5 * 5 / 14)
+        assert usage.meta["reported_weight_g"] == 5
     job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
     assert job.status_code == 200
-    unresolved = timing in {"across", "missing"}
+    unresolved = timing == "missing"
     assert job.json()["confirmed_consumption_g"] == (0 if unresolved else 5)
     assert job.json()["unreconciled_consumption_g"] == (5 if unresolved else 0)
     assert job.json()["usage_segments"][0]["items"][0]["confirmed_weight_g"] == (
@@ -89,7 +97,9 @@ async def test_manual_balance_covers_delayed_usage_without_erasing_job_consumpti
         accepted = await _send(auth_client, bridge, next_event, 2)
         assert accepted.status_code == 200, accepted.text
         await db_session.refresh(bridge.spool_a)
-        assert bridge.spool_a.remaining_weight_g == (987 if timing == "after" else 992)
+        assert bridge.spool_a.remaining_weight_g == pytest.approx(
+            987 if timing == "after" else 995 - 5 * 5 / 14 - 3
+        )
 
     if unresolved:
         # An explicit fresh balance reading also resolves a report when the
@@ -104,9 +114,157 @@ async def test_manual_balance_covers_delayed_usage_without_erasing_job_consumpti
         assert bridge.spool_a.used_weight_g == current_used
         job = await auth_client.get(f"/api/v1/print-jobs/{usage.print_job_id}")
         assert job.json()["unreconciled_consumption_g"] == 0
-        assert job.json()["confirmed_consumption_g"] == (8 if timing == "across" else 5)
+        assert job.json()["confirmed_consumption_g"] == 5
         await db_session.refresh(usage)
         assert usage.meta["balance_accounting"] == "reconciled_by_measurement"
+
+
+async def test_report_observed_before_label_weight_edit_is_still_charged(
+    route_bridge, auth_client, db_session, monkeypatch
+):
+    """Correcting the spool's label weight is not a weighing of what is left."""
+    from app.services import printer_usage_service, spool_service
+
+    bridge = route_bridge
+    base = datetime.now(timezone.utc) + timedelta(seconds=1)
+
+    class EditClock:
+        @staticmethod
+        def now(tz):
+            return base + timedelta(seconds=10)
+
+    monkeypatch.setattr(spool_service, "datetime", EditClock)
+    monkeypatch.setattr(printer_usage_service, "_now", lambda: base + timedelta(seconds=40))
+    edited = await auth_client.patch(
+        f"/api/v1/spools/{bridge.spool_a_id}", json={"initial_weight_g": 1010}
+    )
+    assert edited.status_code == 200, edited.text
+    event = _event(bridge.spool_a_id, bridge.proof, "delayed-outbox", segment_sequence=1)
+    event["items"][0].pop("used_length_mm")
+    event["items"][0]["used_weight_g"] = 5
+    event["started_at"] = (base + timedelta(seconds=1)).isoformat()
+    event["observed_at"] = (base + timedelta(seconds=5)).isoformat()
+
+    response = await _send(auth_client, bridge, event)
+
+    assert response.status_code == 200, response.text
+    await db_session.refresh(bridge.spool_a)
+    assert bridge.spool_a.remaining_weight_g == 1005
+    usage = await db_session.scalar(select(PresetUsageEvent).where(
+        PresetUsageEvent.spool_id == bridge.spool_a_id,
+        PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+    ))
+    assert usage.delta_weight_g == 5
+    assert "balance_accounting" not in usage.meta
+
+
+async def test_reverting_a_prorated_report_does_not_count_as_a_weighing(
+    route_bridge, auth_client, db_session, monkeypatch
+):
+    """Undoing a printer report must not clear another report awaiting a check."""
+    from app.services import printer_usage_service, spool_service
+
+    bridge = route_bridge
+    base = datetime.now(timezone.utc) + timedelta(seconds=1)
+
+    class MeasurementClock:
+        @staticmethod
+        def now(tz):
+            return base + timedelta(seconds=10)
+
+    monkeypatch.setattr(spool_service, "datetime", MeasurementClock)
+    monkeypatch.setattr(printer_usage_service, "_now", lambda: base + timedelta(seconds=40))
+    weighed = await auth_client.patch(
+        f"/api/v1/spools/{bridge.spool_a_id}", json={"used_weight_g": 5}
+    )
+    assert weighed.status_code == 200, weighed.text
+    spanning = _event(bridge.spool_a_id, bridge.proof, "spanning", segment_sequence=1)
+    spanning["items"][0].pop("used_length_mm")
+    spanning["items"][0]["used_weight_g"] = 5
+    spanning["started_at"] = (base + timedelta(seconds=1)).isoformat()
+    spanning["observed_at"] = (base + timedelta(seconds=15)).isoformat()
+    timeless = _event(bridge.spool_a_id, bridge.proof, "timeless", segment_sequence=2)
+    timeless["items"][0].pop("used_length_mm")
+    timeless["items"][0]["used_weight_g"] = 3
+    for sequence, event in enumerate([spanning, timeless], start=1):
+        accepted = await _send(auth_client, bridge, event, sequence)
+        assert accepted.status_code == 200, accepted.text
+
+    reports = list(await db_session.scalars(
+        select(PresetUsageEvent)
+        .where(
+            PresetUsageEvent.spool_id == bridge.spool_a_id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+        )
+        .order_by(PresetUsageEvent.id)
+    ))
+    assert [r.meta["balance_accounting"] for r in reports] == [
+        "prorated_after_balance",
+        "needs_reconciliation",
+    ]
+    reverted = await auth_client.post(
+        f"/api/v1/spools/{bridge.spool_a_id}/usage/{reports[0].id}/revert"
+    )
+
+    assert reverted.status_code == 200, reverted.text
+    assert "balance_observed_at" not in reverted.json()["meta"]
+    await db_session.refresh(reports[1])
+    assert reports[1].meta["balance_accounting"] == "needs_reconciliation"
+    charged = 5 * 5 / 14
+    assert reports[0].delta_weight_g == pytest.approx(charged)
+    assert reverted.json()["delta_weight_g"] == pytest.approx(-charged)
+    job = await auth_client.get(f"/api/v1/print-jobs/{reports[0].print_job_id}")
+    assert job.json()["confirmed_consumption_g"] == pytest.approx(0)
+    assert job.json()["unreconciled_consumption_g"] == pytest.approx(3)
+
+
+@pytest.mark.parametrize("item_start_known", [False, True])
+async def test_segment_after_a_timeless_report_is_prorated_only_with_a_real_start(
+    route_bridge, auth_client, db_session, monkeypatch, item_start_known
+):
+    """A job start standing in for an unknown previous segment end is a guess."""
+    from app.services import printer_usage_service, spool_service
+
+    bridge = route_bridge
+    base = datetime.now(timezone.utc) + timedelta(seconds=1)
+
+    class MeasurementClock:
+        @staticmethod
+        def now(tz):
+            return base + timedelta(seconds=10)
+
+    monkeypatch.setattr(spool_service, "datetime", MeasurementClock)
+    monkeypatch.setattr(printer_usage_service, "_now", lambda: base + timedelta(seconds=40))
+    weighed = await auth_client.patch(
+        f"/api/v1/spools/{bridge.spool_a_id}", json={"used_weight_g": 5}
+    )
+    assert weighed.status_code == 200, weighed.text
+    timeless = _event(bridge.spool_a_id, bridge.proof, "timeless", segment_sequence=1)
+    timeless["items"][0].pop("used_length_mm")
+    timeless["items"][0]["used_weight_g"] = 3
+    later = _event(bridge.spool_a_id, bridge.proof, "later", segment_sequence=2)
+    later["items"][0].pop("used_length_mm")
+    later["items"][0]["used_weight_g"] = 5
+    later["started_at"] = (base + timedelta(seconds=1)).isoformat()
+    later["observed_at"] = (base + timedelta(seconds=20)).isoformat()
+    if item_start_known:
+        later["items"][0]["usage_started_at"] = (base + timedelta(seconds=1)).isoformat()
+    for sequence, event in enumerate([timeless, later], start=1):
+        accepted = await _send(auth_client, bridge, event, sequence)
+        assert accepted.status_code == 200, accepted.text
+
+    reports = list(await db_session.scalars(
+        select(PresetUsageEvent)
+        .where(
+            PresetUsageEvent.spool_id == bridge.spool_a_id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+        )
+        .order_by(PresetUsageEvent.id)
+    ))
+    assert reports[1].meta["balance_accounting"] == (
+        "prorated_after_balance" if item_start_known else "needs_reconciliation"
+    )
+    assert reports[1].delta_weight_g == pytest.approx(5 * 10 / 19 if item_start_known else 0)
 
 
 async def test_estimated_usage_is_deduplicated_and_keeps_source_after_balance_boundary(

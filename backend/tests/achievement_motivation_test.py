@@ -682,6 +682,7 @@ async def test_material_to_print_requires_one_provider_confirmed_consumption_cha
                 event_type=PresetUsageEventType.printer_report,
                 delta_weight_g=50,
                 remaining_weight_g=950,
+                meta={"reverted": True},
             ),
         ]
     )
@@ -701,6 +702,15 @@ async def test_material_to_print_requires_one_provider_confirmed_consumption_cha
             occurred_at=now,
         )
     )
+    await db_session.commit()
+
+    taken_back = await achievement_overview(db_session, user_id=auth_user.id)
+    assert MATERIAL_TO_PRINT not in {item.code for item in taken_back.achievements}
+
+    usage = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.print_job_id == job.id)
+    )
+    usage.meta = {"reverted": False}
     await db_session.commit()
 
     provider_confirmed = await achievement_overview(db_session, user_id=auth_user.id)

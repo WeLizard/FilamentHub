@@ -19,11 +19,13 @@ from app.core.errors import (
     ERR_FILAMENT_NOT_FOUND,
     ERR_SPOOL_CURSOR_INVALID,
     ERR_SPOOL_EMPTY_ON_CREATE,
+    ERR_SPOOL_HAS_RESERVATIONS,
     ERR_SPOOL_LOCATION_CONFLICT,
     ERR_SPOOL_USED_EXCEEDS_INITIAL,
     ERR_SPOOL_WEIGHT_CONFLICT,
     raise_error,
 )
+from app.models.crm import CrmOrderSpoolReservation
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem
@@ -722,6 +724,12 @@ async def update_spool(
     previous_initial_weight = spool.initial_weight_g
     previous_used_weight = spool.used_weight_g
     previous_remaining_weight = spool.remaining_weight_g
+    # A balance boundary is a statement about what is on the spool right now.
+    # Correcting the label weight alone is not one: a delayed printer report
+    # observed before such an edit must still be charged.
+    asserts_balance = (
+        "used_weight_g" in payload.model_fields_set and payload.used_weight_g is not None
+    )
 
     next_initial_weight = (
         payload.initial_weight_g if payload.initial_weight_g is not None else spool.initial_weight_g
@@ -748,6 +756,15 @@ async def update_spool(
     if "comment" in payload.model_fields_set:
         spool.comment = payload.comment
 
+    if (
+        spool.state == UserSpoolState.empty
+        and payload.state is None
+        and asserts_balance
+        and next_used_weight < next_initial_weight
+    ):
+        # Entering a remaining amount on an empty spool says it is not empty.
+        spool.state = UserSpoolState.shelf
+
     if spool.state == UserSpoolState.empty:
         spool.used_weight_g = spool.initial_weight_g
     elif spool.remaining_weight_g <= 0:
@@ -756,7 +773,7 @@ async def update_spool(
     if (
         spool.initial_weight_g != previous_initial_weight
         or spool.used_weight_g != previous_used_weight
-        or payload.used_weight_g is not None
+        or asserts_balance
     ):
         await record_spool_usage(
             db,
@@ -767,7 +784,11 @@ async def update_spool(
                 "reason": "spool_edit",
                 "previous_initial_weight_g": previous_initial_weight,
                 "previous_remaining_weight_g": previous_remaining_weight,
-                "balance_observed_at": datetime.now(timezone.utc).isoformat(),
+                **(
+                    {"balance_observed_at": datetime.now(timezone.utc).isoformat()}
+                    if asserts_balance
+                    else {}
+                ),
             },
         )
 
@@ -824,13 +845,30 @@ async def use_spool(
     return _build_response(spool, filament)
 
 
+async def spool_has_reservations(db: AsyncSession, spool_id: int) -> bool:
+    """A reservation keeps its spool (RESTRICT); the owner archives it instead."""
+    return (
+        await db.scalar(
+            select(CrmOrderSpoolReservation.id)
+            .where(CrmOrderSpoolReservation.spool_id == spool_id)
+            .limit(1)
+        )
+    ) is not None
+
+
 async def delete_spool(db: AsyncSession, user: User, spool_id: int) -> None:
     result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
+    if await spool_has_reservations(db, spool.id):
+        raise_error(409, ERR_SPOOL_HAS_RESERVATIONS)
     await db.execute(
         update(PrintJobMaterial).where(PrintJobMaterial.spool_id == spool.id).values(spool_id=None)
     )
     await db.delete(spool)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_error(409, ERR_SPOOL_HAS_RESERVATIONS)

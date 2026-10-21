@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 
@@ -125,6 +126,13 @@ async def test_spoolmanager_preview_import_and_repeat_are_safe(
     assert spool.extra["display_name"] == "Signal Red PETG"
     assert spool.extra["empty_spool_weight_g"] == "230.0"
     assert spool.extra["currency"] == "€"
+    opening = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert opening is not None
+    assert opening.event_type == PresetUsageEventType.reconcile_adjust
+    assert opening.meta["reason"] == "opening_balance"
+    assert opening.delta_weight_g == 123.4
     preset = await db_session.scalar(
         select(Preset).where(Preset.id == imported.json()["created_draft_ids"][0])
     )

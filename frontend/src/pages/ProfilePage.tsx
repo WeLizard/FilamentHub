@@ -2800,14 +2800,14 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           ...(Number(filamentId) || null) !== spool.filament_id
             ? { filament_id: Number(filamentId) || null }
             : {},
+          // Only a stated used amount is a balance check; a label-weight edit
+          // must not look like one to the usage ledger.
+          ...(initialWeightEditedRef.current ? { initial_weight_g: parsedInitial } : {}),
+          ...(usedWeightEditedRef.current ? { used_weight_g: parsedUsed } : {}),
           ...(initialWeightEditedRef.current || usedWeightEditedRef.current
-            ? {
-              initial_weight_g: parsedInitial,
-              used_weight_g: parsedUsed,
-              expected_initial_weight_g: spool.initial_weight_g,
-              expected_used_weight_g: spool.used_weight_g,
-            }
+            ? { expected_initial_weight_g: spool.initial_weight_g }
             : {}),
+          ...(usedWeightEditedRef.current ? { expected_used_weight_g: spool.used_weight_g } : {}),
           ...(savedPrice !== spool.price
             ? {
               price: savedPrice,

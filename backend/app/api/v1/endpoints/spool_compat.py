@@ -25,6 +25,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -61,6 +62,7 @@ from app.services.spool_service import (
     lock_spool_row,
     release_spool_location,
     shelf_spool_if_unassigned,
+    spool_has_reservations,
 )
 from app.services.spool_tag_service import (
     SpoolTagConflict,
@@ -74,6 +76,7 @@ from app.services.spool_usage_service import (
     append_spoolman_usage_checkpoint,
     find_printer_report_replay,
     find_spoolman_usage_checkpoint,
+    latest_spool_balance_observation,
     mark_printer_report_replay,
     octoprint_job_ref,
     record_spool_usage,
@@ -87,6 +90,10 @@ from .spool_compat_ws import spool_ws_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["spool_compat"])
+
+_SPOOL_LINKED_TO_ORDERS = (
+    "This spool is linked to orders and cannot be deleted. Archive it instead."
+)
 
 _LOCATION_PATTERN = re.compile(r"^(?P<device>.+):\s*gate\s*(?P<gate>\d+)$", re.IGNORECASE)
 _LOCATION_FALLBACK_PATTERN = re.compile(r"^(?P<device>.+):\s*(?P<gate>\d+)$")
@@ -1456,8 +1463,12 @@ async def patch_spool(
         )
 
     before_used = spool.used_weight_g
+    # Only a stated used/remaining amount is a balance observation; changing the
+    # label weight is not, and must not hide a delayed report from the ledger.
+    asserts_balance = body.used_weight is not None or body.remaining_weight is not None
     if body.initial_weight is not None:
         spool.initial_weight_g = float(body.initial_weight)
+        spool.used_weight_g = float(min(spool.used_weight_g, spool.initial_weight_g))
     if body.used_weight is not None:
         spool.used_weight_g = float(min(max(body.used_weight, 0.0), spool.initial_weight_g))
     if body.remaining_weight is not None:
@@ -1465,8 +1476,7 @@ async def patch_spool(
         spool.used_weight_g = float(min(max(computed_used, 0.0), spool.initial_weight_g))
     if (
         spool.used_weight_g != before_used
-        or body.used_weight is not None
-        or body.remaining_weight is not None
+        or asserts_balance
         or body.initial_weight is not None
     ):
         await record_spool_usage(
@@ -1475,7 +1485,11 @@ async def patch_spool(
             event_type=PresetUsageEventType.manual_adjust,
             delta_weight_g=spool.used_weight_g - before_used,
             device_id=_device.id if _device is not None else None,
-            meta={"balance_observed_at": datetime.now(timezone.utc).isoformat()},
+            meta=(
+                {"balance_observed_at": datetime.now(timezone.utc).isoformat()}
+                if asserts_balance
+                else {"reason": "spool_edit"}
+            ),
         )
     if "lot_nr" in fields_set:
         spool.lot_nr = body.lot_nr
@@ -1483,6 +1497,13 @@ async def patch_spool(
         spool.comment = body.comment
     if body.archived is not None:
         spool.state = UserSpoolState.archived if body.archived else UserSpoolState.active
+    elif (
+        spool.state == UserSpoolState.empty
+        and asserts_balance
+        and spool.used_weight_g < spool.initial_weight_g
+    ):
+        # A stated remaining amount on an empty spool says it is not empty.
+        spool.state = UserSpoolState.shelf
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
 
@@ -1653,6 +1674,15 @@ async def _use_spool_impl(
             preset_id=preset_id,
         )
     if checkpoint is not None:
+        # A weighing after the checkpoint opened already includes its grams;
+        # merging into it would make reverting it undo the measurement.
+        balance_boundary = await latest_spool_balance_observation(db, spool.id)
+        created_at = checkpoint.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if balance_boundary is not None and balance_boundary >= created_at:
+            checkpoint = None
+    if checkpoint is not None:
         append_spoolman_usage_checkpoint(
             checkpoint,
             spool=spool,
@@ -1670,7 +1700,11 @@ async def _use_spool_impl(
             **({"adapter": provider} if provider is not None else {}),
         }
         if aggregate_spoolman_deltas:
-            usage_meta.update(spoolman_usage_checkpoint_meta(reported_at=now))
+            usage_meta.update(
+                spoolman_usage_checkpoint_meta(
+                    reported_at=now, reported_weight_g=delta_weight
+                )
+            )
         await record_spool_usage(
             db,
             spool=spool,
@@ -1782,6 +1816,8 @@ async def measure_spool(
     filament = spool.filament
     tare = filament.empty_spool_weight_g if filament is not None and filament.empty_spool_weight_g else 0.0
     remaining_weight = max(body.weight - tare, 0.0)
+    if remaining_weight > spool.initial_weight_g:
+        return _err(status.HTTP_400_BAD_REQUEST, "Measured net weight exceeds the initial filament weight.")
     before_used = spool.used_weight_g
     spool.used_weight_g = float(min(spool.initial_weight_g, max(spool.initial_weight_g - remaining_weight, 0.0)))
     await record_spool_usage(
@@ -1793,6 +1829,8 @@ async def measure_spool(
         # The measured amount is the only fact here; the gap against our own count
         # is how much the reports had drifted, in whichever direction.
         meta={
+            "measured_gross_g": body.weight,
+            "tare_weight_g": tare,
             "measured_remaining_g": remaining_weight,
             "our_remaining_g": spool.initial_weight_g - before_used,
             "balance_observed_at": datetime.now(timezone.utc).isoformat(),
@@ -1802,6 +1840,8 @@ async def measure_spool(
     if spool.first_used_at is None:
         spool.first_used_at = now
     spool.last_used_at = now
+    if spool.state == UserSpoolState.empty and spool.used_weight_g < spool.initial_weight_g:
+        spool.state = UserSpoolState.shelf
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
         await clear_spool_gate_assignments(
@@ -1835,9 +1875,19 @@ async def delete_spool(
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
+    if await spool_has_reservations(db, spool.id):
+        return _err(
+            status.HTTP_409_CONFLICT,
+            _SPOOL_LINKED_TO_ORDERS,
+        )
     await clear_spool_gate_assignments(db, spool)
     await db.delete(spool)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A reservation was created between the check and the commit.
+        await db.rollback()
+        return _err(status.HTTP_409_CONFLICT, _SPOOL_LINKED_TO_ORDERS)
     await _broadcast_spool_event(user.id, "deleted", {"id": spool_id})
     return JSONResponse(content={"message": "Success!"})
 

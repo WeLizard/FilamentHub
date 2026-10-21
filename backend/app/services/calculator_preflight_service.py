@@ -64,11 +64,38 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _changed_balance(event: PresetUsageEvent) -> bool:
+    """Whether this ledger row is evidence of the spool's current balance."""
+    if event.event_type == PresetUsageEventType.print_estimate:
+        return False
+    meta = event.meta or {}
+    if meta.get("reverted"):
+        return False
+    if meta.get("balance_accounting") in {"already_in_balance", "needs_reconciliation"}:
+        return False
+    if event.event_type == PresetUsageEventType.reconcile_adjust:
+        return True
+    if event.event_type == PresetUsageEventType.printer_report:
+        return bool(event.delta_weight_g)
+    return bool(event.delta_weight_g) or bool(meta.get("balance_observed_at"))
+
+
+def _is_balance_boundary(event: PresetUsageEvent) -> bool:
+    """A weighing or an explicit used/remaining statement by the owner."""
+    if (event.meta or {}).get("reverted"):
+        return False
+    return event.event_type == PresetUsageEventType.reconcile_adjust or (
+        event.event_type == PresetUsageEventType.manual_adjust
+        and bool((event.meta or {}).get("balance_observed_at"))
+    )
+
+
 def _remaining_evidence(
     spool: UserSpool,
     event: PresetUsageEvent | None,
     *,
     now: datetime,
+    untrusted: bool = False,
 ) -> _RemainingEvidence:
     if event is None:
         observed_at = _as_utc(spool.updated_at or spool.created_at)
@@ -80,14 +107,27 @@ def _remaining_evidence(
             confidence = "low"
         status: CalculatorRemainingStatus = "known"
     else:
+        meta = event.meta or {}
         observed_at = _as_utc(event.created_at)
         if event.event_type == PresetUsageEventType.reconcile_adjust:
-            evidence = "measurement"
-            confidence = "high"
+            if meta.get("reason") == "opening_balance":
+                # Typed in or carried over when the spool was added; nobody
+                # weighed anything.
+                evidence = "import" if spool.source in _IMPORTED_SPOOL_SOURCES else "manual_update"
+                confidence = "medium"
+            else:
+                evidence = "measurement"
+                confidence = "high"
             status = "known"
         elif event.event_type == PresetUsageEventType.printer_report:
             evidence = "provider_report"
-            confidence = "medium"
+            # A prorated report assumes steady flow across a weighing.
+            confidence = (
+                "low"
+                if meta.get("consumption_kind") == "estimated"
+                or meta.get("balance_accounting") == "prorated_after_balance"
+                else "medium"
+            )
             status = "known"
         elif event.event_type == PresetUsageEventType.manual_adjust:
             evidence = "manual_update"
@@ -98,8 +138,14 @@ def _remaining_evidence(
             confidence = "low"
             status = "unknown"
 
-        if (event.meta or {}).get("possible_repeat"):
+        if meta.get("possible_repeat"):
             status = "unknown"
+
+    if untrusted:
+        # A printer report is waiting for the owner to check the balance, or a
+        # possibly doubled delta has not been followed by a weighing since.
+        status = "unknown"
+        confidence = "low"
 
     can_drift = spool.used_weight_g > 0 or spool.state == UserSpoolState.active
     if status == "known" and can_drift and now - observed_at > _REMAINING_STALE_AFTER:
@@ -117,28 +163,65 @@ async def _latest_usage_events(
     *,
     user_id: int,
     spool_ids: set[int],
-) -> dict[int, PresetUsageEvent]:
+) -> tuple[dict[int, PresetUsageEvent], set[int]]:
+    """Latest balance-changing row per spool, and spools whose balance is in doubt.
+
+    A balance is in doubt while a report waits for reconciliation or a possibly
+    repeated delta has not been followed by a weighing or a stated amount.
+    """
     if not spool_ids:
-        return {}
-    latest_ids = (
+        return {}, set()
+    # Nothing before a spool's latest unreverted weighing can decide its balance
+    # (reports pending reconciliation are closed by it), so older history is
+    # not loaded.
+    boundaries = (
         select(
             PresetUsageEvent.spool_id.label("spool_id"),
-            func.max(PresetUsageEvent.id).label("event_id"),
+            func.max(PresetUsageEvent.id).label("boundary_id"),
         )
         .where(
             PresetUsageEvent.user_id == user_id,
             PresetUsageEvent.spool_id.in_(spool_ids),
+            PresetUsageEvent.meta["reverted"].as_string().is_(None),
+            or_(
+                PresetUsageEvent.event_type == PresetUsageEventType.reconcile_adjust,
+                and_(
+                    PresetUsageEvent.event_type == PresetUsageEventType.manual_adjust,
+                    PresetUsageEvent.meta["balance_observed_at"].as_string().is_not(None),
+                ),
+            ),
         )
         .group_by(PresetUsageEvent.spool_id)
         .subquery()
     )
     rows = await db.execute(
-        select(PresetUsageEvent).join(
-            latest_ids,
-            PresetUsageEvent.id == latest_ids.c.event_id,
+        select(PresetUsageEvent)
+        .outerjoin(boundaries, boundaries.c.spool_id == PresetUsageEvent.spool_id)
+        .where(
+            PresetUsageEvent.user_id == user_id,
+            PresetUsageEvent.spool_id.in_(spool_ids),
+            PresetUsageEvent.event_type != PresetUsageEventType.print_estimate,
+            PresetUsageEvent.id >= func.coalesce(boundaries.c.boundary_id, 0),
         )
+        .order_by(PresetUsageEvent.id.desc())
     )
-    return {event.spool_id: event for event in rows.scalars() if event.spool_id is not None}
+    latest: dict[int, PresetUsageEvent] = {}
+    untrusted: set[int] = set()
+    closed: set[int] = set()
+    for event in rows.scalars():
+        spool_id = event.spool_id
+        if spool_id is None:
+            continue
+        meta = event.meta or {}
+        if meta.get("balance_accounting") == "needs_reconciliation" and not meta.get("reverted"):
+            untrusted.add(spool_id)
+        elif meta.get("possible_repeat") and not meta.get("reverted") and spool_id not in closed:
+            untrusted.add(spool_id)
+        if _is_balance_boundary(event):
+            closed.add(spool_id)
+        if spool_id not in latest and _changed_balance(event):
+            latest[spool_id] = event
+    return latest, untrusted
 
 
 def _rounded(value: float) -> float:
@@ -394,7 +477,7 @@ async def calculate_material_preflight(
     }
 
     repeats_by_job = {job.job_key: job.repeats for job in payload.print_jobs}
-    latest_events = await _latest_usage_events(
+    latest_events, untrusted_spools = await _latest_usage_events(
         db,
         user_id=user_id,
         spool_ids=relevant_spool_ids,
@@ -405,6 +488,7 @@ async def calculate_material_preflight(
             spool,
             latest_events.get(spool_id),
             now=now,
+            untrusted=spool_id in untrusted_spools,
         )
         for spool_id, spool in spools_by_id.items()
     }

@@ -247,6 +247,9 @@ async def process_printer_usage_event(
     else:
         status = PrintJobStatus.paused if "paused" in payload.reasons else PrintJobStatus.printing
         job_payload_hash = payload_hash
+    # False when a later segment starts at a guessed time (the job start stands in
+    # for a previous report whose own time the source did not provide).
+    segment_start_known = True
     if payload.contract_version == 2:
         existing_job_id = await db.scalar(
             select(PrintJob.id)
@@ -291,10 +294,13 @@ async def process_printer_usage_event(
                 and meta.get("segment_sequence") == max(previous_sequences)
             )
             previous_observed = previous_segment.get("observed_at")
+            segment_start_known = (
+                isinstance(previous_observed, str)
+                and previous_segment.get("source_time_known") is True
+            )
             segment_started_at = (
                 _as_utc(datetime.fromisoformat(previous_observed))
-                if isinstance(previous_observed, str)
-                and previous_segment.get("source_time_known") is True
+                if segment_start_known
                 else started_at
             )
         else:
@@ -364,21 +370,40 @@ async def process_printer_usage_event(
         before = spool.used_weight_g
         balance_observed_at = await latest_spool_balance_observation(db, spool.id)
         balance_accounting = None
+        prorated_fraction = 1.0
         item_started_at = (
             min(_as_utc(item.usage_started_at), occurred_at)
             if item.usage_started_at is not None else segment_started_at
         )
         if balance_observed_at is not None:
             if payload.observed_at is None:
+                # Without a source time nothing proves the report is newer than
+                # the weighing: charging it could subtract the same grams twice.
                 balance_accounting = "needs_reconciliation"
             elif occurred_at <= balance_observed_at:
                 balance_accounting = "already_in_balance"
-            elif item_started_at is None or item_started_at < balance_observed_at:
+            elif item_started_at is None:
                 balance_accounting = "needs_reconciliation"
+            elif item_started_at < balance_observed_at:
+                if item.usage_started_at is not None or segment_start_known:
+                    # The weighing fell inside the segment: only the part
+                    # printed after it is missing from the balance, assuming
+                    # steady flow.
+                    balance_accounting = "prorated_after_balance"
+                    prorated_fraction = (occurred_at - balance_observed_at) / (
+                        occurred_at - item_started_at
+                    )
+                else:
+                    # A guessed start would skew the fraction either way.
+                    balance_accounting = "needs_reconciliation"
         consumed = 0.0
         if balance_accounting is None:
             available = max(0.0, spool.initial_weight_g - before)
             consumed = min(reported_weight, available)
+            spool.used_weight_g = before + consumed
+        elif balance_accounting == "prorated_after_balance":
+            available = max(0.0, spool.initial_weight_g - before)
+            consumed = min(reported_weight * prorated_fraction, available)
             spool.used_weight_g = before + consumed
         total_consumed += consumed
         spool.last_used_at = received_at
@@ -433,6 +458,11 @@ async def process_printer_usage_event(
                 **({
                     "balance_accounting": balance_accounting,
                     "balance_observed_at": balance_observed_at.isoformat(),
+                    **(
+                        {"prorated_fraction": round(prorated_fraction, 6)}
+                        if balance_accounting == "prorated_after_balance"
+                        else {}
+                    ),
                 } if balance_accounting is not None else {}),
                 **({"usage_route": route} if route is not None else {}),
             },

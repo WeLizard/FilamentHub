@@ -257,9 +257,25 @@ describe('SpoolForm printer placement', () => {
     fireEvent.change(screen.getByDisplayValue('1000'), { target: { value: '900' } });
     fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolEditModal.submit' }));
 
+    // A label-weight edit is not a balance check: the used amount stays out of it.
     await waitFor(() => expect(apiMocks.updateSpool).toHaveBeenLastCalledWith(1270, {
       initial_weight_g: 900,
-      used_weight_g: 5,
+      expected_initial_weight_g: 1000,
+    }));
+
+    view.unmount();
+    render(
+      <QueryClientProvider client={new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })}>
+        <SpoolForm mode="edit" spool={spool} onSaved={vi.fn()} onCancel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByDisplayValue('5'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolEditModal.submit' }));
+
+    await waitFor(() => expect(apiMocks.updateSpool).toHaveBeenLastCalledWith(1270, {
+      used_weight_g: 8,
       expected_initial_weight_g: 1000,
       expected_used_weight_g: 5,
     }));

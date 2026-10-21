@@ -33,7 +33,7 @@ const formatWeight = (weight: number, locale: string, precise = false) =>
     maximumFractionDigits: precise ? (Math.abs(weight) < 1 ? 2 : 1) : 0,
   }).format(Math.abs(weight));
 
-function warningFor(event: SpoolUsageEvent, t: TFunction): string | null {
+function warningFor(event: SpoolUsageEvent, t: TFunction, locale: string): string | null {
   const meta = event.meta ?? {};
   if (meta.balance_accounting === 'already_in_balance') {
     return t('spoolUsage.alreadyInBalance', { reported: meta.reported_weight_g });
@@ -41,8 +41,19 @@ function warningFor(event: SpoolUsageEvent, t: TFunction): string | null {
   if (meta.balance_accounting === 'reconciled_by_measurement') {
     return t('spoolUsage.reconciledByMeasurement', { reported: meta.reported_weight_g });
   }
+  if (meta.balance_accounting === 'prorated_after_balance') {
+    return t('spoolUsage.proratedAfterBalance', {
+      reported: formatWeight(Number(meta.reported_weight_g), locale, true),
+      charged: formatWeight(Number(event.delta_weight_g), locale, true),
+    });
+  }
   if (meta.balance_accounting === 'needs_reconciliation') {
-    return t('spoolUsage.needsReconciliation', { reported: meta.reported_weight_g });
+    return t(
+      meta.source_time_known === false
+        ? 'spoolUsage.needsReconciliationNoTime'
+        : 'spoolUsage.needsReconciliation',
+      { reported: meta.reported_weight_g },
+    );
   }
   if (meta.possible_repeat) {
     return t('spoolUsage.warnRepeat');
@@ -157,7 +168,7 @@ export const SpoolUsageModal: React.FC<SpoolUsageModalProps> = ({ spool, isOpen,
                 && !(balanceAccounting === 'already_in_balance' && delta === 0);
               const canRevert =
                 !reverted && !isReversal && !unappliedEstimate && event.event_type !== MEASUREMENT && delta > 0;
-              const warning = warningFor(event, t);
+              const warning = warningFor(event, t, i18n.language);
 
               return (
                 <div key={event.id} className="rounded-lg bg-white/5 px-3 py-2 text-xs">

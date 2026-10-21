@@ -10,6 +10,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from app.core.errors import (
 )
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -33,6 +35,7 @@ from app.schemas.spool import (
     SpoolManagerPreviewRow,
 )
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
+from app.services.spool_usage_service import record_spool_usage
 
 SPOOLMANAGER_SOURCE = "octoprint_spoolmanager"
 MAX_IMPORT_ROWS = 1_000
@@ -705,6 +708,19 @@ async def import_parsed_spool_rows(
             ),
         )
         db.add(spool)
+        if spool.used_weight_g > 0:
+            await db.flush()
+            await record_spool_usage(
+                db,
+                spool=spool,
+                event_type=PresetUsageEventType.reconcile_adjust,
+                delta_weight_g=spool.used_weight_g,
+                meta={
+                    "reason": "opening_balance",
+                    "balance_observed_at": datetime.now(timezone.utc).isoformat(),
+                    "measured_remaining_g": spool.remaining_weight_g,
+                },
+            )
         created_spools.append(spool)
         existing.add(row.fingerprint)
 
