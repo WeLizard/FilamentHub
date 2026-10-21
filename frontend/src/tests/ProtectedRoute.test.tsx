@@ -15,11 +15,11 @@ function LocationProbe() {
   const location = useLocation();
   return <span data-testid="location">{location.pathname}{location.search}</span>;
 }
-function renderRoute(requiredRole?: 'admin') {
+function renderRoute(requiredRole?: 'admin', insideLayout = false) {
   return render(<MemoryRouter initialEntries={['/profile?tab=spools']}>
     <LocationProbe />
     <Routes>
-      <Route path="/profile" element={<ProtectedRoute requiredRole={requiredRole}><span>private content</span></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute requiredRole={requiredRole} insideLayout={insideLayout}><span>private content</span></ProtectedRoute>} />
       <Route path="/" element={<span>home</span>} />
     </Routes>
   </MemoryRouter>);
@@ -53,6 +53,17 @@ describe('ProtectedRoute authentication states', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(screen.getByTestId('location')).toHaveTextContent('/');
     expect(screen.getByText('home')).toBeInTheDocument();
+  });
+
+  it('renders the auth-required state without a second full-page background inside Layout', () => {
+    const inside = renderRoute(undefined, true);
+    expect(screen.getByText('protectedRoute.auth_required_title')).toBeInTheDocument();
+    expect(inside.container.querySelectorAll('.min-h-screen, .bg-gradient-to-br')).toHaveLength(0);
+    inside.unmount();
+
+    const standalone = renderRoute();
+    expect(screen.getByText('protectedRoute.auth_required_title')).toBeInTheDocument();
+    expect(standalone.container.querySelectorAll('.min-h-screen.bg-gradient-to-br')).toHaveLength(1);
   });
 
   it('keeps a role denial separate from expired authentication', () => {

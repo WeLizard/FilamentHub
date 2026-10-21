@@ -442,7 +442,7 @@ function AppContent() {
           path="/embed"
           element={
             <Layout>
-              <ProtectedRoute>
+              <ProtectedRoute insideLayout>
                 <Suspense fallback={<PageLoader />}>
                   <ProfilePage />
                 </Suspense>
