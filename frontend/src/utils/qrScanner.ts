@@ -96,3 +96,17 @@ export async function createQrFrameDecoder(): Promise<(video: HTMLVideoElement) 
     return result?.data ?? null;
   };
 }
+
+export type QrCameraFailure = 'notSupported' | 'permissionDenied' | 'noCamera';
+
+/** Maps a getUserMedia failure to the reason shown to the person. */
+export function classifyCameraError(error: unknown): QrCameraFailure {
+  const name = (error as { name?: string } | null)?.name;
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+    return 'permissionDenied';
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') {
+    return 'noCamera';
+  }
+  return 'notSupported';
+}

@@ -488,7 +488,12 @@
     "hint": "将摄像头指向线轴上的二维码",
     "resolving": "正在打开材料…",
     "notOurQr": "这不是 FilamentHub 线轴二维码。请指向线轴上的二维码。",
-    "close": "关闭"
+    "close": "关闭",
+    "camera": {
+      "notSupported": "此浏览器无法使用摄像头扫描。添加线轴时请手动输入二维码。",
+      "permissionDenied": "摄像头权限已被拒绝。请在浏览器设置中允许，或在添加线轴时手动输入二维码。",
+      "noCamera": "此设备上未找到摄像头。添加线轴时请手动输入二维码。"
+    }
   },
   "layout": {
     "tagline": "智能耗材目录",
@@ -2868,6 +2873,8 @@
   },
   "qrScanResult": {
     "productVariantHint": "这是产品型号，不是某一个实体线轴。",
+    "ownSpoolTitle": "这是您的线轴",
+    "openOwnSpool": "打开线轴",
     "inventoryTitle": "您的线轴",
     "inventoryLoginHint": "登录后可查看您的线轴。",
     "inventoryLoading": "正在检查您的线轴...",
@@ -3886,6 +3893,7 @@
       "scanQr": "扫描二维码",
       "scanQrHint": "使用二维码扫描器扫描或粘贴代码/链接，例如/qr/CODE。",
       "scanQrOrEnterCode": "或手动输入代码",
+      "scanQrUsePhoneHint": "您可以在 FilamentHub 网站上用手机扫描二维码标签。",
       "scanQrPlaceholder": "示例：FHUB-ABC123或https://filamenthub.ru/qr/FHUB-ABC123",
       "scanQrApply": "应用二维码",
       "scanQrPaste": "从剪贴板粘贴",

@@ -550,6 +550,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               setQrScanResult(null);
               navigate('/profile?tab=spools');
             }}
+            onOpenOwnSpool={(spoolId) => {
+              setQrScanResult(null);
+              navigate(`/profile?tab=spools&spool=${spoolId}`);
+            }}
           />
         </Suspense>
       )}

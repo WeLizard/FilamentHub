@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PhysicalPrinter, QrScanResponse, UserSpool } from '../api/client';
 import { QrScanResultModal } from './QrScanResultModal';
 
-const { listPrinters, listSpools, savePreset } = vi.hoisted(() => ({
+const { getSpool, listPrinters, listSpools, savePreset } = vi.hoisted(() => ({
+  getSpool: vi.fn(),
   listPrinters: vi.fn(),
   listSpools: vi.fn(),
   savePreset: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { list: listPrinters },
   savedPresetsAPI: { save: savePreset },
-  spoolsAPI: { feed: listSpools },
+  spoolsAPI: { feed: listSpools, get: getSpool },
 }));
 
 vi.mock('../hooks/useConfigurationPresetRecommendation', () => ({
@@ -111,6 +112,7 @@ function renderModal(
     onRequestLogin?: () => void;
     onAddSpool?: (placement: 'shelf' | 'printer') => void;
     onOpenSpools?: () => void;
+    onOpenOwnSpool?: (spoolId: number) => void;
   } = {},
 ) {
   const queryClient = new QueryClient({
@@ -128,6 +130,7 @@ function renderModal(
         onRequestLogin={options.onRequestLogin}
         onAddSpool={options.onAddSpool}
         onOpenSpools={options.onOpenSpools}
+        onOpenOwnSpool={options.onOpenOwnSpool}
       />
     </QueryClientProvider>,
   );
@@ -151,6 +154,37 @@ describe('QrScanResultModal', () => {
     listSpools.mockReset();
     listSpools.mockResolvedValue(feedPage([]));
     savePreset.mockReset();
+    getSpool.mockReset();
+    getSpool.mockResolvedValue(makeSpool({ id: 11, remaining_weight_g: 750 }));
+  });
+
+  const ownIdentity = (spool_id: number | null) => ({
+    version: 1,
+    mode: 'instance' as const,
+    issuer: 'user' as const,
+    resolution: spool_id === null ? ('product_only' as const) : ('linked' as const),
+    spool_id,
+  });
+
+  it('shows the own-spool block and opens that exact spool', async () => {
+    const onOpenOwnSpool = vi.fn();
+    renderModal({ ...baseResult, qr_identity: ownIdentity(11) }, { onOpenOwnSpool });
+
+    expect(await screen.findByTestId('qr-own-spool')).toBeInTheDocument();
+    expect(screen.getByText('qrScanResult.ownSpoolTitle')).toBeInTheDocument();
+    expect(await screen.findByText(/qrScanResult.inventoryRemaining/)).toBeInTheDocument();
+    expect(getSpool).toHaveBeenCalledWith(11, expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.openOwnSpool' }));
+    expect(onOpenOwnSpool).toHaveBeenCalledWith(11);
+    // The material block stays below.
+    expect(screen.getByText('qrScanResult.presetTitle')).toBeInTheDocument();
+  });
+
+  it('has no own-spool block without a bound spool', () => {
+    renderModal({ ...baseResult, qr_identity: ownIdentity(null) });
+
+    expect(screen.queryByTestId('qr-own-spool')).not.toBeInTheDocument();
+    expect(getSpool).not.toHaveBeenCalled();
   });
 
   it('saves only after an explicit click and keeps Orca sync disabled', async () => {

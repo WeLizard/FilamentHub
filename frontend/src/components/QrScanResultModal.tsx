@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   Boxes,
   CheckCircle2,
+  PackageOpen,
   ExternalLink,
   Library,
   Loader2,
@@ -38,6 +39,8 @@ interface QrScanResultModalProps {
   onOpenMaterial?: () => void;
   onAddSpool?: (placement: 'shelf' | 'printer') => void;
   onOpenSpools?: () => void;
+  /** Open the user's own spool when the scanned QR is bound to one of theirs. */
+  onOpenOwnSpool?: (spoolId: number) => void;
   onContinue?: () => void;
   continueLabel?: string;
   onRequestLogin?: () => void;
@@ -50,6 +53,7 @@ export function QrScanResultModal({
   onOpenMaterial,
   onAddSpool,
   onOpenSpools,
+  onOpenOwnSpool,
   onContinue,
   continueLabel,
   onRequestLogin,
@@ -132,6 +136,13 @@ export function QrScanResultModal({
     queryKey: ['qr-inventory-locations', userId],
     queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: isAuthenticated,
+    staleTime: 30_000,
+  });
+  const ownSpoolId = isAuthenticated ? result.qr_identity?.spool_id ?? null : null;
+  const ownSpoolQuery = useQuery({
+    queryKey: spoolQueryKeys.detail(userId, ownSpoolId ?? 0),
+    queryFn: ({ signal }) => spoolsAPI.get(ownSpoolId!, signal),
+    enabled: ownSpoolId !== null,
     staleTime: 30_000,
   });
   const matchingSpools = mergeSpoolFeedPages(inventoryQuery.data?.pages);
@@ -224,6 +235,43 @@ export function QrScanResultModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {ownSpoolId !== null && (
+          <div
+            data-testid="qr-own-spool"
+            className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] p-3.5"
+          >
+            <div className="flex items-start gap-3">
+              <PackageOpen className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-white">
+                  {t('qrScanResult.ownSpoolTitle')}
+                </p>
+                <p className="mt-1 text-xs text-slate-300">
+                  {t('qrScanResult.inventorySpoolLabel', { id: ownSpoolId })}
+                  {ownSpoolQuery.data && (
+                    <>
+                      {' · '}
+                      {t('qrScanResult.inventoryRemaining', {
+                        weight: Math.round(ownSpoolQuery.data.remaining_weight_g),
+                      })}
+                    </>
+                  )}
+                </p>
+                {onOpenOwnSpool && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenOwnSpool(ownSpoolId)}
+                    className="mt-2.5 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {t('qrScanResult.openOwnSpool')}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-3 rounded-xl border border-blue-400/15 bg-blue-400/[0.06] p-3.5">
           <div className="flex items-start gap-3">

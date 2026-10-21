@@ -488,7 +488,12 @@
     "hint": "Point the camera at a spool QR code",
     "resolving": "Opening the material…",
     "notOurQr": "This isn't a FilamentHub spool QR. Point at the code on the spool.",
-    "close": "Close"
+    "close": "Close",
+    "camera": {
+      "notSupported": "This browser can't scan with the camera. Enter the QR code manually when adding a spool.",
+      "permissionDenied": "Camera access is blocked. Allow it in your browser settings, or enter the QR code manually when adding a spool.",
+      "noCamera": "No camera found on this device. Enter the QR code manually when adding a spool."
+    }
   },
   "layout": {
     "tagline": "Intelligent materials catalog",
@@ -2873,6 +2878,8 @@
   },
   "qrScanResult": {
     "productVariantHint": "Product variant, not one physical spool.",
+    "ownSpoolTitle": "This is your spool",
+    "openOwnSpool": "Open spool",
     "inventoryTitle": "Your spools",
     "inventoryLoginHint": "Sign in to see your spools.",
     "inventoryLoading": "Checking your spools...",
@@ -3892,6 +3899,7 @@
       "scanQr": "Scan QR",
       "scanQrHint": "Scan using a QR scanner or paste a code/link like /qr/CODE.",
       "scanQrOrEnterCode": "or enter the code manually",
+      "scanQrUsePhoneHint": "You can scan QR labels with your phone on the FilamentHub website.",
       "scanQrPlaceholder": "Example: FHUB-ABC123 or https://filamenthub.ru/qr/FHUB-ABC123",
       "scanQrApply": "Apply QR",
       "scanQrPaste": "Paste from clipboard",

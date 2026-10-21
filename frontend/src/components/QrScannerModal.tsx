@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, X } from 'lucide-react';
 import { ModalOverlay } from './ModalOverlay';
-import { createQrFrameDecoder } from '../utils/qrScanner';
+import { classifyCameraError, createQrFrameDecoder } from '../utils/qrScanner';
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -53,7 +53,7 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
       setNotice(null);
       setIsReady(false);
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
+        setError(t('qrScanner.camera.notSupported'));
         return;
       }
       try {
@@ -120,9 +120,9 @@ export function QrScannerModal({ isOpen, onClose, onDetected, busy = false }: Qr
           frameRef.current = requestAnimationFrame((ts) => void scanFrame(ts));
         };
         frameRef.current = requestAnimationFrame((ts) => void scanFrame(ts));
-      } catch {
+      } catch (cameraError) {
         if (!cancelled) {
-          setError(t('profilePage.spoolAddModal.scanQrCameraNotSupported'));
+          setError(t(`qrScanner.camera.${classifyCameraError(cameraError)}`));
         }
       }
     };

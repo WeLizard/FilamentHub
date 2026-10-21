@@ -261,6 +261,8 @@ export const ProfilePage: React.FC = () => {
     const parsed = Number(rawId);
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }, [profileSearchParams]);
+  const requestedSpoolParam = profileSearchParams.get('spool');
+  const [pendingOpenSpoolId, setPendingOpenSpoolId] = useState<number | null>(null);
   const spoolIntakeSource = profileSearchParams.get('source') === 'qr' ? 'qr' : 'manual';
   const spoolIntakePlacement = profileSearchParams.get('placement') === 'printer'
     ? 'printer'
@@ -347,19 +349,26 @@ export const ProfilePage: React.FC = () => {
     if (profileSearchParams.get('add_spool') === '1' && spoolIntakeFilamentId !== null) {
       setIsAddSpoolOpen(true);
     }
+    // A scanned personal spool QR deep-links straight to that spool's card.
+    const requestedSpoolId = Number(requestedSpoolParam);
+    if (requestedSpoolParam !== null && Number.isSafeInteger(requestedSpoolId) && requestedSpoolId > 0) {
+      setPendingOpenSpoolId(requestedSpoolId);
+      setUserTab('spools');
+    }
     // The deep link has done its job. Left in the address it would win over the
     // remembered tab on every reload and pin the person to one section.
-    if (requestedTab !== null || requestedPresetFilter !== null) {
+    if (requestedTab !== null || requestedPresetFilter !== null || requestedSpoolParam !== null) {
       const nextParams = new URLSearchParams(profileSearchParams);
       nextParams.delete('tab');
       nextParams.delete('preset_filter');
+      nextParams.delete('spool');
       const nextSearch = nextParams.toString();
       navigate(
         `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash}`,
         { replace: true },
       );
     }
-  }, [profileSearchParams, spoolIntakeFilamentId, navigate, location.pathname, dedicatedSpools]);
+  }, [profileSearchParams, spoolIntakeFilamentId, requestedSpoolParam, navigate, location.pathname, dedicatedSpools]);
 
   useEffect(() => {
     if (dedicatedSpools) return;
@@ -1284,6 +1293,8 @@ export const ProfilePage: React.FC = () => {
           initialFilamentId={spoolIntakeFilamentId}
           initialSource={spoolIntakeSource}
           initialPlacement={spoolIntakePlacement}
+          openSpoolId={pendingOpenSpoolId}
+          onOpenSpoolHandled={() => setPendingOpenSpoolId(null)}
           onResolveImport={(draftId) => {
             const draft = userPresets.find((preset) => preset.id === draftId);
             if (draft) {
@@ -2430,6 +2441,8 @@ interface SpoolFormProps {
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
   initialPlacement?: 'ask' | 'shelf' | 'printer';
+  /** Jump to another owned spool, e.g. from a scanned personal QR. */
+  onOpenSpool?: (spoolId: number) => void;
   onSaved: () => void;
   onCancel: () => void;
 }
@@ -2440,10 +2453,14 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   initialFilamentId = null,
   initialSource = 'manual',
   initialPlacement = 'ask',
+  onOpenSpool,
   onSaved,
   onCancel,
 }) => {
   const { user } = useAuth();
+  // Nobody photographs a spool with a desktop camera from inside OrcaSlicer, and
+  // its embedded browser may not expose the camera at all.
+  const cameraScanAvailable = !isPluginEmbed();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [filamentId, setFilamentId] = useState<string>(spool?.filament_id ? String(spool.filament_id) : '');
@@ -3058,6 +3075,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           onClose={() => setQrScanResult(null)}
           onContinue={applyQrScanResult}
           continueLabel={t('qrScanResult.useForSpool')}
+          onOpenOwnSpool={onOpenSpool}
         />
       )}
       <h3 className="text-white font-semibold text-base">
@@ -3082,7 +3100,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             <p className="text-xs text-gray-400">{t('profilePage.spoolAddModal.scanQrHint')}</p>
 
             {/* Мобила: камера — основной способ */}
-            {isTouchDevice && (
+            {cameraScanAvailable && isTouchDevice && (
               <button
                 type="button"
                 onClick={() => {
@@ -3101,7 +3119,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             )}
 
             {/* Превью камеры */}
-            {isCameraOpen && (
+            {cameraScanAvailable && isCameraOpen && (
               <div className="rounded-lg overflow-hidden border border-white/15 bg-black/30">
                 <video ref={videoRef} className="w-full max-h-64 object-cover" playsInline muted autoPlay />
                 <div className="px-3 py-2 text-xs text-gray-300 border-t border-white/10">
@@ -3111,7 +3129,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             )}
 
             {/* Ручной ввод кода — основной на ПК, запасной на мобиле */}
-            {isTouchDevice && (
+            {cameraScanAvailable && isTouchDevice && (
               <p className="text-[11px] text-gray-500 pt-1">{t('profilePage.spoolAddModal.scanQrOrEnterCode')}</p>
             )}
             <input
@@ -3141,7 +3159,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
                 {t('profilePage.spoolAddModal.scanQrPaste')}
               </button>
               {/* ПК: камера доступна, но второстепенно (вебкой неудобно) */}
-              {!isTouchDevice && (
+              {cameraScanAvailable && !isTouchDevice && (
                 <button
                   type="button"
                   onClick={() => {
@@ -3159,6 +3177,9 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
                 </button>
               )}
             </div>
+            {!cameraScanAvailable && (
+              <p className="text-[11px] text-gray-500">{t('profilePage.spoolAddModal.scanQrUsePhoneHint')}</p>
+            )}
           </div>
         )}
 
@@ -3358,6 +3379,9 @@ interface SpoolsTabProps {
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
   initialPlacement?: 'ask' | 'shelf' | 'printer';
+  /** Spool to open for editing on arrival (deep link from a scanned personal QR). */
+  openSpoolId?: number | null;
+  onOpenSpoolHandled?: () => void;
   onResolveImport: (draftId: number) => void;
   onResolveCompatImport: (importId: number) => void;
 }
@@ -3372,6 +3396,8 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   initialFilamentId = null,
   initialSource = 'manual',
   initialPlacement = 'ask',
+  openSpoolId = null,
+  onOpenSpoolHandled,
   onResolveImport,
   onResolveCompatImport,
 }) => {
@@ -3403,6 +3429,24 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     'collapsed',
   );
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
+
+  const openSpoolForEdit = async (spoolId: number) => {
+    try {
+      const target = await spoolsAPI.get(spoolId);
+      setIsAddOpen(false);
+      setUsingSpool(null);
+      setEditingSpool(target);
+    } catch (error: any) {
+      setActionError(translateApiError(t, error?.response?.data?.detail));
+    }
+  };
+
+  useEffect(() => {
+    if (openSpoolId === null) return;
+    void openSpoolForEdit(openSpoolId);
+    onOpenSpoolHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSpoolId]);
 
   const feedParams = useMemo(() => (
     spoolTab === 'archived'
@@ -3571,6 +3615,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 initialFilamentId={initialFilamentId}
                 initialSource={initialSource}
                 initialPlacement={initialPlacement}
+                onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
                 onSaved={() => {
                   setIsAddOpen(false);
                   onRefetch();
@@ -3588,6 +3633,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
               <SpoolForm
                 mode="edit"
                 spool={editingSpool}
+                onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
                 onSaved={() => {
                   setEditingSpool(null);
                   onRefetch();

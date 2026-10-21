@@ -1494,8 +1494,18 @@ export const filamentReviewsAPI = {
 };
 
 // QR Code API
+/** Mirrors backend `QrResolution.public_identity()`; `spool_id` is set only for the owner. */
+export interface QrIdentity {
+  version: number;
+  mode: 'sku' | 'instance';
+  issuer: 'user' | 'manufacturer' | null;
+  resolution: 'product' | 'product_only' | 'unbound' | 'linked' | 'pending_retirement';
+  spool_id: number | null;
+}
+
 export interface QrScanResponse {
   filament: Filament;
+  qr_identity?: QrIdentity;
   /** Legacy compatibility field. Recognition never saves a preset. */
   preset_added: boolean;
   preset: Preset | null;
