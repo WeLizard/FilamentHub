@@ -359,6 +359,13 @@ export function DownloadPage() {
             />
           </div>
         </div>
+        <div className="mt-4 flex gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+          <p className="text-sm text-gray-300">
+            <span className="font-semibold text-white">{t('downloadPage.permissionTitle')}</span>{' '}
+            {t('downloadPage.permissionDesc')}
+          </p>
+        </div>
       </div>
 
       {/* OctoPrint companion plugin */}

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.5"
+# version = "0.2.6"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -69,10 +69,8 @@ the account access/refresh credentials never cross the plugin bridge. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
 
-import base64
 import codecs
 import csv
-import ftplib
 import gzip
 import io
 import math
@@ -95,6 +93,7 @@ import shutil
 import socket
 import ssl
 import struct
+import sys
 import tempfile
 import threading
 import time
@@ -102,7 +101,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-import webbrowser
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -621,7 +619,7 @@ def push_native_notification(level_name, text):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.5"
+PLUGIN_VERSION = "0.2.6"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -637,7 +635,6 @@ PLUGIN_CAPABILITIES = (
     "printer-setup-v1",
     "printer-discovery-v1",
     "open-external",
-    "quote-pdf-save-v1",
 )
 PROD_SITE_URL = "https://filamenthub.ru"
 PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
@@ -880,11 +877,12 @@ def open_in_system_browser(url):
     # on Windows is ShellExecute("open", url). os.startfile is that same call
     # and works inside Orca's embedded Python, where webbrowser.open can report
     # success without actually launching anything. Fall back to webbrowser on
-    # non-Windows or if startfile is unavailable/raises.
+    # non-Windows or if startfile raises.
+    import webbrowser
+
     try:
-        startfile = getattr(os, "startfile", None)
-        if startfile is not None:
-            startfile(url)
+        if sys.platform == "win32":
+            os.startfile(url)
             return True
         return bool(webbrowser.open(url))
     except Exception:
@@ -924,106 +922,6 @@ def _write_bytes_atomic_unchecked(path, payload, mode=None):
 def write_bytes_atomic(path, payload, mode=None):
     with side_effect_transaction():
         _write_bytes_atomic_unchecked(path, payload, mode=mode)
-
-
-QUOTE_PDF_MAX_BYTES = 20 * 1024 * 1024
-_WINDOWS_RESERVED_NAMES = frozenset(
-    ["CON", "PRN", "AUX", "NUL"]
-    + ["COM%d" % i for i in range(1, 10)]
-    + ["LPT%d" % i for i in range(1, 10)]
-)
-
-
-def sanitize_pdf_file_name(name):
-    """A safe .pdf base name for any OS; never a path, never reserved."""
-    text = name if isinstance(name, str) else ""
-    text = text.replace("\\", "/").rsplit("/", 1)[-1]
-    text = "".join(
-        "_" if (ord(ch) < 32 or ord(ch) == 127 or ch in '<>:"|?*') else ch
-        for ch in text
-    )
-    text = text.strip(" .")
-    if text.lower().endswith(".pdf"):
-        text = text[:-4]
-    text = text.strip(" .")[:120].rstrip(" .")
-    if not text.strip("_ "):
-        text = "quote"
-    if text.split(".")[0].upper() in _WINDOWS_RESERVED_NAMES:
-        text = "_" + text
-    return text + ".pdf"
-
-
-def downloads_folder():
-    if os.name == "nt":
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            class _Guid(ctypes.Structure):
-                _fields_ = [
-                    ("Data1", wintypes.DWORD),
-                    ("Data2", wintypes.WORD),
-                    ("Data3", wintypes.WORD),
-                    ("Data4", ctypes.c_ubyte * 8),
-                ]
-
-            folder_id = _Guid(
-                0x374DE290, 0x123F, 0x4565,
-                (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B),
-            )
-            raw = ctypes.c_wchar_p()
-            get_path = ctypes.windll.shell32.SHGetKnownFolderPath
-            get_path.argtypes = [
-                ctypes.POINTER(_Guid), wintypes.DWORD, wintypes.HANDLE,
-                ctypes.POINTER(ctypes.c_wchar_p),
-            ]
-            if get_path(ctypes.byref(folder_id), 0, None, ctypes.byref(raw)) == 0 and raw.value:
-                try:
-                    return raw.value
-                finally:
-                    ctypes.windll.ole32.CoTaskMemFree(raw)
-        except Exception:
-            pass
-    elif platform.system() != "Darwin":
-        configured = os.environ.get("XDG_DOWNLOAD_DIR", "")
-        if configured and os.path.isabs(configured):
-            return configured
-    return os.path.join(os.path.expanduser("~"), "Downloads")
-
-
-def _free_pdf_path(folder, file_name):
-    stem = file_name[:-4]
-    for index in range(1, 1000):
-        candidate = file_name if index == 1 else "%s (%d).pdf" % (stem, index)
-        path = os.path.join(folder, candidate)
-        if not os.path.exists(path):
-            return path
-    raise FileExistsError(file_name)
-
-
-def save_quote_pdf(file_name, encoded):
-    """Validate and store a quote PDF. Returns (ok, saved_path_or_None, error)."""
-    if not isinstance(encoded, str) or not encoded:
-        return False, None, "invalid-data"
-    if len(encoded) > QUOTE_PDF_MAX_BYTES * 4 // 3 + 8:
-        return False, None, "too-large"
-    try:
-        payload = base64.b64decode(encoded, validate=True)
-    except (ValueError, TypeError):
-        return False, None, "invalid-data"
-    if len(payload) > QUOTE_PDF_MAX_BYTES:
-        return False, None, "too-large"
-    if not payload.startswith(b"%PDF-"):
-        return False, None, "invalid-data"
-    try:
-        folder = downloads_folder()
-        os.makedirs(folder, exist_ok=True)
-        path = _free_pdf_path(folder, sanitize_pdf_file_name(file_name))
-        write_bytes_atomic(path, payload)
-    except Exception as exc:
-        fh_log("Quote PDF save failed: %s" % type(exc).__name__)
-        return False, None, "write-failed"
-    return True, path, ""
 
 
 def write_json_atomic(path, payload, mode=None):
@@ -9397,30 +9295,44 @@ def _bambu_file_candidates(report):
     return candidates
 
 
-class _BambuReadOnlyFTP(ftplib.FTP_TLS):
-    """Implicit LAN TLS; data connections remain pinned to the control peer."""
+_BAMBU_FTP_CLASS = None
 
-    def putcmd(self, line):
-        ensure_worker_generation_active()
-        return super().putcmd(line)
 
-    def ntransfercmd(self, cmd, rest=None):
-        ensure_worker_generation_active()
-        connection, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
-        try:
-            if self._prot_p:
+def _bambu_ftp_class():
+    """ftplib loads only when a Bambu LAN file read needs it."""
+    global _BAMBU_FTP_CLASS
+    if _BAMBU_FTP_CLASS is None:
+        import ftplib
+
+        class _BambuReadOnlyFTP(ftplib.FTP_TLS):
+            """Implicit LAN TLS; data connections remain pinned to the control peer."""
+
+            def putcmd(self, line):
                 ensure_worker_generation_active()
-                connection = self.context.wrap_socket(
-                    connection, server_hostname=self.host, session=self.sock.session
-                )
-            return connection, size
-        except Exception:
-            connection.close()
-            raise
+                return super().putcmd(line)
+
+            def ntransfercmd(self, cmd, rest=None):
+                ensure_worker_generation_active()
+                connection, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
+                try:
+                    if self._prot_p:
+                        ensure_worker_generation_active()
+                        connection = self.context.wrap_socket(
+                            connection, server_hostname=self.host, session=self.sock.session
+                        )
+                    return connection, size
+                except Exception:
+                    connection.close()
+                    raise
+
+        _BAMBU_FTP_CLASS = _BambuReadOnlyFTP
+    return _BAMBU_FTP_CLASS
 
 
 def read_bambu_consumption_file(config, report):
     """Read a uniquely named current artifact, never the newest file on storage."""
+    import ftplib
+
     candidates = _bambu_file_candidates(report)
     if not candidates:
         return None
@@ -9429,7 +9341,7 @@ def read_bambu_consumption_file(config, report):
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     context.maximum_version = ssl.TLSVersion.TLSv1_2
-    ftp = _BambuReadOnlyFTP(context=context, timeout=5)
+    ftp = _bambu_ftp_class()(context=context, timeout=5)
     ftp.host = address[0]
     deadline = time.monotonic() + 30
     try:
@@ -9937,6 +9849,8 @@ class BambuBridgeRuntime:
                 and not state.get("file_permission_denied")
                 and time.time() >= state.get("file_retry_at", 0)):
             state["file_retry_at"] = time.time() + 600
+            import ftplib
+
             try:
                 state["estimate"] = read_bambu_consumption_file(config, report)
             except PermissionError:
@@ -11554,22 +11468,6 @@ class FilamentHubCatalog(
             # page if the credential dialog closed while a worker was running.
             return self._deliver_local(message_type, **payload)
         self._deliver(message_type, **payload)
-
-    def _do_save_quote_pdf(self, request_id, file_name, encoded):
-        ok, path, error = save_quote_pdf(file_name, encoded)
-        if ok:
-            fh_log("Quote PDF saved: %d characters of base64" % len(encoded))
-            open_in_system_browser(path)
-        else:
-            fh_log("Quote PDF rejected: %s" % error)
-        self._deliver(
-            "quote-pdf-saved",
-            requestId=request_id,
-            ok=ok,
-            fileName=os.path.basename(path) if ok else "",
-            folder=os.path.basename(os.path.dirname(path)) if ok else "",
-            error=error,
-        )
 
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
@@ -13359,16 +13257,6 @@ class FilamentHubCatalog(
                 msg.get("path"),
                 msg.get("requestId"),
             )
-        elif msg_type == "save-quote-pdf":
-            request_id = msg.get("requestId")
-            if not isinstance(request_id, str) or not request_id or len(request_id) > 100:
-                return
-            BACKGROUND_WORKER.submit(
-                self._do_save_quote_pdf,
-                request_id,
-                msg.get("fileName"),
-                msg.get("data"),
-            )
         elif msg_type == "open-external":
             self._open_site_path(msg.get("path"))
         elif msg_type == "auth-logout":
@@ -14611,9 +14499,32 @@ def host_capability_lifecycle_available():
     )
 
 
+def declare_host_permissions():
+    """Ask OrcaSlicer up front for what the plugin needs and can name in advance.
+
+    Only background threads qualify: the host matches network, file and process
+    targets by exact string, and ours (full request URLs, printer addresses,
+    saved file names) are not known at load.
+    """
+    request = getattr(orca, "request_permissions", None)
+    if not callable(request):
+        return False
+    try:
+        request(threading=True)
+    except TypeError:
+        # An older host whose request_permissions() takes no threading argument.
+        fh_log("host cannot take a threading permission request")
+        return False
+    except Exception as exc:
+        fh_log("permission request skipped: %s" % type(exc).__name__)
+        return False
+    return True
+
+
 @orca.plugin
 class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
+        declare_host_permissions()
         # Hosts predating capability lifecycle hooks still need the registration
         # behavior used by earlier plugin releases. Current hosts start resources
         # from on_load and stop them through on_cancelled/on_unload instead.

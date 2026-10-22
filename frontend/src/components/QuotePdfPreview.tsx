@@ -1,6 +1,7 @@
-import { useEffect, useRef, type FC } from 'react';
+import { useEffect, useRef, useState, type FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Printer, X } from 'lucide-react';
+import { ExternalLink, Printer, X } from 'lucide-react';
+import { isPluginEmbed } from '../utils/pluginBridge';
 import { ModalOverlay } from './ModalOverlay';
 
 interface QuotePdfPreviewProps {
@@ -9,6 +10,8 @@ interface QuotePdfPreviewProps {
   onClose: () => void;
   /** The frame holds the HTML document (not a PDF), so it can be printed from here. */
   printable?: boolean;
+  /** Inside the plugin: opens this quote on the site in the system browser; resolves false when it could not. */
+  onOpenInBrowser?: () => Promise<boolean>;
 }
 
 // 210 mm at the CSS reference 96 dpi.
@@ -19,8 +22,9 @@ const TOOLBAR_REM = 3.25;
 const VERTICAL_GAP_REM = 6;
 
 /** A sheet-shaped A4 preview; the HTML document is scaled to the sheet width instead of stretching. */
-export const QuotePdfPreview: FC<QuotePdfPreviewProps> = ({ url, title, onClose, printable = false }) => {
+export const QuotePdfPreview: FC<QuotePdfPreviewProps> = ({ url, title, onClose, printable = false, onOpenInBrowser }) => {
   const { t } = useTranslation();
+  const [browserState, setBrowserState] = useState<'idle' | 'opening' | 'failed'>('idle');
   const frameRef = useRef<HTMLIFrameElement>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -51,6 +55,16 @@ export const QuotePdfPreview: FC<QuotePdfPreviewProps> = ({ url, title, onClose,
     }
   };
 
+  const openInBrowser = async () => {
+    if (!onOpenInBrowser) return;
+    setBrowserState('opening');
+    try {
+      setBrowserState((await onOpenInBrowser()) ? 'idle' : 'failed');
+    } catch {
+      setBrowserState('failed');
+    }
+  };
+
   const sheetHeight = `calc(100dvh - ${VERTICAL_GAP_REM}rem)`;
   const sheetWidth = `min(calc(100vw - 2rem), calc((100dvh - ${VERTICAL_GAP_REM + TOOLBAR_REM}rem) * 210 / 297))`;
 
@@ -65,11 +79,17 @@ export const QuotePdfPreview: FC<QuotePdfPreviewProps> = ({ url, title, onClose,
           <div className="min-w-0">
             <h2 className="sr-only">{t('crmWorkspace.actions.pdfPreview')}</h2>
             <p className="truncate text-sm font-medium text-white">{title}</p>
+            {browserState === 'failed' && <p role="alert" className="truncate text-xs text-rose-300">{t('crmWorkspace.actions.openInBrowserFailed')}</p>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {printable && (
               <button type="button" onClick={() => frameRef.current?.contentWindow?.print()} className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white hover:bg-white/10">
                 <Printer className="h-4 w-4" />{t('crmWorkspace.actions.printDocument')}
+              </button>
+            )}
+            {onOpenInBrowser && isPluginEmbed() && (
+              <button type="button" onClick={openInBrowser} disabled={browserState === 'opening'} className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white hover:bg-white/10">
+                <ExternalLink className="h-4 w-4" />{t('crmWorkspace.actions.openInBrowser')}
               </button>
             )}
             <button type="button" autoFocus onClick={onClose} className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-2.5 py-1.5 text-sm text-white hover:bg-white/10" aria-label={t('crmWorkspace.actions.closePreview')}>

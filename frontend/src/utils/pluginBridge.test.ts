@@ -12,6 +12,7 @@ import {
   installPrinterBundleInPlugin,
   removePrinterBundleFromPlugin,
   PLUGIN_MESSAGE_SOURCE,
+  openSitePathInBrowser,
   preserveDirectPluginBridgeBinding,
   reportPluginSessionToPlugin,
   requestBambuMaterialAction,
@@ -23,7 +24,6 @@ import {
   requestPluginCapabilities,
   requestPluginDiagnosticLog,
   requestPluginRecovery,
-  savePdfInPlugin,
   requestPendingPluginSliceReports,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
@@ -1100,7 +1100,7 @@ describe('pluginBridge inbound messages', () => {
       window.history.pushState({}, '', '/');
     }
   });
-  it('saves a quote PDF through the plugin only when it advertises the capability', async () => {
+  it('opens a site path in the system browser only with the capability and a site-relative path', () => {
     const originalParent = window.parent;
     const postMessage = vi.fn();
     const parent = { postMessage };
@@ -1112,36 +1112,25 @@ describe('pluginBridge inbound messages', () => {
       origin: window.location.origin,
       source: parent as unknown as Window,
     }));
-    const pdf = new Blob(['%PDF-1.4 test'], { type: 'application/pdf' });
 
     try {
       reply({ type: 'plugin-capabilities', capabilities: [] });
-      expect(savePdfInPlugin(pdf, 'quote.pdf')).toBeNull();
+      expect(openSitePathInBrowser('/quote/abc')).toBe(false);
 
-      reply({ type: 'plugin-capabilities', capabilities: ['quote-pdf-save-v1'] });
-      const pending = savePdfInPlugin(pdf, 'quote.pdf');
-      expect(pending).not.toBeNull();
-      await vi.waitFor(() => expect(postMessage).toHaveBeenCalled());
-      const request = postMessage.mock.calls.at(-1)?.[0];
-      expect(request).toEqual({
+      reply({ type: 'plugin-capabilities', capabilities: ['open-external'] });
+      expect(openSitePathInBrowser('https://example.com')).toBe(false);
+      expect(openSitePathInBrowser('//example.com')).toBe(false);
+      expect(openSitePathInBrowser('/quote/abc')).toBe(true);
+      expect(postMessage.mock.calls.at(-1)?.[0]).toEqual({
         source: PLUGIN_MESSAGE_SOURCE,
-        type: 'save-quote-pdf',
-        requestId: expect.any(String),
-        fileName: 'quote.pdf',
-        data: btoa('%PDF-1.4 test'),
+        type: 'open-external',
+        path: '/quote/abc',
       });
-
-      let settled = false;
-      void pending!.then(() => { settled = true; });
-      reply({ type: 'quote-pdf-saved', requestId: 'someone-else', ok: true, fileName: 'x.pdf' });
-      await Promise.resolve();
-      expect(settled).toBe(false);
-      reply({ type: 'quote-pdf-saved', requestId: request.requestId, ok: true, fileName: 'quote (2).pdf' });
-      await expect(pending).resolves.toEqual({ ok: true, fileName: 'quote (2).pdf' });
     } finally {
       unsubscribe();
       Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');
     }
   });
+
 });

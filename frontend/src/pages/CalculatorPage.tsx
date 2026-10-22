@@ -66,7 +66,7 @@ import {
   subscribeToPluginSliceProgress,
   type PluginSliceParseResult,
 } from '../utils/pluginBridge';
-import { deliverQuotePdf, QuotePdfSaveError } from '../utils/quotePdf';
+import { deliverQuotePdf } from '../utils/quotePdf';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { QuotePdfPreview } from '../components/QuotePdfPreview';
@@ -3582,7 +3582,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
 
     const url = URL.createObjectURL(new Blob([quoteHtml], { type: 'text/html;charset=utf-8' }));
-    setQuotePdfPreview({ url, title: quoteNumber, printable: true });
+    setQuotePdfPreview({
+      url,
+      title: quoteNumber,
+      printable: true,
+    });
   };
 
   const handleShareQuote = async () => {
@@ -3639,18 +3643,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
       const delivery = await deliverQuotePdf({ title: quoteNumber, html_content: quoteHtml });
       if (delivery.kind === 'preview') {
-        setQuotePdfPreview({ url: delivery.url, title: quoteNumber });
-      } else {
-        setHistoryFeedback({
-          kind: 'success',
-          message: delivery.kind === 'saved' ? t('profilePage.calculator.quotePdfSaved', { fileName: delivery.fileName }) : tc('quotePdfDownloaded'),
+        setQuotePdfPreview({
+          url: delivery.url,
+          title: quoteNumber,
+          printable: delivery.printable,
         });
+      } else {
+        setHistoryFeedback({ kind: 'success', message: tc('quotePdfDownloaded') });
       }
     } catch (err) {
-      if (err instanceof QuotePdfSaveError) {
-        setHistoryFeedback({ kind: 'error', message: tc('quotePdfSaveFailed') });
-        return;
-      }
       const errorWithResponse = err as { response?: { data?: { detail?: unknown } }; message?: string };
       setHistoryFeedback({
         kind: 'error',

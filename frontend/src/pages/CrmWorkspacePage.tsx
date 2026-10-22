@@ -1,7 +1,7 @@
 /** CRM-lite workspace for customers, commercial proposals, and accepted orders. */
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -37,8 +37,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { formatMediumDate } from '../utils/formatDate';
 import { translateApiError } from '../utils/translateApiError';
-import { isPluginEmbed } from '../utils/pluginBridge';
-import { deliverQuotePdf, QuotePdfSaveError } from '../utils/quotePdf';
+import { isPluginEmbed, openSitePathInBrowser } from '../utils/pluginBridge';
+import { deliverQuotePdf } from '../utils/quotePdf';
 import type {
   CrmCustomer,
   CrmCustomerCreate,
@@ -173,9 +173,19 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [customerDialog, setCustomerDialog] = useState<CrmCustomer | 'new' | null>(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<{ url: string; title: string } | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; title: string; printable?: boolean; quoteId?: number } | null>(null);
   const [reservationOrder, setReservationOrder] = useState<CrmOrder | null>(null);
   const hasAccess = user?.has_calculator_access ?? false;
+
+  // A link such as /workspace?quote=12 (from the plugin's "Open in browser") opens that quote once.
+  const [searchParams] = useSearchParams();
+  const quoteParam = searchParams.get('quote');
+  const appliedQuoteParam = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hasAccess || quoteParam === null || appliedQuoteParam.current === quoteParam) return;
+    appliedQuoteParam.current = quoteParam;
+    if (/^[1-9]\d{0,9}$/.test(quoteParam)) setSelectedQuoteId(Number(quoteParam));
+  }, [hasAccess, quoteParam]);
 
   useEffect(() => () => {
     if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
@@ -383,13 +393,8 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
         html_content: quote.current_version.html_content,
       };
       const delivery = await deliverQuotePdf(document);
-      if (delivery.kind === 'preview') setPdfPreview({ url: delivery.url, title: quote.number });
-      if (delivery.kind === 'saved') setFeedback({ kind: 'success', text: t('profilePage.calculator.quotePdfSaved', { fileName: delivery.fileName }) });
+      if (delivery.kind === 'preview') setPdfPreview({ url: delivery.url, title: quote.number, printable: delivery.printable, quoteId: quote.id });
     } catch (error) {
-      if (error instanceof QuotePdfSaveError) {
-        setFeedback({ kind: 'error', text: t('profilePage.calculator.quotePdfSaveFailed') });
-        return;
-      }
       setFeedback({ kind: 'error', text: translateApiError(t, error, t('crmWorkspace.feedback.error')) });
     }
   };
@@ -619,7 +624,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
           busy={quoteStatusMutation.isPending || quoteCustomerMutation.isPending || shareMutation.isPending || quoteDraftMutation.isPending}
         />
       )}
-      {pdfPreview && <QuotePdfPreview url={pdfPreview.url} title={pdfPreview.title} onClose={() => setPdfPreview(null)} />}
+      {pdfPreview && <QuotePdfPreview url={pdfPreview.url} title={pdfPreview.title} printable={pdfPreview.printable} onOpenInBrowser={pdfPreview.quoteId === undefined ? undefined : () => Promise.resolve(openSitePathInBrowser(`/workspace?quote=${pdfPreview.quoteId}`))} onClose={() => setPdfPreview(null)} />}
     </div>
   );
 };
