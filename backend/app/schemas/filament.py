@@ -6,7 +6,15 @@ import re
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 from app.schemas.country_cell import FilamentCountryCellCreate
 from app.services.catalog_color_groups import ColorGroupSource, FilamentColorGroup
@@ -499,12 +507,40 @@ class FilamentPresetSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FilamentAdditionalProperty(BaseModel):
+    """A reviewed manufacturer fact that has no dedicated catalog field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    property_name: str = Field(min_length=1, max_length=120)
+    value_summary: str = Field(min_length=1, max_length=500)
+    source_urls: list[str] = Field(min_length=1, max_length=10)
+    kind: Literal["direct", "inferred"]
+
+    @field_validator("property_name", "value_summary")
+    @classmethod
+    def require_non_whitespace(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Value must not be blank")
+        return value
+
+    @field_validator("source_urls")
+    @classmethod
+    def validate_source_urls(cls, value: list[str]) -> list[str]:
+        parsed = TypeAdapter(list[AnyHttpUrl]).validate_python(value)
+        if any(url.username is not None or url.password is not None for url in parsed):
+            raise ValueError("Source URLs must not contain credentials")
+        return [str(url) for url in parsed]
+
+
 class FilamentResponse(FilamentBase):
     """Schema for Filament response."""
 
     id: int
     slug: str
     brand_id: int
+    additional_properties: list[FilamentAdditionalProperty] = Field(default_factory=list)
     contributed_by_organization_id: int | None = None
     brand_name: str | None = Field(None)
     brand_slug: str | None = Field(None)

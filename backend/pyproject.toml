@@ -37,6 +37,7 @@ dependencies = [
     "nh3~=0.3.6",  # Allowlist-based sanitization for admin-authored email HTML
     "urllib3>=2.6.0",  # CVE-2025-66418, CVE-2026-21441
     "openpyxl~=3.1.5",  # Human-editable catalog master-import workbooks
+    "pypdf~=6.21.0",  # Text of manufacturer PDF datasheets for quote verification
 ]
 
 [project.optional-dependencies]

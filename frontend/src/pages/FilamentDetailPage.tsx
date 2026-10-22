@@ -46,6 +46,7 @@ import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { FilamentPreview } from '../components/FilamentPreview';
+import { FilamentAdditionalProperties } from '../components/FilamentAdditionalProperties';
 import { SEOHead } from '../components/SEOHead';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { formatTemperatureRange, getFilamentCompositionFacts } from '../utils/filamentFacts';
@@ -828,7 +829,7 @@ export const FilamentDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {(compositionFacts.length > 0 || (filament.property_claims?.length ?? 0) > 0) && (
+        {(compositionFacts.length > 0 || (filament.property_claims?.length ?? 0) > 0 || (filament.additional_properties?.length ?? 0) > 0) && (
           <div className="mb-4 grid gap-3 md:mb-6 md:grid-cols-2">
             {compositionFacts.length > 0 && (
               <section className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4">
@@ -878,6 +879,9 @@ export const FilamentDetailPage: React.FC = () => {
                   })}
                 </div>
               </section>
+            )}
+            {(filament.additional_properties?.length ?? 0) > 0 && (
+              <FilamentAdditionalProperties properties={filament.additional_properties ?? []} />
             )}
           </div>
         )}

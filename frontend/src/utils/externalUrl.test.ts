@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { externalUrl, externalUrlHost } from './externalUrl';
+import { externalUrl, externalUrlDisplay, externalUrlHost } from './externalUrl';
 
 describe('externalUrl', () => {
   it('sends a bare domain outside the site instead of into a route', () => {
@@ -31,5 +31,13 @@ describe('externalUrl', () => {
     expect(externalUrlHost('www.example.com')).toBe('example.com');
     expect(externalUrlHost('https://shop.example.com/x')).toBe('shop.example.com');
     expect(externalUrlHost('javascript:alert(1)')).toBe('javascript:alert(1)');
+  });
+
+  it('shows .рф addresses in Cyrillic without changing the destination', () => {
+    const source = 'https://xn--3-htbdlohlho.xn--p1ai/catalog/pla';
+    expect(externalUrl(source)).toBe(source);
+    expect(externalUrlHost(source)).toBe('3дполимер.рф');
+    expect(externalUrlDisplay(source)).toBe('https://3дполимер.рф/catalog/pla');
+    expect(externalUrlDisplay('https://example.com/item')).toBe('https://example.com/item');
   });
 });

@@ -85,6 +85,15 @@ SHEET_COLUMNS: dict[str, list[str]] = {
         "drying_required",
         "drying_temperature_c",
         "drying_duration_hours",
+        "storage_temperature_min_c",
+        "storage_temperature_max_c",
+        "storage_relative_humidity_max_percent",
+        "storage_relative_humidity_target_percent",
+        "storage_airtight_required",
+        "storage_desiccant_recommended",
+        "storage_light_protection_required",
+        "storage_after_opening_guidance",
+        "unopened_shelf_life_months",
         "enclosure_requirement",
         "chamber_temperature_c",
         "bed_adhesives",
@@ -103,6 +112,7 @@ SHEET_COLUMNS: dict[str, list[str]] = {
         "color_type",
         "colors",
         "finish",
+        "filler",
         "effects",
         "transparency",
         "additives",
@@ -500,7 +510,7 @@ def summarize(plan: list[dict[str, Any]]) -> dict[str, int]:
 
 
 async def build_plan(
-    db: AsyncSession, draft: CatalogImportDraft, *, admin_user_id: int
+    db: AsyncSession, draft: CatalogImportDraft, *, admin_user_id: int, curation: bool = False
 ) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     brands_by_key: dict[str, dict[str, Any]] = {}
@@ -631,16 +641,16 @@ async def build_plan(
     filament_slug_map = {
         (filament.brand_id, filament.slug.casefold()): filament for filament in existing_filaments
     }
-    filament_identity_map = {
-        (
+    filament_identity_map: dict[tuple[int, str, str, str], list[Filament]] = {}
+    for filament in existing_filaments:
+        identity_key = (
             filament.brand_id,
             filament.name.strip().casefold(),
             filament.material_type.strip().casefold(),
             (filament.color_name or "").strip().casefold(),
-        ): filament
-        for filament in existing_filaments
-    }
-    seen_filament_identity: set[tuple[str, str, str, str]] = set()
+        )
+        filament_identity_map.setdefault(identity_key, []).append(filament)
+    seen_filament_identity: set[tuple[int | str, str, str, str, float, str]] = set()
     seen_filament_targets: set[int] = set()
 
     for index, row in enumerate(draft.filaments, start=2):
@@ -664,38 +674,55 @@ async def build_plan(
             name = _text(row.get("name"))
             material_type = _text(row.get("material_type"))
             color_name = _text(row.get("color_name"))
+            line_name = _text(row.get("line"))
+            diameter = _number(row.get("diameter")) if _present(row.get("diameter")) else None
             if not name or not material_type:
                 raise ValueError("name and material_type are required")
-            identity = (
-                brand_key,
-                name.casefold(),
-                material_type.casefold(),
-                (color_name or "").casefold(),
-            )
-            if identity in seen_filament_identity:
-                raise ValueError("Duplicate filament identity in workbook")
-            seen_filament_identity.add(identity)
-
             brand_id = parent.get("target_id")
             target = None
             existing_ref = _text(row.get("existing_filament"))
-            if brand_id is not None and existing_ref:
-                target = (
-                    filaments_by_id.get(int(existing_ref))
-                    if existing_ref.isdecimal()
-                    else filament_slug_map.get((brand_id, existing_ref.casefold()))
-                )
-                if target is not None and target.brand_id != brand_id:
-                    target = None
-            if brand_id is not None and target is None:
-                target = filament_identity_map.get(
+            if existing_ref:
+                if brand_id is not None:
+                    target = (
+                        filaments_by_id.get(int(existing_ref))
+                        if existing_ref.isdecimal()
+                        else filament_slug_map.get((brand_id, existing_ref.casefold()))
+                    )
+                if target is None or target.brand_id != brand_id:
+                    raise ValueError("Existing filament was not found for this brand")
+            elif brand_id is not None:
+                candidates = filament_identity_map.get(
                     (
                         brand_id,
                         name.casefold(),
                         material_type.casefold(),
                         (color_name or "").casefold(),
-                    )
+                    ),
+                    [],
                 )
+                match_diameter = diameter
+                if mode == "create" and match_diameter is None:
+                    match_diameter = FilamentBase.model_fields["diameter"].default
+                match_line = (
+                    (line_name or "").casefold()
+                    if mode == "create"
+                    else (line_name.casefold() if line_name is not None else None)
+                )
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if (match_diameter is None or candidate.diameter == match_diameter)
+                    and (
+                        match_line is None
+                        or (candidate.line.name if candidate.line else "").strip().casefold()
+                        == match_line
+                    )
+                ]
+                if len(candidates) > 1:
+                    raise ValueError(
+                        "Filament identity is ambiguous; specify diameter, line or existing_filament"
+                    )
+                target = candidates[0] if candidates else None
             if mode == "create" and target is not None:
                 raise ValueError("Filament already exists; choose update or auto")
             if mode == "update" and target is None:
@@ -704,6 +731,38 @@ async def build_plan(
                 if target.id in seen_filament_targets:
                     raise ValueError("Multiple rows cannot update the same existing filament")
                 seen_filament_targets.add(target.id)
+
+            # Missing dimensions preserve a unique/explicit existing identity;
+            # new rows keep the schema's established default diameter.
+            identity = (
+                brand_id if brand_id is not None else brand_key,
+                name.casefold(),
+                material_type.casefold(),
+                (color_name or (target.color_name if target else "") or "").strip().casefold(),
+                (
+                    diameter
+                    if diameter is not None
+                    else (
+                        target.diameter if target else FilamentBase.model_fields["diameter"].default
+                    )
+                ),
+                (line_name or (target.line.name if target and target.line else ""))
+                .strip()
+                .casefold(),
+            )
+            if identity in seen_filament_identity:
+                raise ValueError("Duplicate filament identity in workbook")
+            seen_filament_identity.add(identity)
+            if brand_id is not None:
+                collisions = filament_identity_map.get(identity[:4], [])
+                if any(
+                    candidate.id != (target.id if target else None)
+                    and candidate.diameter == identity[4]
+                    and (candidate.line.name if candidate.line else "").strip().casefold()
+                    == identity[5]
+                    for candidate in collisions
+                ):
+                    raise ValueError("Filament identity already belongs to another existing record")
 
             raw: dict[str, Any] = {"name": name, "material_type": material_type}
             text_fields = (
@@ -716,6 +775,7 @@ async def build_plan(
                 "price_display_unit",
                 "availability",
                 "description",
+                "storage_after_opening_guidance",
             )
             for field in text_fields:
                 value = _text(row.get(field))
@@ -726,6 +786,10 @@ async def build_plan(
                 "density",
                 "drying_temperature_c",
                 "drying_duration_hours",
+                "storage_temperature_min_c",
+                "storage_temperature_max_c",
+                "storage_relative_humidity_max_percent",
+                "storage_relative_humidity_target_percent",
                 "chamber_temperature_c",
                 "price_per_kg",
                 "spool_weight",
@@ -742,7 +806,17 @@ async def build_plan(
             ):
                 if _present(row.get(field)):
                     raw[field] = _number(row.get(field), integer=True)
-            for field in ("drying_required", "active"):
+            if _present(row.get("unopened_shelf_life_months")):
+                raw["unopened_shelf_life_months"] = _number(
+                    row.get("unopened_shelf_life_months"), integer=True
+                )
+            for field in (
+                "drying_required",
+                "storage_airtight_required",
+                "storage_desiccant_recommended",
+                "storage_light_protection_required",
+                "active",
+            ):
                 if _present(row.get(field)):
                     raw[field] = _bool(row.get(field))
             for field in (
@@ -757,10 +831,10 @@ async def build_plan(
                         if field == "bed_adhesives"
                         else _json(row.get(field), list)
                     )
-            visual_keys = ("color_type", "colors", "finish", "effects", "transparency")
+            visual_keys = ("color_type", "colors", "finish", "filler", "effects", "transparency")
             if any(_present(row.get(field)) for field in visual_keys):
                 visual: dict[str, Any] = {}
-                for field in ("color_type", "finish"):
+                for field in ("color_type", "finish", "filler"):
                     if _present(row.get(field)):
                         visual[field] = _text(row.get(field))
                 for field in ("colors", "effects"):
@@ -768,6 +842,31 @@ async def build_plan(
                         visual[field] = _list(row.get(field))
                 if _present(row.get("transparency")):
                     visual["transparency"] = _bool(row.get("transparency"))
+                existing_visual = target.visual_settings or {} if target else {}
+                if "effects" in visual and not visual["effects"] and "filler" not in visual:
+                    visual["filler"] = "none"
+                if "filler" in visual and "effects" not in visual:
+                    existing_effects = existing_visual.get("effects") or []
+                    if existing_effects:
+                        visual["effects"] = [visual["filler"], *existing_effects[1:]]
+                visual = {**existing_visual, **visual}
+                if curation:
+                    missing_visual = sorted(
+                        field
+                        for field in (
+                            "color_type",
+                            "colors",
+                            "finish",
+                            "effects",
+                            "transparency",
+                        )
+                        if not _present(visual.get(field))
+                    )
+                    if missing_visual:
+                        raise ValueError(
+                            "Visual settings require explicit values for: "
+                            + ", ".join(missing_visual)
+                        )
                 raw["visual_settings"] = visual
             if "color_hex" in raw and "color_group" not in raw:
                 raw["color_group"] = classify_color_group(raw["color_hex"])
@@ -779,17 +878,16 @@ async def build_plan(
                 else {}
             )
             effective.update(raw)
-            validated = FilamentBase(**effective).model_dump(mode="json")
+            validated = FilamentBase(**effective).model_dump(mode="json", exclude_unset=curation)
             FilamentTechnicalDataContract.model_validate(validated)
-            explicit_fields = set(raw)
+            explicit_fields = {field for field in raw if field in validated}
             payload = (
                 validated
-                if target is None
+                if target is None and not curation
                 else {field: validated[field] for field in explicit_fields}
             )
             if _present(row.get("active")):
                 payload["active"] = _bool(row.get("active"))
-            line_name = _text(row.get("line"))
             comparable = {"line": target.line.name if target and target.line else None}
             if line_name is not None:
                 payload["line"] = line_name
@@ -829,7 +927,7 @@ async def build_plan(
         plan.append(item)
 
     await _plan_markets(db, draft, plan, brands_by_key, filaments_by_key)
-    await _plan_presets(db, draft, plan, filaments_by_key, admin_user_id)
+    await _plan_presets(db, draft, plan, filaments_by_key, admin_user_id, curation=curation)
     return plan
 
 
@@ -969,6 +1067,8 @@ async def _plan_presets(
     plan: list[dict[str, Any]],
     filaments_by_key: dict[str, dict[str, Any]],
     admin_user_id: int,
+    *,
+    curation: bool = False,
 ) -> None:
     all_printer_ids = set((await db.execute(select(Printer.id))).scalars().all())
     seen_keys: set[str] = set()
@@ -1053,11 +1153,17 @@ async def _plan_presets(
                 "orcaslicer_settings",
             }
             raw = {field: getattr(source, field) for field in allowed} if source else {}
+            if curation and target is not None:
+                raw = {field: getattr(target, field) for field in allowed}
             raw.update(is_official=False, is_weighted=False)
-            if source is None or _present(row.get("name")):
+            if (source is None and not (curation and target is not None)) or _present(
+                row.get("name")
+            ):
                 raw["name"] = _text(row.get("name"))
             for field in ("extruder_temp", "bed_temp"):
-                if source is None or _present(row.get(field)):
+                if (source is None and not (curation and target is not None)) or _present(
+                    row.get(field)
+                ):
                     raw[field] = _number(row.get(field))
             for field in ("description",):
                 value = _text(row.get(field))
@@ -1072,7 +1178,12 @@ async def _plan_presets(
                 raw["orcaslicer_settings"] = _json(row.get("orcaslicer_settings"), dict)
             validated = PresetBase(**raw).model_dump(mode="json")
             payload = {field: value for field, value in validated.items() if field in allowed}
-            payload["external_id"] = external_id
+            if curation:
+                payload = {
+                    field: value for field, value in payload.items() if _present(row.get(field))
+                }
+            if not curation or target is None or _present(row.get("external_id")):
+                payload["external_id"] = external_id
             if source is not None:
                 payload["compat_context"] = source.compat_context
                 payload["active"] = False
@@ -1211,6 +1322,7 @@ async def apply_plan(
     plan: list[dict[str, Any]],
     *,
     admin_user_id: int,
+    curation: bool = False,
 ) -> CatalogImportBatch:
     summary = summarize(plan)
     if summary["error"]:
@@ -1218,7 +1330,7 @@ async def apply_plan(
             "ERR_CATALOG_IMPORT_HAS_ERRORS", "Fix or disable every invalid row before applying"
         )
     await _lock_plan_targets(db, plan)
-    current_plan = await build_plan(db, draft, admin_user_id=admin_user_id)
+    current_plan = await build_plan(db, draft, admin_user_id=admin_user_id, curation=curation)
     if not hmac.compare_digest(plan_digest(plan), plan_digest(current_plan)):
         raise CatalogMasterImportError(
             "ERR_CATALOG_IMPORT_STALE", "Catalog changed after preview; review a fresh preview"
@@ -1232,6 +1344,13 @@ async def apply_plan(
     )
     db.add(batch)
     await db.flush()
+    applied_targets = {
+        (item["sheet"], item.get("key")): item["target_id"]
+        for item in plan
+        if item["status"] not in {"error", "skipped"}
+        and item["sheet"] in {"Brands", "Filaments", "Presets"}
+        and item.get("target_id") is not None
+    }
 
     brand_objects: dict[str, Brand] = {}
     for item in (entry for entry in plan if entry["sheet"] == "Brands"):
@@ -1248,6 +1367,7 @@ async def apply_plan(
             for field, value in item.get("payload", {}).items():
                 setattr(brand, field, value)
         brand_objects[item["key"]] = brand
+        applied_targets[("Brands", item["key"])] = brand.id
 
     filament_objects: dict[str, Filament] = {}
     for item in (entry for entry in plan if entry["sheet"] == "Filaments"):
@@ -1281,6 +1401,8 @@ async def apply_plan(
                 color_name=payload.get("color_name"),
                 ral_code=payload.get("ral_code"),
                 diameter=payload.get("diameter"),
+                line_name=line_name,
+                allow_unlined_suffix=line_name is None,
             )
             if slug is None:
                 raise CatalogMasterImportError(
@@ -1304,6 +1426,7 @@ async def apply_plan(
             for field, value in payload.items():
                 setattr(filament, field, value)
         filament_objects[item["key"]] = filament
+        applied_targets[("Filaments", item["key"])] = filament.id
 
     for item in (entry for entry in plan if entry["sheet"] in {"BrandMarkets", "FilamentMarkets"}):
         if item["status"] in {"error", "skipped", "noop"}:
@@ -1362,6 +1485,7 @@ async def apply_plan(
             for field, value in payload.items():
                 setattr(preset, field, value)
             preset.filament_id = filament.id
+        applied_targets[("Presets", item["key"])] = preset.id
         if item.get("printer_ids") is not None:
             await db.execute(delete(PresetPrinter).where(PresetPrinter.preset_id == preset.id))
             printer_links = item.get(
@@ -1379,6 +1503,19 @@ async def apply_plan(
                     )
                 )
     await db.flush()
+    batch.plan_snapshot = {
+        "rows": [
+            {
+                **row,
+                **(
+                    {"target_id": applied_targets[(row["sheet"], row["key"])]}
+                    if (row["sheet"], row["key"]) in applied_targets
+                    else {}
+                ),
+            }
+            for row in batch.plan_snapshot["rows"]
+        ]
+    }
     return batch
 
 

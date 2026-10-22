@@ -1,11 +1,13 @@
 """FastAPI dependencies for authentication."""
 
+import hashlib
 import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +33,7 @@ from app.core.security import (
     token_fingerprint,
 )
 from app.db.session import get_db
+from app.models.catalog_curation_service_account import CatalogCurationServiceAccount
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.services.account_session_service import validate_access_family
@@ -89,6 +92,14 @@ async def get_current_user_for_legal_onboarding(
 
     if not token:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED, headers={"WWW-Authenticate": "Bearer"})
+
+    # Never pass service credentials into JWT decoding or its invalid-token logs.
+    if token.startswith("fhca_"):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if using_cookie_auth:
         _validate_cookie_csrf(request)
@@ -164,6 +175,13 @@ async def _get_current_user_or_plugin_scope(
         raise_error(
             status.HTTP_401_UNAUTHORIZED,
             ERR_AUTH_REQUIRED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if token.startswith("fhca_"):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -424,6 +442,50 @@ async def get_current_admin_user(
     if current_user.role != UserRole.ADMIN:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_ADMIN)
     return current_user
+
+
+async def require_catalog_curation_service_account(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CatalogCurationServiceAccount:
+    """Authenticate the revocable key used only by catalog curation routes."""
+    token = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else None
+    if not token or not token.startswith("fhca_"):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_AUTH_REQUIRED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    key_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    account = await db.scalar(
+        select(CatalogCurationServiceAccount).where(
+            CatalogCurationServiceAccount.key_hash == key_hash
+        )
+    )
+    now = datetime.now(timezone.utc)
+    expires_at = account.expires_at if account is not None else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if (
+        account is None
+        or account.revoked_at is not None
+        or expires_at <= now
+    ):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    await db.execute(
+        update(CatalogCurationServiceAccount)
+        .where(CatalogCurationServiceAccount.id == account.id)
+        .values(last_used_at=now)
+    )
+    await db.commit()
+    account.last_used_at = now
+    return account
 
 
 async def require_calculator_access(

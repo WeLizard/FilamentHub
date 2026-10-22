@@ -1,3 +1,5 @@
+import { toUnicode } from 'punycode/';
+
 /**
  * Links people type into brand and shop fields.
  *
@@ -9,6 +11,17 @@
  */
 
 const SAFE_PROTOCOLS = new Set(['http:', 'https:']);
+
+function readableHost(hostname: string): string {
+  if (!hostname.toLowerCase().endsWith('.xn--p1ai')) return hostname;
+  try {
+    const unicode = toUnicode(hostname);
+    return new URL(`https://${unicode}`).hostname.toLowerCase() === hostname.toLowerCase()
+      ? unicode : hostname;
+  } catch {
+    return hostname;
+  }
+}
 
 export function externalUrl(value: string | null | undefined): string | null {
   const raw = value?.trim();
@@ -32,8 +45,18 @@ export function externalUrlHost(value: string | null | undefined): string {
   const normalized = externalUrl(value);
   if (!normalized) return value?.trim() || '';
   try {
-    return new URL(normalized).hostname.replace(/^www\./, '');
+    return readableHost(new URL(normalized).hostname).replace(/^www\./, '');
   } catch {
     return value?.trim() || '';
   }
+}
+
+/** Human-readable label for .рф links; href must still use externalUrl(). */
+export function externalUrlDisplay(value: string | null | undefined): string {
+  const normalized = externalUrl(value);
+  if (!normalized) return value?.trim() || '';
+  const url = new URL(normalized);
+  const host = readableHost(url.hostname);
+  if (host === url.hostname) return value?.trim() || normalized;
+  return normalized.replace(url.hostname, host);
 }

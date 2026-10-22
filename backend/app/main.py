@@ -159,6 +159,13 @@ async def _start_background_tasks(application: FastAPI) -> None:
         name="weighted-preset-refresh-worker",
     )
 
+    from app.services.catalog_quote_queue import run_quote_check_worker
+
+    application.state.catalog_quote_check_task = asyncio.create_task(
+        run_quote_check_worker(AsyncSessionLocal),
+        name="catalog-quote-check-worker",
+    )
+
     # The document renderer is a heavy native library loaded on first use, which
     # made the first person to ask for a quote after every deploy wait a second
     # and a half for someone else's import. Pay it here, in the background,
@@ -211,6 +218,7 @@ async def _stop_background_tasks(application: FastAPI) -> None:
         "qr_binding_sweeper_task",
         "inbound_mail_task",
         "weighted_preset_refresh_task",
+        "catalog_quote_check_task",
         "pdf_warmup_task",
         "qr_repair_task",
     ):

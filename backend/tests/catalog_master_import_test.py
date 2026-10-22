@@ -132,6 +132,19 @@ async def test_master_import_preview_is_read_only_and_apply_is_idempotent(
         "skipped": 0,
         "error": 0,
     }
+    noop_batch = await apply_plan(db_session, draft, repeated, admin_user_id=admin_user.id)
+    await db_session.commit()
+    for saved_batch in (batch, noop_batch):
+        targets = {
+            (row["sheet"], row["key"]): row.get("target_id")
+            for row in saved_batch.plan_snapshot["rows"]
+            if row["sheet"] in {"Brands", "Filaments", "Presets"}
+        }
+        assert targets == {
+            ("Brands", "example"): await db_session.scalar(select(Brand.id)),
+            ("Filaments", "example:pla:black"): await db_session.scalar(select(Filament.id)),
+            ("Presets", "example:pla:black:generic"): await db_session.scalar(select(Preset.id)),
+        }
 
 
 async def test_existing_values_require_explicit_overwrite(
@@ -162,6 +175,111 @@ async def test_existing_values_require_explicit_overwrite(
     assert summarize(plan)["update"] == 1
 
 
+async def test_import_keeps_diameter_and_line_variants_distinct_and_reimports_safely(
+    db_session: AsyncSession, admin_user
+) -> None:
+    draft = CatalogImportDraft(
+        filename="variants.xlsx",
+        brands=[{"brand_key": "variants", "name": "Variant Maker"}],
+        filaments=[
+            {
+                "filament_key": f"{line}:{diameter}",
+                "brand_key": "variants",
+                "name": "PLA Black",
+                "material_type": "PLA",
+                "color_name": "Black",
+                "line": line,
+                "diameter": diameter,
+            }
+            for line in ("Everyday", "Premium")
+            for diameter in (1.75, 2.85)
+        ],
+    )
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(plan)["error"] == 0, plan
+    assert summarize(plan)["create"] == 5
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id)
+    await db_session.commit()
+    variants = (await db_session.scalars(select(Filament))).all()
+    assert len(variants) == 4
+    assert len({variant.slug for variant in variants}) == 4
+    repeated = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(repeated) == {"create": 0, "update": 0, "noop": 5, "skipped": 0, "error": 0}
+
+    # A legacy row without a line must never select an arbitrary matching line.
+    incomplete = draft.model_copy(deep=True)
+    incomplete.filaments = [dict(draft.filaments[0])]
+    incomplete.filaments[0].pop("line")
+    ambiguous = await build_plan(db_session, incomplete, admin_user_id=admin_user.id)
+    assert summarize(ambiguous)["error"] == 1
+    assert "ambiguous" in ambiguous[-1]["message"].lower()
+
+    # An explicit target preserves omitted identity dimensions and remains usable.
+    selected_id = repeated[1]["target_id"]
+    incomplete.filaments[0]["existing_filament"] = selected_id
+    incomplete.filaments[0].pop("diameter")
+    explicit = await build_plan(db_session, incomplete, admin_user_id=admin_user.id)
+    assert summarize(explicit)["error"] == 0, explicit
+    assert explicit[-1]["target_id"] == selected_id
+
+
+async def test_legacy_import_without_variant_dimensions_matches_only_unique_candidate(
+    db_session: AsyncSession, admin_user
+) -> None:
+    draft = _draft()
+    draft.brand_markets = []
+    draft.filament_markets = []
+    draft.presets = []
+    draft.filaments[0]["diameter"] = 2.85
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id)
+    await db_session.commit()
+    draft.filaments[0].pop("line")
+    draft.filaments[0].pop("diameter")
+    legacy = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(legacy)["error"] == 0, legacy
+    assert legacy[-1]["status"] == "noop"
+
+    draft.filaments[0]["existing_filament"] = "999999"
+    missing = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(missing)["error"] == 1
+    assert "Existing filament was not found" in missing[-1]["message"]
+
+
+async def test_explicit_create_without_line_does_not_match_a_lined_variant(
+    db_session: AsyncSession, admin_user
+) -> None:
+    draft = _draft()
+    draft.brand_markets = []
+    draft.filament_markets = []
+    draft.presets = []
+    draft.filaments = [
+        {**draft.filaments[0], "filament_key": f"black:{diameter}", "diameter": diameter}
+        for diameter in (1.75, 2.85)
+    ]
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id)
+    await db_session.commit()
+    draft.filaments = [dict(draft.filaments[1])]
+    draft.filaments[0].pop("line")
+    draft.filaments[0]["mode"] = "create"
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(plan)["error"] == 0, plan
+    assert plan[-1]["status"] == "create"
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id)
+    await db_session.commit()
+    variants = (await db_session.scalars(select(Filament))).all()
+    assert len(variants) == 3
+    assert len({variant.slug for variant in variants}) == 3
+    assert {variant.line_id is None for variant in variants} == {True, False}
+    unlined = next(variant for variant in variants if variant.line_id is None)
+    assert unlined.diameter == 2.85
+    assert unlined.slug.endswith("-unlined")
+    duplicate = await build_plan(db_session, draft, admin_user_id=admin_user.id)
+    assert summarize(duplicate)["error"] == 1
+    assert "already exists" in duplicate[-1]["message"]
+
+
 async def test_template_round_trips_into_editable_draft() -> None:
     workbook = load_workbook(BytesIO(build_template()))
     brands = workbook["Brands"]
@@ -184,6 +302,177 @@ async def test_template_round_trips_into_editable_draft() -> None:
     parsed = parse_workbook(output.getvalue(), "sample.xlsx")
     assert parsed.brands[0]["brand_key"] == "sample"
     assert parsed.filaments[0]["filament_key"] == "sample:pla:red"
+    assert {
+        "storage_temperature_min_c",
+        "storage_temperature_max_c",
+        "storage_relative_humidity_max_percent",
+        "storage_relative_humidity_target_percent",
+        "storage_airtight_required",
+        "storage_desiccant_recommended",
+        "storage_light_protection_required",
+        "storage_after_opening_guidance",
+        "unopened_shelf_life_months",
+        "filler",
+    } <= set(filament_headers)
+
+
+async def test_master_import_creates_manufacturer_storage_facts(db_session, admin_user) -> None:
+    draft = _draft()
+    draft.filament_markets = []
+    draft.presets = []
+    draft.filaments[0].update(
+        {
+            "storage_temperature_min_c": 10,
+            "storage_temperature_max_c": 30,
+            "storage_relative_humidity_max_percent": 20,
+            "storage_relative_humidity_target_percent": 10,
+            "storage_airtight_required": "yes",
+            "storage_desiccant_recommended": "no",
+            "storage_light_protection_required": False,
+            "storage_after_opening_guidance": "Reseal the bag after opening.",
+            "unopened_shelf_life_months": "24",
+        }
+    )
+
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(plan)["error"] == 0, plan
+    await apply_plan(
+        db_session, draft, plan, admin_user_id=admin_user.id, curation=True
+    )
+    await db_session.commit()
+
+    filament = await db_session.scalar(select(Filament))
+    assert filament is not None
+    assert filament.storage_temperature_min_c == 10
+    assert filament.storage_temperature_max_c == 30
+    assert filament.storage_relative_humidity_max_percent == 20
+    assert filament.storage_relative_humidity_target_percent == 10
+    assert filament.storage_airtight_required is True
+    assert filament.storage_desiccant_recommended is False
+    assert filament.storage_light_protection_required is False
+    assert filament.storage_after_opening_guidance == "Reseal the bag after opening."
+    assert filament.unopened_shelf_life_months == 24
+
+
+async def test_master_import_updates_only_supplied_storage_facts_and_validates_them(
+    db_session, admin_user
+) -> None:
+    draft, filament = await _existing_catalog(db_session)
+    filament.storage_temperature_min_c = 5
+    filament.storage_temperature_max_c = 35
+    filament.storage_airtight_required = True
+    filament.description = "Existing description"
+    await db_session.commit()
+
+    row = draft.filaments[0]
+    row.update(
+        {
+            "mode": "update",
+            "storage_temperature_min_c": 8,
+            "storage_temperature_max_c": 32,
+            "storage_desiccant_recommended": False,
+            "storage_after_opening_guidance": "Store in a sealed container.",
+            "unopened_shelf_life_months": 18,
+        }
+    )
+    # Empty existing storage fields can be populated without overwrite; omitted
+    # properties remain untouched, and changed nonempty values need overwrite.
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(plan)["error"] == 1
+    assert "storage_temperature" in plan[-1]["message"]
+
+    row["overwrite"] = True
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(plan)["error"] == 0, plan
+    await apply_plan(
+        db_session, draft, plan, admin_user_id=admin_user.id, curation=True
+    )
+    await db_session.commit()
+    await db_session.refresh(filament)
+    assert filament.storage_temperature_min_c == 8
+    assert filament.storage_temperature_max_c == 32
+    assert filament.storage_airtight_required is True
+    assert filament.storage_desiccant_recommended is False
+    assert filament.storage_relative_humidity_max_percent is None
+    assert filament.storage_after_opening_guidance == "Store in a sealed container."
+    assert filament.unopened_shelf_life_months == 18
+    assert filament.description == "Existing description"
+
+    row.update(
+        {
+            "storage_temperature_min_c": 40,
+            "storage_temperature_max_c": 20,
+            "storage_relative_humidity_max_percent": 10,
+            "storage_relative_humidity_target_percent": 15,
+            "unopened_shelf_life_months": 0,
+        }
+    )
+    invalid = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(invalid)["error"] == 1
+    assert "unopened_shelf_life_months" in invalid[-1]["message"]
+
+    row["unopened_shelf_life_months"] = 18
+    invalid = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(invalid)["error"] == 1
+    assert "storage temperature minimum" in invalid[-1]["message"]
+
+    row["storage_temperature_min_c"] = 10
+    row["storage_temperature_max_c"] = 20
+    invalid = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(invalid)["error"] == 1
+    assert "storage humidity target exceeds maximum" in invalid[-1]["message"]
+
+
+async def test_curation_import_creates_filler_and_effects_together(db_session, admin_user) -> None:
+    draft = _draft()
+    draft.filament_markets = []
+    draft.presets = []
+    draft.filaments[0].update(
+        {
+            "color_type": "single",
+            "colors": ["#112233"],
+            "finish": "glossy",
+            "filler": "sparkle",
+            "effects": ["sparkle", "glitter"],
+            "transparency": False,
+        }
+    )
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(plan)["error"] == 0, plan
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id, curation=True)
+    await db_session.commit()
+
+    filament = await db_session.scalar(select(Filament))
+    assert filament is not None
+    assert filament.visual_settings["filler"] == "sparkle"
+    assert filament.visual_settings["effects"] == ["sparkle", "glitter"]
+
+
+async def test_curation_import_updates_filler_without_dropping_other_effects(
+    db_session, admin_user
+) -> None:
+    draft, filament = await _existing_catalog(db_session)
+    filament.visual_settings = {
+        "color_type": "single",
+        "colors": ["#112233"],
+        "finish": "glossy",
+        "filler": "glitter",
+        "effects": ["glitter", "silk"],
+        "transparency": False,
+    }
+    await db_session.commit()
+    row = draft.filaments[0]
+    row.update({"mode": "update", "filler": "sparkle", "overwrite": True})
+
+    plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
+    assert summarize(plan)["error"] == 0, plan
+    await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id, curation=True)
+    await db_session.commit()
+    await db_session.refresh(filament)
+    assert filament.visual_settings["filler"] == "sparkle"
+    assert filament.visual_settings["effects"] == ["sparkle", "silk"]
+    assert filament.visual_settings["colors"] == ["#112233"]
+    assert filament.visual_settings["finish"] == "glossy"
 
 
 async def test_preview_confirmation_and_apply_work_through_admin_api(

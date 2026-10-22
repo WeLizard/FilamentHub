@@ -4,6 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
+import type { CatalogCurationInput, CatalogCurationList, CatalogQuoteCheckReport, CatalogCurationPreview, CatalogCurationProposal, CatalogCurationServiceAccount, CatalogCurationServiceAccountCreated, CatalogCurationServiceAccountList } from '../types/api';
 import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandDuplicatePair, BrandMergePreview, FilamentMergeCandidatesResponse, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
@@ -3379,6 +3380,43 @@ export const feedbackAPI = {
     const response = await api.post<FeedbackDetail>(`/feedback/${feedbackId}/messages`, data);
     return response.data;
   },
+};
+
+export const adminCatalogCurationAPI = {
+  list: async (offset = 0, size = 20): Promise<CatalogCurationList> =>
+    (await api.get<CatalogCurationList>('/admin/catalog/curation/proposals', { params: { offset, size } })).data,
+  get: async (id: number): Promise<CatalogCurationProposal> =>
+    (await api.get<CatalogCurationProposal>(`/admin/catalog/curation/proposals/${id}`)).data,
+  create: async (value: CatalogCurationInput): Promise<CatalogCurationProposal> =>
+    (await api.post<CatalogCurationProposal>('/admin/catalog/curation/proposals', value)).data,
+  update: async (id: number, revision: number, value: CatalogCurationInput): Promise<CatalogCurationProposal> =>
+    (await api.patch<CatalogCurationProposal>(`/admin/catalog/curation/proposals/${id}`, { revision, ...value })).data,
+  preview: async (id: number, revision: number): Promise<CatalogCurationPreview> =>
+    (await api.post<CatalogCurationPreview>(`/admin/catalog/curation/proposals/${id}/preview`, { revision })).data,
+  quoteChecks: async (id: number): Promise<CatalogQuoteCheckReport> =>
+    (await api.get<CatalogQuoteCheckReport>(`/admin/catalog/curation/proposals/${id}/quote-checks`)).data,
+  verifySources: async (id: number): Promise<CatalogQuoteCheckReport> =>
+    (await api.post<CatalogQuoteCheckReport>(`/admin/catalog/curation/proposals/${id}/verify-sources`)).data,
+  confirmImageClaim: async (
+    id: number,
+    claim: { scope: 'evidence'; sheet: string; key: string; field: string; confirmed: boolean },
+  ): Promise<CatalogQuoteCheckReport> =>
+    (await api.post<CatalogQuoteCheckReport>(`/admin/catalog/curation/proposals/${id}/quote-checks/image-confirmation`, claim)).data,
+  apply: async (id: number, revision: number, confirmationToken: string): Promise<CatalogImportApplyResponse> =>
+    (await api.post<CatalogImportApplyResponse>(`/admin/catalog/curation/proposals/${id}/apply`, {
+      revision, confirmation_token: confirmationToken,
+    })).data,
+};
+
+export const adminCatalogCurationServiceAccountAPI = {
+  list: async (offset = 0, size = 20): Promise<CatalogCurationServiceAccountList> =>
+    (await api.get<CatalogCurationServiceAccountList>('/admin/catalog/curation/service-accounts', { params: { offset, size } })).data,
+  create: async (name: string, expiresAt?: string): Promise<CatalogCurationServiceAccountCreated> =>
+    (await api.post<CatalogCurationServiceAccountCreated>('/admin/catalog/curation/service-accounts', {
+      name, ...(expiresAt ? { expires_at: expiresAt } : {}),
+    })).data,
+  revoke: async (id: number): Promise<CatalogCurationServiceAccount> =>
+    (await api.post<CatalogCurationServiceAccount>(`/admin/catalog/curation/service-accounts/${id}/revoke`)).data,
 };
 
 export const adminCatalogImportAPI = {

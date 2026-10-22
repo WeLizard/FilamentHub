@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     brands,
     calculator,
     catalog_bundles,
+    catalog_curation,
     catalog_master_import,
     catalog_urls,
     country_cells,
@@ -93,6 +94,9 @@ api_router.include_router(spool_compat.router, prefix="/spool_compat")
 api_router.include_router(admin.router)
 api_router.include_router(catalog_bundles.router)
 api_router.include_router(catalog_master_import.router)
+api_router.include_router(catalog_curation.router)
+api_router.include_router(catalog_curation.service_account_router)
+api_router.include_router(catalog_curation.service_router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)

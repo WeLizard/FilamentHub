@@ -74,6 +74,13 @@ export interface FilamentChemicalGuidance {
   hazardous: boolean;
 }
 
+export interface FilamentAdditionalProperty {
+  property_name: string;
+  value_summary: string;
+  source_urls: string[];
+  kind: 'direct' | 'inferred';
+}
+
 export interface FilamentPresetSummary {
   id: number;
   name: string;
@@ -147,6 +154,8 @@ export interface Filament {
   line_id?: number | null; // линейка (группировка вариантов-цвета)
   line_name?: string | null; // имя линейки (денормализовано)
   description: string | null;
+  /** Administrator-approved manufacturer facts that do not fit standard fields. */
+  additional_properties?: FilamentAdditionalProperty[];
   views_count: number | null;
   scans_count: number | null;
   qr_code: string | null;
@@ -1286,6 +1295,146 @@ export interface CatalogImportBatch {
 export interface CatalogImportHistory {
   items: CatalogImportBatch[];
   total: number;
+}
+
+export interface CatalogCurationEvidence {
+  sheet: CatalogImportPlanRow['sheet'];
+  key: string;
+  field: string;
+  kind: 'direct' | 'inferred';
+  source_urls: string[];
+  explanation?: string | null;
+  quote?: string | null;
+  image_url?: string | null;
+}
+
+export interface CatalogCurationUnmappedFact {
+  filament_key: string;
+  property_name: string;
+  value_summary: string;
+  explanation?: string | null;
+  source_urls: string[];
+  public_action?: 'none' | 'publish' | 'remove';
+  kind?: 'direct' | 'inferred' | null;
+  quote?: string | null;
+  unit?: string | null;
+  conditions?: string | null;
+  subject?: string | null;
+  image_url?: string | null;
+}
+
+export interface CatalogCurationSourceFact {
+  filament_key: string;
+  property_name: string;
+  value_summary: string;
+  source_urls: string[];
+  disposition: 'mapped' | 'unsupported' | 'unresolved';
+  mapped_fields: string[];
+  quote?: string | null;
+  unit?: string | null;
+  conditions?: string | null;
+  subject?: string | null;
+  image_url?: string | null;
+}
+
+export type CatalogQuoteCheckStatus =
+  | 'verified'
+  | 'quote_not_found'
+  | 'value_not_in_quote'
+  | 'source_unavailable'
+  | 'image_only'
+  | 'not_official_domain'
+  | 'quote_too_short'
+  | 'pending';
+
+export interface CatalogQuoteCheckItem {
+  scope: 'evidence' | 'source_fact' | 'unmapped_fact';
+  /** Empty for facts, whose `key` is the filament key and `field` the case-folded property name. */
+  sheet: string;
+  key: string;
+  field: string;
+  status: CatalogQuoteCheckStatus;
+  reason: string | null;
+  url: string | null;
+  checked_at: string | null;
+  /** An administrator confirmed the image by eye; only meaningful for `image_only`. */
+  confirmed: boolean;
+  /** False for a quote found only in a legacy explanation: shown, never blocking. */
+  gating: boolean;
+}
+
+export interface CatalogQuoteCheckReport {
+  items: CatalogQuoteCheckItem[];
+  /** Verified claims are counted in the summary but not listed. */
+  summary: Record<CatalogQuoteCheckStatus, number> & { total: number; verified_percent: number };
+  job_pending: boolean;
+}
+
+export interface CatalogCurationInput {
+  title: string;
+  draft: CatalogImportDraft;
+  evidence: CatalogCurationEvidence[];
+  unmapped_facts: CatalogCurationUnmappedFact[];
+  source_facts: CatalogCurationSourceFact[];
+  coverage_note: string;
+}
+
+export interface CatalogCurationProposal extends CatalogCurationInput {
+  id: number;
+  status: 'draft' | 'applied';
+  revision: number;
+  created_by_user_id: number | null;
+  created_by_service_account_id?: number | null;
+  created_at: string;
+  updated_at: string;
+  applied_batch_id: number | null;
+}
+
+export interface CatalogCurationServiceAccount {
+  id: number;
+  name: string;
+  created_by_user_id: number | null;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface CatalogCurationServiceAccountList {
+  items: CatalogCurationServiceAccount[];
+  total: number;
+}
+
+export interface CatalogCurationServiceAccountCreated {
+  account: CatalogCurationServiceAccount;
+  token: string;
+}
+
+export type CatalogCurationSummary = Omit<CatalogCurationProposal, 'draft' | 'evidence' | 'unmapped_facts' | 'source_facts' | 'coverage_note'>;
+
+export interface CatalogCurationListItem extends CatalogCurationSummary {
+  brand_name?: string | null;
+  filament_count?: number;
+  author_name?: string | null;
+}
+
+export interface CatalogCurationList {
+  items: CatalogCurationListItem[];
+  total: number;
+}
+
+export interface CatalogCurationPreview extends CatalogImportPreview {
+  proposal_id: number;
+  revision: number;
+  source_facts_review: Array<{
+    filament_key: string;
+    total: number;
+    mapped: number;
+    unsupported: number;
+    unresolved: number;
+    captured: number;
+    coverage_percent: number;
+  }>;
 }
 
 export interface FeedbackListResponse {

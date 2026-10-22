@@ -211,6 +211,11 @@ class Filament(Base):
     property_claims: Mapped[list[dict]] = mapped_column(
         JSON, default=list, server_default="[]", nullable=False
     )
+    # Public manufacturer properties that do not have a dedicated catalog
+    # field. Values are reviewed, source-linked and scoped to this exact variant.
+    additional_properties: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
 
     # Physical properties
     diameter: Mapped[float] = mapped_column(Float, default=1.75)

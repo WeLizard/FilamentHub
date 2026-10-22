@@ -9,8 +9,6 @@ import {
   Calculator,
   Check,
   CheckCircle,
-  ChevronLeft,
-  ChevronRight,
   CircleOff,
   Factory,
   Link2,
@@ -25,6 +23,7 @@ import {
 import { adminAPI, brandsAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
+import { AdminPager } from './AdminPager';
 import { ConfirmModal } from '../ConfirmModal';
 import { AdminConfirmationDialog } from '../AdminConfirmationDialog';
 import { ACHIEVEMENT_CONFIG, AchievementBadge } from '../Badge';
@@ -270,13 +269,6 @@ export function AdminUsers() {
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }),
     [i18n.language],
   );
-  const pageNumbers = useMemo(() => {
-    if (totalPages <= 5) {
-      return Array.from({ length: totalPages }, (_, index) => index + 1);
-    }
-    const start = Math.min(Math.max(page - 2, 1), totalPages - 4);
-    return Array.from({ length: 5 }, (_, index) => start + index);
-  }, [page, totalPages]);
 
   useEffect(() => {
     if (totalPages > 0 && page > totalPages) {
@@ -541,46 +533,15 @@ export function AdminUsers() {
         <p className="text-xs text-gray-500">
           {t('adminUsers.range', { start: rangeStart, end: rangeEnd, total })}
         </p>
-        {totalPages > 1 && (
-          <nav className="flex flex-wrap items-center gap-1" aria-label={t('adminUsers.paginationLabel')}>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page <= 1 || isFetching}
-              className={actionButtonClass}
-              title={t('adminUsers.previous')}
-              aria-label={t('adminUsers.previous')}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            {pageNumbers.map((pageNumber) => (
-              <button
-                key={pageNumber}
-                type="button"
-                onClick={() => setPage(pageNumber)}
-                disabled={isFetching}
-                aria-current={pageNumber === page ? 'page' : undefined}
-                className={`h-8 min-w-8 rounded-lg px-2 text-xs font-medium transition ${
-                  pageNumber === page
-                    ? 'bg-purple-500/20 text-purple-100 ring-1 ring-inset ring-purple-400/25'
-                    : 'text-gray-500 hover:bg-white/[0.07] hover:text-gray-200'
-                }`}
-              >
-                {pageNumber}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              disabled={page >= totalPages || isFetching}
-              className={actionButtonClass}
-              title={t('adminUsers.next')}
-              aria-label={t('adminUsers.next')}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </nav>
-        )}
+        <AdminPager
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          disabled={isFetching}
+          label={t('adminUsers.paginationLabel')}
+          previousLabel={t('adminUsers.previous')}
+          nextLabel={t('adminUsers.next')}
+        />
       </footer>
       {/* Модальное окно для выбора бренда */}
       {selectedUserIdForBrand && (

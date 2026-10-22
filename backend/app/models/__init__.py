@@ -26,7 +26,14 @@ from app.models.bundle import (
 from app.models.calculator_gcode_artifact import CalculatorGcodeArtifact
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.catalog_curation import CatalogCurationProposal
+from app.models.catalog_curation_service_account import CatalogCurationServiceAccount
 from app.models.catalog_import import CatalogImportBatch
+from app.models.catalog_quote_check import (
+    CatalogImageConfirmation,
+    CatalogQuoteCheck,
+    CatalogQuoteCheckJob,
+)
 from app.models.crm import (
     CrmCustomer,
     CrmCustomerSearchToken,
@@ -171,7 +178,12 @@ __all__ = [
     "AppSetting",
     "CalculatorHistoryEntry",
     "CalculatorGcodeArtifact",
+    "CatalogCurationProposal",
+    "CatalogCurationServiceAccount",
     "CatalogImportBatch",
+    "CatalogImageConfirmation",
+    "CatalogQuoteCheck",
+    "CatalogQuoteCheckJob",
     "UserCalculatorProfile",
     "CrmCustomer",
     "CrmCustomerSearchToken",
