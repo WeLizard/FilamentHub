@@ -4,8 +4,9 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## 0.2.6
 - FilamentHub now tells OrcaSlicer up front that it needs a background thread, so the permission question appears once when the plugin loads instead of when you first open its tab. If you answer "No", OrcaSlicer does not load the plugin.
-- The plugin no longer saves quotation PDFs or opens any program for them. A quotation is previewed and printed inside the FilamentHub tab: press Print and choose Save as PDF to get a file, or press Open in browser to open it on the site.
+- The plugin no longer saves quotation PDFs or opens any program for them. A quotation is previewed and printed inside the FilamentHub tab: press Print and choose Save as PDF to get a file. In the workspace, Open in browser opens the quotation on the site after you sign in.
 - The browser and FTP modules are no longer loaded at start-up; each is used only by the action that needs it (opening a sign-in or wiki link, reading a Bambu printer's files over your network).
+- The plugin always connects to the FilamentHub server chosen in its settings (filamenthub.ru or filamenthub.club). It no longer reads a server address from the environment.
 
 ## 0.2.5
 - On OrcaSlicer builds with the plugin preset API (2.5.0-alpha and later), imported and synchronized presets now appear in the preset selectors right away, with no restart. Your selection and unsaved edits are kept.

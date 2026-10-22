@@ -27,6 +27,11 @@ RELEASE_NOTES_RENDERER = ROOT.parent / "scripts" / "render_plugin_release_notes.
 # also flips the plugin off its dev contour and hides the Log button.
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
+# The source and the -dev build let FILAMENTHUB_SITE_URL redirect the plugin; the
+# production build carries no environment read, so no variable can send sign-in
+# and tokens to another server.
+ENV_OVERRIDE_DEV = 'SITE_URL_ENV_OVERRIDE = os.environ.get("FILAMENTHUB_SITE_URL", "")'
+ENV_OVERRIDE_PROD = 'SITE_URL_ENV_OVERRIDE = ""'
 EMBEDDED_UI_COPY_TOKEN = "_EMBEDDED_UI_COPY = {}"
 PACKAGE_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.py[cod]")
 
@@ -222,6 +227,8 @@ def dev_source(source: str) -> str:
     """Return a localhost-default single file with all UI catalogs embedded."""
     if DEV_SITE_DEFAULT not in source:
         raise ValueError("dev SITE_URL default not found")
+    if ENV_OVERRIDE_DEV not in source:
+        raise ValueError("dev SITE_URL environment override not found")
     result = _source_with_embedded_locales(source)
     ast.parse(result, filename="filamenthub_plugin.py[dev]")
     return result
@@ -236,11 +243,16 @@ def prod_source(source: str) -> str:
     """
     if DEV_SITE_DEFAULT not in source:
         raise ValueError("dev SITE_URL default not found — cannot force the prod URL")
+    if source.count(ENV_OVERRIDE_DEV) != 1:
+        raise ValueError("SITE_URL environment override not found — cannot remove it")
     result = source.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    result = result.replace(ENV_OVERRIDE_DEV, ENV_OVERRIDE_PROD)
     result = _source_with_embedded_locales(result)
     ast.parse(result, filename="filamenthub_plugin.py[prod]")
     if DEV_SITE_DEFAULT in result:
         raise ValueError(f"prod source still contains a dev token: {DEV_SITE_DEFAULT!r}")
+    if "os.environ" in result or "getenv" in result:
+        raise ValueError("prod source still reads the environment")
     return result
 
 
@@ -355,6 +367,7 @@ def build_all(output_root: Path, wheel: bool = True) -> tuple[Path, Path]:
     )
     dev_source_text = dev_path.read_text(encoding="utf-8")
     normalized_dev = dev_source_text.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    normalized_dev = normalized_dev.replace(ENV_OVERRIDE_DEV, ENV_OVERRIDE_PROD)
     if normalized_dev != prod_source_text:
         raise ValueError("dev and prod plugin artifacts diverged beyond the site URL")
     return package_dir, dev_path

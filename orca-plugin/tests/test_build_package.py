@@ -78,7 +78,10 @@ def test_build_packages_locale_catalogs_and_checksums(
         timestamps = {entry.date_time for entry in archive.infolist()}
     assert b"\r" not in wheel_source
     assert b"_EMBEDDED_UI_COPY = {}" not in wheel_source
-    assert b'os.environ.get("FILAMENTHUB_SITE_URL", "https://filamenthub.ru")' in wheel_source
+    assert b"os.environ" not in wheel_source
+    assert b"getenv" not in wheel_source
+    assert b'SITE_URL_ENV_OVERRIDE = ""' in wheel_source
+    assert b'(SITE_URL_ENV_OVERRIDE or "https://filamenthub.ru")' in wheel_source
     assert b"http://localhost:3000" not in wheel_source
     assert b'"server": "ru",' in wheel_source
     assert b"\r" not in metadata_bytes
@@ -116,7 +119,8 @@ def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_mod
     source = dev_plugin.read_text(encoding="utf-8")
 
     assert not (dev_dir / "stale.txt").exists()
-    assert 'os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000")' in source
+    assert 'SITE_URL_ENV_OVERRIDE = os.environ.get("FILAMENTHUB_SITE_URL", "")' in source
+    assert '(SITE_URL_ENV_OVERRIDE or "http://localhost:3000")' in source
     assert "_EMBEDDED_UI_COPY = {}" not in source
     standalone_module = _load_module(dev_plugin, "filamenthub_dev_standalone_smoke")
     assert standalone_module.DEV_CONTOUR is True
@@ -139,8 +143,30 @@ def test_combined_build_keeps_dev_and_prod_in_parity(plugin_module, tmp_path):
     assert dev_plugin.parent.name == f"filamenthub-{plugin_module.PLUGIN_VERSION}-dev"
     assert (
         dev_source.replace(builder.DEV_SITE_DEFAULT, builder.PROD_SITE_DEFAULT)
+        .replace(builder.ENV_OVERRIDE_DEV, builder.ENV_OVERRIDE_PROD)
         == prod_source
     )
+    assert "os.environ" not in prod_source and "getenv" not in prod_source
+
+
+def test_prod_build_ignores_the_environment_and_keeps_the_server_choice(
+    plugin_module, monkeypatch, tmp_path
+):
+    builder = _load_module(BUILD_PATH, "filamenthub_env_build_package_test")
+    package_dir, dev_plugin = builder.build_all(tmp_path, wheel=False)
+    monkeypatch.setenv("FILAMENTHUB_SITE_URL", "https://attacker.example")
+
+    prod = _load_module(package_dir / "filamenthub_plugin.py", "filamenthub_prod_env_smoke")
+    assert prod.SITE_URL == "https://filamenthub.ru"
+    assert prod.DEV_CONTOUR is False
+    prod.apply_plugin_settings({**prod.PLUGIN_SETTINGS_DEFAULTS, "server": "club"}, apply_server=True)
+    assert prod.SITE_URL == "https://filamenthub.club"
+    assert prod.API_BASE == "https://filamenthub.club/api/v1"
+
+    dev = _load_module(dev_plugin, "filamenthub_dev_env_smoke")
+    assert dev.SITE_URL == "https://attacker.example"
+    dev.apply_plugin_settings({**dev.PLUGIN_SETTINGS_DEFAULTS, "server": "club"}, apply_server=True)
+    assert dev.SITE_URL == "https://attacker.example"
 
 def test_default_build_output_is_one_versioned_release_bundle(
     plugin_module, monkeypatch, tmp_path

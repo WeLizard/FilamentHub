@@ -638,7 +638,10 @@ PLUGIN_CAPABILITIES = (
 )
 PROD_SITE_URL = "https://filamenthub.ru"
 PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
-SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
+# The production build replaces the next line with a constant (build_package.py),
+# so the shipped plugin reads no environment variable.
+SITE_URL_ENV_OVERRIDE = os.environ.get("FILAMENTHUB_SITE_URL", "")
+SITE_URL = (SITE_URL_ENV_OVERRIDE or "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL not in PROD_SITE_URLS.values()
 EMBED_URL = SITE_URL + "/embed"
 API_BASE = SITE_URL + "/api/v1"
@@ -697,7 +700,7 @@ def apply_plugin_settings(settings, apply_server=False):
     """Adopt new settings; the server switches only at load, before any page or request uses it."""
     global _PLUGIN_SETTINGS, SITE_URL, EMBED_URL, API_BASE
     _PLUGIN_SETTINGS = dict(settings)
-    if apply_server and not DEV_CONTOUR and "FILAMENTHUB_SITE_URL" not in os.environ:
+    if apply_server and not DEV_CONTOUR and not SITE_URL_ENV_OVERRIDE:
         SITE_URL = PROD_SITE_URLS[settings["server"]]
         EMBED_URL = SITE_URL + "/embed"
         API_BASE = SITE_URL + "/api/v1"
