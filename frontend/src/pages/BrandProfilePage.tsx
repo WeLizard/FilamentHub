@@ -873,6 +873,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     );
   }
 
+  // Переключатель режима должен оставаться доступным и вне основной карточки
+  // бренда: иначе форма заявки, загрузка или ошибка запирают человека в
+  // кабинете компании без пути назад.
+  const withModeSwitch = (content: React.ReactNode) => (
+    <div className="space-y-6">
+      {modeSwitch ? (
+        <div className="flex justify-center">{modeSwitch}</div>
+      ) : null}
+      {content}
+    </div>
+  );
+
   if (isAddingBrand) {
     return (
       <BrandSelectionForm
@@ -885,22 +897,24 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
 
   // Если у пользователя нет brand_id, показываем форму выбора/создания бренда
   if (!user.brand_id) {
-    return <BrandSelectionForm initialBrandId={initialClaimBrandId} initialBrandName={initialClaimBrandName} />;
+    return withModeSwitch(
+      <BrandSelectionForm initialBrandId={initialClaimBrandId} initialBrandName={initialClaimBrandName} />,
+    );
   }
 
   if (isLoadingBrand) {
-    return (
+    return withModeSwitch(
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-white text-xl">{t('brandProfile.loading')}</div>
-      </div>
+      </div>,
     );
   }
 
   if (!brandData) {
-    return (
+    return withModeSwitch(
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-red-400 text-xl">{t('brandProfile.brandNotFound')}</div>
-      </div>
+      </div>,
     );
   }
 
