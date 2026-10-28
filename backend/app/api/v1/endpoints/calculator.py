@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.capacity import Gate
 from app.core.config import settings
-from app.core.dependencies import get_current_verified_user, require_calculator_access
+from app.core.dependencies import get_current_active_user, get_current_verified_user
 from app.core.errors import (
     ERR_CALCULATOR_HISTORY_CURSOR_INVALID,
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
@@ -567,7 +567,7 @@ def _compact_history_projection() -> tuple:
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
 async def estimate_cost(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     data: CalculatorEstimateRequest,
 ) -> CalculatorEstimateResponse:
     """Рассчитать стоимость печати; учесть расчёт в статистике только если он удался."""
@@ -579,7 +579,7 @@ async def estimate_cost(
 @router.post("/preflight", response_model=CalculatorPreflightResponse)
 async def calculate_preflight(
     data: CalculatorPreflightRequest,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorPreflightResponse:
     """Check material readiness without reserving or consuming user inventory."""
@@ -1085,7 +1085,7 @@ async def parse_gcode_excerpt_request(
 )
 async def parse_gcode_excerpts(
     request: Request,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     response: Response,
 ) -> CalculatorGcodeArtifactParseResponse:
@@ -1096,7 +1096,7 @@ async def parse_gcode_excerpts(
 
 @router.get("/history", response_model=CalculatorHistoryEntryListResponse)
 async def list_calculator_history(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -1148,7 +1148,7 @@ async def list_calculator_history(
 
 @router.get("/history/feed", response_model=CalculatorHistoryFeedResponse)
 async def list_calculator_history_feed(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = Query(20, ge=1, le=100),
     cursor: str | None = Query(None, min_length=1, max_length=512),
@@ -1200,7 +1200,7 @@ async def list_calculator_history_feed(
 @router.get("/history/{entry_id}", response_model=CalculatorHistoryEntryResponse)
 async def get_calculator_history_entry(
     entry_id: int,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorHistoryEntryResponse:
     """Return one full Calculator Pro history entry owned by the current user."""
@@ -1220,7 +1220,7 @@ async def get_calculator_history_entry(
 )
 async def save_calculator_history(
     data: CalculatorHistoryEntryCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorHistoryEntryResponse:
     """Persist a Calculator Pro estimate to user history."""
@@ -1244,7 +1244,7 @@ async def save_calculator_history(
 @router.delete("/history/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_calculator_history(
     entry_id: int,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete one Calculator Pro history entry."""
@@ -1296,7 +1296,7 @@ def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileRespon
 
 @router.get("/profile", response_model=CalculatorProfileResponse)
 async def get_calculator_profile(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Return the current user's calculator profile (create with defaults if missing)."""
@@ -1326,7 +1326,7 @@ async def get_calculator_profile(
 @router.put("/profile", response_model=CalculatorProfileResponse)
 async def update_calculator_profile(
     data: CalculatorProfileUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Create or update the current user's calculator profile."""
@@ -1369,7 +1369,7 @@ async def update_calculator_profile(
 
 @router.post("/profile/reset-defaults", response_model=CalculatorProfileResponse)
 async def reset_calculator_profile_defaults(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Explicitly reset only economics to the current platform defaults."""
@@ -1414,7 +1414,7 @@ _SHARED_QUOTE_CSP = (
 )
 async def create_shared_quote(
     data: SharedQuoteCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SharedQuoteResponse:
     """Create a publicly accessible shared quote link."""
@@ -1461,7 +1461,7 @@ async def get_shared_quote(
 @router.post("/quote/pdf")
 async def generate_quote_pdf(
     data: SharedQuoteCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> Response:
     """Generate a PDF from quote HTML content and return it for download."""
     from app.services.pdf_service import generate_pdf_from_html

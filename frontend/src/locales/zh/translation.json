@@ -305,11 +305,6 @@
     "subtitle": "将估算保存为可追溯版本的报价，跟进客户决定，并把已接受的报价转入生产。",
     "newCalculation": "新建估算",
     "search": "编号、订单或客户…",
-    "locked": {
-      "title": "订单工作流属于 Calculator Pro",
-      "description": "在计算器中启动试用，即可保存客户、报价版本和生产订单。",
-      "action": "打开计算器"
-    },
     "metrics": {
       "awaiting": "等待决定",
       "accepted": "已接受报价",
@@ -1402,7 +1397,6 @@
       "database": "数据库",
       "orcaSchema": "Orca 架构",
       "calculator": "计算设置",
-      "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
     },
@@ -1422,7 +1416,6 @@
       "database": "数据库",
       "orcaSchema": "Orca",
       "calculator": "计算",
-      "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
     },
@@ -2926,7 +2919,7 @@
   },
   "profilePage": {
     "calculator": {
-      "proBadge": "高级版",
+      "proBadge": "成本与报价",
       "title": "计算 3D 打印订单价格",
       "subtitle": "上传 G-code——FilamentHub 将提取打印时间和材料用量，帮助定价并准备客户报价。",
       "workspaceSavedEstimates": "已保存估算",
@@ -3479,14 +3472,6 @@
       "quoteClose": "关闭",
       "quotePopupBlocked": "浏览器阻止了打印窗口。允许FilamentHub的弹窗。",
       "quoteDefaultItemTitle": "3D打印服务",
-      "trialBanner": "试用 — 剩余 {{days}} 天",
-      "proLockedTitle": "计算器为 Pro 功能",
-      "proLockedDescription": "专业的成本与报价计算器需要 Pro 访问权限。",
-      "proLockedHint": "试用期已使用。付费订阅即将推出；如需提前使用，请联系我们。",
-      "trialActivationHint": "准备好后再开始试用。倒计时仅在点击按钮后开始。",
-      "trialActivateAction": "激活免费试用",
-      "trialActivating": "正在激活…",
-      "trialActivationError": "无法激活试用",
       "quoteSlicer": "切片机",
       "quoteWeight": "重量",
       "quotePrintTime": "打印时间",
@@ -5678,8 +5663,6 @@
     "confirmErase": "删除账户“{{username}}”及其全部数据？将移除 {{presets}} 个配置、{{spools}} 个料盘和 {{reviews}} 条评价。此操作不可撤销，用于执行用户的删除请求。"
   },
   "adminSubscriptions": {
-    "title": "订阅",
-    "saved": "计算器设置已保存",
     "defaultsTitle": "初始计算设置",
     "defaultsDescription": "这些值用于初始化新的计算器配置。它们只是平台参考，不会覆盖用户的私有成本设置。",
     "defaultsRates": "费率与运行",
@@ -5743,15 +5726,6 @@
     "soon": "即将推出"
   },
   "adminMaintenance": {
-    "calcTitle": "计算器访问",
-    "calcPaidOn": "付费",
-    "calcPaidOff": "全员开放",
-    "calcEnable": "设为付费",
-    "calcDisable": "全员开放",
-    "calcTrial": "试用（天）",
-    "calcSave": "保存",
-    "calcCounts": "{{trialing}} 试用中 · {{active}} 付费",
-    "calcAdminNote": "管理员始终拥有访问权限",
     "title": "维护模式",
     "loadingStatus": "加载状态中...",
     "loadError": "无法加载维护状态",
@@ -6358,6 +6332,7 @@
     "wikiArticles": "知识库文章",
     "hardware": "硬件与同步",
     "devices": "用户设备",
+    "livePrinters": "活跃：{{live}} · 超过 {{threshold}} 台：{{users}} / {{target}}",
     "spools": "线轴",
     "gateSlots": "进料槽",
     "gateSlotsAssigned": "已分配：{{count}}",
@@ -6415,6 +6390,8 @@
       "savedDetail": "30 天内：{{month}}，人数：{{people}}",
       "quotes": "报价单",
       "quotes30d": "30 天内：{{count}}",
+      "regularQuoteUsers": "定期发报价的用户",
+      "regularQuoteTarget": "连续两个月 · 目标 {{target}}",
       "methods": "30 天内的计价方式",
       "method": {
         "by_weight": "按重量",
@@ -7451,7 +7428,6 @@
     "ERR_USER_INACTIVE": "用户未激活",
     "ERR_NOT_BRAND_USER": "您不是品牌代表",
     "ERR_NOT_ADMIN": "需要管理员权限",
-    "ERR_CALCULATOR_ACCESS_REQUIRED": "计算器需要 Pro 访问权限",
     "ERR_CALCULATOR_TRIAL_ALREADY_USED": "试用期已使用",
     "ERR_INVALID_API_KEY": "无效的 API 密钥",
     "ERR_LEGAL_ACCEPTANCE_REQUIRED": "请先接受当前条款及数据处理同意书",

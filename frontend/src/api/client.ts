@@ -2257,10 +2257,6 @@ export const proofFilesAPI = {
 };
 
 export const calculatorAPI = {
-  startTrial: async (): Promise<User> => {
-    const response = await api.post<User>('/calculator/start-trial');
-    return response.data;
-  },
 
   estimate: async (data: CalculatorEstimateRequest) => {
     const response = await api.post<CalculatorEstimateResponse>('/calculator/estimate', data);
@@ -2865,19 +2861,6 @@ export const adminAPI = {
     return response.data;
   },
 
-  updateCalculatorSettings: async (
-    paywallEnforced: boolean,
-    trialDays: number | null,
-  ): Promise<AdminCalculatorSettings> => {
-    const response = await api.post<AdminCalculatorSettings>(
-      '/admin/calculator-settings',
-      {
-        paywall_enforced: paywallEnforced,
-        trial_days: trialDays,
-      },
-    );
-    return response.data;
-  },
 
   updateCalculatorProfileDefaults: async (
     profileDefaults: import('../types/api').CalculatorProfileDefaults,
@@ -2932,7 +2915,9 @@ export const adminAPI = {
       reviews_total: number; reviews_7d: number; wiki_articles: number;
     };
     hardware: {
-      devices: number; spools: number;
+      devices: number; live_printers: number; workshop_users: number;
+      workshop_printer_threshold: number; workshop_launch_target: number;
+      spools: number;
       gate_slots: number; gate_slots_assigned: number;
       sync_devices: number; sync_devices_active_7d: number;
     };
@@ -2942,7 +2927,7 @@ export const adminAPI = {
       users_24h?: number; users_7d?: number; users_30d?: number;
       methods_30d?: Record<string, number>;
       profiles: number; saved_total: number; saved_30d: number; saved_by_users: number;
-      quotes: number; quotes_30d: number;
+      quotes: number; quotes_30d: number; regular_quote_users: number;
     };
     feed_systems: {
       total: number; active: number;

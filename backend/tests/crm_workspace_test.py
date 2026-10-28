@@ -729,3 +729,22 @@ async def test_an_order_can_be_booked_without_issuing_a_proposal(admin_client):
     listed = await admin_client.get("/api/v1/crm/orders?size=50")
     assert listed.status_code == 200
     assert order["id"] in [item["id"] for item in listed.json()["items"]]
+
+
+@pytest.mark.asyncio
+async def test_calculator_and_crm_stay_open_with_the_paywall_switch_on(
+    auth_client,
+    db_session: AsyncSession,
+) -> None:
+    """The calculator and CRM are free for every account; the old switch locks nothing."""
+    await subscription_service.set_paywall_enforced(db_session, True)
+
+    me = await auth_client.get("/api/v1/auth/me")
+    history = await auth_client.get("/api/v1/calculator/history")
+    summary = await auth_client.get("/api/v1/crm/summary")
+
+    assert me.status_code == 200
+    assert me.json()["has_calculator_access"] is True
+    assert me.json()["subscription"] is None
+    assert history.status_code == 200, history.text
+    assert summary.status_code == 200, summary.text

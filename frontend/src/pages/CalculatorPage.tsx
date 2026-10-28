@@ -2158,11 +2158,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   onQuoteProfileOpenChange,
 }) => {
   const { t, i18n } = useTranslation();
-  const { user, refreshUser } = useAuth();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const tc = (key: string) => translateCalculator(t, key);
-  const hasCalculatorAccess = user?.has_calculator_access ?? false;
-  const canStartTrial = !hasCalculatorAccess && user?.subscription == null;
+  const accountReady = user != null;
   const [internalActiveTab, setInternalActiveTab] = useState<CalculatorTab>('calculator');
   const [internalStaticSettingsOpen, setInternalStaticSettingsOpen] = useState(false);
   const [internalQuoteProfileOpen, setInternalQuoteProfileOpen] = useState(false);
@@ -2281,14 +2280,14 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         size: 100,
       }),
     staleTime: 60_000,
-    enabled: hasCalculatorAccess,
+    enabled: accountReady,
   });
 
   const spoolsQuery = useQuery({
     queryKey: ['calculator-pro', 'spools'],
     queryFn: ({ signal }) => spoolsAPI.list(signal),
     staleTime: 30_000,
-    enabled: hasCalculatorAccess,
+    enabled: accountReady,
   });
 
   const resolvedFilamentIds = useMemo(() => {
@@ -2321,7 +2320,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     ),
     staleTime: 60_000,
     enabled:
-      hasCalculatorAccess
+      accountReady
       && !filamentsQuery.isPending
       && supplementalFilamentIds.length > 0,
   });
@@ -2342,14 +2341,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     queryKey: ['crm', 'customers', 'calculator'],
     queryFn: () => crmAPI.listCustomers({ size: 100 }),
     staleTime: 30_000,
-    enabled: hasCalculatorAccess && quoteModalOpen,
-  });
-
-  const startTrialMutation = useMutation({
-    mutationFn: calculatorAPI.startTrial,
-    onSuccess: async () => {
-      await refreshUser();
-    },
+    enabled: accountReady && quoteModalOpen,
   });
 
   const calculateMutation = useMutation({
@@ -2426,7 +2418,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     staleTime: 30_000,
-    enabled: hasCalculatorAccess,
+    enabled: accountReady,
   });
   const historyEntries = useMemo(
     () => historyQuery.data?.pages.flatMap((page) => page.items) ?? [],
@@ -2512,7 +2504,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       ...loadStoredCalculatorDefaults(),
     }));
 
-    if (!hasCalculatorAccess) {
+    if (!accountReady) {
       setAccountEconomicsLoading(false);
       return;
     }
@@ -2551,7 +2543,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [hasCalculatorAccess]);
+  }, [accountReady]);
 
   useEffect(() => {
     if (selectedSpool) {
@@ -2717,7 +2709,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     queryKey: ['calculator', 'physical-printers'],
     queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     staleTime: 60_000,
-    enabled: hasCalculatorAccess,
+    enabled: accountReady,
   });
   const printers = printersQuery.data ?? [];
 
@@ -3007,7 +2999,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const next = { ...prev, [field]: value };
       return next;
     });
-    if (field === 'currency' && hasCalculatorAccess) {
+    if (field === 'currency' && accountReady) {
       const requestSequence = ++economicsRequestSequenceRef.current;
       setAccountEconomicsSaving(true);
       setAccountEconomicsError(false);
@@ -4357,58 +4349,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     spoolsQuery.isPending,
   ]);
 
-  if (!hasCalculatorAccess) {
-    const trialError = startTrialMutation.error as {
-      response?: { data?: { detail?: unknown } };
-    } | null;
-
-    return (
-      <div className="mx-auto max-w-2xl">
-        <div className={`${surfaceClass} p-8 text-center md:p-12`}>
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-300">
-            <Calculator className="h-8 w-8" />
-          </div>
-          <h1 className="mb-3 text-2xl font-bold text-white">{tc('proLockedTitle')}</h1>
-          <p className="mb-6 text-slate-300">{tc('proLockedDescription')}</p>
-          {canStartTrial ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-400">{tc('trialActivationHint')}</p>
-              <button
-                type="button"
-                onClick={() => startTrialMutation.mutate()}
-                disabled={startTrialMutation.isPending}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-wait disabled:opacity-60"
-              >
-                {startTrialMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {startTrialMutation.isPending ? tc('trialActivating') : tc('trialActivateAction')}
-              </button>
-              {startTrialMutation.isError && (
-                <p className="text-sm text-red-300">
-                  {translateApiError(
-                    t,
-                    trialError?.response?.data?.detail,
-                    tc('trialActivationError'),
-                  )}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">{tc('proLockedHint')}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const trialEndsAt = user?.subscription?.status === 'trialing' ? user?.subscription?.trial_ends_at ?? null : null;
-  const trialDaysLeft = trialEndsAt
-    ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86_400_000))
-    : null;
-
   const preflightUiLines: MaterialPreflightUiLine[] = materialLines.length > 0
     ? materialLines.map((line) => ({
         lineId: line.line_id,
@@ -4444,12 +4384,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   return (
     <div className="space-y-6">
-      {trialDaysLeft !== null && (
-        <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
-          <Clock className="h-3.5 w-3.5 shrink-0" />
-          <span>{t('profilePage.calculator.trialBanner', { days: trialDaysLeft })}</span>
-        </div>
-      )}
       {!embedded && <section className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.72))] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.95)] backdrop-blur-xl ring-1 ring-white/5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(251,191,36,0.16),transparent_28%),radial-gradient(circle_at_50%_120%,rgba(16,185,129,0.12),transparent_42%)]" />
         <div className="relative px-6 py-7 md:px-8 md:py-8">

@@ -169,7 +169,7 @@ async def test_start_trial_endpoint_refreshes_effective_entitlement(
 
     before_response = await auth_client.get("/api/v1/auth/me")
     assert before_response.status_code == 200
-    assert before_response.json()["has_calculator_access"] is False
+    assert before_response.json()["has_calculator_access"] is True
     assert before_response.json()["subscription"] is None
 
     first_response = await auth_client.post("/api/v1/calculator/start-trial")

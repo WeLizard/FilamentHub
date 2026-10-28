@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.dependencies import require_calculator_access
+from app.core.dependencies import get_current_active_user
 from app.core.errors import (
     ERR_CRM_CUSTOMER_NOT_FOUND,
     ERR_CRM_INVALID_STATUS_TRANSITION,
@@ -479,7 +479,7 @@ async def _add_version(
 
 @router.get("/summary", response_model=CrmWorkspaceSummary)
 async def get_workspace_summary(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmWorkspaceSummary:
     """Return compact business metrics for the workspace header."""
@@ -546,7 +546,7 @@ async def get_workspace_summary(
 
 @router.get("/customers", response_model=CrmCustomerListResponse)
 async def list_customers(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     search: str | None = Query(None, max_length=255),
     include_archived: bool = False,
@@ -577,7 +577,7 @@ async def list_customers(
 @router.post("/customers", response_model=CrmCustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     payload: CrmCustomerCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmCustomerResponse:
     customer = CrmCustomer(user_id=current_user.id)
@@ -594,7 +594,7 @@ async def create_customer(
 async def update_customer(
     customer_id: int,
     payload: CrmCustomerUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmCustomerResponse:
     customer = await _load_customer(db, current_user.id, customer_id)
@@ -607,7 +607,7 @@ async def update_customer(
 
 @router.get("/quotes", response_model=CrmQuoteListResponse)
 async def list_quotes(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: CrmQuoteStatus | None = Query(None, alias="status"),
     search: str | None = Query(None, max_length=255),
@@ -644,7 +644,7 @@ async def list_quotes(
 @router.post("/quotes", response_model=CrmQuoteDetailResponse, status_code=status.HTTP_201_CREATED)
 async def create_quote(
     payload: CrmQuoteCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     customer: CrmCustomer | None = None
@@ -711,7 +711,7 @@ async def create_quote(
 @router.get("/quotes/{quote_id}", response_model=CrmQuoteDetailResponse)
 async def get_quote(
     quote_id: int,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     return _serialize_quote_detail(await _load_quote(db, current_user.id, quote_id))
@@ -721,7 +721,7 @@ async def get_quote(
 async def update_quote(
     quote_id: int,
     payload: CrmQuoteUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
@@ -749,7 +749,7 @@ async def update_quote(
 async def create_quote_version(
     quote_id: int,
     payload: CrmQuoteVersionCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
@@ -781,7 +781,7 @@ async def create_quote_version(
 async def update_draft_quote(
     quote_id: int,
     payload: CrmQuoteDraftUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     """Atomically replace an editable draft with a new immutable version."""
@@ -813,7 +813,7 @@ async def update_draft_quote(
 async def update_quote_status(
     quote_id: int,
     payload: CrmQuoteStatusUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmQuoteDetailResponse:
     quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
@@ -866,7 +866,7 @@ async def update_quote_status(
 @router.post("/quotes/{quote_id}/share", response_model=CrmShareQuoteResponse)
 async def share_quote(
     quote_id: int,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmShareQuoteResponse:
     quote = await _load_quote(db, current_user.id, quote_id, for_update=True)
@@ -903,7 +903,7 @@ async def share_quote(
 
 @router.get("/orders", response_model=CrmOrderListResponse)
 async def list_orders(
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: CrmOrderStatus | None = Query(None, alias="status"),
     search: str | None = Query(None, max_length=255),
@@ -946,7 +946,7 @@ async def list_orders(
 @router.post("/orders", response_model=CrmOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_order_directly(
     payload: CrmOrderCreate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmOrderResponse:
     """Book work without issuing a proposal for it.
@@ -978,7 +978,7 @@ async def create_order_directly(
 async def update_order(
     order_id: int,
     payload: CrmOrderUpdate,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmOrderResponse:
     order = await _load_order(db, current_user.id, order_id)
@@ -1014,7 +1014,7 @@ async def update_order(
 async def replace_order_spool_reservations(
     order_id: int,
     payload: CrmOrderSpoolReservationReplace,
-    current_user: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CrmOrderResponse:
     """Replace explicit planning holds for an order without consuming stock."""

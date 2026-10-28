@@ -165,7 +165,8 @@ class UserResponse(UserBase):
     # True when the account accepted some earlier version, so the mandatory
     # screen is a re-ask rather than a first-time one.
     legal_previously_accepted: bool = False
-    # Calculator Pro entitlement (effective flag + subscription summary).
+    # The calculator is open to every account; the flag stays for external clients.
+    # Subscription summary is kept for the future Workshop trial.
     # Named to avoid colliding with the ORM `subscription` relationship (from_attributes);
     # serialized to the client as `subscription`.
     has_calculator_access: bool = False
@@ -179,11 +180,11 @@ class UserResponse(UserBase):
         # Вычисляем has_password из password_hash (не передаём сам hash клиенту)
         if hasattr(obj, "password_hash"):
             instance.has_password = bool(obj.password_hash)
-        # Effective calculator (Pro) access + subscription summary (see subscription_service).
+        # Calculator access is universal; the subscription summary is kept for the Workshop trial.
         if hasattr(obj, "role"):
-            from app.services.subscription_service import pro_active, subscription_summary
+            from app.services.subscription_service import subscription_summary
 
-            instance.has_calculator_access = pro_active(obj)
+            instance.has_calculator_access = True
             instance.subscription_info = subscription_summary(obj)
         if hasattr(obj, "terms_version_accepted"):
             from app.services.legal_acceptance_service import (

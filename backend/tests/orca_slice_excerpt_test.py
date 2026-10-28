@@ -75,24 +75,6 @@ async def test_a_plugin_session_without_the_preset_scope_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_the_paid_gate_applies_before_the_body_is_read(
-    client: AsyncClient,
-    auth_user: User,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setitem(subscription_service._settings_cache, "paywall_enforced", True)
-
-    response = await client.post(
-        ROUTE,
-        headers=_plugin_headers(auth_user, ["presets:write"]),
-        content=b"not multipart at all",
-    )
-
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "ERR_CALCULATOR_ACCESS_REQUIRED"
-
-
-@pytest.mark.asyncio
 async def test_a_body_that_breaks_the_excerpt_contract_is_refused_like_the_calculator_does(
     client: AsyncClient,
     auth_user: User,

@@ -45,6 +45,12 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool
 from app.models.wiki_article import WikiArticle
 from app.schemas.calculator import PricingMethod
+from app.services.tier_metrics_service import (
+    PAYMENT_LAUNCH_TARGET,
+    WORKSHOP_PRINTER_THRESHOLD,
+    live_printer_counts,
+    regular_quote_users,
+)
 from app.services.usage_metrics_service import calculator_usage
 
 logger = logging.getLogger(__name__)
@@ -156,6 +162,7 @@ async def _compute(db: AsyncSession) -> dict:
     month_ago = now - timedelta(days=30)
 
     total = await _totals(db)
+    live_printers, workshop_users = await live_printer_counts(db)
 
     activated_users = (
         await db.scalar(
@@ -243,6 +250,10 @@ async def _compute(db: AsyncSession) -> dict:
         },
         "hardware": {
             "devices": total[UserPrinterDevice],
+            "live_printers": live_printers,
+            "workshop_users": workshop_users,
+            "workshop_printer_threshold": WORKSHOP_PRINTER_THRESHOLD,
+            "workshop_launch_target": PAYMENT_LAUNCH_TARGET,
             "spools": total[UserSpool],
             "gate_slots": total[PresetGateState],
             "gate_slots_assigned": await _count(
@@ -266,6 +277,7 @@ async def _compute(db: AsyncSession) -> dict:
             or 0,
             "quotes": await _count(db, CrmQuote),
             "quotes_30d": await _count(db, CrmQuote, CrmQuote.created_at >= month_ago),
+            "regular_quote_users": await regular_quote_users(db, now),
         },
         "feed_systems": {
             "total": await _count(db, MaterialSystem),

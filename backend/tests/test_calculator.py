@@ -402,14 +402,14 @@ async def test_calculator_estimate_anonymous_401(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_calculator_estimate_forbidden_when_paywall_enforced(auth_client: AsyncClient, db_session):
-    """Paywall enforced + no valid subscription → 403."""
+async def test_calculator_estimate_open_even_when_paywall_switch_is_on(auth_client: AsyncClient, db_session):
+    """The calculator is free for every account; the old paywall switch locks nothing."""
     from app.services.subscription_service import set_paywall_enforced
 
     await set_paywall_enforced(db_session, True)
     try:
         response = await auth_client.post("/api/v1/calculator/estimate", json=_ACCESS_REQUEST)
-        assert response.status_code == 403
+        assert response.status_code == 200
     finally:
         await set_paywall_enforced(db_session, False)
 

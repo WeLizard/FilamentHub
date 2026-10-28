@@ -15,7 +15,6 @@ from app.core.config import settings
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_AUTH_REQUIRED,
-    ERR_CALCULATOR_ACCESS_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
     ERR_EMAIL_NOT_VERIFIED,
     ERR_LEGAL_ACCEPTANCE_REQUIRED,
@@ -486,17 +485,6 @@ async def require_catalog_curation_service_account(
     await db.commit()
     account.last_used_at = now
     return account
-
-
-async def require_calculator_access(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-) -> User:
-    """Require effective calculator (Pro) access — see subscription_service.pro_active."""
-    from app.services.subscription_service import pro_active
-
-    if not pro_active(current_user):
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
-    return current_user
 
 
 # Account-level API-key dependencies were retired; device credentials remain

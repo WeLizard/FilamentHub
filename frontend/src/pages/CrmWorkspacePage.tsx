@@ -11,7 +11,6 @@ import { QuotePdfPreview } from '../components/QuotePdfPreview';
 import {
   Archive,
   AlertTriangle,
-  ArrowRight,
   BriefcaseBusiness,
   Check,
   ChevronRight,
@@ -175,17 +174,17 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
   const [pdfPreview, setPdfPreview] = useState<{ url: string; title: string; printable?: boolean; quoteId?: number } | null>(null);
   const [reservationOrder, setReservationOrder] = useState<CrmOrder | null>(null);
-  const hasAccess = user?.has_calculator_access ?? false;
+  const accountReady = user != null;
 
   // A link such as /workspace?quote=12 (from the plugin's "Open in browser") opens that quote once.
   const [searchParams] = useSearchParams();
   const quoteParam = searchParams.get('quote');
   const appliedQuoteParam = useRef<string | null>(null);
   useEffect(() => {
-    if (!hasAccess || quoteParam === null || appliedQuoteParam.current === quoteParam) return;
+    if (!accountReady || quoteParam === null || appliedQuoteParam.current === quoteParam) return;
     appliedQuoteParam.current = quoteParam;
     if (/^[1-9]\d{0,9}$/.test(quoteParam)) setSelectedQuoteId(Number(quoteParam));
-  }, [hasAccess, quoteParam]);
+  }, [accountReady, quoteParam]);
 
   useEffect(() => () => {
     if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
@@ -194,7 +193,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const summaryQuery = useQuery({
     queryKey: ['crm', 'summary'],
     queryFn: crmAPI.getSummary,
-    enabled: hasAccess,
+    enabled: accountReady,
   });
   // The tab counters show what the server has. Asking for one fixed page told a shop
   // with three hundred customers that it had three hundred and then showed a hundred.
@@ -208,7 +207,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     }),
     initialPageParam: 1,
     getNextPageParam: nextCrmPage,
-    enabled: hasAccess,
+    enabled: accountReady,
   });
   const quotesQuery = useInfiniteQuery({
     queryKey: ['crm', 'quotes', debouncedSearch],
@@ -219,7 +218,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     }),
     initialPageParam: 1,
     getNextPageParam: nextCrmPage,
-    enabled: hasAccess,
+    enabled: accountReady,
   });
   const ordersQuery = useInfiniteQuery({
     queryKey: ['crm', 'orders', debouncedSearch],
@@ -230,7 +229,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     }),
     initialPageParam: 1,
     getNextPageParam: nextCrmPage,
-    enabled: hasAccess,
+    enabled: accountReady,
   });
   const customers = customersQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const quotes = quotesQuery.data?.pages.flatMap((page) => page.items) ?? [];
@@ -241,12 +240,12 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const quoteDetailQuery = useQuery({
     queryKey: ['crm', 'quote', selectedQuoteId],
     queryFn: () => crmAPI.getQuote(selectedQuoteId!),
-    enabled: hasAccess && selectedQuoteId !== null,
+    enabled: accountReady && selectedQuoteId !== null,
   });
   const spoolsQuery = useQuery({
     queryKey: ['crm', 'reservation-spools'],
     queryFn: ({ signal }) => spoolsAPI.list(signal),
-    enabled: hasAccess && reservationOrder !== null,
+    enabled: accountReady && reservationOrder !== null,
   });
 
   const refreshWorkspace = async () => {
@@ -398,27 +397,6 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
       setFeedback({ kind: 'error', text: translateApiError(t, error, t('crmWorkspace.feedback.error')) });
     }
   };
-
-  if (!hasAccess) {
-    return (
-      <div className="mx-auto max-w-2xl py-10">
-        <section className={`${surfaceClass} p-8 text-center md:p-12`}>
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10">
-            <BriefcaseBusiness className="h-8 w-8 text-cyan-200" />
-          </div>
-          <h1 className="mt-5 text-2xl font-bold text-white">{t('crmWorkspace.locked.title')}</h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300">{t('crmWorkspace.locked.description')}</p>
-          <NewCalculationAction
-            onClick={onNewCalculation}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-          >
-            {t('crmWorkspace.locked.action')}
-            <ArrowRight className="h-4 w-4" />
-          </NewCalculationAction>
-        </section>
-      </div>
-    );
-  }
 
   const summary = summaryQuery.data;
   const currentQuery = activeTab === 'quotes'

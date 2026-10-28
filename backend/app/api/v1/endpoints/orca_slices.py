@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.calculator import parse_gcode_excerpt_request, parse_uploaded_gcode
 from app.core.dependencies import get_current_active_user, require_preset_write
-from app.core.errors import ERR_CALCULATOR_ACCESS_REQUIRED, ERR_SLICE_NOT_FOUND, raise_error
+from app.core.errors import ERR_SLICE_NOT_FOUND, raise_error
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.calculator import (
@@ -24,7 +24,6 @@ from app.services.orca_slice_report_service import (
     list_slice_reports,
     record_slice_reports,
 )
-from app.services.subscription_service import pro_active
 
 router = APIRouter(prefix="/orcaslicer/slices", tags=["orca-slices"])
 
@@ -57,10 +56,7 @@ async def parse_slice(
 
     The plugin holds the file, so it uploads it here instead of the calculator's
     own route: a plugin session is scoped and cannot pass as a browser session.
-    The paid-feature gate is the same one the calculator applies.
     """
-    if not pro_active(current_user):
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
     return await parse_uploaded_gcode(
         file,
         plate_index,
@@ -82,8 +78,6 @@ async def parse_slice_excerpts(
     session cannot call. The whole G-code never leaves the machine, so the size
     of the print does not matter.
     """
-    if not pro_active(current_user):
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
     response.headers["Cache-Control"] = "private, no-store"
     return await parse_gcode_excerpt_request(request, db, user_id=current_user.id)
 

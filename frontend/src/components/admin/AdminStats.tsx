@@ -570,7 +570,13 @@ export function AdminStats() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2">
           <Section icon={HardDrive} title={t('adminStats.hardware')} cols="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Stat icon={HardDrive} label={t('adminStats.devices')} value={stats.hardware.devices} />
+            <Stat icon={HardDrive} label={t('adminStats.devices')} value={stats.hardware.devices}
+              sub={t('adminStats.livePrinters', {
+                live: stats.hardware.live_printers,
+                threshold: stats.hardware.workshop_printer_threshold,
+                users: stats.hardware.workshop_users,
+                target: stats.hardware.workshop_launch_target,
+              })} />
             <Stat icon={Package} label={t('adminStats.spools')} value={stats.hardware.spools} />
             <Stat icon={Settings} label={t('adminStats.gateSlots')} value={stats.hardware.gate_slots}
               sub={t('adminStats.gateSlotsAssigned', { count: stats.hardware.gate_slots_assigned })} />
@@ -612,6 +618,8 @@ export function AdminStats() {
           })} />
         <Stat icon={FileText} label={t('adminStats.calculator.quotes')} value={stats.calculator.quotes}
           sub={t('adminStats.calculator.quotes30d', { count: stats.calculator.quotes_30d })} />
+        <Stat icon={Users} label={t('adminStats.calculator.regularQuoteUsers')} value={stats.calculator.regular_quote_users}
+          sub={t('adminStats.calculator.regularQuoteTarget', { target: stats.hardware.workshop_launch_target })} />
         {stats.calculator.methods_30d && (
           <Breakdown
             title={t('adminStats.calculator.methods')}

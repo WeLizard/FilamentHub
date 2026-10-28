@@ -305,11 +305,6 @@
     "subtitle": "Save estimates as versioned quotes, track the customer's decision, and move accepted proposals into production.",
     "newCalculation": "New estimate",
     "search": "Number, order, or customer…",
-    "locked": {
-      "title": "Order workflow is part of Calculator Pro",
-      "description": "Start the calculator trial to save customers, quote versions, and production orders.",
-      "action": "Open calculator"
-    },
     "metrics": {
       "awaiting": "Awaiting decision",
       "accepted": "Accepted quotes",
@@ -1402,7 +1397,6 @@
       "database": "Database",
       "orcaSchema": "Orca Schema",
       "calculator": "Calculations",
-      "subscriptions": "Subscriptions",
       "maintenance": "Maintenance",
       "wiki": "Wiki"
     },
@@ -1422,7 +1416,6 @@
       "database": "DB",
       "orcaSchema": "Orca",
       "calculator": "Calc",
-      "subscriptions": "Subs",
       "maintenance": "Maint.",
       "wiki": "Wiki"
     },
@@ -2931,7 +2924,7 @@
   },
   "profilePage": {
     "calculator": {
-      "proBadge": "Premium",
+      "proBadge": "Costs & quotes",
       "title": "Price a 3D printing job",
       "subtitle": "Upload G-code - FilamentHub will extract machine time and material usage, help set the price, and prepare a client quote.",
       "workspaceSavedEstimates": "Saved estimates",
@@ -3484,14 +3477,6 @@
       "quoteClose": "Close",
       "quotePopupBlocked": "The browser blocked the print window. Allow pop-ups for FilamentHub.",
       "quoteDefaultItemTitle": "3D printing service",
-      "trialBanner": "Trial - {{days}} days left",
-      "proLockedTitle": "Calculator is a Pro feature",
-      "proLockedDescription": "The professional cost & quote calculator is available with Pro access.",
-      "proLockedHint": "The trial has already been used. Paid subscriptions are coming soon; contact us for early access.",
-      "trialActivationHint": "Start your trial when you are ready. The countdown begins only after you press the button.",
-      "trialActivateAction": "Activate free trial",
-      "trialActivating": "Activating…",
-      "trialActivationError": "Could not activate the trial",
       "quoteSlicer": "Slicer",
       "quoteWeight": "Weight",
       "quotePrintTime": "Print time",
@@ -5685,8 +5670,6 @@
     "confirmErase": "Erase the account “{{username}}” and all of its data? This removes {{presets}} presets, {{spools}} spools and {{reviews}} reviews. The action cannot be undone and exists to carry out a person's erasure request."
   },
   "adminSubscriptions": {
-    "title": "Subscriptions",
-    "saved": "Calculator settings saved",
     "defaultsTitle": "Starting calculation settings",
     "defaultsDescription": "These values seed a new calculator profile. They are platform guidance and never replace a user's private economics.",
     "defaultsRates": "Rates and operation",
@@ -5750,15 +5733,6 @@
     "soon": "soon"
   },
   "adminMaintenance": {
-    "calcTitle": "Calculator access",
-    "calcPaidOn": "Paid",
-    "calcPaidOff": "Open to all",
-    "calcEnable": "Make paid",
-    "calcDisable": "Open to all",
-    "calcTrial": "Trial, days",
-    "calcSave": "Save",
-    "calcCounts": "{{trialing}} on trial · {{active}} paid",
-    "calcAdminNote": "Admins always have access",
     "title": "Maintenance Mode",
     "loadingStatus": "Loading status...",
     "loadError": "Failed to load maintenance status",
@@ -6372,6 +6346,7 @@
     "wikiArticles": "Wiki articles",
     "hardware": "Hardware & Sync",
     "devices": "User devices",
+    "livePrinters": "live: {{live}} · over {{threshold}} for {{users}} of {{target}}",
     "spools": "Spools",
     "gateSlots": "Gate slots",
     "gateSlotsAssigned": "assigned: {{count}}",
@@ -6429,6 +6404,8 @@
       "savedDetail": "this month: {{month}}, people: {{people}}",
       "quotes": "quotes",
       "quotes30d": "this month: {{count}}",
+      "regularQuoteUsers": "Regular quote makers",
+      "regularQuoteTarget": "two months in a row · target {{target}}",
       "methods": "Pricing method this month",
       "method": {
         "by_weight": "by weight",
@@ -7465,7 +7442,6 @@
     "ERR_USER_INACTIVE": "User is inactive",
     "ERR_NOT_BRAND_USER": "You are not a brand representative",
     "ERR_NOT_ADMIN": "Administrator privileges required",
-    "ERR_CALCULATOR_ACCESS_REQUIRED": "The calculator requires Pro access",
     "ERR_CALCULATOR_TRIAL_ALREADY_USED": "The trial has already been used",
     "ERR_INVALID_API_KEY": "Invalid API key",
     "ERR_LEGAL_ACCEPTANCE_REQUIRED": "Accept the current terms and data-processing consent first",
