@@ -78,6 +78,7 @@ from app.services.catalog_duplicates import (
     same_filament_kind,
 )
 from app.services.catalog_url_service import choose_filament_slug
+from app.services.filament_duplicate_service import delete_reviews_for_filament
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.spool_compat_resource_service import repoint_catalog_refs_for_merge
 from app.services.weighted_preset_reconciliation import enqueue_weighted_preset_refreshes
@@ -93,6 +94,8 @@ FILAMENT_REFERENCES = frozenset(
     {
         "filament_analytics_events.filament_id",
         "filament_country_cells.filament_id",
+        "filament_duplicate_reviews.candidate_id",
+        "filament_duplicate_reviews.filament_id",
         "filament_qr_aliases.filament_id",
         "filament_reviews.filament_id",
         "filament_slug_redirects.filament_id",
@@ -511,6 +514,7 @@ async def merge_filaments(
     await repoint_catalog_refs_for_merge(
         db, kind="filament", source_id=source.id, target_id=target.id
     )
+    await delete_reviews_for_filament(db, source.id)
     await db.execute(delete(Filament).where(Filament.id == source.id))
     db.expunge(source)
     if transferred_qr_code:

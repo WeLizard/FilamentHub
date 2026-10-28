@@ -21,11 +21,12 @@ def comparable_name(value: str | None) -> str:
 
     Catches the same product written differently: `PLA-Black`, `PLA Black` and
     `pla  black` are one product, and a spelling difference must not be enough
-    to create a second catalog record.
+    to create a second catalog record. A plus is kept: `PLA+` is a different
+    product from `PLA`.
     """
     if not value:
         return ""
-    return "".join(char for char in value.lower() if char.isalnum())
+    return "".join(char for char in value.lower().replace("+", "plus") if char.isalnum())
 
 
 def _normalize_text(value: str | None) -> str | None:

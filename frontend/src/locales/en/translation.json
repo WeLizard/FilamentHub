@@ -2454,9 +2454,6 @@
     "commonEditRequestSent": "The request was sent to the responsible recipient.",
     "commonEditRequestFailed": "Could not send the request.",
     "commonEditRequestNoRecipients": "There is nobody to receive this request right now. Contact support@filamenthub.ru.",
-    "similarTitle": "Similar records already exist",
-    "similarHint": "Check whether this is the same product. If it is a different one, go ahead.",
-    "similarConfirmHint": "Press “Create” again to add the material.",
     "mm": "mm"
   },
   "unsavedGuard": {
@@ -5915,6 +5912,21 @@
     "logoUrlPlaceholder": "URL or upload a file"
   },
   "adminMaterials": {
+    "duplicates": {
+      "title": "Possible duplicates",
+      "scan": "Check catalog",
+      "empty": "No possible duplicates.",
+      "hint": "These look like the same filament. Merge them — presets, spools and reviews move to the one you keep — or mark them as different filaments.",
+      "newer": "New",
+      "older": "Existing",
+      "addedBy": "Added by {{name}}",
+      "merge": "Merge",
+      "notDuplicate": "Different",
+      "dismissed": "Marked as different filaments",
+      "actionFailed": "Could not complete the action",
+      "scanFound": "New pairs found: {{count}}",
+      "scanNothing": "No new possible duplicates found"
+    },
     "title": "Catalogue materials",
     "searchPlaceholder": "Search by name, brand or colour",
     "showOffShelf": "Show materials taken off the shelf",
@@ -7307,7 +7319,6 @@
     "ERR_VALIDATION_REQUIRED": "Required fields missing (name, type)",
     "ERR_VALIDATION_TEXT": "Invalid text in the name",
     "ERR_FILAMENT_ALREADY_EXISTS": "This filament already exists. Select the existing one.",
-    "ERR_FILAMENT_SIMILAR_EXISTS": "The catalog already holds similar records. Check whether this is the same product.",
     "ERR_FILAMENT_HAS_CONTRIBUTIONS": "This filament cannot be deleted: people have already added presets or reviews to it, and deleting it would take their work with it. Correct the entry, or take it off the shelf — it leaves the catalogue while the presets and reviews stay.",
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",

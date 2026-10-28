@@ -173,6 +173,10 @@ class Filament(Base):
     )
     # line_id: линейка (группирует варианты-цвета). NULL = филамент вне линейки.
 
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Basic info
     name: Mapped[str] = mapped_column(String(200), index=True)
     slug: Mapped[str] = mapped_column(String(200), index=True)

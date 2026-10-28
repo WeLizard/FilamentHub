@@ -20,6 +20,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.dependencies import get_current_admin_user
 from app.core.errors import (
@@ -66,6 +67,8 @@ from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.brand_territorial_grant import GrantSource
 from app.models.email_communication import EmailThread
 from app.models.feedback import Feedback, FeedbackStatus
+from app.models.filament import Filament
+from app.models.filament_duplicate_review import FilamentDuplicateReview
 from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
@@ -94,7 +97,15 @@ from app.schemas.calculator import (
     CalculatorCountryDefaultsMap,
     CalculatorProfileDefaults,
 )
-from app.schemas.catalog_merge import BrandDuplicatePair, BrandMergePreview, BrandMergeRequest
+from app.schemas.catalog_merge import (
+    BrandDuplicatePair,
+    BrandMergePreview,
+    BrandMergeRequest,
+    DuplicateReviewAuthor,
+    FilamentDuplicateReviewItem,
+    FilamentDuplicateReviewList,
+    FilamentDuplicateScanResult,
+)
 from app.schemas.database import (
     DatabaseExportRequest,
     DatabaseIntegrityResponse,
@@ -139,6 +150,8 @@ from app.services.calculator_defaults_service import (
 from app.services.catalog_merge_service import (
     brand_duplicate_pairs,
     build_brand_merge_preview,
+    count_filament_contributions,
+    filament_summary,
     lock_brands,
     merge_brands,
     plan_brand_merge,
@@ -156,6 +169,7 @@ from app.services.database_service import (
 from app.services.database_service import (
     validate_migration_integrity as validate_migration_integrity_service,
 )
+from app.services.filament_duplicate_service import scan_for_duplicates
 from app.services.file_service import (
     BRAND_LOGO_ALLOWED_EXTENSIONS,
     get_upload_root_dir,
@@ -2650,3 +2664,106 @@ async def import_catalog_source_orca(
             "printers_system": printers_system or 0,
         },
     }
+
+
+# ==================== Filament duplicate review ====================
+
+
+@router.get("/filaments/duplicates/count", response_model=dict[str, int])
+async def count_pending_filament_duplicates(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, int]:
+    """Pairs waiting for a decision — for the tab badge."""
+    del admin
+    pending = await db.scalar(
+        select(func.count())
+        .select_from(FilamentDuplicateReview)
+        .where(FilamentDuplicateReview.status == "pending")
+    )
+    return {"pending_count": int(pending or 0)}
+
+
+@router.get("/filaments/duplicates", response_model=FilamentDuplicateReviewList)
+async def list_filament_duplicates(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> FilamentDuplicateReviewList:
+    """Pending probable-duplicate pairs, oldest first."""
+    del admin
+    newer = aliased(Filament)
+    older = aliased(Filament)
+    # Inner joins: a pair whose record vanished never reaches the queue.
+    pending = (
+        FilamentDuplicateReview.status == "pending",
+    )
+    total = await db.scalar(
+        select(func.count())
+        .select_from(FilamentDuplicateReview)
+        .join(newer, newer.id == FilamentDuplicateReview.filament_id)
+        .join(older, older.id == FilamentDuplicateReview.candidate_id)
+        .where(*pending)
+    )
+    rows = (
+        await db.execute(
+            select(FilamentDuplicateReview, newer, older, Brand.name, User)
+            .join(newer, newer.id == FilamentDuplicateReview.filament_id)
+            .join(older, older.id == FilamentDuplicateReview.candidate_id)
+            .join(Brand, Brand.id == newer.brand_id)
+            .outerjoin(User, User.id == newer.created_by_user_id)
+            .where(*pending)
+            .order_by(FilamentDuplicateReview.created_at, FilamentDuplicateReview.id)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).all()
+    counts = await count_filament_contributions(
+        db, [filament.id for _, a, b, _, _ in rows for filament in (a, b)]
+    )
+    items = [
+        FilamentDuplicateReviewItem(
+            id=review.id,
+            origin=review.origin,
+            created_at=review.created_at,
+            brand_name=brand_name,
+            created_by=(
+                DuplicateReviewAuthor(id=author.id, username=author.username) if author else None
+            ),
+            filament=filament_summary(a, counts),
+            candidate=filament_summary(b, counts),
+        )
+        for review, a, b, brand_name, author in rows
+    ]
+    return FilamentDuplicateReviewList(items=items, total=int(total or 0))
+
+
+@router.post("/filaments/duplicates/scan", response_model=FilamentDuplicateScanResult)
+async def scan_filament_duplicates(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FilamentDuplicateScanResult:
+    """Queue probable duplicates already in the catalog; dismissed pairs stay dismissed."""
+    del admin
+    added = await scan_for_duplicates(db)
+    await db.commit()
+    return FilamentDuplicateScanResult(added=added)
+
+
+@router.post("/filaments/duplicates/{review_id}/dismiss", status_code=204)
+async def dismiss_filament_duplicate(
+    review_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Mark a pair as two different products; repeating the call changes nothing."""
+    review = await db.scalar(
+        select(FilamentDuplicateReview).where(FilamentDuplicateReview.id == review_id)
+    )
+    if review is None or review.status != "pending":
+        return
+    review.status = "dismissed"
+    review.resolved_by_user_id = admin.id
+    review.resolved_at = datetime.now(timezone.utc)
+    await db.commit()

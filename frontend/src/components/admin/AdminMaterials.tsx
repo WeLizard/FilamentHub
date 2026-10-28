@@ -8,6 +8,7 @@ import { filamentsAPI } from '../../api/client';
 import { FilamentPreview } from '../FilamentPreview';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { FilamentMergeModal } from '../FilamentMergeModal';
+import { AdminFilamentDuplicates } from './AdminFilamentDuplicates';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -99,6 +100,8 @@ export function AdminMaterials() {
           {t('adminMaterials.showOffShelf')}
         </label>
       </div>
+
+      <AdminFilamentDuplicates />
 
       <input
         type="text"

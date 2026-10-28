@@ -1,5 +1,7 @@
 """Schemas for folding duplicate brands and filaments."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -66,3 +68,28 @@ class BrandMergeFilamentPair(BaseModel):
 class BrandMergeRequest(BaseModel):
     target_id: int = Field(..., ge=1)
     filament_pairs: list[BrandMergeFilamentPair] = Field(default_factory=list, max_length=2000)
+
+
+class DuplicateReviewAuthor(BaseModel):
+    id: int
+    username: str
+
+
+class FilamentDuplicateReviewItem(BaseModel):
+    id: int
+    origin: str
+    created_at: datetime
+    brand_name: str
+    # Author of `filament`; empty for records created before authorship was kept.
+    created_by: DuplicateReviewAuthor | None = None
+    filament: MergeFilamentSummary
+    candidate: MergeFilamentSummary
+
+
+class FilamentDuplicateReviewList(BaseModel):
+    items: list[FilamentDuplicateReviewItem]
+    total: int
+
+
+class FilamentDuplicateScanResult(BaseModel):
+    added: int

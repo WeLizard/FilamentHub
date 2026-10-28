@@ -52,23 +52,33 @@ interface FilamentMergeModalProps {
   filament: Pick<Filament, 'id' | 'name'>;
   onClose: () => void;
   onMerged?: (target: Filament) => void;
+  initialTargetId?: number;
 }
 
-export const FilamentMergeModal: React.FC<FilamentMergeModalProps> = ({ filament, onClose, onMerged }) => {
+export const FilamentMergeModal: React.FC<FilamentMergeModalProps> = ({
+  filament,
+  onClose,
+  onMerged,
+  initialTargetId,
+}) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [targetId, setTargetId] = useState<number | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['filament-merge-candidates', filament.id],
-    queryFn: () => filamentsAPI.getMergeCandidates(filament.id),
+    queryKey: ['filament-merge-candidates', filament.id, initialTargetId ?? null],
+    queryFn: () => filamentsAPI.getMergeCandidates(filament.id, initialTargetId),
   });
 
   useEffect(() => {
     if (targetId === null && data) {
-      setTargetId(data.candidates.find((item) => item.likely_same)?.id ?? null);
+      // A named target that was not found must not fall back to another record.
+      const preferred = initialTargetId === undefined
+        ? data.candidates.find((item) => item.likely_same)
+        : data.candidates.find((item) => item.id === initialTargetId);
+      setTargetId(preferred?.id ?? null);
     }
-  }, [data, targetId]);
+  }, [data, targetId, initialTargetId]);
 
   const target = useMemo(
     () => data?.candidates.find((item) => item.id === targetId) ?? null,

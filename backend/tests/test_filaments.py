@@ -113,6 +113,93 @@ async def test_community_user_can_add_filament_to_verified_brand(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing_name", "existing_color", "new_name", "new_color"),
+    [
+        # A different product of the same colour is not a duplicate.
+        ("elegoo PLA+ rapid White", "white", "PLA Matte", "Белый"),
+        ("PLA", "White", "PLA+", "White"),
+    ],
+)
+async def test_a_different_product_of_the_same_brand_is_created(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    existing_name: str,
+    existing_color: str,
+    new_name: str,
+    new_color: str,
+):
+    brand = Brand(name="ELEGOO", slug="elegoo", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    db_session.add(
+        Filament(
+            brand_id=brand.id,
+            name=existing_name,
+            slug="existing",
+            material_type="PLA",
+            color_name=existing_color,
+            color_hex="#FFFFFF",
+            diameter=1.75,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": new_name,
+            "material_type": "PLA",
+            "color_name": new_color,
+            "color_hex": "#FFFFFF",
+            "diameter": 1.75,
+        },
+    )
+
+    assert response.status_code == 201, response.json()
+    assert response.json()["name"] == new_name
+
+
+@pytest.mark.asyncio
+async def test_the_same_product_written_differently_is_rejected_as_a_duplicate(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    brand = Brand(name="ELEGOO", slug="elegoo", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    existing = Filament(
+        brand_id=brand.id,
+        name="PLA Matte",
+        slug="pla-matte-white",
+        material_type="PLA",
+        color_name="White",
+        color_hex="#FFFFFF",
+        diameter=1.75,
+    )
+    db_session.add(existing)
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "pla-matte",
+            "material_type": "pla",
+            "color_name": "white",
+            "color_hex": "#FFFFFF",
+            "diameter": 1.75,
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "ERR_FILAMENT_ALREADY_EXISTS"
+    assert detail["params"]["filament_id"] == existing.id
+
+
+@pytest.mark.asyncio
 async def test_create_filament_custom_filler_rejected_for_unverified(
     auth_client: AsyncClient, db_session: AsyncSession
 ):
@@ -133,6 +220,29 @@ async def test_create_filament_custom_filler_rejected_for_unverified(
     )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ERR_CUSTOM_FILLER_VERIFIED_ONLY"
+
+
+@pytest.mark.asyncio
+async def test_create_filament_additive_derived_effect_allowed_for_normal_user(
+    auth_client: AsyncClient, db_session: AsyncSession
+):
+    """Effects derived from known additives are not custom, so an unverified brand can use them."""
+    brand = Brand(name="Unverified Microspheres", slug="unverified-microspheres", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Glass Beads Filament",
+            "material_type": "PLA",
+            "visual_settings": {"filler": "microspheres", "effects": ["microspheres"]},
+            "additives": [{"code": "glass_beads"}],
+        },
+    )
+    assert response.status_code == 201, response.json()
 
 
 @pytest.mark.asyncio

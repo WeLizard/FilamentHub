@@ -43,8 +43,7 @@ import {
   MULTICOLOR_TYPES,
 } from '../utils/filamentColorGroups';
 import type { AxiosError } from 'axios';
-import type { FilamentColorGroup, FilamentColorGroupSource, SimilarFilamentCandidate } from '../types/api';
-import { hasNonStandardDiameter } from '../utils/filamentFacts';
+import type { FilamentColorGroup, FilamentColorGroupSource } from '../types/api';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -70,14 +69,6 @@ type FilamentPatch = Parameters<typeof filamentsAPI.update>[1];
 interface CountryCellSaveDraft {
   cell: CountryCellDraft;
   commonGaps?: FilamentPatch;
-}
-
-function readSimilarCandidates(detail: unknown): SimilarFilamentCandidate[] | null {
-  if (!detail || typeof detail !== 'object') return null;
-  const payload = detail as { code?: string; params?: { candidates?: SimilarFilamentCandidate[] } };
-  if (payload.code !== 'ERR_FILAMENT_SIMILAR_EXISTS') return null;
-  const candidates = payload.params?.candidates;
-  return Array.isArray(candidates) && candidates.length > 0 ? candidates : null;
 }
 
 export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
@@ -220,7 +211,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [description, setDescription] = useState('');
   const [availability, setAvailability] = useState<FilamentAvailability>('available');
   const [error, setError] = useState<string | null>(null);
-  const [similarCandidates, setSimilarCandidates] = useState<SimilarFilamentCandidate[] | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdFilament, setCreatedFilament] = useState<Filament | null>(null); // Для отображения QR-кода после создания
 
@@ -539,12 +529,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   // Мутация для создания материала
   const createMutation = useMutation({
-    mutationFn: ({ data, confirmSimilar }: {
-      data: Parameters<typeof filamentsAPI.create>[0];
-      confirmSimilar?: boolean;
-    }) => filamentsAPI.create(data, confirmSimilar),
+    mutationFn: ({ data }: { data: Parameters<typeof filamentsAPI.create>[0] }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
-      setSimilarCandidates(null);
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       queryClient.invalidateQueries({ queryKey: ['brands'] });
@@ -565,17 +551,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
-      const detail = err.response?.data?.detail;
-      const similar = readSimilarCandidates(detail);
-      if (similar) {
-        // Похожесть — не доказательство дубля: показываем найденное и оставляем
-        // решение автору, а не отказываем ему.
-        setSimilarCandidates(similar);
-        setError(null);
-        return;
-      }
-      setSimilarCandidates(null);
-      setError(translateApiError(t, detail, t('createFilament.createError')));
+      setError(translateApiError(t, err.response?.data?.detail, t('createFilament.createError')));
     },
   });
 
@@ -802,7 +778,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         price_display_unit: priceMode,
         line_id: lineId === '' ? null : lineId,
         country_cell: marketCellPayload ?? undefined,
-      }, confirmSimilar: similarCandidates !== null });
+      } });
     }
   };
 
@@ -904,35 +880,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {error && (
             <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
               {error}
-            </div>
-          )}
-
-          {similarCandidates && (
-            <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
-              <p className="font-medium text-amber-200">{t('createFilament.similarTitle')}</p>
-              <p className="mt-1 text-xs leading-5 text-amber-100/70">{t('createFilament.similarHint')}</p>
-              <ul className="mt-2 space-y-1">
-                {similarCandidates.map((candidate) => (
-                  <li key={candidate.filament_id}>
-                    <a
-                      href={`/filaments/${candidate.filament_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-amber-100 underline decoration-amber-300/40 underline-offset-2 hover:text-white"
-                    >
-                      {candidate.filament_name}
-                    </a>
-                    <span className="text-amber-100/60">
-                      {' · '}{candidate.material_type}
-                      {candidate.color_name ? ` · ${candidate.color_name}` : ''}
-                      {hasNonStandardDiameter(candidate.diameter)
-                        ? ` · ${candidate.diameter} ${t('createFilament.mm')}`
-                        : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-amber-100/70">{t('createFilament.similarConfirmHint')}</p>
             </div>
           )}
 

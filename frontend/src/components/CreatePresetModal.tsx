@@ -2934,7 +2934,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     {uniqueSimilarFilaments.length > 0 && (
                       <div className="mt-2 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
                         <p className="font-medium mb-1">{t('presetModal.similarFilaments')}:</p>
-                        <ul className="space-y-2">
+                        <ul className="max-h-48 overflow-y-auto custom-scrollbar pr-2 space-y-2">
                           {uniqueSimilarFilaments.map((f: Filament) => (
                             <li key={f.id} className="flex items-center justify-between gap-3">
                               <div className="min-w-0">

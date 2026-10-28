@@ -1234,15 +1234,6 @@ export interface FeedbackDetail extends Feedback {
   messages: FeedbackMessage[];
 }
 
-export interface SimilarFilamentCandidate {
-  filament_id: number;
-  filament_name: string;
-  material_type: string;
-  color_name: string | null;
-  color_hex: string | null;
-  diameter: number;
-}
-
 export interface UnreadCommunicationsCount {
   unread_email_threads: number;
   open_email_threads: number;
@@ -2767,6 +2758,21 @@ export interface MergeFilamentSummary {
 
 export interface FilamentMergeCandidate extends MergeFilamentSummary {
   likely_same: boolean;
+}
+
+export interface FilamentDuplicateReview {
+  id: number;
+  origin: 'creation' | 'scan';
+  created_at: string;
+  brand_name: string;
+  created_by: { id: number; username: string } | null;
+  filament: MergeFilamentSummary;
+  candidate: MergeFilamentSummary;
+}
+
+export interface FilamentDuplicateReviewList {
+  items: FilamentDuplicateReview[];
+  total: number;
 }
 
 export interface FilamentMergeCandidatesResponse {

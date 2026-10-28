@@ -45,6 +45,11 @@ export function AdminPanel() {
     queryFn: () => adminAPI.countPendingPresets(),
     enabled: user?.role === 'admin',
   });
+  const pendingDuplicatesQuery = useQuery({
+    queryKey: ['admin-filament-duplicates-count'],
+    queryFn: () => adminAPI.countFilamentDuplicates(),
+    enabled: user?.role === 'admin',
+  });
 
   // Переписка и обращения ждут ответа человека: без метки о них узнают, только
   // если зайти во вкладку.
@@ -76,7 +81,7 @@ export function AdminPanel() {
   const tabs = [
     { id: 'requests' as AdminTab, label: t('adminPanel.tabs.requests'), shortLabel: t('adminPanel.shortTabs.requests'), icon: FileText, count: null },
     { id: 'brands' as AdminTab, label: t('adminPanel.tabs.brands'), shortLabel: t('adminPanel.shortTabs.brands'), icon: Building2, count: null },
-    { id: 'materials' as AdminTab, label: t('adminPanel.tabs.materials'), shortLabel: t('adminPanel.shortTabs.materials'), icon: Layers, count: null },
+    { id: 'materials' as AdminTab, label: t('adminPanel.tabs.materials'), shortLabel: t('adminPanel.shortTabs.materials'), icon: Layers, count: pendingDuplicatesQuery.data?.pending_count || null },
     { id: 'catalog-import' as AdminTab, label: t('adminPanel.tabs.catalogImport'), shortLabel: t('adminPanel.shortTabs.catalogImport'), icon: FileSpreadsheet, count: null },
     { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: pendingPresetsQuery.data?.pending_count || null },
     { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },

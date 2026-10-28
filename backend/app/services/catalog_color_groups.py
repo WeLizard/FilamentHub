@@ -108,6 +108,11 @@ _NORMALIZED_COLOR_LABELS = {
 }
 
 
+def color_group_labels() -> dict[FilamentColorGroup, tuple[str, ...]]:
+    """Visible ru/en/zh labels of every colour group, as written (not normalized)."""
+    return dict(_COLOR_LABELS)
+
+
 def resolve_color_group_aliases(search: str) -> tuple[FilamentColorGroup, ...]:
     """Resolve visible ru/en/zh colour labels to canonical catalogue groups."""
     needle = _normalize_search(search)

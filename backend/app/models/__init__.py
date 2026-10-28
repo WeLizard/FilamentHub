@@ -54,6 +54,7 @@ from app.models.feedback import Feedback, FeedbackMessage, FeedbackStatus, Feedb
 from app.models.filament import Filament
 from app.models.filament_analytics_event import FilamentAnalyticsEvent
 from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
+from app.models.filament_duplicate_review import FilamentDuplicateReview
 from app.models.filament_line import FilamentLine
 from app.models.filament_qr_alias import FilamentQrAlias
 from app.models.filament_review import FilamentReview
@@ -206,6 +207,7 @@ __all__ = [
     "EmailThread",
     "Filament",
     "FilamentCountryCell",
+    "FilamentDuplicateReview",
     "FilamentAnalyticsEvent",
     "CountryAvailability",
     "FilamentLine",

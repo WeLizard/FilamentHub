@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from sqlalchemy import String, and_, case, cast, false, func, or_, select
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,7 +21,6 @@ from app.core.errors import (
     ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_MERGE_BRAND_MISMATCH,
     ERR_FILAMENT_NOT_FOUND,
-    ERR_FILAMENT_SIMILAR_EXISTS,
     ERR_NO_PERMISSION_DELETE_FILAMENT,
     ERR_NO_PERMISSION_EDIT_FILAMENT,
     ERR_NO_PERMISSION_MERGE_FILAMENT,
@@ -45,7 +44,11 @@ from app.models.organization import (
 )
 from app.models.preset import Preset
 from app.models.user import User, UserRole
-from app.schemas.catalog_merge import FilamentMergeCandidatesResponse, FilamentMergeRequest
+from app.schemas.catalog_merge import (
+    FilamentMergeCandidate,
+    FilamentMergeCandidatesResponse,
+    FilamentMergeRequest,
+)
 from app.schemas.filament import (
     KNOWN_ADDITIVES,
     KNOWN_FILLERS,
@@ -64,7 +67,11 @@ from app.services.catalog_color_groups import (
     FilamentColorGroup,
     resolve_color_group,
 )
-from app.services.catalog_duplicates import comparable_name, same_filament_color
+from app.services.catalog_duplicates import (
+    comparable_name,
+    same_filament_color,
+    same_filament_kind,
+)
 from app.services.catalog_feature_search import resolve_catalog_feature_codes
 from app.services.catalog_merge_service import (
     count_filament_contributions,
@@ -79,6 +86,10 @@ from app.services.catalog_url_service import (
     resolve_filament_identifier,
 )
 from app.services.country_market import apply_cell, cells_for, filament_cell_has_public_data
+from app.services.filament_duplicate_service import (
+    delete_reviews_for_filament,
+    record_creation_candidates,
+)
 from app.services.filament_preset_summary import (
     bucket_by_kind,
     summaries_for,
@@ -824,10 +835,6 @@ async def create_filament(
     data: FilamentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    confirm_similar: bool = Query(
-        False,
-        description="Proceed although the catalog already holds similar records",
-    ),
 ) -> FilamentResponse:
     """Создать материал."""
     # Check if brand exists
@@ -902,28 +909,19 @@ async def create_filament(
     normalized_color_name = data.color_name.strip() if data.color_name else None
     normalized_color_hex = data.color_hex.strip().upper() if data.color_hex else None
 
+    # Only a record of the same product blocks creation. A filament that merely
+    # resembles one (same colour, similar name) is a different product, and the
+    # author has already been shown the catalog suggestions while typing.
     # Diameter is part of the product identity: 1.75 and 2.85 of the same colour
     # are two real products, and blocking the second one would force a distorted
     # name just to get it into the catalog.
     candidates_result = await db.execute(
-        select(Filament)
-        .where(
+        select(Filament).where(
             Filament.brand_id == data.brand_id,
             Filament.active.is_(True),
             Filament.diameter == data.diameter,
             func.lower(func.trim(Filament.material_type)) == normalized_material_type.lower(),
-            or_(
-                func.lower(func.trim(Filament.name)) == normalized_name.lower(),
-                (
-                    func.lower(func.trim(Filament.color_name))
-                    == (normalized_color_name or "").lower()
-                    if normalized_color_name
-                    else false()
-                ),
-                Filament.color_hex == normalized_color_hex if normalized_color_hex else false(),
-            ),
         )
-        .limit(20)
     )
     candidates = candidates_result.scalars().all()
 
@@ -955,29 +953,6 @@ async def create_filament(
                 "color_name": duplicate_filament.color_name,
                 "color_hex": duplicate_filament.color_hex,
                 "ral_code": duplicate_filament.ral_code,
-            },
-        )
-
-    # Anything else that looks like the same product is only a warning: the
-    # service cannot know whether two similar records are one product, so it
-    # shows what it found and lets the author decide.
-    if candidates and not confirm_similar:
-        raise_error(
-            409,
-            ERR_FILAMENT_SIMILAR_EXISTS,
-            {
-                "brand_name": brand.name,
-                "candidates": [
-                    {
-                        "filament_id": candidate.id,
-                        "filament_name": candidate.name,
-                        "material_type": candidate.material_type,
-                        "color_name": candidate.color_name,
-                        "color_hex": candidate.color_hex,
-                        "diameter": candidate.diameter,
-                    }
-                    for candidate in candidates
-                ],
             },
         )
 
@@ -1023,10 +998,15 @@ async def create_filament(
         contributor_id = current_user.active_organization_id
 
     filament = Filament(
-        **filament_payload, slug=slug, contributed_by_organization_id=contributor_id
+        **filament_payload,
+        slug=slug,
+        contributed_by_organization_id=contributor_id,
+        created_by_user_id=current_user.id,
     )
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
+
+    await record_creation_candidates(db, filament, brand)
 
     from app.services.achievement_service import (
         FIRST_CATALOG_CONTRIBUTION,
@@ -1334,9 +1314,28 @@ async def get_filament_merge_candidates(
     filament_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    include: Annotated[int | None, Query(ge=1)] = None,
 ) -> FilamentMergeCandidatesResponse:
-    """Filaments of the same brand this duplicate could be folded into."""
+    """Filaments of the same brand this duplicate could be folded into.
+
+    ``include`` names a record that must be offered first even when name ranking
+    or the pool limit would leave it out (a reviewed duplicate pair).
+    """
     source = await _mergeable_filament(db, current_user, await db.get(Filament, filament_id))
+    included = None
+    if include is not None and include != source.id:
+        included = await db.get(Filament, include)
+        if (
+            included is None
+            or included.brand_id != source.brand_id
+            or not same_filament_kind(
+                source.material_type,
+                source.diameter,
+                included.material_type,
+                included.diameter,
+            )
+        ):
+            included = None
     pool = list(
         (
             await db.scalars(
@@ -1344,6 +1343,7 @@ async def get_filament_merge_candidates(
                 .where(
                     Filament.brand_id == source.brand_id,
                     Filament.id != source.id,
+                    Filament.id != include,
                     Filament.diameter == source.diameter,
                     func.lower(func.trim(Filament.material_type))
                     == source.material_type.strip().lower(),
@@ -1352,10 +1352,19 @@ async def get_filament_merge_candidates(
             )
         ).all()
     )
-    counts = await count_filament_contributions(db, [source.id, *(item.id for item in pool)])
+    counts = await count_filament_contributions(
+        db, [source.id, *(item.id for item in pool), *([included.id] if included else [])]
+    )
+    candidates = rank_merge_candidates(source, pool, counts)
+    if included is not None:
+        candidates.insert(
+            0,
+            FilamentMergeCandidate(
+                **filament_summary(included, counts).model_dump(), likely_same=True
+            ),
+        )
     return FilamentMergeCandidatesResponse(
-        source=filament_summary(source, counts),
-        candidates=rank_merge_candidates(source, pool, counts),
+        source=filament_summary(source, counts), candidates=candidates
     )
 
 
@@ -1431,5 +1440,6 @@ async def delete_filament(
         if preset_count or review_count:
             raise_error(409, ERR_FILAMENT_HAS_CONTRIBUTIONS)
 
+    await delete_reviews_for_filament(db, filament_id)
     await db.delete(filament)
     await db.commit()

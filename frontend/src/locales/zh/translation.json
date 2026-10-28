@@ -2449,9 +2449,6 @@
     "commonEditRequestSent": "请求已发送给相应的负责人。",
     "commonEditRequestFailed": "无法发送请求。",
     "commonEditRequestNoRecipients": "目前无人可接收此请求。请联系 support@filamenthub.ru。",
-    "similarTitle": "目录中已有相似条目",
-    "similarHint": "请确认是否为同一产品。如果不同，可以继续创建。",
-    "similarConfirmHint": "再次点击“创建”以添加该耗材。",
     "mm": "mm"
   },
   "unsavedGuard": {
@@ -5908,6 +5905,21 @@
     "logoUrlPlaceholder": "URL 或上传文件"
   },
   "adminMaterials": {
+    "duplicates": {
+      "title": "可能重复的耗材",
+      "scan": "检查目录",
+      "empty": "没有可能重复的耗材。",
+      "hint": "这些看起来是同一种耗材。合并它们（预设、料盘和评价会转移到保留的那一个），或标记为不同的耗材。",
+      "newer": "新增",
+      "older": "已有",
+      "addedBy": "添加者：{{name}}",
+      "merge": "合并",
+      "notDuplicate": "不同",
+      "dismissed": "已标记为不同的耗材",
+      "actionFailed": "操作失败",
+      "scanFound": "发现新的配对：{{count}}",
+      "scanNothing": "未发现新的可能重复项"
+    },
     "title": "目录耗材",
     "searchPlaceholder": "按名称、品牌或颜色搜索",
     "showOffShelf": "显示已下架的耗材",
@@ -7293,7 +7305,6 @@
     "ERR_VALIDATION_REQUIRED": "缺少必需字段（名称、类型）",
     "ERR_VALIDATION_TEXT": "名称中包含无效文本",
     "ERR_FILAMENT_ALREADY_EXISTS": "此耗材已存在。请选择现有的。",
-    "ERR_FILAMENT_SIMILAR_EXISTS": "目录中已有相似的耗材。请确认是否为同一产品。",
     "ERR_FILAMENT_HAS_CONTRIBUTIONS": "无法删除此耗材：用户已为它添加了预设或评价，删除会一并清除这些内容。请修改该条目，或将其下架——下架后它不再出现在目录中，而预设和评价会保留。",
     "ERR_PRINTER_NOT_FOUND": "未找到打印机",
     "ERR_REQUEST_NOT_FOUND": "未找到请求",
