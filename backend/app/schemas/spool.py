@@ -93,6 +93,7 @@ class SpoolResponse(BaseModel):
     updated_at: datetime
     last_used_at: datetime | None
     extra: dict | None
+    collection_ids: list[int] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -274,3 +275,48 @@ class SpoolImportResponse(SpoolManagerImportResponse):
     """Result of a provider-neutral spool file import."""
 
     detected_format: Literal["octoprint_spoolmanager_csv", "custom_csv"]
+
+
+class SpoolCollectionResponse(BaseModel):
+    id: int
+    name: str
+    spool_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class SpoolCollectionName(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    model_config = {"str_strip_whitespace": True}
+
+
+class SpoolCollectionMembersUpdate(BaseModel):
+    add: list[int] = Field(default_factory=list, max_length=500)
+    remove: list[int] = Field(default_factory=list, max_length=500)
+
+
+class SpoolGroupResponse(BaseModel):
+    """Spools of one catalog material, counted as separate physical spools."""
+
+    key: str
+    spool_count: int
+    state_counts: SpoolStateCounts
+    # Known grams still on available (active/shelf) spools of this group.
+    available_remaining_weight_g: float
+    # Spools whose size is not known; their grams are not counted, never as 0.
+    unknown_mass_count: int
+    latest_spool: SpoolResponse
+
+
+class SpoolGroupSummary(BaseModel):
+    total: int
+    group_count: int
+    available_remaining_weight_g: float
+    unknown_mass_count: int
+
+
+class SpoolGroupFeedResponse(BaseModel):
+    items: list[SpoolGroupResponse]
+    next_cursor: str | None = None
+    summary: SpoolGroupSummary

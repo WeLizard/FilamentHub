@@ -47,6 +47,7 @@ from app.api.v1.endpoints import (
     printers,
     qr,
     saved_presets,
+    spool_collections,
     spool_compat,
     spool_qr,
     spool_tags,
@@ -109,6 +110,7 @@ api_router.include_router(orca_preset_slot_sync.router)
 # Register the static QR collection path before /spools/{spool_id}; Starlette
 # matches routes in declaration order and otherwise parses "qr-codes" as an id.
 api_router.include_router(spool_qr.router)
+api_router.include_router(spool_collections.router)
 api_router.include_router(spools.router)
 api_router.include_router(spool_tags.router)
 api_router.include_router(feedback.router)

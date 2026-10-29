@@ -95,6 +95,9 @@ async def get_spool_feed(
     state: Annotated[UserSpoolState | None, Query()] = None,
     state_group: Annotated[str | None, Query(pattern="^(available|archived)$")] = None,
     filament_id: Annotated[int | None, Query(ge=1)] = None,
+    group_key: Annotated[str | None, Query(max_length=40)] = None,
+    collection_id: Annotated[int | None, Query(ge=1)] = None,
+    no_collection: bool = False,
 ) -> SpoolFeedResponse:
     if state is not None and state_group is not None:
         raise_error(422, ERR_SPOOL_FEED_FILTER_INVALID)
@@ -106,6 +109,9 @@ async def get_spool_feed(
         state=state,
         state_group=state_group,
         filament_id=filament_id,
+        group_key=group_key,
+        collection_id=collection_id,
+        no_collection=no_collection,
     )
 
 

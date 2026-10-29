@@ -15,9 +15,9 @@ from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_COULD_NOT_VALIDATE,
     ERR_LEGAL_ACCEPTANCE_REQUIRED,
+    ERR_USER_INACTIVE,
     ERR_WORKSTATION_KEY_LIMIT,
     ERR_WORKSTATION_KEY_NOT_FOUND,
-    ERR_USER_INACTIVE,
     raise_error,
 )
 from app.models.user import User

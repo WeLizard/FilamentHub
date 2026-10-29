@@ -117,6 +117,7 @@ from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
 from app.models.spool_batch_receipt import SpoolBatchReceipt
+from app.models.spool_collection import SpoolCollection, SpoolCollectionMember
 from app.models.spool_compat_resource import (
     SpoolCompatFieldDefinition,
     SpoolCompatResource,
@@ -255,6 +256,8 @@ __all__ = [
     "PresetVersionSource",
     "PasswordResetToken",
     "RefreshSession",
+    "SpoolCollection",
+    "SpoolCollectionMember",
     "WorkstationKey",
     "RevokedToken",
     "PresetModerationStatus",

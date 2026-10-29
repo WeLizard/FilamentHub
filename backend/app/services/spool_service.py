@@ -46,6 +46,7 @@ from app.schemas.spool import (
     SpoolUpdateRequest,
 )
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
+from app.services.spool_shelf_filters import collection_ids_by_spool, shelf_filters
 from app.services.spool_usage_service import record_spool_usage
 
 
@@ -565,10 +566,17 @@ async def list_spool_feed(
     state: UserSpoolState | None = None,
     state_group: str | None = None,
     filament_id: int | None = None,
+    group_key: str | None = None,
+    collection_id: int | None = None,
+    no_collection: bool = False,
 ) -> SpoolFeedResponse:
-    base_filters = [UserSpool.user_id == user_id]
-    if filament_id is not None:
-        base_filters.append(UserSpool.filament_id == filament_id)
+    base_filters = shelf_filters(
+        user_id,
+        filament_id=filament_id,
+        group_key=group_key,
+        collection_id=collection_id,
+        no_collection=no_collection,
+    )
 
     counts_result = await db.execute(
         select(UserSpool.state, func.count(UserSpool.id))
@@ -578,7 +586,7 @@ async def list_spool_feed(
     counts = {row_state.value: count for row_state, count in counts_result.all()}
     total = sum(counts.values())
     available_remaining: float | None = None
-    if filament_id is not None:
+    if filament_id is not None or group_key is not None or collection_id is not None:
         available_remaining = float(
             await db.scalar(
                 select(
@@ -638,8 +646,12 @@ async def list_spool_feed(
             select(Filament).options(joinedload(Filament.brand)).where(Filament.id.in_(fil_ids))
         )
         filaments = {item.id: item for item in fil_result.unique().scalars().all()}
+    folders = await collection_ids_by_spool(db, [row.id for row in rows])
+    items = [_build_response(row, filaments.get(row.filament_id)) for row in rows]
+    for item in items:
+        item.collection_ids = folders.get(item.id, [])
     return SpoolFeedResponse(
-        items=[_build_response(row, filaments.get(row.filament_id)) for row in rows],
+        items=items,
         next_cursor=_encode_spool_cursor(rows[-1]) if has_more and rows else None,
         summary=SpoolFeedSummary(
             total=total,
