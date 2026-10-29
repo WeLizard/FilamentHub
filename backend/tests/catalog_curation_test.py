@@ -852,9 +852,40 @@ async def test_missing_evidence_and_implicit_matching_cannot_be_confirmed(
     )
 
 
-@pytest.mark.parametrize("field", ["diameter", "availability"])
+@pytest.mark.parametrize("issue", ["omitted", "empty"])
+async def test_create_without_availability_defaults_to_available(
+    client: AsyncClient, db_session: AsyncSession, admin_user, issue
+):
+    payload = proposal()
+    if issue == "omitted":
+        payload["draft"]["filaments"][0].pop("availability")
+    else:
+        payload["draft"]["filaments"][0]["availability"] = ""
+    payload["evidence"] = [item for item in payload["evidence"] if item["field"] != "availability"]
+    payload["source_facts"] = [
+        fact for fact in payload["source_facts"] if "availability" not in fact["mapped_fields"]
+    ]
+    created = await client.post(BASE, json=payload, headers=headers(admin_user))
+    assert created.status_code == 201, created.text
+    path = f"{BASE}/{created.json()['id']}"
+    preview = await client.post(
+        path + "/preview", json={"revision": 1}, headers=headers(admin_user)
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["summary"]["error"] == 0, preview.json()["rows"]
+    applied = await client.post(
+        path + "/apply",
+        json={"revision": 1, "confirmation_token": preview.json()["confirmation_token"]},
+        headers=headers(admin_user),
+    )
+    assert applied.status_code == 200, applied.text
+    filament = await db_session.scalar(select(Filament))
+    assert filament.availability == "available"
+
+
+@pytest.mark.parametrize("field", ["diameter"])
 @pytest.mark.parametrize("issue", ["omitted", "blank", "unproven"])
-async def test_create_requires_explicit_evidenced_identity_and_availability(
+async def test_create_requires_explicit_evidenced_diameter(
     client: AsyncClient, db_session: AsyncSession, admin_user, field, issue
 ):
     payload = proposal()

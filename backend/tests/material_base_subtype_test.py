@@ -45,7 +45,10 @@ async def _catalog(db: AsyncSession, *material_types: str) -> Brand:
         ("PLA Basic", "PLA", None),
         ("PA6+CF", "PA", "PA6"),
         ("PLA+Silk", "PLA", "PLA+"),
-        ("PETG+", "PETG", None),
+        ("PETG+", "PETG", "PETG+"),
+        ("ABS Plus", "ABS", "ABS+"),
+        ("ASA+ GF", "ASA", "ASA+"),
+        ("ABS+PC", "ABS", "ABS/PC"),
         ("PLA/PETG", "PLA", None),
         ("Wood", None, None),
     ],
@@ -65,6 +68,8 @@ def test_material_type_resolves_without_guessing(material_type, base, subtype):
         ("PETG", "PCTG", False),
         ("PA6+CF", "PA6-CF", True),
         ("PETG Carbon Fiber", "PETG-CF", True),
+        ("ABS Plus", "ABS+", True),
+        ("ABS+", "ABS", False),
     ],
 )
 def test_duplicate_check_merges_spellings_but_not_grades(left, right, same):

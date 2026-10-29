@@ -232,13 +232,11 @@ async def build_curation_plan(
             key = row_key(sheet, row)
             if sheet == "Filaments":
                 if row.get("mode") == "create":
-                    required = [
-                        name
-                        for name in ("diameter", "availability")
-                        if not str(row.get(name) if row.get(name) is not None else "").strip()
-                    ]
-                    if required:
-                        problems.append("Create requires explicit values for: " + ", ".join(required))
+                    # Availability is not required: like a user-created material it
+                    # defaults to "available".
+                    diameter = row.get("diameter")
+                    if not str(diameter if diameter is not None else "").strip():
+                        problems.append("Create requires explicit values for: diameter")
                 if row.get("enabled", True) is not False:
                     facts = source_facts_by_key.get(key, [])
                     if not facts:
