@@ -60,7 +60,9 @@ def test_recommendation_choice_and_slice_report_keep_an_observed_printer_confirm
         ):
             connection.execute(sa.text(f"CREATE TABLE {table} (physical_printer_id INTEGER)"))
         connection.execute(
-            sa.text("CREATE TABLE users (id INTEGER PRIMARY KEY, recommend_physical_printer_id INTEGER)")
+            sa.text(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, recommend_physical_printer_id INTEGER)"
+            )
         )
 
         ghost, recommended, sliced, entered_by_hand = 1, 2, 3, 4
