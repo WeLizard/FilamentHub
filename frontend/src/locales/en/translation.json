@@ -264,6 +264,16 @@
     "keyExists": "A key has already been issued and cannot be shown again. Use your saved settings or issue a new key.",
     "connectionSettings": "Configure connection"
   },
+  "printerSuggestions": {
+    "title_one": "Found in Orca: {{count}} printer",
+    "title_other": "Found in Orca: {{count}} printers",
+    "hint": "The plugin saw these printers in your Orca profiles. They join your list and calculations once you confirm them.",
+    "mine": "This is my printer",
+    "hide": "Hide",
+    "sameAs": "Same as…",
+    "merge": "Merge",
+    "error": "The action failed"
+  },
   "printerConnections": {
     "awaitingTopology": "Waiting for slot map",
     "status": {

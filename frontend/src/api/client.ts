@@ -4678,6 +4678,15 @@ export interface PhysicalPrinterStatusObservation {
   error_code: string | null;
 }
 
+export interface PrinterSuggestion {
+  id: number;
+  name: string;
+  catalog_printer_name: string | null;
+  profile_names: string[];
+  created_at: string;
+  same_model_printer_ids: number[];
+}
+
 export interface PhysicalPrinter {
   id: number;
   logical_id: string;
@@ -5002,6 +5011,15 @@ export const physicalPrintersAPI = {
     });
   },
 
+  suggestions: async (): Promise<PrinterSuggestion[]> => (
+    await api.get<PrinterSuggestion[]>('/physical-printers/suggestions')
+  ).data,
+  confirm: async (id: number): Promise<void> => {
+    await api.post(`/physical-printers/${id}/confirm`);
+  },
+  dismiss: async (id: number): Promise<void> => {
+    await api.post(`/physical-printers/${id}/dismiss`);
+  },
   previewMerge: async (sourceId: number, targetId: number): Promise<PrinterMergePreview> => (
     await api.get<PrinterMergePreview>(`/physical-printers/${sourceId}/merge-preview`, {
       params: { target_id: targetId },

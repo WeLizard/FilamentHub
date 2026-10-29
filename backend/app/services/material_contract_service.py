@@ -65,6 +65,10 @@ from app.schemas.printer_bridge import (
 )
 from app.services.material_assignment_service import sync_legacy_material_assignment
 from app.services.printer_capability_service import refresh_material_system_capabilities
+from app.services.printer_confirmation_service import (
+    confirm_printer_if_needed,
+    confirmed_printer_clause,
+)
 from app.services.printer_usage_route_service import issue_usage_route_proofs
 
 # Happy Hare and the plain Klipper adapter describe the same feed, so they share
@@ -130,7 +134,7 @@ async def require_physical_printer(
 async def list_physical_printers(db: AsyncSession, user_id: int) -> list[UserPrinterDevice]:
     result = await db.execute(
         select(UserPrinterDevice)
-        .where(UserPrinterDevice.user_id == user_id)
+        .where(UserPrinterDevice.user_id == user_id, confirmed_printer_clause())
         .options(*_printer_load_options())
         .order_by(UserPrinterDevice.created_at, UserPrinterDevice.id)
     )
@@ -146,7 +150,8 @@ async def list_physical_printer_page(
     cursor_id: int | None = None,
 ) -> tuple[list[UserPrinterDevice], int, bool]:
     """Return one stable page without changing the complete-list contract."""
-    query = select(UserPrinterDevice).where(UserPrinterDevice.user_id == user_id)
+    visible = and_(UserPrinterDevice.user_id == user_id, confirmed_printer_clause())
+    query = select(UserPrinterDevice).where(visible)
     if cursor_created_at is not None and cursor_id is not None:
         query = query.where(
             or_(
@@ -166,7 +171,7 @@ async def list_physical_printer_page(
     has_more = len(rows) > size
     total = int(
         await db.scalar(
-            select(func.count(UserPrinterDevice.id)).where(UserPrinterDevice.user_id == user_id)
+            select(func.count(UserPrinterDevice.id)).where(visible)
         )
         or 0
     )
@@ -287,6 +292,7 @@ async def create_physical_printer(
     known_id = await find_setup_printer(db, user_id, payload.connection)
     if known_id is not None:
         printer = await require_physical_printer(db, user_id, known_id)
+        confirm_printer_if_needed(printer)
         existing_profiles = set((await db.execute(select(
             UserPrinterProfileLink.printer_profile_id,
         ).where(UserPrinterProfileLink.physical_printer_id == known_id))).scalars())
@@ -305,6 +311,7 @@ async def create_physical_printer(
             supports_hh=False,
             **({"logical_id": logical_id} if logical_id else {}),
         )
+        confirm_printer_if_needed(printer)
         db.add(printer)
         await db.flush()
         await _replace_profile_links(
@@ -1058,6 +1065,7 @@ async def ingest_printer_bridge_snapshot(
     connector.active = True
     printer.last_seen_at = received_at
     printer.reports_feed = True
+    confirm_printer_if_needed(printer, received_at)
 
     snapshot_is_current = _snapshot_is_current(connector, payload, observed_at)
     if not snapshot_is_current:

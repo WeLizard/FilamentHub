@@ -15,7 +15,9 @@ from tests.conftest import accepted_legal
 
 
 async def _printer(db_session, user_id: int, name: str, created_at: datetime):
-    printer = UserPrinterDevice(user_id=user_id, name=name, created_at=created_at)
+    printer = UserPrinterDevice(
+        user_id=user_id, name=name, created_at=created_at, confirmed_at=created_at
+    )
     db_session.add(printer)
     await db_session.flush()
     return printer

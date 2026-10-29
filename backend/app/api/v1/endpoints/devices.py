@@ -31,6 +31,7 @@ from app.services.preset_slot_sync_service import (
     require_device,
     update_device,
 )
+from app.services.printer_confirmation_service import confirm_printer_if_needed
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -101,6 +102,7 @@ async def create_device_with_key(
         printer_id=payload.printer_id,
         gate_count=payload.gate_count,
     )
+    confirm_printer_if_needed(device)
     db.add(device)
     await ensure_material_topology(db, device)
     await db.commit()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import event
@@ -60,7 +62,9 @@ def _profile(slug: str, name: str, *, owner: User | None = None, **fields) -> Pr
 async def _device(
     db: AsyncSession, user: User, name: str, *profiles: PrinterProfile
 ) -> UserPrinterDevice:
-    device = UserPrinterDevice(user_id=user.id, name=name)
+    device = UserPrinterDevice(
+        user_id=user.id, name=name, confirmed_at=datetime.now(timezone.utc)
+    )
     db.add(device)
     await db.flush()
     db.add_all(

@@ -50,6 +50,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterFeedResponse,
     PhysicalPrinterMergeRequest,
     PhysicalPrinterResponse,
+    PhysicalPrinterSuggestion,
     PhysicalPrinterUpdate,
 )
 from app.schemas.orca_sync import OrcaPrinterRecoveryPlanRequest
@@ -84,6 +85,10 @@ from app.services.orca_printer_bundle_service import (
     build_orca_printer_archive,
     build_orca_printer_bundle,
     build_orca_printer_recovery_bundle,
+)
+from app.services.printer_confirmation_service import (
+    list_printer_suggestions,
+    set_printer_confirmation,
 )
 from app.services.printer_contact_events import (
     CONTACT_PROTOCOL,
@@ -294,6 +299,34 @@ async def list_feed(
         has_more=has_more,
         total=total,
     )
+
+
+@router.get("/suggestions", response_model=list[PhysicalPrinterSuggestion])
+async def list_suggestions(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    return await list_printer_suggestions(db, current_user.id)
+
+
+@router.post("/{physical_printer_id}/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_item(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    await set_printer_confirmation(db, current_user.id, physical_printer_id, dismiss=False)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{physical_printer_id}/dismiss", status_code=status.HTTP_204_NO_CONTENT)
+async def dismiss_item(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    await set_printer_confirmation(db, current_user.id, physical_printer_id, dismiss=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/orcaslicer-recovery-plan", response_model=None)

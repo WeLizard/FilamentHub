@@ -21,6 +21,7 @@ from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.printer_connection_observation import PrinterIdentityEvidence
 from app.services.orca_import_guard import hold_account_import_lock
+from app.services.printer_confirmation_service import confirm_printer_if_needed
 from app.services.printer_connection_observation_service import observed_endpoint
 from app.services.printer_identity_service import (
     discovery_key,
@@ -153,14 +154,15 @@ async def assign_user_binding(
     if binding is None:
         raise_error(404, ERR_PRINTER_CONNECTION_NOT_FOUND)
 
-    printer_id = await db.scalar(
-        select(UserPrinterDevice.id).where(
+    target = await db.scalar(
+        select(UserPrinterDevice).where(
             UserPrinterDevice.id == physical_printer_id,
             UserPrinterDevice.user_id == user_id,
         )
     )
-    if printer_id is None:
+    if target is None:
         raise_error(404, ERR_DEVICE_NOT_FOUND)
+    confirm_printer_if_needed(target)
 
     if (
         binding.identity_kind
@@ -444,6 +446,8 @@ async def reconcile_user_printers(
                 device_fingerprint=None,
                 supports_hh=False,
             )
+            if evidence:
+                confirm_printer_if_needed(printer)
             db.add(printer)
             await db.flush()
             physical_id = printer.id
@@ -604,6 +608,7 @@ async def resolve_pending_connection(
         printer = UserPrinterDevice(
             user_id=user_id, name=obs.preset_name or obs.printer_model or "Printer"
         )
+        confirm_printer_if_needed(printer)
         db.add(printer)
         await db.flush()
         physical_printer_id = printer.id

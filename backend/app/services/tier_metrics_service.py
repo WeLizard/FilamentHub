@@ -20,14 +20,23 @@ def live_printer_condition() -> ColumnElement[bool]:
     """A printer row backed by a real signal, not only by plugin discovery.
 
     Reported by a device, provider or bridge (`last_seen_at`), used for a print
-    job, or bound to a confirmed connection.
+    job, bound to a confirmed connection, or confirmed by the owner. A dismissed
+    proposal never counts.
     """
     has_print_job = exists().where(PrintJob.physical_printer_id == UserPrinterDevice.id)
     has_confirmed_binding = exists().where(
         PrinterConnectionBinding.physical_printer_id == UserPrinterDevice.id,
         PrinterConnectionBinding.assignment_confirmed.is_(True),
     )
-    return or_(UserPrinterDevice.last_seen_at.isnot(None), has_print_job, has_confirmed_binding)
+    return and_(
+        UserPrinterDevice.dismissed_at.is_(None),
+        or_(
+            UserPrinterDevice.confirmed_at.isnot(None),
+            UserPrinterDevice.last_seen_at.isnot(None),
+            has_print_job,
+            has_confirmed_binding,
+        ),
+    )
 
 
 def _month_index(column: ColumnElement) -> ColumnElement[int]:

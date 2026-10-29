@@ -264,6 +264,15 @@
     "keyExists": "密钥已生成，无法再次显示。请使用已保存的设置，或生成新密钥。",
     "connectionSettings": "配置连接"
   },
+  "printerSuggestions": {
+    "title_other": "在 Orca 中发现 {{count}} 台打印机",
+    "hint": "插件在你的 Orca 配置中发现了这些打印机。确认后才会出现在列表和核算中。",
+    "mine": "这是我的打印机",
+    "hide": "隐藏",
+    "sameAs": "与……相同",
+    "merge": "合并",
+    "error": "操作失败"
+  },
   "printerConnections": {
     "awaitingTopology": "等待槽位图",
     "status": {

@@ -40,6 +40,7 @@ from app.schemas.printer_bridge import (
 from app.schemas.printer_usage import PrinterUsageEventResult
 from app.services.material_contract_service import require_physical_printer
 from app.services.printer_capability_service import refresh_material_system_capabilities
+from app.services.printer_confirmation_service import confirm_printer_if_needed
 from app.services.printer_identity_service import discovery_key
 from app.services.printer_usage_service import process_printer_usage_event, usage_payload_data
 
@@ -618,6 +619,7 @@ async def record_printer_bridge_heartbeat(
         await refresh_material_system_capabilities(db, payload.material_system_id)
     printer.last_seen_at = received_at
     printer.reports_feed = True
+    confirm_printer_if_needed(printer, received_at)
     await db.commit()
     return PrinterBridgeHeartbeatResponse(
         accepted=True,

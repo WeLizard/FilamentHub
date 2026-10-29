@@ -398,6 +398,15 @@ class PhysicalPrinterStatusObservationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PhysicalPrinterSuggestion(BaseModel):
+    id: int
+    name: str
+    catalog_printer_name: str | None
+    profile_names: list[str]
+    created_at: datetime
+    same_model_printer_ids: list[int]
+
+
 class PhysicalPrinterResponse(BaseModel):
     id: int
     logical_id: str
@@ -410,6 +419,7 @@ class PhysicalPrinterResponse(BaseModel):
     printer_hostname: str | None
     reports_feed: bool
     last_seen_at: datetime | None
+    confirmed: bool
     created_at: datetime
     updated_at: datetime
 
@@ -425,6 +435,7 @@ class PhysicalPrinterResponse(BaseModel):
             printer_hostname=printer.printer_hostname,
             reports_feed=printer.reports_feed,
             last_seen_at=printer.last_seen_at,
+            confirmed=printer.confirmed_at is not None,
             printer_profile_ids=sorted(link.printer_profile_id for link in printer.profile_links),
             material_systems=[cls._material_system_response(system) for system in systems],
             connectors=[

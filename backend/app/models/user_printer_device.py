@@ -51,6 +51,8 @@ class UserPrinterDevice(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     purchase_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     residual_value: Mapped[float | None] = mapped_column(Float, nullable=True)

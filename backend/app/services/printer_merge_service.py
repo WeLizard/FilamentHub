@@ -18,6 +18,7 @@ from app.models.printer_identity import PrinterIdentity
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.services.orca_import_guard import hold_account_import_lock
+from app.services.printer_confirmation_service import confirm_printer_if_needed
 
 REFERENCES = (
     (PrinterConnectionBinding, "physical_printer_id"),
@@ -139,6 +140,7 @@ async def merge_printers(
         await db.get(UserPrinterDevice, source_id),
         await db.get(UserPrinterDevice, target_id),
     )
+    confirm_printer_if_needed(target)
     source_fingerprint = source.device_fingerprint
     source.device_fingerprint = None
     await db.flush()

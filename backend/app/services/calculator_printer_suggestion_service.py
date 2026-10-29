@@ -21,6 +21,7 @@ from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.calculator import CalculatorGcodeParseResponse
 from app.services.calculator_printer_compatibility_service import nozzle_values
+from app.services.printer_confirmation_service import confirmed_printer_clause
 
 # Orca names a machine variant "<model> <diameter> nozzle".
 _NOZZLE_SUFFIX_RE = re.compile(r"\s+(\d+(?:\.\d+)?)\s*nozzle")
@@ -71,6 +72,7 @@ async def _load_linked_profiles(db: AsyncSession, user_id: int) -> list[_LinkedP
         .join(PrinterProfile, PrinterProfile.id == UserPrinterProfileLink.printer_profile_id)
         .where(
             UserPrinterDevice.user_id == user_id,
+            confirmed_printer_clause(),
             or_(PrinterProfile.owner_user_id == user_id, PrinterProfile.owner_user_id.is_(None)),
         )
     )

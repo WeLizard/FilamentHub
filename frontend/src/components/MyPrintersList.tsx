@@ -30,6 +30,7 @@ import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
 import { PrinterRecoveryModal } from './PrinterRecoveryModal';
 import { PrinterConnectionReview } from './PrinterConnectionReview';
+import { PrinterSuggestions } from './PrinterSuggestions';
 import { usePrinterContactEvents } from '../hooks/usePrinterContactEvents';
 import { latestFreshStatusConnector, useNow } from '../utils/deviceLink';
 import {
@@ -283,6 +284,7 @@ export function MyPrintersList({
       </div>
 
       <PrinterConnectionReview printers={list} userId={currentUserId} />
+      <PrinterSuggestions confirmed={list} userId={currentUserId} />
       {printersQuery.isPending ? (
         <p className="text-sm text-gray-400">{t('myPrinters.loading')}</p>
       ) : printersQuery.isError && !printersQuery.isFetchNextPageError ? (

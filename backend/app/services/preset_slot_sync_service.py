@@ -69,6 +69,7 @@ from app.services.material_contract_service import (
     require_physical_printer,
 )
 from app.services.physical_printer_discovery_service import list_user_bindings
+from app.services.printer_confirmation_service import confirm_printer_if_needed
 from app.services.spool_service import (
     clear_spool_gate_assignments,
     lock_material_slots_for_spools,
@@ -98,6 +99,7 @@ def touch_device_last_seen(device: UserPrinterDevice) -> None:
     FilamentHub recently — it is NOT the printer's power or online state.
     """
     device.last_seen_at = datetime.now(timezone.utc)
+    confirm_printer_if_needed(device, device.last_seen_at)
 
 
 async def get_device_by_fingerprint(
