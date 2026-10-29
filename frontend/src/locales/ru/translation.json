@@ -3490,6 +3490,8 @@
       "groupingLabel": "Как группировать",
       "grouping": { "product": "По товару", "brand": "По производителю", "type": "По типу" },
       "noCatalogCard": "Без карточки каталога",
+      "collapseGroup": "Свернуть группу",
+      "expandGroup": "Развернуть группу",
       "spoolCount_one": "{{count}} катушка",
       "spoolCount_few": "{{count}} катушки",
       "spoolCount_many": "{{count}} катушек",

@@ -3972,6 +3972,8 @@
       "groupingLabel": "Group by",
       "grouping": { "product": "By product", "brand": "By manufacturer", "type": "By type" },
       "noCatalogCard": "No catalog card",
+      "collapseGroup": "Collapse group",
+      "expandGroup": "Expand group",
       "spoolCount_one": "{{count}} spool",
       "spoolCount_other": "{{count}} spools",
       "gramsLeft": "{{weight}} left",
