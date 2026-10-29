@@ -64,6 +64,7 @@ from app.schemas.printer_economics import (
     PrinterEconomicsUpdate,
     residual_exceeds_purchase,
 )
+from app.services.contact_status_service import native_leases
 from app.services.material_assignment_service import (
     clear_material_system_assignments,
     update_material_slot_assignment,
@@ -106,6 +107,20 @@ from app.services.printer_economics_service import (
 )
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
+
+
+async def _respond_all(printers: list) -> list[PhysicalPrinterResponse]:
+    leases = await native_leases([printer.id for printer in printers if printer.api_key])
+    return [
+        PhysicalPrinterResponse.from_model(
+            printer, None if leases is None else leases.get(printer.id, False)
+        )
+        for printer in printers
+    ]
+
+
+async def _respond(printer) -> PhysicalPrinterResponse:
+    return (await _respond_all([printer]))[0]
 
 
 def _encode_printer_cursor(printer: UserPrinterDevice) -> str:
@@ -273,7 +288,7 @@ async def list_items(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[PhysicalPrinterResponse]:
     printers = await list_physical_printers(db, current_user.id)
-    return [PhysicalPrinterResponse.from_model(printer) for printer in printers]
+    return await _respond_all(printers)
 
 
 @router.get("/feed", response_model=PhysicalPrinterFeedResponse)
@@ -294,7 +309,7 @@ async def list_feed(
         cursor_id=cursor_id,
     )
     return PhysicalPrinterFeedResponse(
-        items=[PhysicalPrinterResponse.from_model(printer) for printer in printers],
+        items=await _respond_all(printers),
         next_cursor=(_encode_printer_cursor(printers[-1]) if has_more and printers else None),
         has_more=has_more,
         total=total,
@@ -369,7 +384,7 @@ async def create_item(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PhysicalPrinterResponse:
     printer = await create_physical_printer(db, current_user.id, payload)
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.get("/{physical_printer_id}", response_model=PhysicalPrinterResponse)
@@ -379,7 +394,7 @@ async def get_item(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PhysicalPrinterResponse:
     printer = await require_physical_printer(db, current_user.id, physical_printer_id)
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.post("/{physical_printer_id}/connection-setup", response_model=PhysicalPrinterResponse)
@@ -402,9 +417,7 @@ async def setup_connection(
         )
     await setup_material_system(db, current_user.id, physical_printer_id, payload.material_system)
     await db.commit()
-    return PhysicalPrinterResponse.from_model(
-        await require_physical_printer(db, current_user.id, physical_printer_id)
-    )
+    return await _respond(await require_physical_printer(db, current_user.id, physical_printer_id))
 
 
 @router.get("/{physical_printer_id}/orcaslicer-bundle", response_model=None)
@@ -466,7 +479,7 @@ async def patch_item(
     printer = await update_physical_printer(
         db, current_user.id, physical_printer_id, payload
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.put(
@@ -482,7 +495,7 @@ async def replace_configurations(
     printer = await set_physical_printer_configurations(
         db, current_user.id, physical_printer_id, payload
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.post(
@@ -499,7 +512,7 @@ async def add_material_system(
     printer = await create_material_system(
         db, current_user.id, physical_printer_id, payload
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.patch(
@@ -516,7 +529,7 @@ async def patch_material_system(
     printer = await update_material_system(
         db, current_user.id, physical_printer_id, material_system_id, payload
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.delete(
@@ -532,7 +545,7 @@ async def remove_material_system(
     printer = await delete_material_system(
         db, current_user.id, physical_printer_id, material_system_id
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.put(
@@ -548,7 +561,7 @@ async def upsert_connector(
     printer = await upsert_physical_printer_connector(
         db, current_user.id, physical_printer_id, payload
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.patch(
@@ -572,7 +585,7 @@ async def patch_material_slot_assignment(
     printer = await require_physical_printer(
         db, current_user.id, physical_printer_id
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 @router.post(
@@ -596,7 +609,7 @@ async def clear_material_system(
     printer = await require_physical_printer(
         db, current_user.id, physical_printer_id
     )
-    return PhysicalPrinterResponse.from_model(printer)
+    return await _respond(printer)
 
 
 async def _economics_response(

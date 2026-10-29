@@ -457,6 +457,15 @@ def queue_other_sessions_revoked(session: Session, user_id: int, preserved_sessi
     }
 
 
+def _native_ws(device: UserPrinterDevice, state: Any) -> str | None:
+    """Which way the native socket just moved, when this flush moved it."""
+    opened = state.attrs.ws_connected_at.history.has_changes()
+    closed = state.attrs.ws_disconnected_at.history.has_changes()
+    if opened == closed:
+        return None
+    return "open" if opened else "closed"
+
+
 def _collect_contacts(session: Session, _flush_context: Any) -> None:
     transaction = session.get_nested_transaction() or session.get_transaction()
     pending = session.info.setdefault(_PENDING, {}).setdefault(transaction, {})
@@ -478,7 +487,11 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
         elif isinstance(row, (UserPrinterDevice, PhysicalPrinterConnector)):
             state = inspect(row)
             connector = isinstance(row, PhysicalPrinterConnector)
-            fields = ("last_seen_at", "active") if connector else ("last_seen_at", "reports_feed")
+            fields = (
+                ("last_seen_at", "active")
+                if connector
+                else ("last_seen_at", "reports_feed", "ws_connected_at", "ws_disconnected_at")
+            )
             if not any(state.attrs[name].history.has_changes() for name in fields):
                 continue
             value = row.last_seen_at
@@ -492,6 +505,7 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
                 "last_seen_at": timestamp,
                 "active": row.active if connector else True,
                 "reports_feed": None if connector else row.reports_feed,
+                "native_ws": None if connector else _native_ws(row, state),
             }
 
 

@@ -57,6 +57,7 @@ async def test_only_committed_contacts_escape_including_savepoints(db_session, a
     assert messages[0][1]["last_seen_at"] == now.isoformat()
     assert set(messages[0][1]) == {
         "type", "printer_id", "connector_id", "last_seen_at", "active", "reports_feed",
+        "native_ws",
     }
 
     await db_session.refresh(printer)
@@ -223,14 +224,17 @@ async def test_spoolman_ws_only_contact_publishes_without_http_get(
 
     # Moonraker with spool_id=None may never make a subsequent HTTP request.
     # Its successful WS authentication must reach the existing UI event path.
-    publish.assert_awaited_once()
+    # One event for the authenticated open, one for the close.
+    assert publish.await_count == 2
     await db_session.refresh(printer)
     assert printer.last_seen_at is not None
-    assert publish.call_args.args[0] == [(auth_user.id, {
+    assert publish.await_args_list[0].args[0] == [(auth_user.id, {
         "type": "contact", "printer_id": printer.id, "connector_id": None,
         "last_seen_at": printer.last_seen_at.replace(tzinfo=timezone.utc).isoformat(),
-        "active": True, "reports_feed": False,
+        "active": True, "reports_feed": False, "native_ws": "open",
     })]
+    assert publish.await_args_list[1].args[0][0][1]["native_ws"] == "closed"
+    assert printer.ws_connected_at is not None and printer.ws_disconnected_at is not None
     assert printer.reports_feed is False
     send.assert_awaited_once_with({"type": "websocket.accept", "subprotocol": None, "headers": []})
 

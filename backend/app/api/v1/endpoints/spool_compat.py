@@ -47,6 +47,7 @@ from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.services.contact_status_service import NativeLease
 from app.services.material_contract_service import MAX_GATE_INDEX
 from app.services.preset_enrichment_service import _load_material_defaults
 from app.services.preset_slot_sync_service import (
@@ -953,28 +954,28 @@ async def spool_compat_root(api_key: str, request: Request) -> RedirectResponse:
 
 @router.websocket("/v1/spool")
 async def spool_ws(websocket: WebSocket) -> None:
-    # No api_key — accept but never emit events (no user context).
+    # Without a device key there is no user to scope events to. Refusing the
+    # handshake makes Moonraker report the missing key instead of "connected"
+    # while every HTTP request is answered with 401.
     await websocket.accept()
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
+    await websocket.close(code=1008)
 
 
 @router.websocket("/{api_key}/v1/spool")
 @router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     async with AsyncSessionLocal() as db:
-        user, _device = await _resolve_user_and_device(db, api_key)
-        if user is not None:
-            # Fresh session: the only dirty object is the device's adapter-link
-            # touch — persist it, unlike HTTP paths this session has no get_db
-            # commit behind it.
+        user, device = await _resolve_user_and_device(db, api_key)
+        device_id = device.id if device is not None else None
+        if user is not None and device is not None:
+            # Fresh session: the only dirty objects are the device's contact
+            # touch and the socket transition - persist them, unlike HTTP paths
+            # this session has no get_db commit behind it.
+            device.ws_connected_at = datetime.now(timezone.utc)
             await db.commit()
             await publish_committed_contacts(db)
 
-    if user is None:
+    if user is None or device_id is None:
         await websocket.accept()
         await websocket.close(code=1008)
         return
@@ -982,11 +983,31 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     user_id = user.id
     await websocket.accept()
     spool_ws_manager.connect(user_id, websocket)
+    lease = NativeLease(device_id)
+    await lease.start()
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
         spool_ws_manager.disconnect(user_id, websocket)
+        await lease.stop()
+        await _record_ws_closed(device_id)
+
+
+async def _record_ws_closed(device_id: int) -> None:
+    # Another socket of the same device may still be open (reconnect overlap);
+    # the lease set, not this transition, decides whether the link is live.
+    try:
+        async with AsyncSessionLocal() as db:
+            device = await db.get(UserPrinterDevice, device_id)
+            if device is not None:
+                device.ws_disconnected_at = datetime.now(timezone.utc)
+                await db.commit()
+                await publish_committed_contacts(db)
+    except Exception:
+        logger.warning("Could not record native websocket close", exc_info=True)
 
 
 @router.get("/v1/spool")

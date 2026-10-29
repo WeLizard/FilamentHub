@@ -427,6 +427,16 @@ class PhysicalPrinterSuggestion(BaseModel):
     same_model_printer_ids: list[int]
 
 
+class ContactChannelResponse(BaseModel):
+    kind: Literal["native_spoolman", "connector"]
+    source: str
+    connector_id: int | None = None
+    material_system_id: int | None = None
+    last_contact_at: datetime | None
+    state: Literal["not_configured", "live", "silent", "unknown"]
+    basis: str
+
+
 class PhysicalPrinterResponse(BaseModel):
     id: int
     logical_id: str
@@ -440,11 +450,16 @@ class PhysicalPrinterResponse(BaseModel):
     reports_feed: bool
     last_seen_at: datetime | None
     confirmed: bool
+    contact_channels: list[ContactChannelResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, printer: Any) -> "PhysicalPrinterResponse":
+    def from_model(
+        cls, printer: Any, native_lease: bool | None = None
+    ) -> "PhysicalPrinterResponse":
+        from app.services.contact_status_service import build_contact_channels
+
         systems = sorted(printer.material_systems, key=lambda system: system.id)
         return cls(
             id=printer.id,
@@ -456,6 +471,11 @@ class PhysicalPrinterResponse(BaseModel):
             reports_feed=printer.reports_feed,
             last_seen_at=printer.last_seen_at,
             confirmed=printer.confirmed_at is not None,
+            contact_channels=build_contact_channels(
+                printer,
+                native_lease,
+                next((s.id for s in systems if s.provider in ("happy_hare", "legacy")), None),
+            ),
             printer_profile_ids=sorted(link.printer_profile_id for link in printer.profile_links),
             material_systems=[cls._material_system_response(system) for system in systems],
             connectors=[

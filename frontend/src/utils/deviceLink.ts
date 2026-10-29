@@ -38,8 +38,10 @@ export type ObservationSource =
 // The real touch source is the adapter's own request cadence (Moonraker's
 // Spoolman polling, plugin sync), not a fixed heartbeat — thresholds are
 // deliberately generous.
-export const DEVICE_LINK_ACTIVE_MS = 120_000;
-export const DEVICE_LINK_DELAYED_MS = 300_000;
+// Bambu/Orca heartbeats arrive every ~120 s, so "active" must outlast two beats
+// or the badge flips to delayed between healthy ones.
+export const DEVICE_LINK_ACTIVE_MS = 240_000;
+export const DEVICE_LINK_DELAYED_MS = 600_000;
 const DEFAULT_CONTACT_FRESHNESS: DeviceContactFreshness = {
   activeMs: DEVICE_LINK_ACTIVE_MS,
   inactiveMs: DEVICE_LINK_DELAYED_MS,
@@ -81,6 +83,44 @@ export function latestMaterialSystemContact(
   const systemConnectors = activeMaterialSystemConnectors(connectors, materialSystemId);
   if (systemConnectors.length === 0) return latestDeviceContact(printerLastSeenAt);
   return latestDeviceContact(...systemConnectors.map((connector) => connector.last_seen_at));
+}
+
+export type ContactChannelState = 'not_configured' | 'live' | 'silent' | 'unknown';
+
+/** One independent way FilamentHub hears from a device; times are never merged across channels. */
+export interface ContactChannel {
+  kind: 'native_spoolman' | 'connector';
+  source: string;
+  connector_id: number | null;
+  material_system_id: number | null;
+  last_contact_at: string | null;
+  state: ContactChannelState;
+  basis: string;
+}
+
+/** Channels that speak for one material system; a legacy connector without a system speaks for all. */
+export function systemContactChannels(
+  channels: readonly ContactChannel[] | undefined,
+  materialSystemId: number,
+): ContactChannel[] {
+  return (channels ?? []).filter((channel) => channel.material_system_id === materialSystemId
+    || (channel.material_system_id === null && channel.kind === 'connector'));
+}
+
+/**
+ * One badge from several channels without inventing a shared time: the badge is
+ * live if any channel is live, and the shown contact time is that channel's own.
+ */
+export function linkFromChannels(
+  channels: readonly ContactChannel[],
+): { state: DeviceLinkState; lastContactAt: string | null } {
+  const live = channels.find((channel) => channel.state === 'live');
+  if (live) return { state: 'active', lastContactAt: live.last_contact_at };
+  const lost = channels.find((channel) => channel.state === 'unknown' && channel.last_contact_at);
+  if (lost) return { state: 'delayed', lastContactAt: lost.last_contact_at };
+  const silent = channels.find((channel) => channel.state === 'silent' && channel.last_contact_at);
+  if (silent) return { state: 'inactive', lastContactAt: silent.last_contact_at };
+  return { state: 'never', lastContactAt: null };
 }
 
 export function connectorChannel(connector: Pick<MaterialSystemConnectorLike, 'provider' | 'transport'>): ConnectorChannel {

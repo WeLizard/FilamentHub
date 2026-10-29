@@ -176,6 +176,21 @@ describe('visible printer contact updates', () => {
     expect(lateInventory[0].reports_feed).toBe(true);
   });
 
+  it('moves only the channel the event belongs to', () => {
+    const withChannels = {
+      ...printer,
+      contact_channels: [
+        { kind: 'native_spoolman', source: 'moonraker', connector_id: null, material_system_id: 1, last_contact_at: oldTime, state: 'live', basis: 'websocket_lease' },
+        { kind: 'connector', source: 'bambu:orca', connector_id: update.connector_id, material_system_id: 1, last_contact_at: oldTime, state: 'silent', basis: 'heartbeat' },
+      ],
+    } as unknown as PhysicalPrinter;
+    const beat = applyPrinterContact([withChannels], update)[0].contact_channels!;
+    expect(beat.map((c) => c.state)).toEqual(['live', 'live']);
+    expect(beat[0].last_contact_at).toBe(oldTime);
+    const closed = applyPrinterContact([withChannels], { ...update, connector_id: null, native_ws: 'closed' })[0].contact_channels!;
+    expect(closed.map((c) => c.state)).toEqual(['silent', 'silent']);
+  });
+
   it('coalesces reset bursts and cancels a queued refresh when the screen hides', async () => {
     const view = renderSurfaces();
     await waitFor(() => expect(api.contactEvents).toHaveBeenCalledTimes(1));

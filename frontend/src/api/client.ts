@@ -1,5 +1,6 @@
 /** API Client для интеграции с бэкендом */
 
+import type { ContactChannel } from '../utils/deviceLink';
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
@@ -4747,6 +4748,7 @@ export interface PhysicalPrinter {
   printer_hostname: string | null;
   reports_feed: boolean;
   last_seen_at: string | null;
+  contact_channels?: ContactChannel[];
   created_at: string;
   updated_at: string;
 }

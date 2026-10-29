@@ -19,6 +19,7 @@ export interface PrinterContactEvent {
   last_seen_at: string | null;
   active: boolean;
   reports_feed: boolean | null;
+  native_ws?: 'open' | 'closed' | null;
 }
 
 const PRINTERS_KEY = physicalPrinterQueryKeys.root;
@@ -32,13 +33,27 @@ export function applyPrinterContact(printers: PhysicalPrinter[], event: PrinterC
     if (event.connector_id === null) {
       if (printer.last_seen_at && event.last_seen_at && Date.parse(event.last_seen_at) < Date.parse(printer.last_seen_at)) return printer;
       const lastSeen = latestDeviceContact(printer.last_seen_at, event.last_seen_at);
-      return { ...printer, last_seen_at: lastSeen, reports_feed: event.reports_feed ?? printer.reports_feed };
+      return {
+        ...printer,
+        last_seen_at: lastSeen,
+        reports_feed: event.reports_feed ?? printer.reports_feed,
+        contact_channels: printer.contact_channels?.map((channel) => channel.kind !== 'native_spoolman'
+          ? channel
+          : {
+            ...channel,
+            last_contact_at: latestDeviceContact(channel.last_contact_at, event.last_seen_at),
+            state: event.native_ws === 'open' ? 'live' : event.native_ws === 'closed' ? 'silent' : channel.state,
+          }),
+      };
     }
     return {
       ...printer,
       connectors: printer.connectors.map((connector) => connector.id === event.connector_id
         ? { ...connector, last_seen_at: latestDeviceContact(connector.last_seen_at, event.last_seen_at) }
         : connector),
+      contact_channels: printer.contact_channels?.map((channel) => channel.connector_id === event.connector_id
+        ? { ...channel, last_contact_at: latestDeviceContact(channel.last_contact_at, event.last_seen_at), state: 'live' }
+        : channel),
     };
   });
 }

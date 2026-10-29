@@ -1,3 +1,4 @@
+import type { ContactChannel } from './deviceLink';
 import { describe, expect, it } from 'vitest';
 import {
   activeMaterialSystemConnectors,
@@ -10,6 +11,7 @@ import {
   latestDeviceContact,
   latestFreshStatusConnector,
   latestMaterialSystemContact,
+  linkFromChannels,
   observationSource,
 } from './deviceLink';
 
@@ -164,5 +166,27 @@ describe('formatLastSeen', () => {
   it('falls back to a locale date beyond a day', () => {
     const result = formatLastSeen(iso(3 * 86_400_000), t, 'en', NOW);
     expect(result).not.toContain('deviceLink');
+  });
+});
+
+describe('linkFromChannels', () => {
+  const channel = (state: ContactChannel['state'], last: string | null, kind: ContactChannel['kind'] = 'connector'): ContactChannel => ({
+    kind, source: 'x', connector_id: null, material_system_id: 1, last_contact_at: last, state, basis: 'heartbeat',
+  });
+
+  it('shows the live channel\'s own time and never borrows a fresher time from a silent one', () => {
+    const result = linkFromChannels([
+      channel('silent', '2026-10-29T10:59:00Z', 'native_spoolman'),
+      channel('live', '2026-10-29T09:00:00Z'),
+    ]);
+    expect(result).toEqual({ state: 'active', lastContactAt: '2026-10-29T09:00:00Z' });
+  });
+
+  it('keeps a lost lease as delayed data, not as live', () => {
+    expect(linkFromChannels([channel('unknown', '2026-10-29T09:00:00Z', 'native_spoolman')]).state).toBe('delayed');
+  });
+
+  it('treats a channel that was never heard from as never connected', () => {
+    expect(linkFromChannels([channel('unknown', null), channel('not_configured', null)]).state).toBe('never');
   });
 });

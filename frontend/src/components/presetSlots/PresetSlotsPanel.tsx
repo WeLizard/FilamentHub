@@ -26,6 +26,8 @@ import {
   connectorChannels,
   formatLastSeen,
   getDeviceLinkState,
+  linkFromChannels,
+  systemContactChannels,
   latestMaterialSystemContact,
   useNow,
 } from '../../utils/deviceLink';
@@ -122,12 +124,14 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const topologyAuthority = systemConnectors.find((item) => item.topology_authority) ?? null;
   // Legacy connections did not identify their material system. Keep the printer
   // fallback only when no system-specific connector exists.
-  const lastSeenAt = latestMaterialSystemContact(
-    printer.connectors,
-    system.id,
-    printer.last_seen_at,
-  );
-  const linkState = getDeviceLinkState(lastSeenAt, now, adapter.contactMode, adapter.contactFreshness);
+  const channels = systemContactChannels(printer.contact_channels, system.id);
+  const channelLink = channels.length > 0 ? linkFromChannels(channels) : null;
+  const lastSeenAt = channelLink
+    ? channelLink.lastContactAt
+    : latestMaterialSystemContact(printer.connectors, system.id, printer.last_seen_at);
+  const linkState = channelLink
+    ? channelLink.state
+    : getDeviceLinkState(lastSeenAt, now, adapter.contactMode, adapter.contactFreshness);
   const linkConfirmed = printer.reports_feed;
   const providerLabel = t(`presetSlots.provider.${system.provider}`, {
     defaultValue: system.provider,
