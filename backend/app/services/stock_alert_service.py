@@ -284,15 +284,32 @@ async def _rearm_for_rule(db: AsyncSession, rule: StockAlertRule) -> None:
         rule.fired = stock.grams < rule.threshold_g
         return
     if not rule.enabled:
-        # No rule speaks for these spools now (a wider one may; it re-arms on the next reading).
-        flag_off = (
-            UserSpool.id == rule.spool_id if rule.scope == "spool" else UserSpool.id.is_not(None)
-        )
-        await db.execute(
-            update(UserSpool)
-            .where(UserSpool.user_id == rule.user_id, flag_off)
-            .values(low_stock_fired=False)
-        )
+        # A rule that no longer speaks for a spool hands it to the wider one
+        # without a new alert: a spool already below that line starts as fired.
+        if rule.scope == "spool":
+            wider = await db.scalar(
+                select(StockAlertRule).where(
+                    StockAlertRule.user_id == rule.user_id,
+                    StockAlertRule.scope == "all",
+                    StockAlertRule.enabled.is_(True),
+                )
+            )
+            if wider is None:
+                await db.execute(
+                    update(UserSpool)
+                    .where(UserSpool.id == rule.spool_id)
+                    .values(low_stock_fired=False)
+                )
+            else:
+                await _silently_arm_spools(
+                    db, rule.user_id, wider.threshold_g, UserSpool.id == rule.spool_id
+                )
+        else:
+            await db.execute(
+                update(UserSpool)
+                .where(UserSpool.user_id == rule.user_id)
+                .values(low_stock_fired=False)
+            )
         return
     if rule.scope == "spool":
         await _silently_arm_spools(

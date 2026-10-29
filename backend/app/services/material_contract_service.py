@@ -968,13 +968,14 @@ async def build_printer_bridge_desired_snapshot(
     if (
         system.active
         and source_instance_id
-        and await hold_usage_authority(db, connector)
         and has_capability(
             connector.capabilities or [],
             "consumption",
             provider=connector.provider,
             transport=connector.transport,
         )
+        # Only a connector that can report consumption may claim authority.
+        and await hold_usage_authority(db, connector)
     ):
         await issue_usage_route_proofs(
             db,
@@ -1704,6 +1705,7 @@ async def delete_material_system(
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     _forget_reporting(printer)
     printer.api_key = None
+    printer.pending_api_key = None
     if provider in KLIPPER_PROVIDERS:
         # The legacy gate map describes exactly this system, so it goes with it;
         # otherwise the next system would inherit a phantom slot count.

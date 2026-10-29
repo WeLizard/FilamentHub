@@ -192,7 +192,7 @@ async def resolve_usage_routes(
     return routes
 
 
-USAGE_AUTHORITY_STALE_AFTER = timedelta(minutes=15)
+USAGE_AUTHORITY_STALE_AFTER = timedelta(minutes=6)
 
 
 async def hold_usage_authority(db: AsyncSession, connector: PhysicalPrinterConnector) -> bool:

@@ -146,14 +146,19 @@ async def _find_bridge_connector(
     provider: str,
     transport: PrinterBridgeTransport,
 ) -> PhysicalPrinterConnector | None:
+    # Several helpers may be paired to one system; the newest link is the one
+    # a pairing code or status belongs to.
     return await db.scalar(
-        select(PhysicalPrinterConnector).where(
+        select(PhysicalPrinterConnector)
+        .where(
             PhysicalPrinterConnector.user_id == user_id,
             PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
             PhysicalPrinterConnector.material_system_id == material_system_id,
             PhysicalPrinterConnector.provider == provider,
             PhysicalPrinterConnector.transport == transport,
         )
+        .order_by(PhysicalPrinterConnector.id.desc())
+        .limit(1)
     )
 
 
@@ -727,7 +732,8 @@ async def revoke_connector_for_user(
         )
         .with_for_update()
     )
-    if connector is None:
+    if connector is None or connector.transport in {"spoolman_compat", "legacy_adapter"}:
+        # The native link is the device key; it is cut by replacing that key.
         raise_error(404, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
     credential = await db.scalar(
         select(PrinterBridgeCredential)
