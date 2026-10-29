@@ -24,9 +24,16 @@ interface MaterialTypeSelectProps {
   label?: string;
   placeholder?: string;
   required?: boolean;
+  disabled?: boolean;
+  /** Accessible name when there is no visible label. */
+  ariaLabel?: string;
+  /** sm: compact field for dense admin forms. */
+  size?: 'sm' | 'md';
 }
 
-export function MaterialTypeSelect({ value, onChange, onSelect, options, label, placeholder, required }: MaterialTypeSelectProps) {
+export function MaterialTypeSelect({
+  value, onChange, onSelect, options, label, placeholder, required, disabled, ariaLabel, size = 'md',
+}: MaterialTypeSelectProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -75,11 +82,15 @@ export function MaterialTypeSelect({ value, onChange, onSelect, options, label, 
         onBlur={() => setOpen(false)}
         placeholder={placeholder ?? t('createFilament.selectOrEnterMaterial')}
         required={required}
-        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className={`w-full border text-white placeholder-gray-400 focus:outline-none transition-all disabled:opacity-60 ${size === 'sm'
+          ? 'h-9 rounded-lg border-white/15 bg-slate-950/70 px-2.5 text-sm focus:border-indigo-400'
+          : 'px-4 py-3 bg-white/10 border-white/20 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent'}`}
       />
       {open && (
         <div
-          className="scrollbar-contained absolute z-10 w-full mt-1 max-h-72 overflow-y-auto rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
+          className="scrollbar-contained absolute z-50 w-full mt-1 max-h-72 overflow-y-auto rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
           onClick={(e) => e.stopPropagation()}
         >
           {visible.length > 0 ? (

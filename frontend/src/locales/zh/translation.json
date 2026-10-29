@@ -6051,6 +6051,29 @@
       "revokeError": "无法撤销访问权限。"
     },
     "curation": {
+      "materialResolved": "识别为 {{base}}，子类型 {{subtype}}",
+      "materialResolvedBase": "识别为 {{base}}",
+      "materialUnrecognised": "未识别的类型",
+      "tempsSummary": "喷嘴 / 热床，°C",
+      "rangeNames": {
+        "recommended_nozzle_temp": "喷嘴，°C",
+        "recommended_bed_temp": "热床，°C",
+        "storage_temperature_c": "储存，°C"
+      },
+      "compoundNames": {
+        "drying": "干燥"
+      },
+      "units": {
+        "c": "°C",
+        "hours": "小时",
+        "percent": "%",
+        "months": "个月"
+      },
+      "rangeMissingMin": "缺少最小值",
+      "rangeMissingMax": "缺少最大值",
+      "noLogo": "无标志",
+      "logoBroken": "标志加载失败",
+      "logoLooksLikeFavicon": "这看起来像网站图标，而不是标志",
       "title": "目录提案",
       "reviewDescription": "选择记录并核对数值与来源。完成预览并应用后，目录才会更改。",
       "importJson": "导入提案 JSON",
@@ -6179,7 +6202,7 @@
       "sourceFactMissing": "尚未列出已发现的资料",
       "disposition": "处理方式",
       "dispositionState": { "mapped": "卡片字段", "unsupported": "单独备注", "unresolved": "未解决" },
-      "mappedFields": "卡片字段（每行一个）",
+      "mappedFields": "卡片字段",
       "addSourceFact": "添加已发现资料",
       "removeSourceFact": "移除资料",
       "sheet": "工作表",

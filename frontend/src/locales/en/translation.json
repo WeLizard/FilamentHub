@@ -6059,6 +6059,29 @@
       "revokeError": "Could not revoke access."
     },
     "curation": {
+      "materialResolved": "Recognised as {{base}}, subtype {{subtype}}",
+      "materialResolvedBase": "Recognised as {{base}}",
+      "materialUnrecognised": "Type not recognised",
+      "tempsSummary": "Nozzle / bed, °C",
+      "rangeNames": {
+        "recommended_nozzle_temp": "Nozzle, °C",
+        "recommended_bed_temp": "Bed, °C",
+        "storage_temperature_c": "Storage, °C"
+      },
+      "compoundNames": {
+        "drying": "Drying"
+      },
+      "units": {
+        "c": "°C",
+        "hours": "h",
+        "percent": "%",
+        "months": "mo"
+      },
+      "rangeMissingMin": "no minimum",
+      "rangeMissingMax": "no maximum",
+      "noLogo": "No logo",
+      "logoBroken": "Logo failed to load",
+      "logoLooksLikeFavicon": "Looks like a site icon, not a logo",
       "title": "Catalog proposals",
       "reviewDescription": "Select a record and review its values and sources. The catalog changes only after preview and apply.",
       "importJson": "Import proposal JSON",
@@ -6194,7 +6217,7 @@
       "sourceFactMissing": "No found-fact inventory provided",
       "disposition": "Disposition",
       "dispositionState": { "mapped": "Card field", "unsupported": "Separate note", "unresolved": "Unresolved" },
-      "mappedFields": "Card fields (one per line)",
+      "mappedFields": "Card fields",
       "addSourceFact": "Add found fact",
       "removeSourceFact": "Remove fact",
       "sheet": "Sheet",

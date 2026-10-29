@@ -11,9 +11,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
+  initReactI18next: { type: '3rdParty', init: () => undefined },
 }));
 vi.mock('../../api/client', () => ({
   adminCatalogCurationAPI: mocks,
+  filamentsAPI: { getMaterialTypeGroups: vi.fn().mockResolvedValue([]) },
   adminCatalogImportAPI: {
     history: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     previewWorkbook: mocks.previewWorkbook,
@@ -99,7 +101,8 @@ const applyButton = () => screen.getAllByRole('button')
   .find((button) => /curation\.outcome|^adminCatalogImport\.apply$/.test(button.getAttribute('aria-label') ?? ''))!;
 const savedDraft = () => mocks.update.mock.calls[0][2].draft;
 
-describe('catalog proposal review', () => {
+// Whole-screen renders with many role queries; jsdom needs more than the default 5 s on a busy machine.
+describe('catalog proposal review', { timeout: 15_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.list.mockResolvedValue({ items: [proposal], total: 1 });

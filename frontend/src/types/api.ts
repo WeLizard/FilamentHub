@@ -1283,6 +1283,9 @@ export interface CatalogImportPlanRow {
   status: 'create' | 'update' | 'noop' | 'skipped' | 'error';
   message: string | null;
   changes: Record<string, { before: unknown; after: unknown }>;
+  /** Filament rows: what material_type resolves to; both null when unrecognised. */
+  material_base?: string | null;
+  material_subtype?: string | null;
 }
 
 export interface CatalogImportPreview {

@@ -8,6 +8,7 @@ import { cellText, isTruthyCell, listValues, numberFromInput, settledNumber } fr
 import { Dropdown } from '../../Dropdown';
 import { FloatingHSLColorPicker } from '../../FloatingHSLColorPicker';
 import { LinkListEditor } from '../../LinkListEditor';
+import { MaterialTypeSelect } from '../../MaterialTypeSelect';
 import { fieldSpec } from './fieldSpecs';
 
 export const inputClass = 'h-9 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 text-sm text-white placeholder:text-gray-500 focus:border-indigo-400 focus:outline-none disabled:opacity-60';
@@ -158,6 +159,9 @@ export function ProposalFieldControl({ sheet, field, value, disabled, label, onC
         onChange={(next) => onChange(next)} />;
     case 'shop':
       return <LinkListEditor kind="shop" value={value} disabled={disabled} label={label}
+        onChange={(next) => onChange(next)} />;
+    case 'materialType':
+      return <MaterialTypeSelect size="sm" value={text} options={[]} disabled={disabled} ariaLabel={label}
         onChange={(next) => onChange(next)} />;
     case 'number':
       return <NumberEntry value={value} disabled={disabled} label={label} onChange={onChange} />;

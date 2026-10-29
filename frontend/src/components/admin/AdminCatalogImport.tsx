@@ -681,6 +681,12 @@ export function AdminCatalogImport() {
   };
 
   const checked = preview && !dirty ? preview : null;
+  // Only a preview of the current draft: after an edit the material may already be different.
+  const materialByKey = useMemo(() => new Map((checked?.rows ?? [])
+    .filter((row) => row.sheet === 'Filaments' && row.key
+      && !(row.status === 'error' && row.material_base == null && row.material_subtype == null))
+    .map((row) => [row.key as string, { base: row.material_base ?? null, subtype: row.material_subtype ?? null }] as const)), [checked]);
+  const materialOf = (row: ProposalRow) => (activeSheet === 'filaments' ? materialByKey.get(rowKey(activeSheet, row)) : undefined);
   const outcome = previewOutcome(checked);
   const applyReady = Boolean(checked?.confirmation_token) && (checked?.summary.error ?? 0) === 0;
   const applyLabel = (() => {
@@ -960,7 +966,7 @@ export function AdminCatalogImport() {
             ))}
           </nav>
 
-          {proposal && activeRows.length > 0 && <section className={`grid min-w-0 gap-4 ${openRow && !singleBrand ? 'lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]' : ''}`}>
+          {proposal && activeRows.length > 0 && <section className={`grid min-w-0 gap-4 ${openRow && !singleBrand ? 'lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)]' : ''}`}>
             {!singleBrand && <div className={`min-w-0 space-y-3 ${openRow ? 'hidden lg:block' : ''}`}>
               {activeSheet === 'filaments' && marketCountries.length > 1 && <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
                 <span>{t('adminCatalogImport.curation.marketSwitch')}</span>
@@ -1009,7 +1015,8 @@ export function AdminCatalogImport() {
                 <ProposalRecordList sheet={activeSheet} rows={proposalRows}
                   page={page} pageSize={PROPOSAL_ROW_PAGE_SIZE} onPageChange={setPage}
                   selected={selectedVisible} onSelect={updateSelection} openIndex={openIndex} onOpen={setOpenIndex}
-                  planByRow={planByRow} coverage={coverageOf} marketCells={marketCells} differs={differs} hasDefault={marketGroups.length > 0} showBrand={draft.brands.length > 1} disabled={busy || readonly} />
+                  planByRow={planByRow} coverage={coverageOf} marketCells={marketCells} differs={differs} hasDefault={marketGroups.length > 0} showBrand={draft.brands.length > 1} disabled={busy || readonly}
+                  narrow={Boolean(openRow)} materialOf={materialOf} />
               </div>
             </div>}
             {openRow && currentIndex !== null && <div className={`min-w-0 ${singleBrand ? '' : 'lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:pr-1'}`}>
@@ -1017,7 +1024,7 @@ export function AdminCatalogImport() {
                 standalone={singleBrand}
                 rowNumber={Number(openRow._row ?? currentIndex + 2)} draft={draft}
                 disabled={busy} readonly={readonly} coverageLine={editorCoverage}
-                evidence={evidenceApi} facts={factsApi} marketErrors={marketErrors} onEdit={editRows}
+                evidence={evidenceApi} facts={factsApi} marketErrors={marketErrors} material={materialOf(openRow)} onEdit={editRows}
                 onAddRow={addMarketRow} onRemoveRow={removeMarketRow} onClose={() => setOpenIndex(null)} />
             </div>}
           </section>}

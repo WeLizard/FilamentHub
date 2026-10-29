@@ -2,7 +2,7 @@ import type { CatalogImportSheet } from '../../../types/api';
 
 export type FieldKind =
   | 'text' | 'textarea' | 'number' | 'bool' | 'select' | 'availability' | 'marketAvailability'
-  | 'colorHex' | 'colors' | 'colorGroup' | 'social' | 'shop' | 'country';
+  | 'colorHex' | 'colors' | 'colorGroup' | 'social' | 'shop' | 'country' | 'materialType';
 
 /** Columns taken out of six in the editor grid: 2 = three per row, 3 = two per row, 6 = full row. */
 export type FieldSpan = 2 | 3 | 6;
@@ -35,6 +35,7 @@ export function fieldSpec(sheet: CatalogImportSheet, field: string): FieldSpec {
   if (field === 'color_hex' || field === 'logo_bg') return { kind: 'colorHex', span: 3 };
   if (field === 'color_group') return { kind: 'colorGroup', span: 3 };
   if (field === 'country') return { kind: 'country', span: 2 };
+  if (field === 'material_type') return { kind: 'materialType', span: 3 };
   if (field === 'availability') {
     return sheet === 'filament_markets'
       ? { kind: 'marketAvailability', span: 3, options: MARKET_AVAILABILITY, optionsKey: 'filamentMarket.availability_' }
@@ -60,6 +61,47 @@ export function fieldSpec(sheet: CatalogImportSheet, field: string): FieldSpec {
   if (TEXTAREA_FIELDS.has(field)) return { kind: 'textarea', span: 6 };
   if (NUMBER_FIELD.test(field)) return { kind: 'number', span: 2 };
   return { kind: 'text', span: FULL_ROW_FIELDS.has(field) ? 6 : 3 };
+}
+
+const MIN_TOKEN = /(^|_)min(_|$)/;
+const MAX_TOKEN = /(^|_)max(_|$)/;
+
+/** Ends of a from–to range, recognised by name so that new card fields pair up without configuration. */
+export interface RangeFields {
+  base: string;
+  min: string;
+  max: string;
+}
+
+export function rangeOf(field: string): RangeFields | null {
+  if (MIN_TOKEN.test(field)) {
+    return { base: field.replace(MIN_TOKEN, (_, a: string, b: string) => (a && b ? '_' : '')), min: field, max: field.replace(MIN_TOKEN, '$1max$2') };
+  }
+  if (MAX_TOKEN.test(field)) {
+    return { base: field.replace(MAX_TOKEN, (_, a: string, b: string) => (a && b ? '_' : '')), min: field.replace(MAX_TOKEN, '$1min$2'), max: field };
+  }
+  return null;
+}
+
+/** A range only when both ends are fields of this sheet (or of this row), so "humidity_max" alone stays a single value. */
+export function rangeFor(sheet: CatalogImportSheet, field: string, row?: Record<string, unknown>): RangeFields | null {
+  const range = rangeOf(field);
+  const known = (name: string) => PROPOSAL_FIELDS[sheet].includes(name) || Boolean(row && name in row);
+  return range && known(range.min) && known(range.max) ? range : null;
+}
+
+/** Values entered together on one line: the label names the whole, each input shows its unit. */
+export const COMPOUND_FIELDS: Array<{ key: string; fields: string[] }> = [
+  { key: 'drying', fields: ['drying_temperature_c', 'drying_duration_hours'] },
+];
+
+/** Unit read from the field name's suffix. */
+export function unitOf(field: string): string | null {
+  if (/_c$|temp/.test(field)) return 'c';
+  if (/_hours$/.test(field)) return 'hours';
+  if (/_percent$/.test(field)) return 'percent';
+  if (/_months$/.test(field)) return 'months';
+  return null;
 }
 
 export interface FieldGroup {

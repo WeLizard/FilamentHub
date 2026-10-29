@@ -2,6 +2,11 @@ import { useTranslation } from 'react-i18next';
 
 import type { CatalogCurationSourceFact, CatalogCurationUnmappedFact } from '../../../types/api';
 import { externalUrl, externalUrlDisplay } from '../../../utils/externalUrl';
+import { Dropdown } from '../../Dropdown';
+import { PROPOSAL_FIELDS, TECHNICAL_KEYS } from './fieldSpecs';
+
+/** Card fields a manufacturer fact can fill: everything the filament sheet accepts except the technical columns. */
+const MAPPABLE_FIELDS = PROPOSAL_FIELDS.filaments.filter((field) => field !== 'enabled' && !TECHNICAL_KEYS.filaments.includes(field));
 
 interface SourceFactsPanelsProps {
   filamentKeys: string[];
@@ -23,6 +28,7 @@ export function SourceFactsPanels({
   onUpdateUnmappedFact, onRemoveUnmappedFact, onAddUnmappedFact,
 }: SourceFactsPanelsProps) {
   const { t } = useTranslation();
+  const fieldName = (field: string) => t(`adminCatalogImport.curation.fieldNames.${field}`, { defaultValue: field.replaceAll('_', ' ') });
   return <>
           <details className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
   <summary className="cursor-pointer text-sm font-semibold text-white">
@@ -65,12 +71,13 @@ export function SourceFactsPanels({
             onChange={(event) => onUpdateSourceFact(index, { value_summary: event.target.value })}
             className="mt-1 block w-full rounded bg-gray-900 p-2 text-gray-200" />
         </label>
-        {item.disposition === 'mapped' && <label className="block text-xs text-gray-400">{t('adminCatalogImport.curation.mappedFields')}
-          <textarea aria-label={`${t('adminCatalogImport.curation.mappedFields')} ${index + 1}`}
-            value={item.mapped_fields.join('\n')} rows={2}
-            onChange={(event) => onUpdateSourceFact(index, { mapped_fields: event.target.value.split('\n').map((field) => field.trim()).filter(Boolean) })}
-            className="mt-1 block w-full rounded bg-gray-900 p-2 font-mono text-gray-200" />
-        </label>}
+        {item.disposition === 'mapped' && <Dropdown multiple filterable size="sm" value="" disabled={disabled}
+          className="max-w-xl" label={t('adminCatalogImport.curation.mappedFields')} labelClassName="mb-1 block text-xs text-gray-400"
+          selectedValues={item.mapped_fields}
+          options={[...MAPPABLE_FIELDS, ...item.mapped_fields.filter((field) => !MAPPABLE_FIELDS.includes(field))]
+            .map((field) => ({ value: field, label: fieldName(field) }))}
+          onChange={() => undefined}
+          onMultiChange={(values) => onUpdateSourceFact(index, { mapped_fields: values.map(String) })} />}
         <label className="block text-xs text-gray-400">{t('adminCatalogImport.curation.sources')}
           <textarea aria-label={`${t('adminCatalogImport.curation.sources')} ${index + 1} fact`}
             value={item.source_urls.join('\n')} rows={2}

@@ -6,6 +6,7 @@ import { ProposalFieldControl } from './ProposalFieldControl';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+  initReactI18next: { type: '3rdParty', init: () => undefined },
 }));
 
 function Harness({ field, initial, onStore }: { field: string; initial: unknown; onStore: (value: unknown) => void }) {

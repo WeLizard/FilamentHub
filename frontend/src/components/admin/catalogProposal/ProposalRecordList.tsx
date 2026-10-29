@@ -6,6 +6,7 @@ import {
   cellText, filamentVisual, rowKey, type FactCoverage, type ProposalRow, factCoverageNeedsAttention,
 } from '../../../utils/catalogProposalEdit';
 import { AdminPager } from '../AdminPager';
+import { MaterialClassification, type MaterialClass } from './MaterialClassification';
 
 export interface ListRow {
   row: ProposalRow;
@@ -37,9 +38,14 @@ interface ProposalRecordListProps {
   /** Brand key joins the line header only when the draft holds several brands. */
   showBrand: boolean;
   disabled: boolean;
+  /** Beside an open editor: one line per record, no market column. */
+  narrow?: boolean;
+  /** Server classification of a record's material type, when a current preview has one. */
+  materialOf?: (row: ProposalRow) => MaterialClass | undefined;
 }
 
-const GRID = 'grid items-center gap-x-3 grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_11rem_1.25rem]';
+const WIDE_GRID = 'grid items-center gap-x-3 grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_11rem_1.25rem]';
+const NARROW_GRID = 'grid items-center gap-x-3 grid-cols-[auto_minmax(0,1fr)_auto]';
 const MAX_CHIPS = 2;
 
 function IndeterminateCheckbox({ checked, indeterminate, onChange, label, disabled }: {
@@ -57,11 +63,21 @@ const typeOf = (sheet: CatalogImportSheet, row: ProposalRow, showBrand: boolean)
   ? [showBrand ? row.brand_key : '', row.material_type].map(cellText).filter(Boolean).join(' · ') : '';
 const lineOf = (row: ProposalRow): string => cellText(row.line).trim();
 
+/** "240–260", "240" when both ends match, "240–?" when an end is missing; null when there is nothing. */
+const rangeText = (row: ProposalRow, min: string, max: string): { text: string; partial: boolean } | null => {
+  const low = cellText(row[min]).trim();
+  const high = cellText(row[max]).trim();
+  if (!low && !high) return null;
+  if (!low || !high) return { text: `${low || '?'}–${high || '?'}`, partial: true };
+  return { text: low === high ? low : `${low}–${high}`, partial: false };
+};
+
 export function ProposalRecordList({
   sheet, rows, page, pageSize, onPageChange, selected, onSelect, openIndex, onOpen,
-  planByRow, coverage, marketCells, differs, hasDefault, showBrand, disabled,
+  planByRow, coverage, marketCells, differs, hasDefault, showBrand, disabled, narrow = false, materialOf,
 }: ProposalRecordListProps) {
   const { t } = useTranslation();
+  const GRID = narrow ? NARROW_GRID : WIDE_GRID;
 
   const SINGLES = '\u0001';
   /**
@@ -109,7 +125,7 @@ export function ProposalRecordList({
   }, [currentPage, page, onPageChange]);
   const visible = layout.ordered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const header = (level: 1 | 2, title: string, members: number[]) => {
+  const header = (level: 1 | 2, title: string, members: number[], material?: MaterialClass) => {
     const selectedCount = members.filter((member) => selected.has(member)).length;
     return <div className={`${GRID} ${level === 1 ? 'mt-2 bg-white/[0.07]' : 'bg-white/[0.03] pl-4'} px-2 py-1.5`}>
       <IndeterminateCheckbox disabled={disabled} checked={selectedCount === members.length}
@@ -118,8 +134,9 @@ export function ProposalRecordList({
         onChange={(checked) => onSelect(members, checked)} />
       <p className={`min-w-0 truncate ${level === 1 ? 'text-xs font-semibold uppercase tracking-wide text-indigo-200' : 'text-xs font-medium text-gray-300'}`}>
         {title} <span className="font-normal text-gray-500">· {members.length}</span>
+        {material && <span className="ml-1.5 font-normal normal-case tracking-normal"><MaterialClassification value={material} compact /></span>}
       </p>
-      <span className="text-xs text-indigo-200 sm:col-span-2">
+      <span className={`text-xs text-indigo-200 ${narrow ? '' : 'sm:col-span-2'}`}>
         {selectedCount > 0 && selectedCount < members.length
           ? t('adminCatalogImport.curation.selectedOf', { selected: selectedCount, total: members.length }) : ''}
       </span>
@@ -145,25 +162,33 @@ export function ProposalRecordList({
           const visual = sheet === 'filaments' ? filamentVisual(row) : null;
           const attention = sheet === 'filaments' && factCoverageNeedsAttention(coverage(rowKey(sheet, row)));
           const isOpen = openIndex === index;
-          const title = cellText(row.name) || rowKey(sheet, row);
+          const name = cellText(row.name) || rowKey(sheet, row);
+          // Inside a material group every name repeats; the colour is what tells the records apart.
+          const colorName = sheet === 'filaments' ? cellText(row.color_name).trim() : '';
+          const title = colorName || name;
+          const temps = sheet === 'filaments'
+            ? [rangeText(row, 'recommended_nozzle_temp_min', 'recommended_nozzle_temp_max'),
+              rangeText(row, 'recommended_bed_temp_min', 'recommended_bed_temp_max')]
+            : [];
           const cells = marketCells(row);
           const marker = result?.status === 'error'
             ? { tone: 'bg-red-400', text: result.message ?? t('adminCatalogImport.status.error') }
             : attention ? { tone: 'bg-amber-400', text: t('adminCatalogImport.curation.issueCoverage') }
               : differs.has(index) ? { tone: 'bg-indigo-300', text: t('adminCatalogImport.curation.differsFromDefault') } : null;
-          const detail = [single ? lineOf(row) : '', visual?.finish && t(`adminCatalogImport.curation.visualTerms.${visual.finish}`, { defaultValue: visual.finish }),
+          const detail = [colorName && name !== lineOf(row) && name !== cellText(row.material_type) ? name : '',
+            single ? lineOf(row) : '', visual?.finish && t(`adminCatalogImport.curation.visualTerms.${visual.finish}`, { defaultValue: visual.finish }),
             ...(visual?.effects ?? []).map((value) => t(`filamentFeatures.effects.${value}`, {
               defaultValue: t(`adminCatalogImport.curation.visualTerms.${value}`, { defaultValue: value }) }))]
             .filter(Boolean).join(' · ');
           return <div key={`${sheet}-${index}`}>
-            {newType && header(1, typeTitle, byType.get(type) ?? [])}
+            {newType && header(1, typeTitle, byType.get(type) ?? [], materialOf?.(row))}
             {newLine && header(2, lineTitle, byLine.get(rowLineKey) ?? [])}
             <div className={`${GRID} rounded-lg px-2 py-1 transition ${isOpen ? 'bg-indigo-500/20' : 'hover:bg-white/5'}`}>
-              <input type="checkbox" aria-label={`${t('adminCatalogImport.curation.selectRecord')} ${title}`} disabled={disabled}
+              <input type="checkbox" aria-label={`${t('adminCatalogImport.curation.selectRecord')} ${name}`} disabled={disabled}
                 checked={selected.has(index)} onChange={(event) => onSelect([index], event.target.checked)}
                 className="h-4 w-4 accent-purple-500" />
               <button type="button" onClick={() => onOpen(index)} aria-current={isOpen ? 'true' : undefined}
-                className="col-span-2 grid min-w-0 grid-cols-subgrid items-center gap-x-3 py-0.5 text-left sm:col-span-3">
+                className={`col-span-2 grid min-w-0 grid-cols-subgrid items-center gap-x-3 py-0.5 text-left ${narrow ? '' : 'sm:col-span-3'}`}>
                 <span className="flex min-w-0 items-center gap-2">
                   {visual && visual.colors.length > 0 && <span className="flex shrink-0 -space-x-1" role="img"
                     aria-label={t('adminCatalogImport.curation.colorsCount', { count: visual.colors.length })}>
@@ -171,15 +196,24 @@ export function ProposalRecordList({
                   </span>}
                   <span className="min-w-0">
                     <span className={`block truncate text-sm ${row.enabled === false ? 'text-gray-500 line-through' : 'text-white'}`}>{title}</span>
-                    {detail && <span className="block truncate text-xs text-gray-400">{detail}</span>}
+                    {(detail || temps.some(Boolean)) && <span className="flex min-w-0 items-baseline gap-2 text-xs text-gray-400">
+                      {detail && <span className="min-w-0 truncate">{detail}</span>}
+                      {temps.some(Boolean) && <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums"
+                        title={t('adminCatalogImport.curation.tempsSummary')}>
+                        {temps.map((temp, tempIndex) => <span key={tempIndex}>
+                          {tempIndex > 0 && <span className="text-gray-600"> / </span>}
+                          <span className={temp?.partial ? 'text-amber-300' : 'text-gray-300'}>{temp ? `${temp.text}°` : '—'}</span>
+                        </span>)}
+                      </span>}
+                    </span>}
                   </span>
                 </span>
-                <span className="hidden min-w-0 flex-wrap items-center gap-1 sm:flex">
+                {!narrow && <span className="hidden min-w-0 flex-wrap items-center gap-1 sm:flex">
                   {(differs.has(index) || !hasDefault) && cells.slice(0, MAX_CHIPS).map((cell) => <span key={cell.country} className="max-w-full truncate rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-gray-200">
                     {cell.country}{cell.text ? ` · ${cell.text}` : ''}
                   </span>)}
                   {(differs.has(index) || !hasDefault) && cells.length > MAX_CHIPS && <span className="text-[11px] text-gray-400">+{cells.length - MAX_CHIPS}</span>}
-                </span>
+                </span>}
                 <span className="flex justify-end" title={marker?.text}>
                   {marker && <span role="img" aria-label={marker.text} className={`h-2 w-2 rounded-full ${marker.tone}`} />}
                 </span>

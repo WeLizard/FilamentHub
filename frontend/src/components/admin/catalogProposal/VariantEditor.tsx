@@ -20,19 +20,29 @@ import {
 import { countryName, sortedCountries } from '../../../utils/countries';
 import { FilamentFeaturesEditor } from '../../FilamentFeaturesEditor';
 import {
-  FEATURE_FIELDS, PROPOSAL_FIELDS, SHEET_GROUPS, TECHNICAL_KEYS, fieldSpec, type FieldGroup,
+  COMPOUND_FIELDS, FEATURE_FIELDS, PROPOSAL_FIELDS, SHEET_GROUPS, TECHNICAL_KEYS, fieldSpec, rangeFor, unitOf,
+  type FieldGroup, type RangeFields,
 } from './fieldSpecs';
+import { MaterialClassification, type MaterialClass } from './MaterialClassification';
 import { ProposalFieldControl } from './ProposalFieldControl';
 import { ProvenanceButton, type FieldEvidence } from './ProvenanceButton';
 import { SourceFactsPanels } from './SourceFactsPanels';
 
 // Controls take the width their content needs (DESIGN_SYSTEM: content-appropriate control sizing),
 // so several fit on one row instead of every input spanning the whole panel.
+const FAVICON = /favicon|\.ico(?:[?#]|$)/i;
+
+type SpecItem =
+  | { kind: 'range'; range: RangeFields }
+  | { kind: 'compound'; key: string; fields: string[] }
+  | { kind: 'single'; field: string };
+
 const widthFor = (kind: string, span: number): string => {
   if (kind === 'bool') return 'w-auto';
-  if (kind === 'number') return 'w-28';
+  if (kind === 'number') return 'w-36';
   if (kind === 'colorHex') return 'w-44';
   if (kind === 'country') return 'w-40';
+  if (kind === 'materialType') return 'w-60';
   if (kind === 'textarea' || kind === 'colors') return 'w-full max-w-3xl';
   if (kind === 'social' || kind === 'shop') return span === 6 ? 'w-full max-w-3xl' : 'w-full xl:w-[calc(50%-0.5rem)]';
   if (kind === 'text') return span === 6 ? 'w-full max-w-xl' : 'w-72';
@@ -74,6 +84,8 @@ interface VariantEditorProps {
   facts: FactsApi | null;
   /** Preview errors of this record's market rows, shown beside the rows they concern. */
   marketErrors?: CatalogImportPlanRow[];
+  /** Server classification of material_type from a preview of the current draft. */
+  material?: MaterialClass;
   onEdit: (sheet: CatalogImportSheet, edits: CellEdit[]) => void;
   onAddRow: (sheet: CatalogImportSheet, row: ProposalRow) => void;
   onRemoveRow: (sheet: CatalogImportSheet, index: number) => void;
@@ -83,7 +95,7 @@ interface VariantEditorProps {
 }
 
 export function VariantEditor({
-  sheet, row, index, rowNumber, draft, disabled, readonly, coverageLine, evidence, facts, marketErrors = [], onEdit, onAddRow, onRemoveRow, onClose, standalone = false,
+  sheet, row, index, rowNumber, draft, disabled, readonly, coverageLine, evidence, facts, marketErrors = [], material, onEdit, onAddRow, onRemoveRow, onClose, standalone = false,
 }: VariantEditorProps) {
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -131,15 +143,18 @@ export function VariantEditor({
     return <div key={field} className={`${widthFor(spec.kind, spec.span)} min-w-0 max-w-full`}>
       {spec.kind === 'bool'
         ? <div className="flex h-9 items-center gap-1.5">
-          <label className="inline-flex min-w-0 items-center gap-2 text-sm text-gray-200">{control}<span className="truncate">{name}</span></label>
+          <label className="inline-flex min-w-0 items-center gap-2 text-sm text-gray-200">{control}<span className="break-words">{name}</span></label>
           {provenance(targetSheet, targetRow, field)}
         </div>
         : <>
-          <div className="mb-1 flex items-center gap-1 text-xs text-gray-400">
-            <span className="truncate">{name}</span>
+          <div className="mb-1 flex items-start gap-1 text-xs leading-4 text-gray-400">
+            <span className="min-w-0 break-words">{name}</span>
             {provenance(targetSheet, targetRow, field)}
           </div>
           {control}
+          {field === 'material_type' && targetSheet === 'filaments' && material && <p className="mt-1 text-xs">
+            <MaterialClassification value={material} />
+          </p>}
         </>}
     </div>;
   };
@@ -157,10 +172,85 @@ export function VariantEditor({
       </section>;
   };
 
+  const numberInput = (targetSheet: CatalogImportSheet, targetRow: ProposalRow, targetIndex: number, field: string, missing = false) =>
+    <span className="inline-flex items-center gap-1">
+      <span className={`w-20 rounded-lg ${missing ? 'ring-1 ring-amber-400/70' : ''}`}>
+        <ProposalFieldControl sheet={targetSheet} field={field} value={targetRow[field]} disabled={disabled || readonly}
+          label={`${label(field)} ${rowNumber}`} onChange={(value) => editField(targetSheet, targetIndex, field, value)} />
+      </span>
+      {provenance(targetSheet, targetRow, field)}
+    </span>;
+
+  const specRow = (key: string, name: string, content: ReactNode) =>
+    <div key={key} className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+      <span className="break-words text-xs leading-4 text-gray-400 sm:w-32 sm:shrink-0">{name}</span>
+      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">{content}</span>
+    </div>;
+
+  const renderSpec = (item: SpecItem, targetSheet: CatalogImportSheet, targetRow: ProposalRow, targetIndex: number) => {
+    if (item.kind === 'single') {
+      return specRow(item.field, label(item.field), numberInput(targetSheet, targetRow, targetIndex, item.field));
+    }
+    if (item.kind === 'compound') {
+      return specRow(item.key, t(`adminCatalogImport.curation.compoundNames.${item.key}`), item.fields.map((field, position) => {
+        const unit = unitOf(field);
+        return <span key={field} className="inline-flex items-center gap-1.5">
+          {position > 0 && <span className="text-gray-600">·</span>}
+          {numberInput(targetSheet, targetRow, targetIndex, field)}
+          {unit && <span className="text-xs text-gray-400">{t(`adminCatalogImport.curation.units.${unit}`)}</span>}
+        </span>;
+      }));
+    }
+    const { base, min, max } = item.range;
+    const filled = (field: string) => cellText(targetRow[field]).trim() !== '';
+    const missing = filled(min) === filled(max) ? null : filled(min) ? max : min;
+    return specRow(base, t(`adminCatalogImport.curation.rangeNames.${base}`, { defaultValue: base.replaceAll('_', ' ') }), <>
+      {numberInput(targetSheet, targetRow, targetIndex, min, missing === min)}
+      <span className="text-gray-300">–</span>
+      {numberInput(targetSheet, targetRow, targetIndex, max, missing === max)}
+      {missing && <span className="text-xs text-amber-300">
+        {t(missing === min ? 'adminCatalogImport.curation.rangeMissingMin' : 'adminCatalogImport.curation.rangeMissingMax')}
+      </span>}
+    </>);
+  };
+
+  /**
+   * Numbers read as a "label — value" table, with both ends of a range on one line so a missing end shows;
+   * everything else keeps its stacked label and its own width.
+   */
   const grid = (fields: string[], targetSheet = sheet, targetRow = row, targetIndex = index) => {
-    const present = fields.filter((field) => field in targetRow);
-    return present.length === 0 ? null
-      : <div className="flex flex-wrap items-start gap-x-4 gap-y-2.5">{present.map((field) => renderField(targetSheet, targetRow, targetIndex, field))}</div>;
+    const used = new Set<string>();
+    const specs: SpecItem[] = [];
+    const flow: string[] = [];
+    for (const field of fields) {
+      if (used.has(field)) continue;
+      const range = fieldSpec(targetSheet, field).kind === 'number' ? rangeFor(targetSheet, field, targetRow) : null;
+      if (range && (range.min in targetRow || range.max in targetRow)) {
+        used.add(range.min).add(range.max);
+        specs.push({ kind: 'range', range });
+        continue;
+      }
+      const compound = COMPOUND_FIELDS.find((item) => item.fields.includes(field));
+      if (compound && compound.fields.some((name) => name in targetRow)) {
+        compound.fields.forEach((name) => used.add(name));
+        specs.push({ kind: 'compound', key: compound.key, fields: compound.fields });
+        continue;
+      }
+      if (!(field in targetRow)) continue;
+      used.add(field);
+      if (fieldSpec(targetSheet, field).kind === 'number') specs.push({ kind: 'single', field });
+      else flow.push(field);
+    }
+    // A lone number gains nothing from a table and stays among the other fields.
+    const table = specs.some((item) => item.kind !== 'single') || specs.length > 1;
+    if (!table) flow.unshift(...specs.flatMap((item) => (item.kind === 'single' ? [item.field] : [])));
+    if (flow.length === 0 && !table) return null;
+    return <div className="space-y-3">
+      {table && <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,26rem),1fr))] gap-x-8 gap-y-1.5">
+        {specs.map((item) => renderSpec(item, targetSheet, targetRow, targetIndex))}
+      </div>}
+      {flow.length > 0 && <div className="flex flex-wrap items-start gap-x-4 gap-y-2.5">{flow.map((field) => renderField(targetSheet, targetRow, targetIndex, field))}</div>}
+    </div>;
   };
 
   const renderGroup = (group: FieldGroup) => {
@@ -292,11 +382,15 @@ export function VariantEditor({
           </button>}
         </div>
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-          {logoUrl && logoUrl !== failedLogo && <div className="flex h-9 w-24 shrink-0 items-center justify-center rounded-lg border border-white/10 p-1.5"
-            style={{ backgroundColor: cellText(row.logo_bg) || 'transparent' }}>
-            <img src={logoUrl} alt={cellText(row.name)} referrerPolicy="no-referrer"
-              className="max-h-full max-w-full object-contain" onError={() => setFailedLogo(logoUrl)} />
-          </div>}
+          {sheet === 'brands' && (logoUrl && logoUrl !== failedLogo
+            ? <div className="flex h-14 w-36 shrink-0 items-center justify-center rounded-lg border border-white/10 p-1.5"
+              style={{ backgroundColor: cellText(row.logo_bg) || 'transparent' }}>
+              <img src={logoUrl} alt={cellText(row.name)} referrerPolicy="no-referrer"
+                className="max-h-full max-w-full object-contain" onError={() => setFailedLogo(logoUrl)} />
+            </div>
+            : <div className="flex h-14 w-36 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/25 px-2 text-center text-xs text-gray-400">
+              {t(logoUrl ? 'adminCatalogImport.curation.logoBroken' : 'adminCatalogImport.curation.noLogo')}
+            </div>)}
           {'name' in row
             ? <div className="min-w-0 w-full max-w-md">
               <div className="mb-1 flex items-center gap-1 text-xs text-gray-400">
@@ -323,6 +417,7 @@ export function VariantEditor({
             {colors.map((color, colorIndex) => <span key={colorIndex} className="h-4 w-4 rounded-full border border-white/50" style={{ backgroundColor: color }} />)}
           </span>}
         </div>
+        {FAVICON.test(logoUrl) && <p className="mt-2 text-xs text-amber-300">{t('adminCatalogImport.curation.logoLooksLikeFavicon')}</p>}
         {coverageLine}
       </div>
 
