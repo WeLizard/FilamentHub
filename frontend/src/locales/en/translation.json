@@ -6154,6 +6154,8 @@
       "materialResolved": "Recognised as {{base}}, subtype {{subtype}}",
       "materialResolvedBase": "Recognised as {{base}}",
       "materialUnrecognised": "Type not recognised",
+      "collapseGroup": "Collapse group",
+      "expandGroup": "Expand group",
       "tempsSummary": "Nozzle / bed, °C",
       "rangeNames": {
         "recommended_nozzle_temp": "Nozzle, °C",

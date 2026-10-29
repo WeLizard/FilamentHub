@@ -6143,6 +6143,8 @@
       "materialResolved": "识别为 {{base}}，子类型 {{subtype}}",
       "materialResolvedBase": "识别为 {{base}}",
       "materialUnrecognised": "未识别的类型",
+      "collapseGroup": "折叠分组",
+      "expandGroup": "展开分组",
       "tempsSummary": "喷嘴 / 热床，°C",
       "rangeNames": {
         "recommended_nozzle_temp": "喷嘴，°C",
