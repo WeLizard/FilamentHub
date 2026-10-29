@@ -90,14 +90,14 @@ export function MaterialTypeSelect({
       />
       {open && (
         <div
-          className="scrollbar-contained absolute z-50 w-full mt-1 max-h-72 overflow-y-auto rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
+          className="scrollbar-contained absolute z-50 w-full mt-1 max-h-72 overflow-y-auto rounded-xl border border-white/20 bg-gray-800 shadow-xl"
           onClick={(e) => e.stopPropagation()}
         >
           {visible.length > 0 ? (
             visible.map((group) => (
               <div key={group.base ?? 'other'} role="group" aria-label={group.base === '' ? undefined : label_(group.base)}>
                 {group.base !== '' && (
-                  <div className="sticky top-0 z-[1] flex items-baseline justify-between gap-3 border-b border-white/5 bg-gray-800/95 px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
+                  <div className="sticky top-0 z-[1] flex items-baseline justify-between gap-3 border-b border-white/5 bg-gray-800 px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
                     <span>{label_(group.base)}</span>
                     {group.filament_count > 0 && (
                       <span className="normal-case tracking-normal text-gray-500">
