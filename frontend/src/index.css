@@ -97,10 +97,15 @@ body {
  * One scrollbar contract for the whole application.
  * Firefox uses the standard properties; Chromium/WebKit use the pseudo-elements.
  * A transparent track keeps scrollbars visually inside rounded surfaces.
+ * Chromium 121+ ignores the pseudo-elements once scrollbar-color/width are
+ * set, falling back to square native bars with arrow buttons, so the standard
+ * properties are limited to engines without ::-webkit-scrollbar.
  */
-* {
-  scrollbar-color: var(--fh-scrollbar-thumb) transparent;
-  scrollbar-width: auto;
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-color: var(--fh-scrollbar-thumb) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 ::-webkit-scrollbar {
