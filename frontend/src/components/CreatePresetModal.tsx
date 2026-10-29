@@ -2739,9 +2739,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   </div>
                   
                   {/* Тип материала и Производитель в одной строке */}
-                  <div className="flex items-start gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                     {/* Тип материала */}
-                    <div className="flex-1">
+                    <div className="min-w-0 sm:flex-1">
                       <MaterialTypeSelect
                         label={`${t('presetModal.materialType')} *`}
                         value={materialType}
@@ -2795,7 +2795,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
                     
                     {/* Поиск производителя */}
-                    <div className="relative flex-[2]" ref={brandDropdownRef}>
+                    <div className="relative min-w-0 sm:flex-[2]" ref={brandDropdownRef}>
                       <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.brand')} *</label>
                       {brandId && currentBrandData ? (
                         // Если передан brandId - показываем как read-only поле
@@ -2824,7 +2824,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               onFocus={() => setShowBrandDropdown(true)}
                               disabled={showBrandForm}
                               placeholder={t('presetModal.brandSearchPlaceholder')}
-                              className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:opacity-50"
+                              className="min-w-0 flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:opacity-50"
                             />
                             {!showBrandForm ? (
                               <>
