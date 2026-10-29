@@ -19,6 +19,14 @@ export const PROPERTY_CLAIM_CODES = [
   'magnetically_detectable',
 ] as const;
 
+// Stabilisers and process aids: manufacturers do not state their share, so the
+// editor offers no percentage for them. Fillers and reinforcements keep it.
+export const UNQUANTIFIED_ADDITIVE_CODES = new Set([
+  'uv_stabilizers_hals', 'impact_modifiers', 'compatibilizers', 'chain_extenders',
+  'nucleating_agents', 'antioxidants_heat_stabilizers', 'antimicrobial_additives',
+  'laser_marking_additives', 'active_foaming_agent',
+]);
+
 export const ABRASIVE_ADDITIVE_CODES = new Set([
   'carbon_fiber', 'glass_fiber', 'aramid_fiber', 'basalt_fiber', 'natural_fiber',
   'metal_powder', 'mineral', 'ceramic', 'glass_beads', 'carbon_nanotubes',

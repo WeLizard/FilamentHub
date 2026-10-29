@@ -5,6 +5,7 @@ import {
   ADDITIVE_CODES,
   DECORATIVE_VISUAL_EFFECT_CODES,
   PROPERTY_CLAIM_CODES,
+  UNQUANTIFIED_ADDITIVE_CODES,
   deriveVisualEffectsFromAdditives,
 } from '../data/filamentFeatures';
 import type { FilamentAdditive, FilamentPropertyClaim } from '../types/api';
@@ -39,6 +40,14 @@ export const FilamentFeaturesEditor: React.FC<FilamentFeaturesEditorProps> = ({
   const [customAdditive, setCustomAdditive] = useState('');
   const [customClaim, setCustomClaim] = useState('');
   const derivedEffects = useMemo(() => deriveVisualEffectsFromAdditives(additives), [additives]);
+  // A share already entered stays editable even for a stabiliser.
+  const takesShare = (item: FilamentAdditive) =>
+    !UNQUANTIFIED_ADDITIVE_CODES.has(item.code) || item.content_percent != null || item.content_basis != null;
+  const additiveLabel = (code: string) =>
+    t(`filamentFeatures.additives.${code}`, { defaultValue: code.replaceAll('_', ' ') });
+  const removeAdditive = (code: string) => onAdditivesChange(additives.filter(item => item.code !== code));
+  const sharedAdditives = additives.filter(takesShare);
+  const plainAdditives = additives.filter(item => !takesShare(item));
 
   const compositionOptions = useMemo(() => {
     const selectedCodes = additives.map(item => item.code);
@@ -158,19 +167,19 @@ export const FilamentFeaturesEditor: React.FC<FilamentFeaturesEditorProps> = ({
           codes => setSelectedAdditives(codes),
           () => setCustomAdditive(''),
         ))}
-        {additives.length > 0 && (
+        {sharedAdditives.length > 0 && (
           <div className="mt-2 space-y-2">
-            {additives.map((item, index) => (
+            {sharedAdditives.map(item => (
               <div
                 key={item.code}
                 className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-white/10 bg-black/15 px-2.5 py-1.5"
               >
                 <span className="col-span-2 col-start-1 row-start-1 min-w-0 break-words text-sm leading-snug text-gray-200">
-                  {t(`filamentFeatures.additives.${item.code}`, { defaultValue: item.code.replaceAll('_', ' ') })}
+                  {additiveLabel(item.code)}
                 </span>
                 <button
                   type="button"
-                  onClick={() => onAdditivesChange(additives.filter((_, itemIndex) => itemIndex !== index))}
+                  onClick={() => removeAdditive(item.code)}
                   className="col-start-3 row-start-1 justify-self-end p-1.5 text-gray-500 hover:text-red-300 transition-colors"
                   title={t('filamentFeatures.remove')}
                 >
@@ -183,21 +192,17 @@ export const FilamentFeaturesEditor: React.FC<FilamentFeaturesEditorProps> = ({
                     max={100}
                     step="any"
                     value={item.content_percent ?? ''}
-                    onChange={event => {
-                      const next = [...additives];
-                      next[index] = { ...item, content_percent: event.target.value === '' ? null : Number(event.target.value) };
-                      onAdditivesChange(next);
-                    }}
+                    onChange={event => onAdditivesChange(additives.map(other => other.code === item.code
+                      ? { ...item, content_percent: event.target.value === '' ? null : Number(event.target.value) }
+                      : other))}
                     placeholder={t('filamentFeatures.percent')}
                     className="min-w-0 w-full px-2 py-1.5 bg-white/10 border border-white/15 rounded-md text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
                   />
                   <select
                     value={item.content_basis ?? ''}
-                    onChange={event => {
-                      const next = [...additives];
-                      next[index] = { ...item, content_basis: (event.target.value || null) as FilamentAdditive['content_basis'] };
-                      onAdditivesChange(next);
-                    }}
+                    onChange={event => onAdditivesChange(additives.map(other => other.code === item.code
+                      ? { ...item, content_basis: (event.target.value || null) as FilamentAdditive['content_basis'] }
+                      : other))}
                     className="min-w-0 w-full px-2 py-1.5 bg-gray-800 border border-white/15 rounded-md text-sm text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
                     aria-label={t('filamentFeatures.contentBasis')}
                   >
@@ -207,6 +212,27 @@ export const FilamentFeaturesEditor: React.FC<FilamentFeaturesEditorProps> = ({
                   </select>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+        {plainAdditives.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {plainAdditives.map(item => (
+              <span
+                key={item.code}
+                className="inline-flex max-w-full items-start gap-1 rounded-lg border border-white/10 bg-black/15 py-1 pl-2.5 pr-1 text-sm leading-snug text-gray-200"
+              >
+                <span className="min-w-0 break-words">{additiveLabel(item.code)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAdditive(item.code)}
+                  className="shrink-0 rounded-full p-0.5 text-gray-500 transition-colors hover:text-red-300"
+                  title={t('filamentFeatures.remove')}
+                  aria-label={`${t('filamentFeatures.remove')}: ${additiveLabel(item.code)}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
             ))}
           </div>
         )}
