@@ -173,7 +173,7 @@ def test_rejected_workstation_key_keeps_the_page_token(env, tmp_path):
     runtime.poll_once()
     assert env.requests[0][1] == "fhw_abcdefgh12345678"
     assert env.plugin.load_saved_auth()["accessToken"] == "page-token"
-    assert (tmp_path / "key.json").exists()
+    assert not (tmp_path / "key.json").exists()
 
     env.serve([], 3)
     runtime.poll_once()

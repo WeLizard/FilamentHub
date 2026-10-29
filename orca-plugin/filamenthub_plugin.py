@@ -1362,6 +1362,7 @@ DIAGNOSTIC_REPORT_MAX_BYTES = 64 * 1024
 _DIAGNOSTIC_SECRET_PATTERNS = (
     (re.compile(r"(?i)\bbearer\s+\S+"), "Bearer [redacted]"),
     (re.compile(r"\bfhpb_[A-Za-z0-9_-]+"), "fhpb_[redacted]"),
+    (re.compile(r"\bfhw_[A-Za-z0-9_-]+"), "fhw_[redacted]"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"), "[redacted]"),
     (
         re.compile(
@@ -10537,6 +10538,49 @@ def load_workstation_key():
     return None
 
 
+def load_workstation_key_id():
+    """Server-side id of the stored workstation key, or None."""
+    try:
+        with open(WORKSTATION_KEY_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    key_id = data.get("id") if isinstance(data, dict) else None
+    return key_id if type(key_id) is int and key_id > 0 else None
+
+
+def save_workstation_key(key, key_id):
+    """Keep the long-lived report-only key the page just minted for this machine."""
+    if not isinstance(key, str) or not _STOCK_ALERT_KEY.fullmatch(key):
+        return False
+    if type(key_id) is not int or key_id <= 0:
+        return False
+    try:
+        write_json_atomic(WORKSTATION_KEY_FILE, {"key": key, "id": key_id}, mode=0o600)
+        return True
+    except OSError:
+        return False
+
+
+def clear_workstation_key(expected_key=None):
+    """Forget the stored key; with expected_key, only if it is still that key."""
+    if expected_key is not None:
+        current = load_workstation_key()
+        if current is None or not secrets.compare_digest(current, expected_key):
+            return
+    with side_effect_transaction():
+        try:
+            os.remove(WORKSTATION_KEY_FILE)
+        except OSError:
+            pass
+
+
+def workstation_key_name():
+    """Label the user sees in the key list, so a lost machine can be told apart."""
+    name = "".join(ch for ch in platform.node() if ch.isprintable()).strip()
+    return ("OrcaSlicer on " + name)[:100] if name else "OrcaSlicer"
+
+
 def _native_notifications_available():
     ui = getattr(getattr(orca, "host", None), "ui", None)
     level = getattr(getattr(ui, "NotificationLevel", None), "WarningNotificationLevel", None)
@@ -10751,6 +10795,10 @@ class StockAlertRuntime:
             self._rejected[kind] = secret
             if kind == "page":
                 clear_auth_if_current(secret)
+            else:
+                # Revoked on the site: forget it so the page issues a new one
+                # the next time it hands the plugin a session.
+                clear_workstation_key(secret)
             fh_log("stock alerts: %s credential rejected" % kind)
             return STOCK_ALERT_IDLE_RECHECK_SECONDS
         if status != 200:
@@ -11808,6 +11856,21 @@ class FilamentHubCatalog(
         payload = {"source": "filamenthub-host", "type": message_type}
         payload.update(data)
         return post_window(self.win, payload)
+
+    def _announce_workstation_key(self):
+        """Tell the page whether this machine already holds a background key.
+
+        The page owns the site session: it issues a key when none is stored and
+        revokes the stored one when the user signs out.
+        """
+        try:
+            self._deliver(
+                "workstation-key-state",
+                keyId=load_workstation_key_id() if load_workstation_key() else None,
+                name=workstation_key_name(),
+            )
+        except Exception as exc:
+            fh_log("workstation key state not delivered: %s" % type(exc).__name__)
 
     def _deliver_local(self, message_type, **data):
         payload = {"source": "filamenthub-host", "type": message_type}
@@ -13853,6 +13916,7 @@ class FilamentHubCatalog(
             access = msg.get("accessToken") or ""
             if isinstance(access, str) and 0 < len(access) <= MAX_TOKEN_LENGTH:
                 save_auth(access)
+                self._announce_workstation_key()
                 wake_bambu_bridge_runtime()
                 if plugin_setting("auto_sync") and not getattr(
                     self, "_session_sync_started", False
@@ -13878,8 +13942,13 @@ class FilamentHubCatalog(
             )
         elif msg_type == "open-external":
             self._open_site_path(msg.get("path"))
+        elif msg_type == "workstation-key":
+            key_id = msg.get("keyId")
+            if not save_workstation_key(msg.get("key"), key_id):
+                fh_log("workstation key from the page was malformed")
         elif msg_type == "auth-logout":
             clear_auth()
+            clear_workstation_key()
             self._session_sync_started = False
         elif msg_type == "recover":
             token = (load_saved_auth() or {}).get("accessToken") or ""

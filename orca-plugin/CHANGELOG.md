@@ -5,6 +5,7 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## 0.2.7
 - QIDI printers with a QIDI Box: the plugin now reads which slots hold filament, and their material and colour, straight from the printer over your network and shows them in the printer's material system. Nothing is sent to the printer. It needs no extra setup beyond the printer connection you already use; usage is still counted by the printer's own Spoolman connection.
 - When a spool or a material on your shelf runs low, OrcaSlicer now shows a notification with the amount left. Each alert appears once, and clicking it opens your Spools on the site. It needs OrcaSlicer 2.5 or later and a signed-in FilamentHub tab.
+- Low-stock notifications keep arriving after the 30-minute sign-in of the FilamentHub tab has expired. The tab now issues a separate key for this computer, which can only report and read alerts, never edit your presets. Signing out of the tab revokes it, and if you revoke it on the site the plugin falls back to the tab's sign-in and gets a new key the next time you open the tab.
 - A Bambu printer that is switched off is no longer mistaken for OrcaSlicer being closed: FilamentHub keeps showing that the plugin is running and that the printer is not answering.
 
 ## 0.2.6
