@@ -98,17 +98,8 @@ class QidiBoxTest(unittest.TestCase):
 
     def test_dictionary_parser_ignores_comments_and_other_sections(self) -> None:
         colors, filaments = qidi_box.parse_dictionary(
-            "[other]
-1=x
-# c
-[colordict]
-3 = #112233
-"
-            "[fila0]
-filament=X
-[fila2]
-filament = ABS
-"
+            "[other]\n1=x\n# c\n[colordict]\n3 = #112233\n"
+            "[fila0]\nfilament=X\n[fila2]\nfilament = ABS\n"
         )
         self.assertEqual((colors, filaments), ({3: "#112233"}, {2: "ABS"}))
 
