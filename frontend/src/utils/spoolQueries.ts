@@ -1,4 +1,4 @@
-import type { SpoolFeedParams, SpoolFeedResponse, UserSpool } from '../api/client';
+import type { SpoolFeedParams, SpoolFeedResponse, SpoolGroupsParams, UserSpool } from '../api/client';
 
 export const spoolQueryKeys = {
   root: ['user-spools'] as const,
@@ -7,6 +7,10 @@ export const spoolQueryKeys = {
     [...spoolQueryKeys.root, 'feed', userId, params] as const,
   detail: (userId: number | null | undefined, spoolId: number) =>
     [...spoolQueryKeys.root, 'detail', userId, spoolId] as const,
+  groups: (userId: number | null | undefined, params: Omit<SpoolGroupsParams, 'cursor'>) =>
+    [...spoolQueryKeys.root, 'groups', userId, params] as const,
+  collections: (userId: number | null | undefined) =>
+    [...spoolQueryKeys.root, 'collections', userId] as const,
 };
 
 export function mergeSpoolFeedPages(pages: SpoolFeedResponse[] | undefined): UserSpool[] {

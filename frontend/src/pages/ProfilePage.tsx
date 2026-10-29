@@ -42,7 +42,7 @@ import {
   BriefcaseBusiness,
   FileText,
   Upload,
-  UsersRound, History } from 'lucide-react';
+  UsersRound, History, FolderPlus, Layers } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -58,6 +58,7 @@ import type {
   MaterialSlot,
   QrScanResponse,
   SpoolUpdatePayload,
+  SpoolCollection,
 } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
@@ -120,6 +121,9 @@ import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import { SpoolLabelButton } from '../components/SpoolLabelButton';
 import { SpoolTagsButton } from '../components/SpoolTagsButton';
+import { SpoolFolderBar, spoolFolderParams, useSpoolFolderFilter } from '../components/SpoolFolderBar';
+import { SpoolFolderChips, SpoolFolderPicker } from '../components/SpoolFolderPicker';
+import { SpoolGroupList } from '../components/SpoolGroupList';
 import type {
   AchievementCode,
   AchievementOverview,
@@ -143,6 +147,7 @@ type PresetFilter = (typeof PRESET_FILTERS)[number];
 
 const SPOOL_TABS = ['active', 'shelf', 'archived'] as const;
 type SpoolTab = (typeof SPOOL_TABS)[number];
+const SPOOL_GROUP_MODES = ['flat', 'material'] as const;
 
 const PROFILE_TABS = [
   'dashboard',
@@ -2069,6 +2074,8 @@ interface SpoolCardProps {
   onResolveImport?: (draftId: number) => void;
   onResolveCompatImport?: (importId: number) => void;
   viewMode?: ViewMode;
+  folders?: SpoolCollection[];
+  onOpenFolders?: () => void;
 }
 
 export const SpoolCard: React.FC<SpoolCardProps> = ({
@@ -2081,6 +2088,8 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
   onResolveImport,
   onResolveCompatImport,
   viewMode = 'grid',
+  folders = [],
+  onOpenFolders,
 }) => {
   const { t } = useTranslation();
   const { currency: userCurrency } = useUserCurrency();
@@ -2130,6 +2139,7 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
                 <span>#{currentLocation.gate}</span>
               </span>
             )}
+            <SpoolFolderChips folders={folders} onClick={onOpenFolders} max={2} className="hidden flex-nowrap sm:flex" />
           </div>
           <p className="truncate text-xs text-gray-400">
             {spool.filament
@@ -2171,6 +2181,18 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
               className="rounded-lg p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-white"
             >
               <History className="h-4 w-4" />
+            </button>
+          )}
+          {onOpenFolders && (
+            <button
+              type="button"
+              onClick={onOpenFolders}
+              disabled={isBusy}
+              title={t('profilePage.spoolShelf.putInFolder')}
+              aria-label={t('profilePage.spoolShelf.putInFolder')}
+              className="rounded-lg p-1.5 text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+            >
+              <FolderPlus className="h-4 w-4" />
             </button>
           )}
           <button
@@ -2238,9 +2260,23 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
           <p className="text-white font-semibold text-sm leading-tight truncate">
             {displayName}
           </p>
-          <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
-            {t(stateKey)}
-          </span>
+          <div className="flex flex-shrink-0 items-center gap-1">
+            {onOpenFolders && (
+              <button
+                type="button"
+                onClick={onOpenFolders}
+                disabled={isBusy}
+                title={t('profilePage.spoolShelf.putInFolder')}
+                aria-label={t('profilePage.spoolShelf.putInFolder')}
+                className="rounded p-0.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+              >
+                <FolderPlus className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
+              {t(stateKey)}
+            </span>
+          </div>
         </div>
 
         {/* Brand · material */}
@@ -2256,6 +2292,7 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
         {!spool.filament && importedDetails && (
           <p className="text-gray-400 text-xs truncate">{importedDetails}</p>
         )}
+        <SpoolFolderChips folders={folders} onClick={onOpenFolders} />
 
         {/* Weight stats */}
         <div className="flex items-center gap-3 text-xs mt-0.5">
@@ -3539,7 +3576,7 @@ interface SpoolsTabProps {
   onResolveCompatImport: (importId: number) => void;
 }
 
-const SpoolsTab: React.FC<SpoolsTabProps> = ({
+export const SpoolsTab: React.FC<SpoolsTabProps> = ({
   spools,
   printerProfiles,
   onRefetch,
@@ -3582,6 +3619,27 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     'collapsed',
   );
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
+  const [spoolGroupMode, setSpoolGroupMode] = useStoredUiChoice(
+    pluginEmbedded ? 'plugin.spoolsGroupMode' : 'profile.spoolsGroupMode',
+    user?.id,
+    SPOOL_GROUP_MODES,
+    'flat',
+  );
+  const groupedByMaterial = spoolGroupMode === 'material';
+  const collectionsQuery = useQuery({
+    queryKey: spoolQueryKeys.collections(user?.id),
+    queryFn: ({ signal }) => spoolsAPI.listCollections(signal),
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  });
+  const collections = useMemo(() => collectionsQuery.data ?? [], [collectionsQuery.data]);
+  const [folderFilter, setFolderFilter] = useSpoolFolderFilter(
+    pluginEmbedded ? 'plugin.spoolsFolder' : 'profile.spoolsFolder',
+    user?.id,
+    collectionsQuery.data,
+  );
+  const folderFiltered = folderFilter !== 'all';
+  const [folderPickerSpool, setFolderPickerSpool] = useState<UserSpool | null>(null);
 
   const openSpoolForEdit = async (spoolId: number) => {
     try {
@@ -3601,11 +3659,13 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSpoolId]);
 
-  const feedParams = useMemo(() => (
-    spoolTab === 'archived'
-      ? { limit: 24, state_group: 'archived' as const }
-      : { limit: 24, state: spoolTab }
-  ), [spoolTab]);
+  const stateFilters = useMemo(() => ({
+    ...(spoolTab === 'archived'
+      ? { state_group: 'archived' as const }
+      : { state: spoolTab }),
+    ...spoolFolderParams(folderFilter),
+  }), [spoolTab, folderFilter]);
+  const feedParams = useMemo(() => ({ limit: 24, ...stateFilters }), [stateFilters]);
   const feedQuery = useInfiniteQuery({
     queryKey: spoolQueryKeys.feed(user?.id, feedParams),
     queryFn: ({ pageParam, signal }) => spoolsAPI.feed(
@@ -3669,6 +3729,43 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
     active: feedSummary?.state_counts.active ?? 0,
     archived: (feedSummary?.state_counts.archived ?? 0) + (feedSummary?.state_counts.empty ?? 0),
   };
+
+  const renderSpoolCard = (spool: UserSpool) => (
+    <SpoolCard
+      key={spool.id}
+      viewMode={spoolsViewMode}
+      spool={spool}
+      isBusy={busySpoolId === spool.id}
+      onEdit={() => {
+        setIsAddOpen(false);
+        setUsingSpool(null);
+        setEditingSpool(spool);
+      }}
+      onUse={() => {
+        setIsAddOpen(false);
+        setEditingSpool(null);
+        setUsingSpool(spool);
+      }}
+      onDelete={() => handleDelete(spool.id)}
+      onStateChange={(state) => handleStateChange(spool.id, state)}
+      onResolveImport={onResolveImport}
+      onResolveCompatImport={onResolveCompatImport}
+      folders={collections.filter((folder) => spool.collection_ids?.includes(folder.id))}
+      onOpenFolders={() => setFolderPickerSpool(spool)}
+    />
+  );
+  const spoolList = groupedByMaterial ? (
+    <SpoolGroupList
+      userId={user?.id}
+      filters={stateFilters}
+      viewMode={spoolsViewMode}
+      renderSpool={renderSpoolCard}
+    />
+  ) : (
+    <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
+      {filteredSpools.map(renderSpoolCard)}
+    </div>
+  );
 
   const spoolTabs: Array<{ key: 'shelf' | 'active' | 'archived'; label: string; count: number }> = [
     { key: 'active', label: t('profilePage.spoolTabs.active'), count: spoolTabCounts.active },
@@ -3816,7 +3913,11 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        {(collections.length > 0 || folderFiltered || (feedSummary?.total ?? 0) > 0) && (
+          <SpoolFolderBar collections={collections} selected={folderFilter} onSelect={setFolderFilter} />
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
           {spoolTabs.map((tab) => (
             <button
               key={tab.key}
@@ -3835,6 +3936,21 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
               </span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setSpoolGroupMode(groupedByMaterial ? 'flat' : 'material')}
+            aria-pressed={groupedByMaterial}
+            title={t('profilePage.spoolShelf.groupToggleTitle')}
+            className={[
+              'ml-auto inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+              groupedByMaterial
+                ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+            ].join(' ')}
+          >
+            <Layers className="h-4 w-4" />
+            <span>{t('profilePage.spoolShelf.groupToggle')}</span>
+          </button>
         </div>
 
         {feedQuery.isPending ? (
@@ -3871,7 +3987,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             <div className="space-y-3">
               <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
               {filteredSpools.length === 0 ? (
-                (feedSummary?.total ?? 0) === 0 && showNewcomerGuide ? (
+                (feedSummary?.total ?? 0) === 0 && showNewcomerGuide && !folderFiltered ? (
                   <GuidedEmptyState
                     icon={<Package className="h-5 w-5" />}
                     eyebrow={t('profilePage.newcomer.spools.eyebrow')}
@@ -3889,32 +4005,11 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                   </div>
                 )
               ) : (
-                <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
-                  {filteredSpools.map((spool) => (
-                    <SpoolCard
-                      key={spool.id}
-                      viewMode={spoolsViewMode}
-                      spool={spool}
-                      isBusy={busySpoolId === spool.id}
-                      onEdit={() => {
-                        setIsAddOpen(false);
-                        setUsingSpool(null);
-                        setEditingSpool(spool);
-                      }}
-                      onUse={() => {
-                        setIsAddOpen(false);
-                        setEditingSpool(null);
-                        setUsingSpool(spool);
-                      }}
-                      onDelete={() => handleDelete(spool.id)}
-                      onStateChange={(state) => handleStateChange(spool.id, state)}
-                    />
-                  ))}
-                </div>
+                spoolList
               )}
             </div>
           </div>
-        ) : (feedSummary?.total ?? 0) === 0 ? (
+        ) : (feedSummary?.total ?? 0) === 0 && !folderFiltered ? (
           showNewcomerGuide ? (
             <GuidedEmptyState
               icon={<Package className="h-5 w-5" />}
@@ -3940,32 +4035,9 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             </p>
           </div>
         ) : (
-          <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
-            {filteredSpools.map(spool => (
-              <SpoolCard
-                key={spool.id}
-                viewMode={spoolsViewMode}
-                spool={spool}
-                isBusy={busySpoolId === spool.id}
-                onEdit={() => {
-                  setIsAddOpen(false);
-                  setUsingSpool(null);
-                  setEditingSpool(spool);
-                }}
-                onUse={() => {
-                  setIsAddOpen(false);
-                  setEditingSpool(null);
-                  setUsingSpool(spool);
-                }}
-                onDelete={() => handleDelete(spool.id)}
-                onStateChange={(state) => handleStateChange(spool.id, state)}
-                onResolveImport={onResolveImport}
-                onResolveCompatImport={onResolveCompatImport}
-              />
-            ))}
-          </div>
+          spoolList
         )}
-        {feedQuery.hasNextPage && !(feedQuery.isError && !feedQuery.isFetchNextPageError) && (
+        {!groupedByMaterial && feedQuery.hasNextPage && !(feedQuery.isError && !feedQuery.isFetchNextPageError) && (
           <div>
             <button
               type="button"
@@ -3994,6 +4066,14 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
         }}
         message={t('profilePage.spoolActions.deleteConfirm')}
       />
+      {folderPickerSpool && (
+        <SpoolFolderPicker
+          spool={folderPickerSpool}
+          collections={collections}
+          userId={user?.id}
+          onClose={() => setFolderPickerSpool(null)}
+        />
+      )}
     </div>
   );
 };

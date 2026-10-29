@@ -3458,6 +3458,28 @@
       "empty": "Пуста"
     },
     "spoolNoFilament": "Без привязки к каталогу",
+    "spoolShelf": {
+      "groupToggle": "По материалам",
+      "groupToggleTitle": "Сгруппировать катушки по материалу",
+      "spoolCount_one": "{{count}} катушка",
+      "spoolCount_few": "{{count}} катушки",
+      "spoolCount_many": "{{count}} катушек",
+      "spoolCount_other": "{{count}} катушки",
+      "gramsLeft": "осталось {{weight}}",
+      "unknownMass": "вес неизвестен: {{count}}",
+      "folders": "Папки",
+      "allSpools": "Все",
+      "noFolder": "Без папки",
+      "newFolder": "Новая папка",
+      "folderNamePlaceholder": "Название папки",
+      "renameFolder": "Переименовать папку",
+      "deleteFolder": "Удалить папку",
+      "deleteFolderMessage": "Удалить папку «{{name}}»? Катушки из неё останутся на месте.",
+      "putInFolder": "Разложить по папкам",
+      "pickerTitle": "Папки",
+      "pickerEmpty": "Папок пока нет. Создайте первую ниже.",
+      "create": "Создать"
+    },
     "spoolCurrentLocation": "Сейчас: {{printer}} · гейт {{gate}}",
     "spoolLastLocation": "Был в: {{printer}} · гейт {{gate}}",
     "spoolGateStep": {

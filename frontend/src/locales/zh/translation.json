@@ -3932,6 +3932,25 @@
       "empty": "空的"
     },
     "spoolNoFilament": "无目录链接",
+    "spoolShelf": {
+      "groupToggle": "按材料",
+      "groupToggleTitle": "按材料分组显示线盘",
+      "spoolCount_other": "{{count}} 卷",
+      "gramsLeft": "剩余 {{weight}}",
+      "unknownMass": "重量未知：{{count}}",
+      "folders": "文件夹",
+      "allSpools": "全部",
+      "noFolder": "未分类",
+      "newFolder": "新建文件夹",
+      "folderNamePlaceholder": "文件夹名称",
+      "renameFolder": "重命名文件夹",
+      "deleteFolder": "删除文件夹",
+      "deleteFolderMessage": "删除文件夹“{{name}}”？其中的线盘不会被删除。",
+      "putInFolder": "放入文件夹",
+      "pickerTitle": "文件夹",
+      "pickerEmpty": "还没有文件夹，请在下方新建。",
+      "create": "创建"
+    },
     "spoolCurrentLocation": "当前位置：{{printer}} · 通道 {{gate}}",
     "spoolLastLocation": "上次位置：{{printer}} · 通道 {{gate}}",
     "spoolGateStep": {

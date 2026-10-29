@@ -3940,6 +3940,26 @@
       "empty": "Empty"
     },
     "spoolNoFilament": "No catalog link",
+    "spoolShelf": {
+      "groupToggle": "By material",
+      "groupToggleTitle": "Group spools by material",
+      "spoolCount_one": "{{count}} spool",
+      "spoolCount_other": "{{count}} spools",
+      "gramsLeft": "{{weight}} left",
+      "unknownMass": "weight unknown: {{count}}",
+      "folders": "Folders",
+      "allSpools": "All",
+      "noFolder": "No folder",
+      "newFolder": "New folder",
+      "folderNamePlaceholder": "Folder name",
+      "renameFolder": "Rename folder",
+      "deleteFolder": "Delete folder",
+      "deleteFolderMessage": "Delete the folder “{{name}}”? Its spools will stay where they are.",
+      "putInFolder": "Add to folder",
+      "pickerTitle": "Folders",
+      "pickerEmpty": "No folders yet. Create the first one below.",
+      "create": "Create"
+    },
     "spoolCurrentLocation": "Now in: {{printer}} · gate {{gate}}",
     "spoolLastLocation": "Last seen in: {{printer}} · gate {{gate}}",
     "spoolGateStep": {

@@ -4012,6 +4012,7 @@ export interface UserSpool {
   updated_at: string;
   last_used_at: string | null;
   extra: Record<string, string> | null;
+  collection_ids?: number[];
 }
 
 export interface SpoolCompatImportMaterial {
@@ -4069,6 +4070,44 @@ export interface SpoolFeedParams {
   state?: SpoolState;
   state_group?: SpoolStateGroup;
   filament_id?: number;
+  group_key?: string;
+  collection_id?: number;
+  no_collection?: boolean;
+}
+
+export interface SpoolGroupsParams {
+  limit?: number;
+  cursor?: string;
+  state?: SpoolState;
+  state_group?: SpoolStateGroup;
+  collection_id?: number;
+  no_collection?: boolean;
+}
+
+export interface SpoolGroup {
+  key: string;
+  spool_count: number;
+  state_counts: Record<SpoolState, number>;
+  available_remaining_weight_g: number;
+  unknown_mass_count: number;
+  latest_spool: UserSpool;
+}
+
+export interface SpoolGroupsResponse {
+  items: SpoolGroup[];
+  next_cursor: string | null;
+  summary: {
+    total: number;
+    group_count: number;
+    available_remaining_weight_g: number;
+    unknown_mass_count: number;
+  };
+}
+
+export interface SpoolCollection {
+  id: number;
+  name: string;
+  spool_count: number;
 }
 
 export interface SpoolFeedSummary {
@@ -4376,6 +4415,41 @@ export const spoolsAPI = {
 
   feed: async (params: SpoolFeedParams, signal?: AbortSignal): Promise<SpoolFeedResponse> => {
     const response = await api.get<SpoolFeedResponse>('/spools/feed', { params, signal });
+    return response.data;
+  },
+
+  groups: async (params: SpoolGroupsParams, signal?: AbortSignal): Promise<SpoolGroupsResponse> => {
+    const response = await api.get<SpoolGroupsResponse>('/spools/groups', { params, signal });
+    return response.data;
+  },
+
+  listCollections: async (signal?: AbortSignal): Promise<SpoolCollection[]> => {
+    const response = await api.get<SpoolCollection[]>('/spools/collections', { signal });
+    return response.data;
+  },
+
+  createCollection: async (name: string): Promise<SpoolCollection> => {
+    const response = await api.post<SpoolCollection>('/spools/collections', { name });
+    return response.data;
+  },
+
+  renameCollection: async (id: number, name: string): Promise<SpoolCollection> => {
+    const response = await api.patch<SpoolCollection>(`/spools/collections/${id}`, { name });
+    return response.data;
+  },
+
+  deleteCollection: async (id: number): Promise<void> => {
+    await api.delete(`/spools/collections/${id}`);
+  },
+
+  updateCollectionMembers: async (
+    id: number,
+    changes: { add?: number[]; remove?: number[] },
+  ): Promise<SpoolCollection> => {
+    const response = await api.post<SpoolCollection>(`/spools/collections/${id}/members`, {
+      add: changes.add ?? [],
+      remove: changes.remove ?? [],
+    });
     return response.data;
   },
 
