@@ -1407,6 +1407,7 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
         "presets:read",
         "presets:write",
         "printer-bundles:read",
+        "stock-alerts:read",
         "sync:report",
     }
     plugin_headers = {"Authorization": f"Bearer {plugin_token}"}

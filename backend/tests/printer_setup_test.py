@@ -122,12 +122,21 @@ async def test_manual_topology_preserves_external_spool_and_rejects_stale_or_occ
                  "expected_spool_id": slot["assignment"]["spool_id"] if slot["assignment"] else None}
                 for slot in current["slots"]]
     ordinary = [{"provider_index": i, "kind": "gate"} for i in range(8)]
-    refused = await auth_client.patch(path, json={"slots": ordinary, "expected_slots": expected})
-    assert refused.status_code == 409 and "ERR_MATERIAL_SLOT_IN_USE" in refused.text
+    # Leaving an occupied holder out of a save hides it; nothing is unassigned and
+    # it stays displayed while it holds the spool.
+    hidden = await auth_client.patch(path, json={"slots": ordinary, "expected_slots": expected})
+    assert hidden.status_code == 200, hidden.text
+    held = next(slot for slot in hidden.json()["material_systems"][0]["slots"]
+                if slot["id"] == bypass["id"])
+    assert held["user_visibility"] == "hidden" and held["displayed"] is True
+    assert held["assignment"]["spool_id"] == spool.id
     stale = [{**item, "expected_revision": item["expected_revision"] + 1} for item in expected]
     refused = await auth_client.patch(path, json={"slots": routes, "expected_slots": stale})
     assert refused.status_code == 409 and "ERR_MATERIAL_ASSIGNMENT_CONFLICT" in refused.text
-    # Explicitly reducing only the empty ordinary gates leaves the bypass in place.
+    # Explicitly reducing only the empty ordinary gates shows the bypass again.
+    expected = [{"material_slot_id": slot["id"], "expected_revision": slot["assignment_revision"],
+                 "expected_spool_id": slot["assignment"]["spool_id"] if slot["assignment"] else None}
+                for slot in hidden.json()["material_systems"][0]["slots"]]
     payload = {"slots": routes, "expected_slots": expected, "kind": "mmu"}
     changed = await auth_client.patch(path, json=payload)
     assert changed.status_code == 200, changed.text
