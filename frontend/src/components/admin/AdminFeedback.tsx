@@ -131,6 +131,7 @@ export function AdminFeedback() {
   const [selectedFeedback, setSelectedFeedback] = useState<Feedback | null>(null);
   const [adminResponse, setAdminResponse] = useState('');
   const [replyImages, setReplyImages] = useState<File[]>([]);
+  const [replyImageError, setReplyImageError] = useState<string | null>(null);
   const [replyIdempotencyKey, setReplyIdempotencyKey] = useState(createIdempotencyKey);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -247,6 +248,7 @@ export function AdminFeedback() {
       setSelectedFeedback(updatedFeedback);
       setAdminResponse('');
       setReplyImages([]);
+      setReplyImageError(null);
       setIsEmojiPickerOpen(false);
       setReplyIdempotencyKey(createIdempotencyKey());
     },
@@ -299,7 +301,7 @@ export function AdminFeedback() {
     noClick: true,
     noKeyboard: true,
     onDropAccepted: addReplyImages,
-    onDropRejected: () => toast.warning(t('adminFeedback.imageRejected')),
+    onDropRejected: () => setReplyImageError(t('adminFeedback.imageRejected')),
   });
 
   const openFeedback = (feedback: Feedback) => {
@@ -307,6 +309,7 @@ export function AdminFeedback() {
     setSelectedFeedback(feedback);
     setAdminResponse('');
     setReplyImages([]);
+    setReplyImageError(null);
     setReplyIdempotencyKey(createIdempotencyKey());
     setIsEmojiPickerOpen(false);
     setIsPluginLogOpen(false);
@@ -316,6 +319,7 @@ export function AdminFeedback() {
     setSelectedFeedback(null);
     setAdminResponse('');
     setReplyImages([]);
+    setReplyImageError(null);
     setIsEmojiPickerOpen(false);
     setIsPluginLogOpen(false);
   };
@@ -687,13 +691,26 @@ export function AdminFeedback() {
               const images = files.filter(
                 (file) => file.type in REPLY_IMAGE_TYPES && file.size <= MAX_REPLY_IMAGE_BYTES,
               );
-              if (images.length < files.length) toast.warning(t('adminFeedback.imageRejected'));
+              if (images.length < files.length) setReplyImageError(t('adminFeedback.imageRejected'));
               if (images.length) addReplyImages(images);
             }}
             rows={3}
             placeholder={t('adminFeedback.modal_response_placeholder')}
             className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 custom-scrollbar"
           />
+          {replyImageError && (
+            <p role="alert" className="mt-2 flex items-start justify-between gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-200">
+              <span>{replyImageError}</span>
+              <button
+                type="button"
+                onClick={() => setReplyImageError(null)}
+                aria-label={t('common.close')}
+                className="shrink-0 text-red-200/80 hover:text-white"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </p>
+          )}
           {replyImages.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
               {replyImages.map((file, index) => (

@@ -161,6 +161,19 @@ describe('AdminFeedback emoji picker', () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
+  it('explains a rejected attachment inline and keeps the valid screenshots', async () => {
+    renderFeedback();
+
+    fireEvent.click(await screen.findByText(feedback.subject));
+    const textarea = screen.getByPlaceholderText('adminFeedback.modal_response_placeholder');
+    const image = new File(['png'], 'screen.png', { type: 'image/png' });
+    const note = new File(['text'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.paste(textarea, { clipboardData: { files: [image, note] } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('adminFeedback.imageRejected');
+    expect(screen.getByRole('button', { name: /adminFeedback.attachImages/ })).toHaveTextContent('1/4');
+  });
+
   it('keeps the newly opened thread and its draft when an earlier reply finishes', async () => {
     const other: FeedbackDetail = { ...feedback, id: 18, subject: 'Second thread', messages: [] };
     let finishReply: (value: FeedbackDetail) => void = () => {};

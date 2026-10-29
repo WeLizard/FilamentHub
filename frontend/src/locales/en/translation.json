@@ -1385,7 +1385,7 @@
     "dropImages": "Drop to attach",
     "removeImage": "Remove {{name}}",
     "imagesLimit": "You can attach up to {{count}} images",
-    "imageRejected": "Only PNG, JPEG or WebP up to 8 MB can be attached",
+    "imageRejected": "Only images can be attached: PNG, JPG or WebP, up to 8 MB each. Other files were not added.",
     "sendHint": "Ctrl+Enter to send",
     "send": "Send",
     "sending": "Sending…",

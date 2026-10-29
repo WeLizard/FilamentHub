@@ -1384,7 +1384,7 @@
     "dropImages": "松开即可添加",
     "removeImage": "移除 {{name}}",
     "imagesLimit": "最多可添加 {{count}} 张图片",
-    "imageRejected": "仅支持不超过 8 MB 的 PNG、JPEG 或 WebP",
+    "imageRejected": "只能添加图片：PNG、JPG 或 WebP，每张不超过 8 MB。其他文件未添加。",
     "sendHint": "Ctrl+Enter 发送",
     "send": "发送",
     "sending": "发送中…",

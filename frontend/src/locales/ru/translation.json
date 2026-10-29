@@ -1546,7 +1546,7 @@
     "dropImages": "Отпустите, чтобы приложить",
     "removeImage": "Убрать {{name}}",
     "imagesLimit": "Можно приложить не больше {{count}} картинок",
-    "imageRejected": "Подходят только PNG, JPEG или WebP до 8 МБ",
+    "imageRejected": "Можно прикрепить только картинки: PNG, JPG или WebP, до 8 МБ каждая. Другие файлы не добавлены.",
     "sendHint": "Ctrl+Enter — отправить",
     "send": "Отправить",
     "sending": "Отправка…",
