@@ -9,6 +9,7 @@ import {
   CheckCircle,
   Info,
   MessageCircle,
+  PackageMinus,
   Settings,
   Trash2,
   X,
@@ -85,6 +86,13 @@ const getNotificationPresentation = (
         actionKey: notification.extra_data?.feedback_id
           ? 'notifications.actions.openResponse'
           : 'notifications.actions.open',
+      };
+    case 'low_stock_spool':
+    case 'low_stock_material':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.lowStock',
+        actionKey: 'notifications.actions.openSpools',
       };
     default:
       return {
@@ -278,6 +286,9 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         return <AlertCircle className="w-5 h-5 text-yellow-400" />;
       case 'admin_message':
         return <MessageCircle className="w-5 h-5 text-purple-400" />;
+      case 'low_stock_spool':
+      case 'low_stock_material':
+        return <PackageMinus className="w-5 h-5 text-amber-400" />;
       default:
         return <Info className="w-5 h-5 text-blue-400" />;
     }
@@ -371,7 +382,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     const normalizedTitle = typeof translatedTitle === 'string' ? translatedTitle : notification.title;
     const normalizedMessage = typeof translatedMessage === 'string' ? translatedMessage : notification.message;
     const title = normalizedTitle === titleKey ? notification.title : normalizedTitle;
-    const message = normalizedMessage === messageKey ? notification.message : normalizedMessage;
+    let message = normalizedMessage === messageKey ? notification.message : normalizedMessage;
+    const unknownCount = Number(params.unknown_count);
+    if (notification.type === 'low_stock_material' && unknownCount > 0) {
+      message = `${message} ${t('notifications.keys.low_stock_material_unknown', { count: unknownCount })}`;
+    }
     return { title, message };
   };
 

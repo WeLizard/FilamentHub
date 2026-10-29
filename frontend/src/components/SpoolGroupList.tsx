@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { Bell, ChevronDown, Loader2 } from 'lucide-react';
 
 import { spoolsAPI, type SpoolGroup, type SpoolGroupsParams, type UserSpool } from '../api/client';
 import type { ViewMode } from './ViewModeToggle';
@@ -16,7 +16,16 @@ interface SpoolGroupListProps {
   filters: GroupFilters;
   viewMode: ViewMode;
   renderSpool: (spool: UserSpool) => ReactNode;
+  /** Material alert state for f:/c: groups; lone s: groups have no material rule. */
+  materialAlertOn?: (key: string) => boolean;
+  onOpenMaterialAlert?: (group: SpoolGroup, name: string) => void;
 }
+
+export const isMaterialGroupKey = (key: string) => /^[fc]:\d+$/.test(key);
+
+export const spoolGroupName = (spool: UserSpool, fallback: string) => (
+  spool.filament?.name || spool.extra?.display_name || fallback
+);
 
 const PAGE_SIZE = 24;
 
@@ -94,15 +103,17 @@ interface GroupHeaderProps {
   expanded: boolean;
   onToggle: () => void;
   panelId: string;
+  alertOn?: boolean;
+  onOpenAlert?: (name: string) => void;
 }
 
-function GroupHeader({ group, expanded, onToggle, panelId }: GroupHeaderProps) {
+function GroupHeader({ group, expanded, onToggle, panelId, alertOn, onOpenAlert }: GroupHeaderProps) {
   const { t, i18n } = useTranslation();
   const spool = group.latest_spool;
   const color = spool.filament?.color_hex
     ? `#${spool.filament.color_hex.replace('#', '')}`
     : spool.extra?.color_hex || '#9333ea';
-  const name = spool.filament?.name || spool.extra?.display_name || t('profilePage.spoolNoFilament');
+  const name = spoolGroupName(spool, t('profilePage.spoolNoFilament'));
   const details = spool.filament
     ? [spool.filament.brand_name, spool.filament.material_type]
     : [spool.extra?.vendor, spool.extra?.material];
@@ -112,45 +123,61 @@ function GroupHeader({ group, expanded, onToggle, panelId }: GroupHeaderProps) {
     && (group.available_remaining_weight_g > 0 || group.unknown_mass_count === 0);
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      aria-controls={panelId}
-      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left transition-colors hover:bg-white/5 sm:flex-nowrap"
-    >
-      <ChevronDown
-        className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
-        aria-hidden
-      />
-      <SpoolIcon pct={100} color={color} size={36} viewBox="8 12 78 72" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-white">{name}</p>
-        {detailText && <p className="truncate text-xs text-gray-400">{detailText}</p>}
-      </div>
-      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 pl-[4.75rem] text-xs sm:ml-auto sm:w-auto sm:flex-shrink-0 sm:justify-end sm:pl-0">
-        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-gray-200">
-          {t('profilePage.spoolShelf.spoolCount', { count: group.spool_count })}
-        </span>
-        {showGrams && (
-          <span className="font-medium text-green-300">
-            {t('profilePage.spoolShelf.gramsLeft', {
-              weight: formatNetWeight(group.available_remaining_weight_g, t, i18n?.language ?? 'en'),
-            })}
+    <div className="flex items-stretch">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left transition-colors hover:bg-white/5 sm:flex-nowrap"
+      >
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          aria-hidden
+        />
+        <SpoolIcon pct={100} color={color} size={36} viewBox="8 12 78 72" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-white">{name}</p>
+          {detailText && <p className="truncate text-xs text-gray-400">{detailText}</p>}
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 pl-[4.75rem] text-xs sm:ml-auto sm:w-auto sm:flex-shrink-0 sm:justify-end sm:pl-0">
+          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-gray-200">
+            {t('profilePage.spoolShelf.spoolCount', { count: group.spool_count })}
           </span>
-        )}
-        {group.unknown_mass_count > 0 && (
-          <span className="text-gray-500">
-            {t('profilePage.spoolShelf.unknownMass', { count: group.unknown_mass_count })}
-          </span>
-        )}
-      </div>
-    </button>
+          {showGrams && (
+            <span className="font-medium text-green-300">
+              {t('profilePage.spoolShelf.gramsLeft', {
+                weight: formatNetWeight(group.available_remaining_weight_g, t, i18n?.language ?? 'en'),
+              })}
+            </span>
+          )}
+          {group.unknown_mass_count > 0 && (
+            <span className="text-gray-500">
+              {t('profilePage.spoolShelf.unknownMass', { count: group.unknown_mass_count })}
+            </span>
+          )}
+        </div>
+      </button>
+      {onOpenAlert && (
+        <button
+          type="button"
+          onClick={() => onOpenAlert(name)}
+          title={t('profilePage.stockAlerts.materialButton')}
+          aria-label={t('profilePage.stockAlerts.materialButton')}
+          aria-pressed={!!alertOn}
+          className={`flex-shrink-0 border-l border-white/10 px-3 transition-colors hover:bg-white/5 ${
+            alertOn ? 'text-purple-300' : 'text-gray-500 hover:text-gray-200'
+          }`}
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 }
 
 export function SpoolGroupList(props: SpoolGroupListProps) {
-  const { userId, filters, viewMode, renderSpool } = props;
+  const { userId, filters, viewMode, renderSpool, materialAlertOn, onOpenMaterialAlert } = props;
   const { t } = useTranslation();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const params = useMemo(() => ({ ...filters, limit: PAGE_SIZE }), [filters]);
@@ -232,7 +259,16 @@ export function SpoolGroupList(props: SpoolGroupListProps) {
                 key={group.key}
                 className={`glass-panel overflow-hidden rounded-xl border shadow-lg ${expanded ? 'border-purple-400/40' : 'border-white/15'}`}
               >
-                <GroupHeader group={group} expanded={expanded} onToggle={() => toggle(group.key)} panelId={panelId} />
+                <GroupHeader
+                  group={group}
+                  expanded={expanded}
+                  onToggle={() => toggle(group.key)}
+                  panelId={panelId}
+                  alertOn={materialAlertOn?.(group.key)}
+                  onOpenAlert={onOpenMaterialAlert && isMaterialGroupKey(group.key)
+                    ? (name) => onOpenMaterialAlert(group, name)
+                    : undefined}
+                />
                 {expanded && (
                   <div id={panelId} className="border-t border-white/10 bg-black/10 p-2 md:p-3">
                     <GroupSpools {...props} group={group} />

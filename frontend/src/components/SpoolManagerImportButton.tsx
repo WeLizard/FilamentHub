@@ -188,10 +188,12 @@ export const SpoolImportButton: React.FC<SpoolImportButtonProps> = ({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 transition hover:border-purple-400/50 hover:bg-purple-500/10 hover:text-white"
+        title={t('profilePage.spoolManagerImport.button')}
+        aria-label={t('profilePage.spoolManagerImport.button')}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-2 text-sm text-gray-200 transition hover:border-purple-400/50 hover:bg-purple-500/10 hover:text-white sm:px-3"
       >
         <Upload className="h-4 w-4" />
-        <span>{t('profilePage.spoolManagerImport.button')}</span>
+        <span className="hidden sm:inline">{t('profilePage.spoolManagerImport.button')}</span>
       </button>
 
       {isOpen && (

@@ -3940,6 +3940,25 @@
       "empty": "Empty"
     },
     "spoolNoFilament": "No catalog link",
+    "stockAlerts": {
+      "title": "Low-stock alert",
+      "toggle": "Low-stock alert",
+      "below": "below",
+      "defaultHint": "Notify when a spool runs low. Applies to every spool without its own threshold.",
+      "thresholdLabel": "Threshold, g",
+      "spoolButton": "Low-stock alert",
+      "materialButton": "Low-stock alert for this material",
+      "spoolOwn": "This spool has its own threshold: {{threshold}} g.",
+      "spoolDefault": "Uses the account threshold: {{threshold}} g.",
+      "spoolDefaultOff": "Account alerts are off. You can set a threshold for this spool only.",
+      "ownThreshold": "Alert when less than",
+      "materialThreshold": "Alert when storage stock is below",
+      "materialOn": "Alert is on: below {{threshold}} g in storage.",
+      "materialOff": "No alert set for this material.",
+      "materialNote": "Only spools in storage count; spools loaded in printers are not included.",
+      "useDefault": "Use account threshold",
+      "turnOff": "Turn off"
+    },
     "spoolShelf": {
       "groupToggle": "By material",
       "groupToggleTitle": "Group spools by material",
@@ -6886,6 +6905,7 @@
       "administration": "FilamentHub administration"
     },
     "types": {
+      "lowStock": "Low stock",
       "notification": "Notification",
       "presetUpdated": "Preset update",
       "presetDeleted": "Preset removal",
@@ -6897,12 +6917,19 @@
       "feedbackResponse": "Feedback response"
     },
     "actions": {
+      "openSpools": "Open spools",
       "open": "Open",
       "openFilament": "Open material",
       "openBrand": "Open brand",
       "openResponse": "Open response"
     },
     "keys": {
+      "low_stock_spool": "Spool running low",
+      "low_stock_spool_message": "Spool \"{{name}}\" is running low: {{remaining_g}} g left (alert at {{threshold_g}} g).",
+      "low_stock_material": "Material running low",
+      "low_stock_material_message": "\"{{name}}\" in storage: {{shelf_g}} g left (alert at {{threshold_g}} g).",
+      "low_stock_material_unknown_one": "{{count}} spool of unknown size is not counted.",
+      "low_stock_material_unknown_other": "{{count}} spools of unknown size are not counted.",
       "feedback_response": "Reply to your feedback",
       "feedback_response_images": "The FilamentHub team sent an image in reply to your feedback.",
       "preset_updated": "Preset updated",

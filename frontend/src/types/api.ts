@@ -1240,7 +1240,7 @@ export interface FilamentRatingStats {
   rating_distribution: Record<number, number>; // {1: count, 2: count, ...}
 }
 
-export type NotificationType = 'preset_updated' | 'preset_deleted' | 'preset_locally_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected' | 'admin_message';
+export type NotificationType = 'preset_updated' | 'preset_deleted' | 'preset_locally_deleted' | 'brand_verified' | 'brand_request_approved' | 'brand_request_rejected' | 'admin_message' | 'low_stock_spool' | 'low_stock_material';
 
 export type FeedbackType = 'bug' | 'feature' | 'question' | 'other';
 export type FeedbackStatus = 'open' | 'in_progress' | 'resolved' | 'closed';

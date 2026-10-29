@@ -4383,6 +4383,46 @@ export const printJobsAPI = {
   },
 };
 
+export type StockAlertScope = 'all' | 'spool' | 'material';
+
+export interface StockAlertRule {
+  id: number;
+  scope: StockAlertScope;
+  spool_id: number | null;
+  material_key: string | null;
+  threshold_g: number;
+  enabled: boolean;
+}
+
+export interface StockAlertRules {
+  default_threshold_g: number;
+  rules: StockAlertRule[];
+}
+
+export interface StockAlertRulePayload {
+  scope: StockAlertScope;
+  spool_id?: number;
+  material_key?: string;
+  threshold_g: number;
+  enabled: boolean;
+}
+
+export const stockAlertsAPI = {
+  rules: async (signal?: AbortSignal): Promise<StockAlertRules> => {
+    const response = await api.get<StockAlertRules>('/stock-alerts/rules', { signal });
+    return response.data;
+  },
+
+  saveRule: async (payload: StockAlertRulePayload): Promise<StockAlertRule> => {
+    const response = await api.put<StockAlertRule>('/stock-alerts/rules', payload);
+    return response.data;
+  },
+
+  deleteRule: async (id: number): Promise<void> => {
+    await api.delete(`/stock-alerts/rules/${id}`);
+  },
+};
+
 export const spoolsAPI = {
   getImport: async (id: number): Promise<SpoolCompatImportDetail> => {
     const response = await api.get<SpoolCompatImportDetail>(`/spools/imports/${id}`);

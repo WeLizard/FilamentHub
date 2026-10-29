@@ -3458,6 +3458,25 @@
       "empty": "Пуста"
     },
     "spoolNoFilament": "Без привязки к каталогу",
+    "stockAlerts": {
+      "title": "Сигнал об остатке",
+      "toggle": "Сигнал об остатке",
+      "below": "ниже",
+      "defaultHint": "Сообщать, когда на катушке остаётся мало филамента. Действует для всех катушек без своего порога.",
+      "thresholdLabel": "Порог, г",
+      "spoolButton": "Сигнал об остатке",
+      "materialButton": "Сигнал об остатке материала",
+      "spoolOwn": "У катушки свой порог: {{threshold}} г.",
+      "spoolDefault": "Действует общий порог: {{threshold}} г.",
+      "spoolDefaultOff": "Общие сигналы выключены. Можно задать порог только для этой катушки.",
+      "ownThreshold": "Сообщить, когда останется меньше",
+      "materialThreshold": "Сообщить, когда в запасе меньше",
+      "materialOn": "Сигнал включён: в запасе меньше {{threshold}} г.",
+      "materialOff": "Для этого материала сигнал не настроен.",
+      "materialNote": "Считаются только катушки в запасе, заряженные в принтер не учитываются.",
+      "useDefault": "Вернуть общий порог",
+      "turnOff": "Выключить"
+    },
     "spoolShelf": {
       "groupToggle": "По материалам",
       "groupToggleTitle": "Сгруппировать катушки по материалу",
@@ -7077,6 +7096,7 @@
       "administration": "Администрация FilamentHub"
     },
     "types": {
+      "lowStock": "Заканчивается филамент",
       "notification": "Уведомление",
       "presetUpdated": "Обновление пресета",
       "presetDeleted": "Удаление пресета",
@@ -7088,12 +7108,21 @@
       "feedbackResponse": "Ответ на обращение"
     },
     "actions": {
+      "openSpools": "Открыть катушки",
       "open": "Открыть",
       "openFilament": "Открыть материал",
       "openBrand": "Открыть бренд",
       "openResponse": "Открыть ответ"
     },
     "keys": {
+      "low_stock_spool": "Катушка заканчивается",
+      "low_stock_spool_message": "На катушке «{{name}}» осталось {{remaining_g}} г (порог {{threshold_g}} г).",
+      "low_stock_material": "Материал заканчивается",
+      "low_stock_material_message": "«{{name}}» в запасе: {{shelf_g}} г (порог {{threshold_g}} г).",
+      "low_stock_material_unknown_one": "Ещё {{count}} катушка неизвестного веса не учтена.",
+      "low_stock_material_unknown_few": "Ещё {{count}} катушки неизвестного веса не учтены.",
+      "low_stock_material_unknown_many": "Ещё {{count}} катушек неизвестного веса не учтены.",
+      "low_stock_material_unknown_other": "Ещё {{count}} катушки неизвестного веса не учтены.",
       "feedback_response": "Ответ на обращение",
       "feedback_response_images": "Команда FilamentHub прислала изображение в ответ на ваше обращение.",
       "preset_updated": "Пресет обновлён",

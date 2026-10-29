@@ -13,6 +13,10 @@ export const spoolQueryKeys = {
     [...spoolQueryKeys.root, 'collections', userId] as const,
 };
 
+export const stockAlertQueryKeys = {
+  rules: (userId: number | null | undefined) => ['stock-alert-rules', userId] as const,
+};
+
 export function mergeSpoolFeedPages(pages: SpoolFeedResponse[] | undefined): UserSpool[] {
   const byId = new Map<number, UserSpool>();
   for (const page of pages ?? []) {

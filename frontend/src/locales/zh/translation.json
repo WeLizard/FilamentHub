@@ -3932,6 +3932,25 @@
       "empty": "空的"
     },
     "spoolNoFilament": "无目录链接",
+    "stockAlerts": {
+      "title": "余量提醒",
+      "toggle": "余量提醒",
+      "below": "低于",
+      "defaultHint": "线盘余量不足时提醒。适用于所有未单独设置阈值的线盘。",
+      "thresholdLabel": "阈值（克）",
+      "spoolButton": "余量提醒",
+      "materialButton": "此材料的余量提醒",
+      "spoolOwn": "此线盘使用单独阈值：{{threshold}} 克。",
+      "spoolDefault": "使用账户阈值：{{threshold}} 克。",
+      "spoolDefaultOff": "账户提醒已关闭。可以只为此线盘设置阈值。",
+      "ownThreshold": "剩余少于",
+      "materialThreshold": "库存低于",
+      "materialOn": "提醒已开启：库存低于 {{threshold}} 克。",
+      "materialOff": "此材料未设置提醒。",
+      "materialNote": "只统计库存中的线盘，不包括已装入打印机的线盘。",
+      "useDefault": "改用账户阈值",
+      "turnOff": "关闭"
+    },
     "spoolShelf": {
       "groupToggle": "按材料",
       "groupToggleTitle": "按材料分组显示线盘",
@@ -6868,6 +6887,7 @@
       "administration": "FilamentHub 管理团队"
     },
     "types": {
+      "lowStock": "库存不足",
       "notification": "通知",
       "presetUpdated": "预设更新",
       "presetDeleted": "预设删除",
@@ -6879,12 +6899,18 @@
       "feedbackResponse": "反馈回复"
     },
     "actions": {
+      "openSpools": "打开线盘",
       "open": "打开",
       "openFilament": "打开材料",
       "openBrand": "打开品牌",
       "openResponse": "打开回复"
     },
     "keys": {
+      "low_stock_spool": "线盘即将用完",
+      "low_stock_spool_message": "线盘“{{name}}”即将用完：剩余 {{remaining_g}} 克（提醒阈值 {{threshold_g}} 克）。",
+      "low_stock_material": "材料库存不足",
+      "low_stock_material_message": "“{{name}}”库存剩余 {{shelf_g}} 克（提醒阈值 {{threshold_g}} 克）。",
+      "low_stock_material_unknown_other": "另有 {{count}} 卷重量未知，未计入。",
       "feedback_response": "反馈回复",
       "feedback_response_images": "FilamentHub 团队在回复您的反馈时发送了一张图片。",
       "preset_updated": "预设已更新",

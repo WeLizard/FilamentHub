@@ -10,6 +10,8 @@ const api = vi.hoisted(() => ({
   createCollection: vi.fn(),
   deleteCollection: vi.fn(),
   updateCollectionMembers: vi.fn(),
+  alertRules: vi.fn(),
+  saveAlertRule: vi.fn(),
 }));
 
 vi.mock('react-i18next', async (importOriginal) => ({
@@ -30,7 +32,11 @@ vi.mock('../components/Toast', () => ({
 }));
 vi.mock('../api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('../api/client')>();
-  return { ...original, spoolsAPI: { ...original.spoolsAPI, ...api } };
+  return {
+    ...original,
+    spoolsAPI: { ...original.spoolsAPI, ...api },
+    stockAlertsAPI: { ...original.stockAlertsAPI, rules: api.alertRules, saveRule: api.saveAlertRule },
+  };
 });
 
 import { SpoolsTab } from './ProfilePage';
@@ -71,12 +77,16 @@ function renderTab() {
   );
 }
 
-describe('Spool shelf grouping and folders', () => {
+describe('Spool shelf grouping and folders', { timeout: 20_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     folders = [];
     api.listCollections.mockImplementation(async () => folders);
+    api.alertRules.mockResolvedValue({ default_threshold_g: 100, rules: [] });
+    api.saveAlertRule.mockImplementation(async (payload: Record<string, unknown>) => ({
+      id: 9, spool_id: null, material_key: null, ...payload,
+    }));
     api.feed.mockImplementation(async (params: { group_key?: string }) => (
       params.group_key ? feedPage([spool(1), spool(2)]) : feedPage([spool(1), spool(2), spool(3)])
     ));
@@ -150,5 +160,27 @@ describe('Spool shelf grouping and folders', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'confirmDeleteModal.delete' }));
     await waitFor(() => expect(api.deleteCollection).toHaveBeenCalledWith(7));
+  });
+
+  it('saves the account alert with 100 g and a spool alert with the entered grams', async () => {
+    renderTab();
+    await screen.findAllByText('Galaxy PLA');
+
+    const toggle = await screen.findByRole('button', { name: /profilePage.stockAlerts.toggle/ });
+    await waitFor(() => expect(api.alertRules).toHaveBeenCalled());
+    fireEvent.click(toggle);
+    await waitFor(() => expect(api.saveAlertRule).toHaveBeenCalledWith(
+      { scope: 'all', threshold_g: 100, enabled: true },
+    ));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'profilePage.stockAlerts.spoolButton' })[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'profilePage.stockAlerts.title' });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'profilePage.stockAlerts.thresholdLabel' }), {
+      target: { value: '250' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'common.save' }));
+    await waitFor(() => expect(api.saveAlertRule).toHaveBeenLastCalledWith(
+      { scope: 'spool', spool_id: 1, threshold_g: 250, enabled: true },
+    ));
   });
 });

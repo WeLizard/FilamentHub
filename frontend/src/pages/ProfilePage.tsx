@@ -42,7 +42,7 @@ import {
   BriefcaseBusiness,
   FileText,
   Upload,
-  UsersRound, History, FolderPlus, Layers } from 'lucide-react';
+  UsersRound, History, FolderPlus, Layers, Bell, BellOff } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -124,6 +124,13 @@ import { SpoolTagsButton } from '../components/SpoolTagsButton';
 import { SpoolFolderBar, spoolFolderParams, useSpoolFolderFilter } from '../components/SpoolFolderBar';
 import { SpoolFolderChips, SpoolFolderPicker } from '../components/SpoolFolderPicker';
 import { SpoolGroupList } from '../components/SpoolGroupList';
+import {
+  StockAlertDefaultControl,
+  StockAlertRuleModal,
+  useStockAlertRules,
+  type SpoolAlertState,
+  type StockAlertTarget,
+} from '../components/StockAlertControls';
 import type {
   AchievementCode,
   AchievementOverview,
@@ -2076,7 +2083,15 @@ interface SpoolCardProps {
   viewMode?: ViewMode;
   folders?: SpoolCollection[];
   onOpenFolders?: () => void;
+  alertState?: SpoolAlertState;
+  onOpenStockAlert?: () => void;
 }
+
+const SpoolAlertIcon: React.FC<{ state?: SpoolAlertState; className: string }> = ({ state, className }) => (
+  state === 'off'
+    ? <BellOff className={className} />
+    : <Bell className={`${className}${state === 'own' ? ' text-purple-300' : ''}`} />
+);
 
 export const SpoolCard: React.FC<SpoolCardProps> = ({
   spool,
@@ -2090,6 +2105,8 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
   viewMode = 'grid',
   folders = [],
   onOpenFolders,
+  alertState,
+  onOpenStockAlert,
 }) => {
   const { t } = useTranslation();
   const { currency: userCurrency } = useUserCurrency();
@@ -2195,6 +2212,18 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
               <FolderPlus className="h-4 w-4" />
             </button>
           )}
+          {onOpenStockAlert && (
+            <button
+              type="button"
+              onClick={onOpenStockAlert}
+              disabled={isBusy}
+              title={t('profilePage.stockAlerts.spoolButton')}
+              aria-label={t('profilePage.stockAlerts.spoolButton')}
+              className="rounded-lg p-1.5 text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+            >
+              <SpoolAlertIcon state={alertState} className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onEdit}
@@ -2271,6 +2300,18 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
                 className="rounded p-0.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onOpenStockAlert && (
+              <button
+                type="button"
+                onClick={onOpenStockAlert}
+                disabled={isBusy}
+                title={t('profilePage.stockAlerts.spoolButton')}
+                aria-label={t('profilePage.stockAlerts.spoolButton')}
+                className="rounded p-0.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+              >
+                <SpoolAlertIcon state={alertState} className="h-3.5 w-3.5" />
               </button>
             )}
             <span className={`text-xs px-2 py-0.5 rounded-full border ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
@@ -3640,6 +3681,8 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
   );
   const folderFiltered = folderFilter !== 'all';
   const [folderPickerSpool, setFolderPickerSpool] = useState<UserSpool | null>(null);
+  const stockAlerts = useStockAlertRules(user?.id);
+  const [stockAlertTarget, setStockAlertTarget] = useState<StockAlertTarget | null>(null);
 
   const openSpoolForEdit = async (spoolId: number) => {
     try {
@@ -3752,6 +3795,12 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
       onResolveCompatImport={onResolveCompatImport}
       folders={collections.filter((folder) => spool.collection_ids?.includes(folder.id))}
       onOpenFolders={() => setFolderPickerSpool(spool)}
+      alertState={stockAlerts.spoolState(spool.id)}
+      onOpenStockAlert={() => setStockAlertTarget({
+        scope: 'spool',
+        spoolId: spool.id,
+        name: spool.filament?.name || spool.extra?.display_name || t('profilePage.spoolNoFilament'),
+      })}
     />
   );
   const spoolList = groupedByMaterial ? (
@@ -3760,6 +3809,8 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
       filters={stateFilters}
       viewMode={spoolsViewMode}
       renderSpool={renderSpoolCard}
+      materialAlertOn={(key) => !!stockAlerts.materialRule(key)}
+      onOpenMaterialAlert={(group, name) => setStockAlertTarget({ scope: 'material', materialKey: group.key, name })}
     />
   ) : (
     <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
@@ -3775,7 +3826,7 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
           <button
@@ -3936,21 +3987,24 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
               </span>
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => setSpoolGroupMode(groupedByMaterial ? 'flat' : 'material')}
-            aria-pressed={groupedByMaterial}
-            title={t('profilePage.spoolShelf.groupToggleTitle')}
-            className={[
-              'ml-auto inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
-              groupedByMaterial
-                ? 'border-purple-400/70 bg-purple-500/20 text-white'
-                : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
-            ].join(' ')}
-          >
-            <Layers className="h-4 w-4" />
-            <span>{t('profilePage.spoolShelf.groupToggle')}</span>
-          </button>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <StockAlertDefaultControl alerts={stockAlerts} />
+            <button
+              type="button"
+              onClick={() => setSpoolGroupMode(groupedByMaterial ? 'flat' : 'material')}
+              aria-pressed={groupedByMaterial}
+              title={t('profilePage.spoolShelf.groupToggleTitle')}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                groupedByMaterial
+                  ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                  : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+              ].join(' ')}
+            >
+              <Layers className="h-4 w-4" />
+              <span>{t('profilePage.spoolShelf.groupToggle')}</span>
+            </button>
+          </div>
         </div>
 
         {feedQuery.isPending ? (
@@ -4072,6 +4126,13 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
           collections={collections}
           userId={user?.id}
           onClose={() => setFolderPickerSpool(null)}
+        />
+      )}
+      {stockAlertTarget && (
+        <StockAlertRuleModal
+          target={stockAlertTarget}
+          alerts={stockAlerts}
+          onClose={() => setStockAlertTarget(null)}
         />
       )}
     </div>
