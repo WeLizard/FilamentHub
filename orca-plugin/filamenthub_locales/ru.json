@@ -131,5 +131,9 @@
   "sliceSettingsEnable": "Сохранять нарезанные файлы и отправлять их данные в FilamentHub",
   "sliceIdentityStamped": "Идентификаторы профилей FilamentHub добавлены в {name}. Отчёты о нарезке выключены.",
   "sliceReportingDisabled": "Отчёты о нарезке выключены. Откройте настройки этого плагина нарезки, чтобы узнать, что он делает, и включить его.",
-  "sliceQueued": "Файл {name} сохранён локально. Его данные будут отправлены после входа на странице FilamentHub."
+  "sliceQueued": "Файл {name} сохранён локально. Его данные будут отправлены после входа на странице FilamentHub.",
+  "stockAlertSpool": "Заканчивается: у «{name}» осталось {remaining} г (порог {threshold} г).",
+  "stockAlertMaterial": "Заканчивается: «{name}» на полке — {shelf} г (порог {threshold} г).",
+  "stockAlertMaterialUnknown": "Заканчивается: «{name}» на полке — {shelf} г (порог {threshold} г). Катушки с неизвестным весом ({count}) не учтены.",
+  "stockAlertOpen": "Открыть катушки"
 }

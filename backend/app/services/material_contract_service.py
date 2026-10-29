@@ -1089,6 +1089,8 @@ async def ingest_printer_bridge_snapshot(
 
     connector.last_seen_at = received_at
     connector.active = True
+    # An observation the helper just read from the device proves the device answers.
+    connector.provider_reachable = True
     printer.last_seen_at = received_at
     printer.reports_feed = True
     confirm_printer_if_needed(printer, received_at)

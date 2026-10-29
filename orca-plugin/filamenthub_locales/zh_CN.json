@@ -130,5 +130,9 @@
   "sliceSettingsPermission": "报告先保存在本地队列中，并由已登录的 FilamentHub 页面发送。插件激活和切片过程不会发起此 HTTP 请求，因此该地址不会触发原生权限对话框。发送失败的报告会保留在队列中，并在页面可用时重试。",
   "sliceSettingsEnable": "保存已切片文件并将其详细信息发送到 FilamentHub",
   "sliceReportingDisabled": "切片报告已关闭。打开此切片插件的设置，阅读其功能并启用它。",
-  "sliceQueued": "已在本地保存 {name}。登录 FilamentHub 页面后将发送其详细信息。"
+  "sliceQueued": "已在本地保存 {name}。登录 FilamentHub 页面后将发送其详细信息。",
+  "stockAlertSpool": "库存不足：{name} 仅剩 {remaining} g（提醒阈值 {threshold} g）。",
+  "stockAlertMaterial": "库存不足：货架上的 {name} 仅剩 {shelf} g（提醒阈值 {threshold} g）。",
+  "stockAlertMaterialUnknown": "库存不足：货架上的 {name} 仅剩 {shelf} g（提醒阈值 {threshold} g）。{count} 卷重量未知的料盘未计入。",
+  "stockAlertOpen": "打开料盘"
 }

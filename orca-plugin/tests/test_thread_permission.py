@@ -189,6 +189,10 @@ def test_first_worker_thread_comes_from_opening_the_page_not_from_load(monkeypat
         module.BAMBU_BRIDGE_RUNTIME, "_run",
         lambda generation=None: bridge_started.append(generation), raising=False,
     )
+    monkeypatch.setattr(
+        module.STOCK_ALERT_RUNTIME, "_run",
+        lambda generation=None: None, raising=False,
+    )
     monkeypatch.setattr(module, "BACKGROUND_WORKER", module.ReusableDaemonWorker(
         "filamenthub-test-worker", idle_timeout=0.5,
     ))
@@ -197,7 +201,9 @@ def test_first_worker_thread_comes_from_opening_the_page_not_from_load(monkeypat
         module.start_plugin_runtime(storage_initialized=True)
         # Plugin load runs wherever the host's loader does: no thread yet.
         assert audit.started == [] and audit.denied == []
-        assert module._DEFERRED_BACKGROUND == {"bambu revoke retry", "Bambu bridge"}
+        assert module._DEFERRED_BACKGROUND == {
+            "bambu revoke retry", "Bambu bridge", "stock alerts",
+        }
 
         page.get_ui()
 
@@ -206,6 +212,7 @@ def test_first_worker_thread_comes_from_opening_the_page_not_from_load(monkeypat
         assert audit.started[0][1] is True
         assert "filamenthub-bambu-revoke" in names
         assert "filamenthub-bambu-bridge" in names
+        assert "filamenthub-stock-alerts" in names
         assert module._DEFERRED_BACKGROUND == set()
     finally:
         module.stop_plugin_runtime()
@@ -359,6 +366,9 @@ def _refused_session(monkeypatch):
     monkeypatch.setattr(
         module.BAMBU_BRIDGE_RUNTIME, "_run", lambda generation=None: None, raising=False
     )
+    monkeypatch.setattr(
+        module.STOCK_ALERT_RUNTIME, "_run", lambda generation=None: None, raising=False
+    )
     monkeypatch.setattr(module, "_PLUGIN_RUNTIME_ACTIVE", False)
     module.start_plugin_runtime(storage_initialized=True)
     page.get_ui()
@@ -400,7 +410,9 @@ def test_explicit_sync_after_a_refusal_retries_and_resumes_deferred_work(monkeyp
     module, page, audit, ran = _refused_session(monkeypatch)
     session = "bridge-session"
     page._catalog._direct_bridge_session = session
-    assert module._DEFERRED_BACKGROUND == {"bambu revoke retry", "Bambu bridge"}
+    assert module._DEFERRED_BACKGROUND == {
+        "bambu revoke retry", "Bambu bridge", "stock alerts",
+    }
     audit.allowed = True
     try:
         page._catalog.on_message({

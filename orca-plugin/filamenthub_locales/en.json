@@ -131,5 +131,9 @@
   "sliceSettingsEnable": "Save sliced files and send their details to FilamentHub",
   "sliceIdentityStamped": "Added FilamentHub profile identifiers to {name}. Slice reporting is off.",
   "sliceReportingDisabled": "Slice reporting is off. Open this slicing plugin’s settings to read what it does and enable it.",
-  "sliceQueued": "Saved {name} locally. Its details will be sent when the FilamentHub page is signed in."
+  "sliceQueued": "Saved {name} locally. Its details will be sent when the FilamentHub page is signed in.",
+  "stockAlertSpool": "Low stock: {name} has {remaining} g left (alert at {threshold} g).",
+  "stockAlertMaterial": "Low stock: {name} on the shelf is down to {shelf} g (alert at {threshold} g).",
+  "stockAlertMaterialUnknown": "Low stock: {name} on the shelf is down to {shelf} g (alert at {threshold} g). {count} spool(s) of unknown weight are not counted.",
+  "stockAlertOpen": "Open Spools"
 }

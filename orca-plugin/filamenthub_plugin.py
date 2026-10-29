@@ -80,6 +80,7 @@ from xml.etree import ElementTree
 import datetime
 import hashlib
 import hmac
+import inspect
 import ipaddress
 import json
 import os
@@ -588,18 +589,55 @@ def push_background_denied_notice_once():
     )
 
 
-def push_native_notification(level_name, text):
+def _notification_accepts(push, name):
+    """Whether the host push function declares ``name``; None when unknown."""
+    try:
+        parameters = inspect.signature(push).parameters
+    except (TypeError, ValueError):
+        return None
+    if name in parameters:
+        return True
+    if any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values()):
+        return True
+    return False
+
+
+def push_native_notification(level_name, text, hyper_text=None, on_click=None):
     """Show a plater notification from a worker job. Never call this from the
     slicing pipeline: the host marshals the call onto the UI thread and waits.
+
+    ``hyper_text`` and ``on_click`` are passed only to hosts that accept them;
+    every other host shows the plain two-argument notification.
     """
     ui = getattr(getattr(orca, "host", None), "ui", None)
     push = getattr(ui, "push_notification", None)
     level = getattr(getattr(ui, "NotificationLevel", None), level_name, None)
     if not callable(push) or level is None or not text:
         return False
+    extras = {}
+    if hyper_text:
+        extras["hyper_text"] = hyper_text
+    if on_click is not None:
+        extras["on_click"] = on_click
 
     def send():
-        push(level, text)
+        authorize_bound_lifecycle_operation()
+        if not extras:
+            push(level, text)
+            return True
+        supported = {
+            name: value for name, value in extras.items()
+            if _notification_accepts(push, name) is not False
+        }
+        if not supported:
+            push(level, text)
+            return True
+        try:
+            push(level, text, **supported)
+        except TypeError:
+            # A host whose signature cannot be read may still refuse the
+            # extra arguments before showing anything.
+            push(level, text)
         return True
 
     try:
@@ -895,6 +933,18 @@ def open_in_system_browser(url):
             return False
 
 
+def open_site_path(path):
+    """Open a site-relative path in the system browser.
+
+    Only a site-relative path is accepted and the origin is added here, so
+    neither the embedded page nor the server can turn this into "open any
+    address".
+    """
+    if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+        return False
+    return open_in_system_browser(SITE_URL + path)
+
+
 def _temporary_path(path):
     return "%s.tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
 
@@ -1176,7 +1226,7 @@ def configure_plugin_storage():
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
-    global PRINTER_BUNDLE_STATE_FILE
+    global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
 
     fallback_root = fallback_plugin_storage_dir()
@@ -1250,6 +1300,8 @@ def configure_plugin_storage():
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
+    WORKSTATION_KEY_FILE = os.path.join(target_root, ".fh_workstation_key.json")
+    STOCK_ALERT_STATE_FILE = os.path.join(target_root, ".fh_stock_alerts.json")
     _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
     _SLICE_REPORT_OUTBOX_FILE = os.path.join(target_root, ".fh_slice_reports.json")
     _SLICE_CACHE_DIR = target_cache
@@ -1353,6 +1405,8 @@ AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
+WORKSTATION_KEY_FILE = os.path.join(PLUGIN_DIR, ".fh_workstation_key.json")
+STOCK_ALERT_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_stock_alerts.json")
 
 
 def load_saved_auth():
@@ -9870,6 +9924,9 @@ class BambuBridgeRuntime:
         self._last_snapshot_digest = {}
         self._last_snapshot_at = {}
         self._last_heartbeat_at = {}
+        self._heartbeat_retry_at = {}
+        self._lan_unreachable = set()
+        self._reported_unreachable = set()
         self._failure_count = {}
         self._retry_at = {}
         self._usage_states = {}
@@ -10146,6 +10203,59 @@ class BambuBridgeRuntime:
                     self._restart_requested = False
                     self._start_locked()
 
+    def _post_heartbeat(self, config, source_instance_id, reachable, capabilities=None):
+        payload = {
+            "material_system_id": config["material_system_id"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "provider_reachable": reachable,
+            "contact_interval_s": int(BAMBU_HEARTBEAT_SECONDS),
+        }
+        if capabilities is not None:
+            payload["capabilities"] = capabilities
+        return http_post_bridge_json(
+            "/printer-bridge/heartbeat", config["bridge_token"], payload
+        )
+
+    def _heartbeat_printer_unreachable(self, config, source_instance_id, binding_key, now):
+        """Keep the helper visible while its printer does not answer.
+
+        Only the heartbeat is sent: no printer fact exists to report. Without a
+        known source id nothing is sent, because the server cannot attribute it.
+        """
+        if (
+            not isinstance(source_instance_id, str)
+            or not 16 <= len(source_instance_id) <= 100
+            or not config.get("bridge_token")
+        ):
+            return
+        last = self._last_heartbeat_at.get(binding_key)
+        if last is not None and now - last < BAMBU_HEARTBEAT_SECONDS:
+            return
+        if now < self._heartbeat_retry_at.get(binding_key, 0.0) or self._stop.is_set():
+            return
+        status, _, retry_after = self._post_heartbeat(
+            config, source_instance_id, False
+        )
+        if self._stop.is_set():
+            return
+        if status == 200:
+            self._last_heartbeat_at[binding_key] = now
+            self._heartbeat_retry_at.pop(binding_key, None)
+            self._reported_unreachable.add(binding_key)
+        elif status == 401:
+            invalidate_bambu_bridge_token(
+                config["physical_printer_id"], config["bridge_token"]
+            )
+        else:
+            self._heartbeat_retry_at[binding_key] = now + min(
+                max(BAMBU_RETRY_INITIAL_SECONDS, retry_after or 0.0),
+                BAMBU_RETRY_MAX_SECONDS,
+            )
+            fh_log("Bambu bridge heartbeat failed: HTTP %s" % status)
+
     def _run(self, generation=None):
         if generation is not None:
             with bind_lifecycle_generation(self, generation):
@@ -10181,9 +10291,24 @@ class BambuBridgeRuntime:
                 )
                 now_monotonic = time.monotonic()
                 if now_monotonic < self._retry_at.get(binding_key, 0.0):
+                    # The LAN backoff can outlast the heartbeat interval; the
+                    # helper still reports in while the printer is silent.
+                    if binding_key in self._lan_unreachable:
+                        try:
+                            self._heartbeat_printer_unreachable(
+                                config, local.get("source_instance_id"),
+                                binding_key, now_monotonic,
+                            )
+                        except Exception as exc:
+                            if self._stop.is_set():
+                                break
+                            fh_log("Bambu bridge heartbeat failed: %s" % type(exc).__name__)
                     continue
+                lan_read = False
                 try:
                     serial, report = self._stream_observation(config)
+                    lan_read = True
+                    self._lan_unreachable.discard(binding_key)
                     if self._stop.is_set():
                         break
                     stream_config = config
@@ -10230,27 +10355,28 @@ class BambuBridgeRuntime:
                             self._last_snapshot_digest[binding_key] = snapshot_digest
                             self._last_snapshot_at[binding_key] = now_monotonic
                             self._last_heartbeat_at[binding_key] = now_monotonic
-                    elif heartbeat_due:
+                            if binding_key in self._reported_unreachable:
+                                # A snapshot cannot clear "printer unreachable";
+                                # only a heartbeat carries that flag.
+                                beat, _, beat_retry = self._post_heartbeat(
+                                    config, source_instance_id, True,
+                                    snapshot["capabilities"],
+                                )
+                                if beat == 200:
+                                    self._reported_unreachable.discard(binding_key)
+                                elif beat == 401:
+                                    status, retry_after = beat, beat_retry
+                    elif heartbeat_due or binding_key in self._reported_unreachable:
                         if self._stop.is_set():
                             break
-                        status, _, retry_after = http_post_bridge_json(
-                            "/printer-bridge/heartbeat",
-                            config["bridge_token"],
-                            {
-                                "material_system_id": config["material_system_id"],
-                                "provider": "bambu",
-                                "transport": "orca_plugin_lan",
-                                "source_instance_id": source_instance_id,
-                                "observed_at": datetime.datetime.now(
-                                    datetime.timezone.utc
-                                ).isoformat(),
-                                "capabilities": snapshot["capabilities"],
-                            },
+                        status, _, retry_after = self._post_heartbeat(
+                            config, source_instance_id, True, snapshot["capabilities"]
                         )
                         if self._stop.is_set():
                             break
                         if status == 200:
                             self._last_heartbeat_at[binding_key] = now_monotonic
+                            self._reported_unreachable.discard(binding_key)
                     else:
                         status = 200
                         retry_after = None
@@ -10313,6 +10439,20 @@ class BambuBridgeRuntime:
                     fh_log("Bambu bridge poll failed: %s" % type(exc).__name__)
                     if isinstance(exc, PermissionError):
                         fh_log("bambu_lan_auth_rejected")
+                    if not lan_read:
+                        self._lan_unreachable.add(binding_key)
+                        try:
+                            self._heartbeat_printer_unreachable(
+                                config, local.get("source_instance_id"),
+                                binding_key, now_monotonic,
+                            )
+                        except Exception as beat_exc:
+                            if self._stop.is_set():
+                                break
+                            fh_log(
+                                "Bambu bridge heartbeat failed: %s"
+                                % type(beat_exc).__name__
+                            )
             if self._stop.is_set():
                 break
             spread = BAMBU_POLL_SECONDS * BAMBU_INTERVAL_JITTER_RATIO
@@ -10351,6 +10491,325 @@ def wake_bambu_bridge_runtime():
         return True
 
 
+# --------------------------------------------------------------------------- #
+# Low-stock alerts from the server -> native OrcaSlicer notifications
+# --------------------------------------------------------------------------- #
+STOCK_ALERT_POLL_SECONDS = 300.0
+STOCK_ALERT_FIRST_POLL_RANGE = (10.0, 30.0)
+STOCK_ALERT_IDLE_RECHECK_SECONDS = 60.0
+STOCK_ALERT_RETRY_INITIAL_SECONDS = 60.0
+STOCK_ALERT_RETRY_MAX_SECONDS = 1800.0
+STOCK_ALERT_RETRY_AFTER_CAP_SECONDS = 3600.0
+STOCK_ALERT_JITTER_RATIO = 0.2
+STOCK_ALERT_PAGE_LIMIT = 50
+STOCK_ALERT_SPOOLS_PATH = "/profile?tab=spools"
+_STOCK_ALERT_LINK = re.compile(r"/profile(\?[A-Za-z0-9_=&-]{1,100})?")
+_STOCK_ALERT_KEY = re.compile(r"fhw_[A-Za-z0-9_-]{8,250}")
+
+
+def http_get_bearer(path, token):
+    """GET with a bearer credential; also returns the server's Retry-After."""
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+        "Authorization": "Bearer " + token,
+    }
+    req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    try:
+        with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
+            return resp.getcode(), _read_response_limited(resp), None
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(MAX_RESPONSE_BYTES), _bridge_retry_after_seconds(exc.headers)
+    except (OSError, ValueError, urllib.error.URLError):
+        return 0, b"", None
+
+
+def load_workstation_key():
+    """Read the long-lived workstation key, or None when absent or malformed."""
+    try:
+        with open(WORKSTATION_KEY_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    key = data.get("key") if isinstance(data, dict) else None
+    if isinstance(key, str) and _STOCK_ALERT_KEY.fullmatch(key):
+        return key
+    return None
+
+
+def _native_notifications_available():
+    ui = getattr(getattr(orca, "host", None), "ui", None)
+    level = getattr(getattr(ui, "NotificationLevel", None), "WarningNotificationLevel", None)
+    return callable(getattr(ui, "push_notification", None)) and level is not None
+
+
+def _stock_alert_grams(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    value = max(0.0, float(value))
+    if value >= 10:
+        return str(int(round(value)))
+    return ("%.1f" % value).rstrip("0").rstrip(".") or "0"
+
+
+def _stock_alert_name(value):
+    text = "".join(ch for ch in str(value or "") if ch.isprintable()).strip()
+    return text[:80] or "?"
+
+
+def stock_alert_text(alert):
+    """Localized notification text for one server alert, or None if unusable."""
+    extra = alert.get("extra_data")
+    if not isinstance(extra, dict):
+        return None
+    threshold = _stock_alert_grams(extra.get("threshold_g"))
+    if threshold is None:
+        return None
+    name = _stock_alert_name(extra.get("name"))
+    if alert.get("type") == "low_stock_spool":
+        remaining = _stock_alert_grams(extra.get("remaining_g"))
+        if remaining is None:
+            return None
+        return ui_text("stockAlertSpool", name=name, remaining=remaining, threshold=threshold)
+    if alert.get("type") == "low_stock_material":
+        shelf = _stock_alert_grams(extra.get("shelf_g"))
+        if shelf is None:
+            return None
+        unknown = extra.get("unknown_count")
+        if type(unknown) is int and unknown > 0:
+            return ui_text(
+                "stockAlertMaterialUnknown",
+                name=name, shelf=shelf, threshold=threshold, count=unknown,
+            )
+        return ui_text("stockAlertMaterial", name=name, shelf=shelf, threshold=threshold)
+    return None
+
+
+def _stock_alert_site_path(link):
+    if isinstance(link, str) and _STOCK_ALERT_LINK.fullmatch(link):
+        return link
+    return STOCK_ALERT_SPOOLS_PATH
+
+
+def load_stock_alert_cursor():
+    """Last alert id already handled for this server, or None."""
+    try:
+        with open(STOCK_ALERT_STATE_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("server") != API_BASE:
+        return None
+    cursor = data.get("last_alert_id")
+    if type(cursor) is int and cursor >= 0:
+        return cursor
+    return None
+
+
+def save_stock_alert_cursor(alert_id):
+    write_json_atomic(
+        STOCK_ALERT_STATE_FILE,
+        {"version": 1, "server": API_BASE, "last_alert_id": int(alert_id)},
+        mode=0o600,
+    )
+
+
+class StockAlertRuntime:
+    """One bounded daemon that shows each new low-stock alert once."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._thread = None
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._restart_requested = False
+        self._generation = 0
+        self._failures = 0
+        self._rejected = {}
+
+    def _start_locked(self):
+        self._stop.clear()
+        self._generation += 1
+        thread = threading.Thread(
+            target=self._run,
+            args=(self._generation,),
+            name="filamenthub-stock-alerts",
+            daemon=True,
+        )
+        self._thread = thread if start_audited_thread(thread, "stock alerts") else None
+
+    def authorize_external_operation(self, generation):
+        with self._lock:
+            if self._stop.is_set() or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "Stock alert lifecycle generation has stopped"
+                )
+
+    def start(self):
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                if self._stop.is_set():
+                    # Restart only after the retiring generation has exited;
+                    # clearing its shared stop flag would revive it.
+                    self._restart_requested = True
+                return
+            self._restart_requested = False
+            if not background_threads_permitted():
+                _DEFERRED_BACKGROUND.add("stock alerts")
+                return
+            self._start_locked()
+
+    def stop(self, wait_timeout=0.25):
+        with self._lock:
+            thread = self._thread
+            self._restart_requested = False
+            self._stop.set()
+            self._wake.set()
+        if (
+            thread is not None
+            and thread is not threading.current_thread()
+            and wait_timeout > 0
+        ):
+            thread.join(wait_timeout)
+
+    def _retire_current_thread(self):
+        current = threading.current_thread()
+        with self._lock:
+            if self._thread is current:
+                self._thread = None
+                if self._restart_requested:
+                    self._restart_requested = False
+                    self._start_locked()
+
+    def _run(self, generation=None):
+        if generation is not None:
+            with bind_lifecycle_generation(self, generation):
+                return self._run_loop()
+        return self._run_loop()
+
+    def _run_loop(self):
+        self._wake.wait(random.uniform(*STOCK_ALERT_FIRST_POLL_RANGE))
+        self._wake.clear()
+        while not self._stop.is_set():
+            try:
+                delay = self.poll_once()
+            except PluginLifecycleStopped:
+                break
+            except Exception as exc:
+                if self._stop.is_set():
+                    break
+                fh_log("stock alert poll failed: %s" % type(exc).__name__)
+                delay = self._failure_delay(None)
+            if self._stop.is_set():
+                break
+            self._wake.wait(delay)
+            self._wake.clear()
+        self._retire_current_thread()
+
+    def _jittered(self, seconds):
+        spread = seconds * STOCK_ALERT_JITTER_RATIO
+        return random.uniform(seconds - spread, seconds + spread)
+
+    def _failure_delay(self, retry_after):
+        self._failures += 1
+        base = min(
+            STOCK_ALERT_RETRY_INITIAL_SECONDS * (2 ** (self._failures - 1)),
+            STOCK_ALERT_RETRY_MAX_SECONDS,
+        )
+        delay = self._jittered(base)
+        if retry_after:
+            delay = max(delay, min(retry_after, STOCK_ALERT_RETRY_AFTER_CAP_SECONDS))
+        return delay
+
+    def _credential(self):
+        """Prefer the workstation key; skip a credential the server rejected."""
+        key = load_workstation_key()
+        if key and self._rejected.get("workstation") != key:
+            return "workstation", key
+        token = (load_saved_auth() or {}).get("accessToken") or ""
+        if token and self._rejected.get("page") != token:
+            return "page", token
+        return None
+
+    def poll_once(self):
+        """Fetch and show new alerts; return the delay before the next poll."""
+        credential = self._credential()
+        if credential is None or not _native_notifications_available():
+            return STOCK_ALERT_IDLE_RECHECK_SECONDS
+        kind, secret = credential
+        cursor = load_stock_alert_cursor()
+        query = "after_id=%d&limit=%d" % (
+            cursor if cursor is not None else 0,
+            STOCK_ALERT_PAGE_LIMIT if cursor is not None else 1,
+        )
+        status, body, retry_after = http_get_bearer(
+            "/stock-alerts/events?" + query, secret
+        )
+        if self._stop.is_set():
+            return STOCK_ALERT_POLL_SECONDS
+        if status == 401:
+            self._rejected[kind] = secret
+            if kind == "page":
+                clear_auth_if_current(secret)
+            fh_log("stock alerts: %s credential rejected" % kind)
+            return STOCK_ALERT_IDLE_RECHECK_SECONDS
+        if status != 200:
+            return self._failure_delay(retry_after)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+            items = payload["items"]
+            latest = payload["latest_id"]
+            if not isinstance(items, list) or type(latest) is not int or latest < 0:
+                raise ValueError("unexpected stock alert response")
+        except (KeyError, TypeError, ValueError):
+            return self._failure_delay(None)
+        self._failures = 0
+        if cursor is None or latest < cursor:
+            # First contact with this account/server, or the server's history
+            # moved backwards: adopt its position without showing anything.
+            save_stock_alert_cursor(latest)
+            return self._jittered(STOCK_ALERT_POLL_SECONDS)
+        fresh = sorted(
+            (item for item in items
+             if isinstance(item, dict) and type(item.get("id")) is int and item["id"] > cursor),
+            key=lambda item: item["id"],
+        )
+        for alert in fresh:
+            if self._stop.is_set():
+                return STOCK_ALERT_POLL_SECONDS
+            previous = cursor
+            text = stock_alert_text(alert)
+            # The cursor moves first so that a restart can repeat nothing; a
+            # push the host refuses puts it back so the alert is not lost.
+            save_stock_alert_cursor(alert["id"])
+            cursor = alert["id"]
+            if text is None:
+                continue
+            path = _stock_alert_site_path(alert.get("link"))
+
+            def open_spools(*_args, _path=path):
+                try:
+                    open_site_path(_path)
+                except Exception as exc:
+                    fh_log("stock alert link failed: %s" % type(exc).__name__)
+
+            if not push_native_notification(
+                "WarningNotificationLevel", text,
+                hyper_text=ui_text("stockAlertOpen"), on_click=open_spools,
+            ):
+                try:
+                    save_stock_alert_cursor(previous)
+                except Exception as exc:
+                    fh_log("stock alert cursor rollback failed: %s" % type(exc).__name__)
+                return self._failure_delay(None)
+        if len(fresh) >= STOCK_ALERT_PAGE_LIMIT:
+            return STOCK_ALERT_FIRST_POLL_RANGE[0]
+        return self._jittered(STOCK_ALERT_POLL_SECONDS)
+
+
+STOCK_ALERT_RUNTIME = StockAlertRuntime()
+
+
 _PLUGIN_RUNTIME_LOCK = threading.Lock()
 _PLUGIN_RUNTIME_ACTIVE = False
 _PLUGIN_RUNTIME_EPOCH = 0
@@ -10385,6 +10844,7 @@ def resume_deferred_background_threads():
                 BAMBU_REVOKE_SCHEDULER.start()
                 if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
                     BAMBU_BRIDGE_RUNTIME.start()
+                STOCK_ALERT_RUNTIME.start()
             except Exception as exc:
                 fh_log("deferred background start failed: %s" % type(exc).__name__)
 
@@ -10407,6 +10867,7 @@ def start_plugin_runtime(storage_initialized=False):
         refresh_ui_language()
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
+        STOCK_ALERT_RUNTIME.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)
@@ -10427,6 +10888,7 @@ def stop_plugin_runtime():
     BAMBU_REVOKE_SCHEDULER.stop()
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
+    STOCK_ALERT_RUNTIME.stop()
     return True
 
 
@@ -13749,11 +14211,7 @@ class FilamentHubCatalog(
     def _open_site_path(self, path):
         # A wiki page links to other parts of the site. Inside this panel there is
         # nowhere for a second tab to go, so the link opens in the real browser.
-        # Only a site-relative path is accepted and the origin is added here, so
-        # the embedded page cannot turn this into "open any address".
-        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
-            return
-        open_in_system_browser(SITE_URL + path)
+        open_site_path(path)
 
     def _log_managed_preset_state(self, folder, remote_ids, loaded_preset_ids, failed_ids):
         """Record desired, on-disk and host-loaded counts as three separate facts.
