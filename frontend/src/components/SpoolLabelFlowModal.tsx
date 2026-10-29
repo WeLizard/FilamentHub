@@ -12,6 +12,7 @@ import {
 import { translateApiError } from "../utils/translateApiError";
 import { LabelStudioModal } from "./LabelStudioModal";
 import { ModalOverlay } from "./ModalOverlay";
+import { QrUsageHint } from "./QrUsageHint";
 import { toast } from "./Toast";
 
 type LifecycleAction = "issue" | "rotate" | "retire" | "restore";
@@ -119,6 +120,7 @@ export function SpoolLabelFlowModal({
           <div>
             <h2 className="text-xl font-semibold text-white">{t("spoolQr.title")}</h2>
             <p className="mt-1 text-sm text-slate-400">{productName}</p>
+            <QrUsageHint className="mt-1" />
           </div>
           <button
             type="button"

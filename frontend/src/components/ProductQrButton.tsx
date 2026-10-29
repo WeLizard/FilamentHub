@@ -7,6 +7,7 @@ import { filamentPublicPath } from "../utils/catalogUrls";
 import { absoluteLocalizedUrl, normalizeSiteLocale } from "../utils/siteLocale";
 import { translateApiError } from "../utils/translateApiError";
 import { ModalOverlay } from "./ModalOverlay";
+import { QrUsageHint } from "./QrUsageHint";
 import { toast } from "./Toast";
 
 type Product = Pick<
@@ -116,6 +117,7 @@ export function ProductQrButton({
               {filament.qr_code}
             </p>
             <p className="mt-3 text-sm text-gray-400">{t("productQr.hint")}</p>
+            <QrUsageHint className="mt-2" />
             {error && (
               <p role="alert" className="mt-3 text-sm text-red-300">
                 {error}

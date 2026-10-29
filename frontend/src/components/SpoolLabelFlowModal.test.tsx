@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserSpool, UserSpoolQrIdentity } from "../api/client";
 import { SpoolLabelFlowModal } from "./SpoolLabelFlowModal";
@@ -26,6 +27,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options ? `${key} ${JSON.stringify(options)}` : key,
+    i18n: { language: "ru" },
   }),
 }));
 vi.mock("./Toast", () => ({ toast: { success: mocks.success } }));
@@ -80,9 +82,11 @@ function open() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={client}>
-      <SpoolLabelFlowModal spool={spool} onClose={vi.fn()} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <SpoolLabelFlowModal spool={spool} onClose={vi.fn()} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 

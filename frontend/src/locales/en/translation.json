@@ -1,4 +1,9 @@
 {
+  "qrUsage": {
+    "line": "What is the spool QR for?",
+    "tooltip": "Stick the QR on a spool and point your phone camera or the site's QR scanner at it — the spool's card or its shelf entry opens. Any QR scanner app works.",
+    "more": "Learn more"
+  },
   "productQr": {
     "title": "Product QR",
     "hint": "This code identifies the product, not an individual spool. Label editing is available in My spools and the company workspace.",

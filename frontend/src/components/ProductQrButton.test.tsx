@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductQrButton } from "./ProductQrButton";
 
@@ -41,7 +42,7 @@ describe("public product QR", () => {
   });
 
   it("offers only product viewing, classic downloads and a public link, without opening the label editor", async () => {
-    render(<ProductQrButton filament={filament} />);
+    render(<ProductQrButton filament={filament} />, { wrapper: MemoryRouter });
     fireEvent.click(screen.getByRole("button", { name: "productQr.title" }));
     expect(
       screen.getByRole("dialog", { name: "productQr.title" }),
@@ -72,6 +73,7 @@ describe("public product QR", () => {
   it("does not offer an absent QR and keeps file download available after preview failure", async () => {
     const { rerender } = render(
       <ProductQrButton filament={{ ...filament, qr_code: null }} />,
+      { wrapper: MemoryRouter },
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     rerender(<ProductQrButton filament={filament} />);
@@ -88,8 +90,18 @@ describe("public product QR", () => {
     );
   });
 
+  it("explains what the QR is for and links the shelf guide", () => {
+    render(<ProductQrButton filament={filament} />, { wrapper: MemoryRouter });
+    fireEvent.click(screen.getByRole("button", { name: "productQr.title" }));
+    expect(screen.getByText("qrUsage.line")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "qrUsage.more" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/wiki/articles/spool-on-shelf"),
+    );
+  });
+
   it("can render a compact icon-only trigger without changing the dialog", () => {
-    render(<ProductQrButton filament={filament} iconOnly />);
+    render(<ProductQrButton filament={filament} iconOnly />, { wrapper: MemoryRouter });
 
     const trigger = screen.getByRole("button", { name: "productQr.title" });
     expect(trigger).toHaveClass("size-10", "shrink-0");
