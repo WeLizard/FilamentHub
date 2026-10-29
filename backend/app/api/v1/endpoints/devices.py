@@ -119,14 +119,20 @@ async def regenerate_device_key(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DeviceRegenerateKeyResponse:
-    """Regenerate the API key for a device. The old key stops working immediately."""
+    """Issue a replacement API key for a device.
+
+    A device that already has a key keeps it working until the first request
+    with the new one, so replacing the key never leaves the printer without a
+    link while the new key is being pasted.
+    """
     device = await require_device(db, current_user.id, device_id)
     new_key = generate_api_key()
-    device.api_key = device_api_key_verifier(new_key)
-    # The old key dies with this call, so whatever used to report through it is
-    # silent again until someone pastes the new one.
-    device.reports_feed = False
-    device.last_seen_at = None
+    if device.api_key is None:
+        device.api_key = device_api_key_verifier(new_key)
+        device.reports_feed = False
+        device.last_seen_at = None
+    else:
+        device.pending_api_key = device_api_key_verifier(new_key)
     if device.device_fingerprint is None:
         device.device_fingerprint = f"manual-{uuid.uuid4().hex[:12]}"
     await ensure_material_topology(db, device)

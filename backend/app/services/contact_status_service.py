@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -33,11 +34,13 @@ ContactState = Literal["not_configured", "live", "silent", "unknown"]
 
 LEASE_SECONDS = 45
 RENEW_SECONDS = 15
+TOUCH_SECONDS = 600
 # A connector heartbeat is expected every ~120 s; a state flips to silent only
 # after two missed beats so one slow beat does not make the badge flicker.
 CONNECTOR_HEARTBEAT_SECONDS = 120
 CONNECTOR_LIVE_FACTOR = 2
 
+NATIVE_MIRROR_TRANSPORTS = frozenset({"spoolman_compat", "legacy_adapter"})
 _KEY = "fh:native-ws:v1:"
 _redis: Redis | None = None
 
@@ -65,21 +68,35 @@ async def _renew(device_id: int, connection_id: str) -> None:
         await pipe.execute()
 
 
-async def _lease_loop(device_id: int, connection_id: str) -> None:
+async def _lease_loop(
+    device_id: int,
+    connection_id: str,
+    touch: Callable[[], Awaitable[None]] | None,
+) -> None:
+    last_touch = time.monotonic()
     while True:
         await asyncio.sleep(RENEW_SECONDS)
         try:
             await _renew(device_id, connection_id)
         except (RedisError, OSError, ValueError):
             logger.warning("native presence renew failed", exc_info=True)
+        # An idle healthy socket sends nothing, so its contact time is advanced
+        # here - rarely, because every write is a row update per connected printer.
+        if touch is not None and time.monotonic() - last_touch >= TOUCH_SECONDS:
+            last_touch = time.monotonic()
+            try:
+                await touch()
+            except Exception:
+                logger.warning("native contact touch failed", exc_info=True)
 
 
 class NativeLease:
     """Presence of one open native socket, renewed by the worker that holds it."""
 
-    def __init__(self, device_id: int) -> None:
+    def __init__(self, device_id: int, touch: Callable[[], Awaitable[None]] | None = None) -> None:
         self.device_id = device_id
         self.connection_id = uuid4().hex
+        self._touch = touch
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -87,7 +104,9 @@ class NativeLease:
             await _renew(self.device_id, self.connection_id)
         except (RedisError, OSError, ValueError):
             logger.warning("native presence unavailable", exc_info=True)
-        self._task = asyncio.create_task(_lease_loop(self.device_id, self.connection_id))
+        self._task = asyncio.create_task(
+            _lease_loop(self.device_id, self.connection_id, self._touch)
+        )
 
     async def stop(self) -> None:
         if self._task is not None:
@@ -176,7 +195,9 @@ def build_contact_channels(
             }
         )
     for connector in sorted(printer.connectors, key=lambda item: item.id):
-        if not connector.active:
+        # The native link's own contact time is mirrored onto this connector;
+        # it is reported once, as the native channel.
+        if not connector.active or connector.transport in NATIVE_MIRROR_TRANSPORTS:
             continue
         channels.append(
             {

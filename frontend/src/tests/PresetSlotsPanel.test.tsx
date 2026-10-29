@@ -957,4 +957,21 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByText('presetSlots.happyHare.linkHint')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.newSystem.done')).toBeInTheDocument();
   });
+
+  it('asks before replacing a device key that is already in use', async () => {
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      has_api_key: true,
+      material_systems: [{ ...physicalPrinter.material_systems[0], provider: 'happy_hare', kind: 'mmu' }],
+    }];
+    const { PresetSlotsPanel } = await import('../components/presetSlots/PresetSlotsPanel');
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    fireEvent.click(await screen.findByRole('button', { name: /presetSlots.link.reissue/ }));
+    expect(regenerateKey).not.toHaveBeenCalled();
+    expect(screen.getByText('presetSlots.link.reissueConfirm')).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: 'presetSlots.link.reissue' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(regenerateKey).toHaveBeenCalledWith(11));
+  });
 });

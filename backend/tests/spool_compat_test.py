@@ -293,7 +293,7 @@ async def test_device_key_is_returned_once_but_stored_as_a_verifier(
 
 
 @pytest.mark.asyncio
-async def test_regenerated_device_key_replaces_the_verifier_and_revokes_the_old_key(
+async def test_replacement_key_overlaps_the_old_one_until_its_first_use(
     auth_client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
@@ -315,16 +315,23 @@ async def test_regenerated_device_key_replaces_the_verifier_and_revokes_the_old_
     device = await db_session.get(UserPrinterDevice, device_id)
     assert device is not None
     await db_session.refresh(device)
-    assert device.api_key == device_api_key_verifier(new_raw_key)
+    assert device.api_key == device_api_key_verifier(old_raw_key)
+    assert device.pending_api_key == device_api_key_verifier(new_raw_key)
 
-    old_key_response = await auth_client.get(
-        f"/api/v1/spool_compat/{old_raw_key}/v1/spool"
-    )
-    new_key_response = await auth_client.get(
-        f"/api/v1/spool_compat/{new_raw_key}/v1/spool"
-    )
-    assert old_key_response.status_code == 401
+    # Until the new key is pasted and used, the printer keeps its link.
+    still_old = await auth_client.get(f"/api/v1/spool_compat/{old_raw_key}/v1/spool")
+    assert still_old.status_code == 200
+    new_key_response = await auth_client.get(f"/api/v1/spool_compat/{new_raw_key}/v1/spool")
     assert new_key_response.status_code == 200
+
+    # The first request with the new key retires the old one - once.
+    old_key_response = await auth_client.get(f"/api/v1/spool_compat/{old_raw_key}/v1/spool")
+    assert old_key_response.status_code == 401
+    await db_session.refresh(device)
+    assert device.api_key == device_api_key_verifier(new_raw_key)
+    assert device.pending_api_key is None
+    again = await auth_client.get(f"/api/v1/spool_compat/{new_raw_key}/v1/spool")
+    assert again.status_code == 200
 
 
 @pytest.mark.asyncio

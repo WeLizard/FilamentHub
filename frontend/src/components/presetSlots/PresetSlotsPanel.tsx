@@ -107,6 +107,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [deleting, setDeleting] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
+  const [confirmReissue, setConfirmReissue] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const collapseStorageKey = `filamenthub:material-system:collapsed:${user?.id ?? 'anonymous'}:${system.id}`;
   const [collapsed, setCollapsed] = useState(
@@ -431,7 +432,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               {adapter.renderSettings?.({ printer, system, gates, spools, linkConfirmed })}
               <button
                 type="button"
-                onClick={handleIssueKey}
+                onClick={() => (printer.has_api_key ? setConfirmReissue(true) : void handleIssueKey())}
                 disabled={issuingKey}
                 className="flex items-center gap-1 rounded px-1 py-0.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
               >
@@ -488,6 +489,15 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         </div>
       </div>
 
+      <ConfirmDeleteModal
+        isOpen={confirmReissue}
+        onClose={() => setConfirmReissue(false)}
+        onConfirm={async () => { await handleIssueKey(); setConfirmReissue(false); }}
+        isLoading={issuingKey}
+        title={t('presetSlots.link.reissueTitle')}
+        confirmText={t('presetSlots.link.reissue')}
+        message={t('presetSlots.link.reissueConfirm')}
+      />
       <ConfirmDeleteModal
         isOpen={confirmDelete}
         onClose={() => setConfirmDelete(false)}

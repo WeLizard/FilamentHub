@@ -44,6 +44,11 @@ class UserPrinterDevice(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     device_fingerprint: Mapped[str | None] = mapped_column(String(200), nullable=True)
     api_key: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    # A replacement key waiting for its first use; the active key keeps working
+    # until then, so re-pasting it on the printer never opens a dead window.
+    pending_api_key: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
     supports_hh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reports_feed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gate_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -8455,6 +8455,8 @@
       "label": "Link to the printer",
       "issue": "Issue a key",
       "reissue": "Issue a new one",
+      "reissueTitle": "Issue a new key?",
+      "reissueConfirm": "A new key is created. The current one keeps working until the printer first connects with the new one, then it stops. Paste the new key into the printer settings.",
       "onceHint": "Connection details are shown once. A new key can be issued from the system card — the old one stops working then.",
       "notSet": "Link not set up",
       "waiting": "Waiting for the printer",

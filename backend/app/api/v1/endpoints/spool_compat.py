@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -40,14 +40,14 @@ from app.core.tag_identity import (
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.material_system import MaterialSystem
+from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.services.contact_status_service import NativeLease
+from app.services.contact_status_service import NATIVE_MIRROR_TRANSPORTS, NativeLease
 from app.services.material_contract_service import MAX_GATE_INDEX
 from app.services.preset_enrichment_service import _load_material_defaults
 from app.services.preset_slot_sync_service import (
@@ -382,7 +382,10 @@ async def _resolve_user_and_device(
         select(UserPrinterDevice, User)
         .join(User, UserPrinterDevice.user_id == User.id)
         .where(
-            UserPrinterDevice.api_key.in_(lookup_candidates),
+            or_(
+                UserPrinterDevice.api_key.in_(lookup_candidates),
+                UserPrinterDevice.pending_api_key.in_(lookup_candidates),
+            ),
             User.active.is_(True),
         )
     )
@@ -390,6 +393,10 @@ async def _resolve_user_and_device(
     if result is None:
         return None, None
     device, user = result
+    if device.pending_api_key in lookup_candidates:
+        # First request with the replacement key: it takes over and the old one
+        # stops working, exactly once.
+        device.api_key, device.pending_api_key = device.pending_api_key, None
     touch_device_last_seen(device)
     return user, device
 
@@ -983,7 +990,7 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
     user_id = user.id
     await websocket.accept()
     spool_ws_manager.connect(user_id, websocket)
-    lease = NativeLease(device_id)
+    lease = NativeLease(device_id, touch=lambda: _touch_native_contact(device_id))
     await lease.start()
     try:
         while True:
@@ -994,6 +1001,24 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
         spool_ws_manager.disconnect(user_id, websocket)
         await lease.stop()
         await _record_ws_closed(device_id)
+
+
+async def _touch_native_contact(device_id: int) -> None:
+    async with AsyncSessionLocal() as db:
+        device = await db.get(UserPrinterDevice, device_id)
+        if device is None:
+            return
+        touch_device_last_seen(device)
+        await db.execute(
+            update(PhysicalPrinterConnector)
+            .where(
+                PhysicalPrinterConnector.physical_printer_id == device_id,
+                PhysicalPrinterConnector.transport.in_(NATIVE_MIRROR_TRANSPORTS),
+            )
+            .values(last_seen_at=device.last_seen_at)
+        )
+        await db.commit()
+        await publish_committed_contacts(db)
 
 
 async def _record_ws_closed(device_id: int) -> None:
