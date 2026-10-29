@@ -27,6 +27,8 @@ capacity depends on the host and adapter. The current adapter supports Moonraker
 with Happy Hare (`happy_hare`) or direct Klipper feed (`legacy`); other printer
 protocols require their own adapters.
 
+QIDI Box (Moonraker objects `box_stepper slot*`) is detected automatically for `legacy` connections: slot presence, material and colour are reported read-only, following OrcaSlicer's `QidiPrinterAgent`. Usage still comes from Moonraker's native `[spoolman]`.
+
 OrcaSlicer is optional. Install on the printer's Linux computer or another
 always-on computer on the same LAN. No inbound internet port, printer API key in
 FilamentHub, or separate hardware is required. Do not install into Klipper's or

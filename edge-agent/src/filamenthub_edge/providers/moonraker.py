@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from ..errors import HttpRequestError, ProviderUnavailable
 from ..http import JsonHttpClient
+from . import qidi_box
 from .base import ProviderSnapshot
 
 HAPPY_HARE_FIELDS = [
@@ -94,6 +95,10 @@ class MoonrakerProvider:
         self._capabilities = ["read", "presence", "consumption"]
         self._identity_checked_at = float("-inf")
         self._identity: tuple[str, str] | None = None
+        self._qidi_box_checked_at = float("-inf")
+        self._qidi_box = False
+        self._qidi_dict_at = float("-inf")
+        self._qidi_dict: tuple[dict[int, str], dict[int, str]] | None = None
 
     def capabilities(self) -> list[str]:
         return list(self._capabilities)
@@ -113,6 +118,9 @@ class MoonrakerProvider:
         }
         if self.material_provider == "happy_hare":
             objects["mmu"] = HAPPY_HARE_FIELDS
+        qidi = self.material_provider == "legacy" and self._detect_qidi_box()
+        if qidi:
+            objects.update(qidi_box.query_objects())
         try:
             _, decoded, _ = self.http.request(
                 "POST",
@@ -144,6 +152,9 @@ class MoonrakerProvider:
             if tag_read_capable:
                 self._capabilities.append("tag_read")
         else:
+            if qidi:
+                slots = self._qidi_box_slots(status)
+                topology_complete = bool(slots)
             self._capabilities = ["read", "presence"]
             if self._native_spoolman_configured:
                 usage = None
@@ -158,6 +169,38 @@ class MoonrakerProvider:
             inventory_key_digest=inventory_key_digest,
             device_identity=self._device_identity(),
         )
+
+    def _detect_qidi_box(self) -> bool:
+        if time.monotonic() - self._qidi_box_checked_at < 60:
+            return self._qidi_box
+        self._qidi_box_checked_at = time.monotonic()
+        try:
+            _, decoded, _ = self.http.request("GET", "/printer/objects/list")
+            objects = decoded.get("result", {}).get("objects")
+            self._qidi_box = isinstance(objects, list) and qidi_box.is_qidi_box(objects)
+        except (HttpRequestError, AttributeError, TypeError):
+            # A failed capability read keeps the previous answer instead of
+            # flipping a QIDI Box printer to "no slots" on one lost request.
+            pass
+        return self._qidi_box
+
+    def _qidi_box_slots(self, status: dict[str, Any]) -> list[dict[str, Any]]:
+        age = time.monotonic() - self._qidi_dict_at
+        known = self._qidi_dict is not None and any(self._qidi_dict)
+        if self._qidi_dict is None or age > (600 if known else 60):
+            self._qidi_dict_at = time.monotonic()
+            try:
+                _, text, _ = self.http.request("GET", qidi_box.DICT_PATH, as_text=True)
+                self._qidi_dict = qidi_box.parse_dictionary(text)
+            except HttpRequestError:
+                # Without the dictionary presence is still real; material and
+                # colour are left unknown rather than guessed.
+                self._qidi_dict = self._qidi_dict or ({}, {})
+        colors, filaments = self._qidi_dict
+        try:
+            return qidi_box.build_slots(status, colors, filaments)
+        except ValueError:
+            return []
 
     def _device_identity(self) -> tuple[str, str] | None:
         if time.monotonic() - self._identity_checked_at < 60:

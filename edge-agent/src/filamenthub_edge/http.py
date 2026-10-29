@@ -70,6 +70,7 @@ class JsonHttpClient:
         payload: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
         expected_statuses: set[int] | None = None,
+        as_text: bool = False,
     ) -> tuple[int, Any, Mapping[str, str]]:
         if not path.startswith("/") or path.startswith("//"):
             raise ValueError("request path must be origin-relative")
@@ -108,6 +109,11 @@ class JsonHttpClient:
                 f"HTTP peer returned {status}{detail}",
                 status_code=status,
             )
+        if as_text:
+            try:
+                return status, body.decode("utf-8", errors="replace"), response_headers
+            except ValueError as exc:
+                raise HttpRequestError("HTTP peer returned invalid text") from exc
         if not body:
             decoded: Any = None
         else:

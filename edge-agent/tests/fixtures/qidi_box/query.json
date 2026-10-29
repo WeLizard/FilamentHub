@@ -1,0 +1,15 @@
+{"result": {"status": {
+  "print_stats": {"state": "standby", "filename": "", "filament_used": 0.0, "total_duration": 0.0, "print_duration": 0.0},
+  "display_status": {"progress": 0.0},
+  "extruder": {"temperature": 25.1, "target": 0.0},
+  "heater_bed": {"temperature": 24.8, "target": 0.0},
+  "save_variables": {"variables": {"box_count": 1,
+    "color_slot0": 2, "filament_slot0": 1, "vendor_slot0": 1,
+    "color_slot1": 5, "filament_slot1": 3, "vendor_slot1": 0,
+    "color_slot2": 1, "filament_slot2": 1, "vendor_slot2": 0,
+    "color_slot3": 9, "filament_slot3": 99, "vendor_slot3": 0}},
+  "box_stepper slot0": {"runout_button": 0},
+  "box_stepper slot1": {"runout_button": 0},
+  "box_stepper slot2": {"runout_button": 1},
+  "box_stepper slot3": {"runout_button": null}
+}}}
