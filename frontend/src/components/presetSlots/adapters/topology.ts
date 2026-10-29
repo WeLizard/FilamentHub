@@ -30,7 +30,7 @@ export function topologyFromSystem(choices: FeedTopologyChoice[], system?: Mater
     ?? choices.find((item) => item.kind === system?.kind) ?? choices[0];
   if (!system) return initialTopology(choice);
   const extraIndices = new Set(choice.extras?.map((item) => item.index));
-  const slots = system.slots.filter((slot) => slot.active);
+  const slots = system.slots.filter((slot) => slot.active && slot.user_visibility !== 'hidden');
   if (slots.length === 0) return initialTopology(choice);
   return { choice: choice.id,
     count: String(slots.filter((slot) => !extraIndices.has(slot.provider_index)).length || choice.count?.initial || 1),

@@ -71,7 +71,7 @@ function RoutingEditor({ printer, system, status, onClose, onRefresh }: RoutingE
   }, [status.routing]);
 
   const slots = [...system.slots]
-    .filter((slot) => slot.active)
+    .filter((slot) => slot.active && slot.displayed !== false)
     .sort((left, right) => left.provider_index - right.provider_index);
   const mappedTools = new Set(mapping.map((item) => item.tool_index));
   const hasDuplicateTool = mappedTools.size !== mapping.length;

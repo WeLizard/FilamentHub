@@ -4,7 +4,8 @@ import type { FeedTopologyChoice } from './adapters/types';
 import { initialTopology } from './adapters/topology';
 import type { TopologySelection } from './adapters/topology';
 
-export function TopologyEditor({ choices, value, onChange }: {
+export function TopologyEditor({ choices, value, onChange, heldExtras = [] }: {
+  heldExtras?: number[];
   choices: FeedTopologyChoice[];
   value: TopologySelection;
   onChange: (value: TopologySelection) => void;
@@ -29,6 +30,8 @@ export function TopologyEditor({ choices, value, onChange }: {
       <input type="checkbox" checked={value.extras.includes(extra.index)} onChange={(event) => onChange({ ...value,
         extras: event.target.checked ? [...value.extras, extra.index] : value.extras.filter((index) => index !== extra.index) })} />
       {t(extra.labelKey)}
+      {!value.extras.includes(extra.index) && heldExtras.includes(extra.index)
+        && <span className="text-xs text-gray-400">{t('printerSetup.feed.hidesWhenEmpty')}</span>}
     </label>)}
   </div>;
 }

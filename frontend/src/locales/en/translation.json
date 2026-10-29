@@ -161,6 +161,7 @@
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings."
     },
     "feed": {
+      "hidesWhenEmpty": "Hides once it is empty",
       "existingMap": "The printer’s position map is preserved. If its hardware changed, refresh from the printer; a count must not renumber its slots.",
       "configure": "Spools and filament changer",
       "label": "How is filament fed?",

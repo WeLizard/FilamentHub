@@ -4645,6 +4645,8 @@ export interface MaterialSlot {
   label: string | null;
   kind: string;
   active: boolean;
+  user_visibility?: 'auto' | 'shown' | 'hidden' | null;
+  displayed?: boolean;
   assignment_revision: number;
   assignment: MaterialSlotAssignment | null;
   observation?: MaterialSlotObservation | null;

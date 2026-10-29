@@ -423,6 +423,10 @@ async def create_material_system(
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
+def _hidden_by_user(slot: MaterialSlot) -> bool:
+    return slot.user_visibility == "hidden" and slot.kind not in {"slot", "gate"}
+
+
 async def _occupied_slot_indices(db: AsyncSession, slots: list[MaterialSlot]) -> set[int]:
     """Slot indices holding a spool or a preset, by either assignment path.
 
@@ -583,7 +587,11 @@ async def update_material_system(
                 payload.kind in {None, system.kind}
                 and payload.provider in {None, system.provider}
                 and {(item.provider_index, item.kind, item.label) for item in payload.slots}
-                == {(slot.provider_index, slot.kind, slot.label) for slot in slots if slot.active}
+                == {
+                    (slot.provider_index, slot.kind, slot.label)
+                    for slot in slots
+                    if slot.active and not _hidden_by_user(slot)
+                }
             )
             # A lost response may replay an already applied explicit map. It
             # cannot change any assignment, and must not force a fresh card.
@@ -629,7 +637,19 @@ async def update_material_system(
             if len({item.provider_index for item in requested}) != len(requested):
                 raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
         requested_indices = {item.provider_index for item in requested}
-        doomed = [slot for slot in slots if slot.provider_index not in requested_indices]
+        # Leaving an extra holder (external spool, bypass) out of a person's save
+        # hides it: the provider legitimately reports it again, and deleting the
+        # row would only bring it back as a new one with a new identity.
+        hidden = [
+            slot
+            for slot in slots
+            if slot.provider_index not in requested_indices and slot.kind not in {"slot", "gate"}
+        ]
+        doomed = [
+            slot
+            for slot in slots
+            if slot.provider_index not in requested_indices and slot not in hidden
+        ]
         await _guard_route_reinterpretation(
             db, system, slots, requested, payload.kind or system.kind
         )
@@ -670,6 +690,10 @@ async def update_material_system(
                 ):
                     slot.assignment_revision += 1
                 slot.kind, slot.label, slot.active = item.kind, item.label, True
+                if payload.slots is not None and item.kind not in {"slot", "gate"}:
+                    slot.user_visibility = "shown"
+        for slot in hidden:
+            slot.user_visibility = "hidden"
         if doomed:
             await db.execute(
                 delete(MaterialSlot).where(MaterialSlot.id.in_([slot.id for slot in doomed]))

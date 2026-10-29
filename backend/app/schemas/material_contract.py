@@ -335,6 +335,9 @@ class MaterialSlotResponse(BaseModel):
     label: str | None
     kind: str
     active: bool
+    user_visibility: Literal["auto", "shown", "hidden"] | None = None
+    # A hidden slot stays visible while it holds something or the printer reports material.
+    displayed: bool = True
     assignment_revision: int
     assignment: MaterialSlotAssignmentResponse | None = None
     observation: MaterialSlotObservationResponse | None = None
@@ -343,6 +346,23 @@ class MaterialSlotResponse(BaseModel):
     legacy_projection: LegacySlotProjectionResponse | None = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def derive_displayed(self) -> "MaterialSlotResponse":
+        if self.user_visibility != "hidden":
+            self.displayed = True
+            return self
+        held = any(
+            holder is not None and (holder.spool_id is not None or holder.preset_id is not None)
+            for holder in (self.assignment, self.legacy_projection)
+        )
+        reported = any(
+            item.present is True or bool(item.material)
+            for item in [self.observation, *self.observations]
+            if item is not None
+        )
+        self.displayed = held or reported
+        return self
 
 
 class MaterialSystemResponse(BaseModel):
@@ -481,6 +501,7 @@ class PhysicalPrinterResponse(BaseModel):
                     kind=slot.kind,
                     active=slot.active,
                     assignment_revision=slot.assignment_revision,
+                    user_visibility=slot.user_visibility,
                     assignment=assignment,
                     observation=(
                         MaterialSlotObservationResponse.model_validate(slot.observation)

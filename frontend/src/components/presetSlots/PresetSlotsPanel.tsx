@@ -134,7 +134,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   });
   const systemLabel = GENERATED_SYSTEM_NAMES.has(system.name) ? providerLabel : system.name;
   const visibleSlots = useMemo(
-    () => system.slots.filter((slot) => slot.active),
+    () => system.slots.filter((slot) => slot.active && slot.displayed !== false),
     [system.slots],
   );
   const gates = useMemo(
@@ -727,7 +727,7 @@ export function PresetSlotsPanel({
         )}
         <div className="flex flex-wrap items-start justify-center gap-4">
           {materialSections.map(({ printer, system }) => {
-            const activeSlotCount = system.slots.filter((slot) => slot.active).length;
+            const activeSlotCount = system.slots.filter((slot) => slot.active && slot.displayed !== false).length;
             const preferredColumns = Math.min(Math.max(activeSlotCount, 1), 9);
             const preferredWidthRem = Math.max(
               20,

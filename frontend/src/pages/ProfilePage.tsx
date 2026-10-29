@@ -2424,7 +2424,7 @@ const collectFeedTargets = (printers: PhysicalPrinter[]): FeedTarget[] => {
       .filter((system) => system.active)
       .forEach((system) => {
         const slots = system.slots
-          .filter((slot) => slot.active)
+          .filter((slot) => slot.active && slot.displayed !== false)
           .sort((left, right) => left.provider_index - right.provider_index || left.id - right.id);
         if (slots.length > 0) {
           targets.push({

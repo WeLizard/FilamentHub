@@ -566,7 +566,7 @@ export function MyPrintersList({
                           className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/25 text-emerald-200"
                         >
                           {system.name} · {t('myPrinters.gates', {
-                            count: system.slots.filter((slot) => slot.active).length,
+                            count: system.slots.filter((slot) => slot.active && slot.displayed !== false).length,
                           })}
                         </span>
                       ))}

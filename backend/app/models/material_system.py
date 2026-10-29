@@ -103,6 +103,8 @@ class MaterialSlot(Base):
     label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     kind: Mapped[str] = mapped_column(String(50), nullable=False, default="slot")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # The person's own choice (shown/hidden; null = auto). Providers never write it.
+    user_visibility: Mapped[str | None] = mapped_column(String(10), nullable=True)
     assignment_revision: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )

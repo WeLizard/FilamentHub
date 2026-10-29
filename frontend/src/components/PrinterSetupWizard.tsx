@@ -699,7 +699,8 @@ export function PrinterSetupWizard({
               {(!existingSystem || editTopology || provider !== existingSystem.provider) && (!probe || probe.provider === 'manual') && <details className="rounded-lg border border-white/10 p-3"
                 open={manualSettings && adapter.topologyFromProvider === true}>
                 <summary className="cursor-pointer text-sm font-medium">{t('printerSetup.feed.configure')}</summary>
-                <div className="mt-3 space-y-3"><TopologyEditor choices={topologies} value={topology} onChange={changeTopology} />
+                <div className="mt-3 space-y-3"><TopologyEditor choices={topologies} value={topology} onChange={changeTopology}
+                  heldExtras={existingSystem?.slots.filter((slot) => slot.displayed !== false).map((slot) => slot.provider_index)} />
                   {adapter.onboarding?.connectionProvider && <p className="text-xs text-gray-400">{t(adapter.onboarding.connectionHintKey)}</p>}
                   <p className="text-xs text-gray-400">{t('printerSetup.feed.manualHint')}</p>
                 </div>

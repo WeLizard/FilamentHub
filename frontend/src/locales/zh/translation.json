@@ -161,6 +161,7 @@
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。"
     },
     "feed": {
+      "hidesWhenEmpty": "清空后将隐藏",
       "existingMap": "已保留打印机的槽位映射。如果硬件发生变化，请从打印机刷新数据；修改数量不能重新编号槽位。",
       "configure": "料卷与换料系统",
       "label": "如何供料？",
