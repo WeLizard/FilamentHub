@@ -211,6 +211,14 @@ class PhysicalPrinterConnector(Base):
     topology_authority: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Heartbeat facts: is the device behind the helper reachable, and how often
+    # does the helper promise to report. None = the helper did not say.
+    provider_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    contact_interval_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The one connector per system whose usage reports are deducted from spools.
+    usage_authority: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     last_topology_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -225,11 +233,22 @@ class PhysicalPrinterConnector(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint(
+        # One connector per source: two workstations (or a workstation and an
+        # Edge) paired to the same printer must not evict each other.
+        Index(
+            "uq_physical_printer_connector_source",
             "physical_printer_id",
             "provider",
             "transport",
-            name="uq_physical_printer_connector",
+            text("coalesce(source_instance_id, '')"),
+            unique=True,
+        ),
+        Index(
+            "uq_connector_usage_authority",
+            "material_system_id",
+            unique=True,
+            postgresql_where=text("usage_authority"),
+            sqlite_where=text("usage_authority = 1"),
         ),
         Index(
             "uq_material_system_topology_authority",

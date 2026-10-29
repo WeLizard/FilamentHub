@@ -46,9 +46,9 @@ MAX_WORKER_STREAMS = 512
 MAX_PENDING_EVENTS = 32
 _PENDING = "printer_contact_pending"
 _COMMITTED = "printer_contact_committed"
-_NAMESPACE = "fh:printer-contact:v1:" + hashlib.sha256(
-    str(settings.DATABASE_URL).encode()
-).hexdigest()[:16]
+_NAMESPACE = (
+    "fh:printer-contact:v1:" + hashlib.sha256(str(settings.DATABASE_URL).encode()).hexdigest()[:16]
+)
 
 # Expiring leases bound tabs across workers; abandoned requests expire without
 # a sweeper or a Redis command on every keepalive.
@@ -76,9 +76,7 @@ class ContactSubscription:
     auth_version: int = 0
     session_id: str | None = None
     lease_id: str = field(default_factory=lambda: uuid4().hex)
-    queue: asyncio.Queue = field(
-        default_factory=lambda: asyncio.Queue(maxsize=MAX_PENDING_EVENTS)
-    )
+    queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=MAX_PENDING_EVENTS))
     closed: bool = False
     auth_valid_until: float = 0
     auth_ready: asyncio.Event = field(default_factory=asyncio.Event)
@@ -123,8 +121,11 @@ class PrinterContactBroker:
     def redis(self) -> Redis:
         if self._redis is None:
             self._redis = Redis.from_url(
-                settings.REDIS_URL, decode_responses=True, max_connections=16,
-                socket_connect_timeout=0.5, socket_timeout=1,
+                settings.REDIS_URL,
+                decode_responses=True,
+                max_connections=16,
+                socket_connect_timeout=0.5,
+                socket_timeout=1,
                 client_name="fh-printer-contact",
             )
         return self._redis
@@ -151,12 +152,22 @@ class PrinterContactBroker:
                 async with self.redis.pipeline(transaction=False) as pipe:
                     for user_id, payload in messages:
                         if payload["type"] == "revoke":
-                            pipe.set(f"{_NAMESPACE}:deny-token:{payload['token_id']}", 1, ex=TICKET_SECONDS + 1)
+                            pipe.set(
+                                f"{_NAMESPACE}:deny-token:{payload['token_id']}",
+                                1,
+                                ex=TICKET_SECONDS + 1,
+                            )
                         elif payload["type"] == "disconnect":
                             pipe.set(f"{_NAMESPACE}:deny-user:{user_id}", 1, ex=TICKET_SECONDS + 1)
                         elif payload["type"] == "revoke_session":
-                            pipe.set(f"{_NAMESPACE}:deny-session:{payload['session_id']}", 1, ex=TICKET_SECONDS + 1)
-                        pipe.publish(self.channel(user_id), json.dumps(payload, separators=(",", ":")))
+                            pipe.set(
+                                f"{_NAMESPACE}:deny-session:{payload['session_id']}",
+                                1,
+                                ex=TICKET_SECONDS + 1,
+                            )
+                        pipe.publish(
+                            self.channel(user_id), json.dumps(payload, separators=(",", ":"))
+                        )
                     await pipe.execute()
         except (RedisError, OSError, TimeoutError, ValueError):
             self._warn()
@@ -174,19 +185,27 @@ class PrinterContactBroker:
                 key = f"{_NAMESPACE}:ticket-rate:{user_id}"
                 count = await self.redis.eval(
                     "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
-                    1, key, TICKET_SECONDS,
+                    1,
+                    key,
+                    TICKET_SECONDS,
                 )
                 if count > 12:
                     raise StreamLimitReached
                 ticket = secrets.token_urlsafe(32)
                 key = f"{_NAMESPACE}:ticket:{hashlib.sha256(ticket.encode()).hexdigest()}"
-                await self.redis.set(key, json.dumps({
-                    "user_id": user_id,
-                    "token_id": token_id,
-                    "auth_version": auth_version,
-                    "session_id": session_id,
-                    "expires_at": expires_at,
-                }), ex=TICKET_SECONDS)
+                await self.redis.set(
+                    key,
+                    json.dumps(
+                        {
+                            "user_id": user_id,
+                            "token_id": token_id,
+                            "auth_version": auth_version,
+                            "session_id": session_id,
+                            "expires_at": expires_at,
+                        }
+                    ),
+                    ex=TICKET_SECONDS,
+                )
                 return ticket
         except (RedisError, OSError, TimeoutError, ValueError) as exc:
             self._warn()
@@ -202,7 +221,9 @@ class PrinterContactBroker:
                 if not value:
                     return None
                 session = json.loads(value)
-                if await self._denied(session["user_id"], session["token_id"], session.get("session_id")):
+                if await self._denied(
+                    session["user_id"], session["token_id"], session.get("session_id")
+                ):
                     return None
                 return session
         except (RedisError, OSError, TimeoutError, ValueError) as exc:
@@ -210,11 +231,13 @@ class PrinterContactBroker:
             raise StreamUnavailable from exc
 
     async def _denied(self, user_id: int, token_id: str, session_id: str | None = None) -> bool:
-        return bool(await self.redis.exists(
-            f"{_NAMESPACE}:deny-token:{token_id}",
-            f"{_NAMESPACE}:deny-user:{user_id}",
-            f"{_NAMESPACE}:deny-session:{session_id}",
-        ))
+        return bool(
+            await self.redis.exists(
+                f"{_NAMESPACE}:deny-token:{token_id}",
+                f"{_NAMESPACE}:deny-user:{user_id}",
+                f"{_NAMESPACE}:deny-session:{session_id}",
+            )
+        )
 
     async def _refresh_authorizations(self, subscriptions: list[ContactSubscription]) -> None:
         if not subscriptions:
@@ -260,8 +283,12 @@ class PrinterContactBroker:
                     # becoming one repeated database batch per socket. New
                     # handshakes never postpone this periodic authorization.
                     next_check = now + AUTH_RECHECK_SECONDS
-                batch = [item for group in self._users.values() for item in group
-                         if not item.closed and (periodic or not item.auth_ready.is_set())]
+                batch = [
+                    item
+                    for group in self._users.values()
+                    for item in group
+                    if not item.closed and (periodic or not item.auth_ready.is_set())
+                ]
                 await self._refresh_authorizations(batch)
         finally:
             # Cancellation/death of the guard must not leave valid-looking
@@ -316,7 +343,9 @@ class PrinterContactBroker:
                     subscription.stop()
 
     @asynccontextmanager
-    async def subscribe(self, user_id: int, token_id: str, auth_version: int = 0, session_id: str | None = None):
+    async def subscribe(
+        self, user_id: int, token_id: str, auth_version: int = 0, session_id: str | None = None
+    ):
         subscription = ContactSubscription(user_id, token_id, auth_version, session_id)
         acquired = False
         try:
@@ -325,15 +354,23 @@ class PrinterContactBroker:
                     if sum(map(len, self._users.values())) >= MAX_WORKER_STREAMS:
                         raise StreamLimitReached
                     now = time.time()
-                    acquired = bool(await self.redis.eval(
-                        _ACQUIRE, 1, self.lease_key(user_id), now,
-                        MAX_USER_STREAMS, now + STREAM_SECONDS + 15,
-                        subscription.lease_id, STREAM_SECONDS + 30,
-                    ))
+                    acquired = bool(
+                        await self.redis.eval(
+                            _ACQUIRE,
+                            1,
+                            self.lease_key(user_id),
+                            now,
+                            MAX_USER_STREAMS,
+                            now + STREAM_SECONDS + 15,
+                            subscription.lease_id,
+                            STREAM_SECONDS + 30,
+                        )
+                    )
                     if not acquired:
                         raise StreamLimitReached
-                    if ((self._reader is not None and self._reader.done())
-                            or (self._auth_guard is not None and self._auth_guard.done())):
+                    if (self._reader is not None and self._reader.done()) or (
+                        self._auth_guard is not None and self._auth_guard.done()
+                    ):
                         await self._close_reader()
                     if self._pubsub is None:
                         self._pubsub = self.redis.pubsub()
@@ -421,27 +458,51 @@ async def _load_authorizations(
     # or a query for every contact. No connection is held between checks.
     async with AsyncSessionLocal() as db:
         active_rows = (
-            await db.execute(
-                select(User.id, User.auth_version, User.legacy_access_revoked_at).where(
-                    User.id.in_({item.user_id for item in subscriptions}),
-                    User.active.is_(True),
+            (
+                await db.execute(
+                    select(User.id, User.auth_version, User.legacy_access_revoked_at).where(
+                        User.id.in_({item.user_id for item in subscriptions}),
+                        User.active.is_(True),
+                    )
                 )
             )
-        ).tuples().all()
+            .tuples()
+            .all()
+        )
         active_versions = {row[0]: row[1] for row in active_rows}
         legacy_allowed = {row[0] for row in active_rows if row[2] is None}
-        revoked_tokens = set((await db.scalars(select(RevokedToken.jti).where(
-            RevokedToken.jti.in_({item.token_id for item in subscriptions}),
-        ))).all())
+        revoked_tokens = set(
+            (
+                await db.scalars(
+                    select(RevokedToken.jti).where(
+                        RevokedToken.jti.in_({item.token_id for item in subscriptions}),
+                    )
+                )
+            ).all()
+        )
         session_ids = {item.session_id for item in subscriptions if item.session_id is not None}
-        live_families = dict((await db.execute(select(RefreshSession.id, RefreshSession.user_id).where(
-            RefreshSession.id.in_(session_ids), RefreshSession.revoked_at.is_(None),
-            RefreshSession.expires_at > datetime.now(timezone.utc),
-        ))).tuples().all()) if session_ids else {}
+        live_families = (
+            dict(
+                (
+                    await db.execute(
+                        select(RefreshSession.id, RefreshSession.user_id).where(
+                            RefreshSession.id.in_(session_ids),
+                            RefreshSession.revoked_at.is_(None),
+                            RefreshSession.expires_at > datetime.now(timezone.utc),
+                        )
+                    )
+                )
+                .tuples()
+                .all()
+            )
+            if session_ids
+            else {}
+        )
         for item in subscriptions:
             valid = (
                 live_families.get(item.session_id) == item.user_id
-                if item.session_id is not None else item.user_id in legacy_allowed
+                if item.session_id is not None
+                else item.user_id in legacy_allowed
             )
             if not valid:
                 revoked_tokens.add(item.token_id)
@@ -453,7 +514,8 @@ def queue_other_sessions_revoked(session: Session, user_id: int, preserved_sessi
     transaction = session.get_nested_transaction() or session.get_transaction()
     pending = session.info.setdefault(_PENDING, {}).setdefault(transaction, {})
     pending[(user_id, "other_sessions", user_id)] = {
-        "type": "revoke_other_sessions", "preserved_session_id": preserved_session_id,
+        "type": "revoke_other_sessions",
+        "preserved_session_id": preserved_session_id,
     }
 
 
@@ -466,6 +528,13 @@ def _native_ws(device: UserPrinterDevice, state: Any) -> str | None:
     return "open" if opened else "closed"
 
 
+def _native_seen_at(device: UserPrinterDevice, state: Any) -> str | None:
+    value = device.native_last_seen_at
+    if value is None or not state.attrs.native_last_seen_at.history.has_changes():
+        return None
+    return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).isoformat()
+
+
 def _collect_contacts(session: Session, _flush_context: Any) -> None:
     transaction = session.get_nested_transaction() or session.get_transaction()
     pending = session.info.setdefault(_PENDING, {}).setdefault(transaction, {})
@@ -475,14 +544,13 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
         elif isinstance(row, RefreshSession):
             if row.revoked_at is not None and inspect(row).attrs.revoked_at.history.has_changes():
                 pending[(row.user_id, "session", row.id)] = {
-                    "type": "revoke_session", "session_id": row.id,
+                    "type": "revoke_session",
+                    "session_id": row.id,
                 }
         elif isinstance(row, User):
             active_changed = inspect(row).attrs.active.history.has_changes()
             auth_version_changed = inspect(row).attrs.auth_version.history.has_changes()
-            if row.id is not None and (
-                (active_changed and not row.active) or auth_version_changed
-            ):
+            if row.id is not None and ((active_changed and not row.active) or auth_version_changed):
                 pending[(row.id, "auth", row.id)] = {"type": "disconnect"}
         elif isinstance(row, (UserPrinterDevice, PhysicalPrinterConnector)):
             state = inspect(row)
@@ -490,14 +558,22 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
             fields = (
                 ("last_seen_at", "active")
                 if connector
-                else ("last_seen_at", "reports_feed", "ws_connected_at", "ws_disconnected_at")
+                else (
+                    "last_seen_at",
+                    "reports_feed",
+                    "native_last_seen_at",
+                    "ws_connected_at",
+                    "ws_disconnected_at",
+                )
             )
             if not any(state.attrs[name].history.has_changes() for name in fields):
                 continue
             value = row.last_seen_at
             timestamp = None
             if value is not None:
-                timestamp = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).isoformat()
+                timestamp = (
+                    value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+                ).isoformat()
             pending[(row.user_id, "connector" if connector else "printer", row.id)] = {
                 "type": "contact",
                 "printer_id": row.physical_printer_id if connector else row.id,
@@ -506,6 +582,7 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
                 "active": row.active if connector else True,
                 "reports_feed": None if connector else row.reports_feed,
                 "native_ws": None if connector else _native_ws(row, state),
+                "native_seen_at": None if connector else _native_seen_at(row, state),
             }
 
 

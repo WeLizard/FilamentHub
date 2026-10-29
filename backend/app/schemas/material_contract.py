@@ -433,7 +433,9 @@ class ContactChannelResponse(BaseModel):
     connector_id: int | None = None
     material_system_id: int | None = None
     last_contact_at: datetime | None
-    state: Literal["not_configured", "live", "silent", "unknown"]
+    state: Literal[
+        "not_configured", "live", "executor_only", "silent", "unknown", "needs_action"
+    ]
     basis: str
 
 

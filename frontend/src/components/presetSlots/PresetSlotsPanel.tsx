@@ -308,7 +308,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                   ? 'bg-amber-500/15 text-amber-300'
                   : linkState === 'active' || linkState === 'ready'
                   ? 'bg-emerald-500/15 text-emerald-300'
-                  : linkState === 'delayed'
+                  : linkState === 'delayed' || linkState === 'executor' || linkState === 'action'
                     ? 'bg-amber-500/15 text-amber-300'
                     : linkState === 'inactive'
                       ? 'bg-white/10 text-gray-400'
@@ -319,7 +319,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                 <Wifi className="h-3 w-3" />
               ) : linkState === 'ready' ? (
                 <Check className="h-3 w-3" />
-              ) : linkState === 'delayed' ? (
+              ) : linkState === 'delayed' || linkState === 'executor' || linkState === 'action' ? (
                 <AlertTriangle className="h-3 w-3" />
               ) : linkState === 'inactive' ? (
                 <WifiOff className="h-3 w-3" />

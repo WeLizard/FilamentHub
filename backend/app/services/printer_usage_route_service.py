@@ -7,7 +7,7 @@ import hmac
 import json
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,3 +190,43 @@ async def resolve_usage_routes(
             raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
         routes[item.slot_index] = route
     return routes
+
+
+USAGE_AUTHORITY_STALE_AFTER = timedelta(minutes=15)
+
+
+async def hold_usage_authority(db: AsyncSession, connector: PhysicalPrinterConnector) -> bool:
+    """Whether this connector is the one whose usage reports are deducted.
+
+    The first connector that can report consumption claims its system. Another
+    takes over only when the holder is inactive or has been silent for a while,
+    so two helpers watching one printer never deduct the same print twice.
+    """
+    if connector.usage_authority:
+        return True
+    if connector.material_system_id is None:
+        return False
+    holder = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.material_system_id == connector.material_system_id,
+            PhysicalPrinterConnector.usage_authority.is_(True),
+            PhysicalPrinterConnector.id != connector.id,
+        )
+        .with_for_update()
+    )
+    if holder is not None:
+        seen = holder.last_seen_at
+        if seen is not None and seen.tzinfo is None:
+            seen = seen.replace(tzinfo=timezone.utc)
+        if (
+            holder.active
+            and seen is not None
+            and datetime.now(timezone.utc) - seen < USAGE_AUTHORITY_STALE_AFTER
+        ):
+            return False
+        holder.usage_authority = False
+        await db.flush()
+    connector.usage_authority = True
+    await db.flush()
+    return True

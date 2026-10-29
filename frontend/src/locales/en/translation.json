@@ -8048,6 +8048,8 @@
   },
   "deviceLink": {
     "label": "Plugin link",
+    "executor": "Helper online, printer unreachable",
+    "action": "Reconnect needed",
     "active": "Link active",
     "ready": "Connected on demand",
     "delayed": "Data delayed",

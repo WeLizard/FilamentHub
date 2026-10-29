@@ -299,6 +299,7 @@ async def issue_pairing_code(
                 PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
                 PhysicalPrinterConnector.provider == OCTOPRINT_PROVIDER,
                 PhysicalPrinterConnector.transport == OCTOPRINT_TRANSPORT,
+                PhysicalPrinterConnector.material_system_id == material_system_id,
                 PhysicalPrinterConnector.id != connector.id,
                 PhysicalPrinterConnector.active.is_(True),
             )
@@ -640,7 +641,12 @@ async def record_heartbeat(
             )
         )
         if slot_exists is None:
-            raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
+            # The slot count changed under a running bridge. The heartbeat must
+            # still land (it is the proof of life); only the stale slot report
+            # is dropped.
+            payload = payload.model_copy(
+                update={"reported_slot_index": None, "reported_slot_source": None}
+            )
 
     if payload.routing_mode is not None and payload.tool_slot_map is not None:
         reported_mapping = _normalized_tool_slot_map(payload.tool_slot_map)

@@ -30,7 +30,11 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-ContactState = Literal["not_configured", "live", "silent", "unknown"]
+# executor_only: the helper reports in, the printer behind it does not answer.
+# needs_action: the link was set up and now needs a person (revoked, replaced).
+ContactState = Literal[
+    "not_configured", "live", "executor_only", "silent", "unknown", "needs_action"
+]
 
 LEASE_SECONDS = 45
 RENEW_SECONDS = 15
@@ -161,12 +165,21 @@ def native_state(
     return "silent"
 
 
-def connector_state(last_seen_at: datetime | None, now: datetime | None = None) -> ContactState:
+def connector_state(
+    last_seen_at: datetime | None,
+    now: datetime | None = None,
+    *,
+    interval_s: int | None = None,
+    provider_reachable: bool | None = None,
+) -> ContactState:
     seen = _aware(last_seen_at)
     if seen is None:
         return "unknown"
     age = ((now or datetime.now(timezone.utc)) - seen).total_seconds()
-    return "live" if age < CONNECTOR_HEARTBEAT_SECONDS * CONNECTOR_LIVE_FACTOR else "silent"
+    window = (interval_s or CONNECTOR_HEARTBEAT_SECONDS) * CONNECTOR_LIVE_FACTOR
+    if age >= window:
+        return "silent"
+    return "executor_only" if provider_reachable is False else "live"
 
 
 def build_contact_channels(
@@ -177,14 +190,14 @@ def build_contact_channels(
 ) -> list[dict[str, Any]]:
     channels: list[dict[str, Any]] = []
     has_key = printer.api_key is not None
-    if has_key or printer.last_seen_at is not None:
+    if has_key or printer.native_last_seen_at is not None:
         channels.append(
             {
                 "kind": "native_spoolman",
                 "source": "moonraker",
                 "connector_id": None,
                 "material_system_id": native_system_id,
-                "last_contact_at": printer.last_seen_at,
+                "last_contact_at": printer.native_last_seen_at,
                 "state": native_state(
                     has_key=has_key,
                     lease=lease,
@@ -197,8 +210,21 @@ def build_contact_channels(
     for connector in sorted(printer.connectors, key=lambda item: item.id):
         # The native link's own contact time is mirrored onto this connector;
         # it is reported once, as the native channel.
-        if not connector.active or connector.transport in NATIVE_MIRROR_TRANSPORTS:
+        if connector.transport in NATIVE_MIRROR_TRANSPORTS:
             continue
+        if not connector.active:
+            # A revoked or replaced link that once worked needs a person; a
+            # connector that never paired is just an unfinished setup.
+            if connector.source_instance_id is None:
+                continue
+            state: ContactState = "needs_action"
+        else:
+            state = connector_state(
+                connector.last_seen_at,
+                now,
+                interval_s=connector.contact_interval_s,
+                provider_reachable=connector.provider_reachable,
+            )
         channels.append(
             {
                 "kind": "connector",
@@ -206,7 +232,7 @@ def build_contact_channels(
                 "connector_id": connector.id,
                 "material_system_id": connector.material_system_id,
                 "last_contact_at": connector.last_seen_at,
-                "state": connector_state(connector.last_seen_at, now),
+                "state": state,
                 "basis": "heartbeat",
             }
         )

@@ -1227,3 +1227,28 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
         },
     )
     assert duplicate_tool.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_survives_a_slot_count_that_shrank_under_the_bridge(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(auth_client, printer_id, system_id)
+
+    heartbeat = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers={"X-FilamentHub-Bridge-Token": token},
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.1",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "spool_identity", "consumption"],
+            "reported_slot_index": 7,
+            "reported_slot_source": "manual_declaration",
+        },
+    )
+
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["last_seen_at"] is not None
+    assert heartbeat.json()["reported_slot"] is None

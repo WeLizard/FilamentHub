@@ -189,6 +189,11 @@ describe('visible printer contact updates', () => {
     expect(beat[0].last_contact_at).toBe(oldTime);
     const closed = applyPrinterContact([withChannels], { ...update, connector_id: null, native_ws: 'closed' })[0].contact_channels!;
     expect(closed.map((c) => c.state)).toEqual(['silent', 'silent']);
+    // A bridge heartbeat moves the printer's merged time, never the native link's.
+    const merged = applyPrinterContact([withChannels], { ...update, connector_id: null, last_seen_at: newTime })[0].contact_channels!;
+    expect(merged[0].last_contact_at).toBe(oldTime);
+    const native = applyPrinterContact([withChannels], { ...update, connector_id: null, native_seen_at: newTime })[0].contact_channels!;
+    expect(native[0].last_contact_at).toBe(newTime);
   });
 
   it('coalesces reset bursts and cancels a queued refresh when the screen hides', async () => {

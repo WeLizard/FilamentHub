@@ -68,6 +68,10 @@ class PrinterBridgeHeartbeatRequest(BaseModel):
     source_instance_id: str = Field(min_length=16, max_length=100)
     observed_at: datetime
     capabilities: list[str] | None = Field(default=None, max_length=32)
+    # Whether the device behind the helper answers, and how often the helper
+    # promises to report. Omitted = the helper cannot say.
+    provider_reachable: bool | None = None
+    contact_interval_s: int | None = Field(default=None, ge=5, le=3600)
 
     model_config = {"str_strip_whitespace": True, "extra": "forbid"}
 

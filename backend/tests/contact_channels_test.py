@@ -152,3 +152,11 @@ async def test_unkeyed_websocket_is_refused_instead_of_looking_connected():
     await spool_compat.spool_ws(WebSocket({"type": "websocket"}, receive, send))
     assert [m["type"] for m in sent] == ["websocket.accept", "websocket.close"]
     assert sent[-1]["code"] == 1008
+
+
+def test_connector_state_reflects_reachability_and_its_own_interval():
+    assert contact.connector_state(NOW - timedelta(seconds=20), NOW, provider_reachable=False) == "executor_only"
+    assert contact.connector_state(NOW - timedelta(seconds=20), NOW, provider_reachable=True) == "live"
+    # A 30 s heartbeat is silent after two missed beats, not after four minutes.
+    assert contact.connector_state(NOW - timedelta(seconds=90), NOW, interval_s=30) == "silent"
+    assert contact.connector_state(NOW - timedelta(seconds=90), NOW) == "live"

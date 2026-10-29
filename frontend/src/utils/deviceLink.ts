@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 
-export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never' | 'ready';
+export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never' | 'ready' | 'executor' | 'action';
 export type DeviceContactMode = 'periodic' | 'on_demand';
 
 export interface DeviceContactFreshness {
@@ -85,7 +85,7 @@ export function latestMaterialSystemContact(
   return latestDeviceContact(...systemConnectors.map((connector) => connector.last_seen_at));
 }
 
-export type ContactChannelState = 'not_configured' | 'live' | 'silent' | 'unknown';
+export type ContactChannelState = 'not_configured' | 'live' | 'executor_only' | 'silent' | 'unknown' | 'needs_action';
 
 /** One independent way FilamentHub hears from a device; times are never merged across channels. */
 export interface ContactChannel {
@@ -116,8 +116,12 @@ export function linkFromChannels(
 ): { state: DeviceLinkState; lastContactAt: string | null } {
   const live = channels.find((channel) => channel.state === 'live');
   if (live) return { state: 'active', lastContactAt: live.last_contact_at };
+  const executor = channels.find((channel) => channel.state === 'executor_only');
+  if (executor) return { state: 'executor', lastContactAt: executor.last_contact_at };
   const lost = channels.find((channel) => channel.state === 'unknown' && channel.last_contact_at);
   if (lost) return { state: 'delayed', lastContactAt: lost.last_contact_at };
+  const action = channels.find((channel) => channel.state === 'needs_action');
+  if (action) return { state: 'action', lastContactAt: action.last_contact_at };
   const silent = channels.find((channel) => channel.state === 'silent' && channel.last_contact_at);
   if (silent) return { state: 'inactive', lastContactAt: silent.last_contact_at };
   return { state: 'never', lastContactAt: null };

@@ -20,6 +20,7 @@ export interface PrinterContactEvent {
   active: boolean;
   reports_feed: boolean | null;
   native_ws?: 'open' | 'closed' | null;
+  native_seen_at?: string | null;
 }
 
 const PRINTERS_KEY = physicalPrinterQueryKeys.root;
@@ -41,7 +42,7 @@ export function applyPrinterContact(printers: PhysicalPrinter[], event: PrinterC
           ? channel
           : {
             ...channel,
-            last_contact_at: latestDeviceContact(channel.last_contact_at, event.last_seen_at),
+            last_contact_at: latestDeviceContact(channel.last_contact_at, event.native_seen_at),
             state: event.native_ws === 'open' ? 'live' : event.native_ws === 'closed' ? 'silent' : channel.state,
           }),
       };

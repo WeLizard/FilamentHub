@@ -42,6 +42,7 @@ from app.services.material_contract_service import require_physical_printer
 from app.services.printer_capability_service import refresh_material_system_capabilities
 from app.services.printer_confirmation_service import confirm_printer_if_needed
 from app.services.printer_identity_service import discovery_key
+from app.services.printer_usage_route_service import hold_usage_authority, resolve_usage_routes
 from app.services.printer_usage_service import process_printer_usage_event, usage_payload_data
 
 PAIRING_TTL = timedelta(minutes=10)
@@ -203,9 +204,7 @@ async def issue_printer_bridge_pairing_code(
         connector.active = True
 
     credential = await db.scalar(
-        select(PrinterBridgeCredential).where(
-            PrinterBridgeCredential.connector_id == connector.id
-        )
+        select(PrinterBridgeCredential).where(PrinterBridgeCredential.connector_id == connector.id)
     )
     if credential is None:
         credential = PrinterBridgeCredential(connector_id=connector.id)
@@ -259,9 +258,7 @@ async def get_printer_bridge_status(
             capabilities=[],
         )
     credential = await db.scalar(
-        select(PrinterBridgeCredential).where(
-            PrinterBridgeCredential.connector_id == connector.id
-        )
+        select(PrinterBridgeCredential).where(PrinterBridgeCredential.connector_id == connector.id)
     )
     return PrinterBridgeStatusResponse(
         configured=credential is not None,
@@ -281,6 +278,62 @@ async def get_printer_bridge_status(
         transport=transport,
         capabilities=list(connector.capabilities),
     )
+
+
+async def _connector_for_source(
+    db: AsyncSession,
+    credential: PrinterBridgeCredential,
+    connector: PhysicalPrinterConnector,
+    payload: PrinterBridgePairRequest,
+) -> tuple[PrinterBridgeCredential, PhysicalPrinterConnector]:
+    """Give each workstation or Edge its own connector, so pairing one never evicts another."""
+    paired_elsewhere = (
+        credential.token_hash is not None
+        and credential.revoked_at is None
+        and connector.source_instance_id not in (None, payload.source_instance_id)
+        # An Edge that restarted keeps its node identity and takes its own link back.
+        and (
+            payload.node_instance_id is None
+            or payload.node_instance_id != connector.node_instance_id
+        )
+    )
+    if not paired_elsewhere:
+        return credential, connector
+    sibling = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.physical_printer_id == connector.physical_printer_id,
+            PhysicalPrinterConnector.provider == connector.provider,
+            PhysicalPrinterConnector.transport == connector.transport,
+            PhysicalPrinterConnector.source_instance_id == payload.source_instance_id,
+        )
+        .with_for_update()
+    )
+    if sibling is None:
+        sibling = PhysicalPrinterConnector(
+            user_id=connector.user_id,
+            physical_printer_id=connector.physical_printer_id,
+            material_system_id=connector.material_system_id,
+            provider=connector.provider,
+            transport=connector.transport,
+            source_instance_id=payload.source_instance_id,
+            capabilities=list(connector.capabilities),
+            active=True,
+        )
+        db.add(sibling)
+        await db.flush()
+    sibling_credential = await db.scalar(
+        select(PrinterBridgeCredential)
+        .where(PrinterBridgeCredential.connector_id == sibling.id)
+        .with_for_update()
+    )
+    if sibling_credential is None:
+        sibling_credential = PrinterBridgeCredential(connector_id=sibling.id)
+        db.add(sibling_credential)
+    # The code was spent on this pairing; the other workstation keeps its token.
+    credential.pairing_code_hash = None
+    credential.pairing_expires_at = None
+    return sibling_credential, sibling
 
 
 async def pair_printer_bridge(
@@ -306,6 +359,7 @@ async def pair_printer_bridge(
         or connector.material_system_id is None
     ):
         raise_error(401, ERR_PRINTER_BRIDGE_PAIRING_INVALID)
+    credential, connector = await _connector_for_source(db, credential, connector, payload)
     if payload.previous_physical_printer_id is not None and (
         connector.physical_printer_id != payload.previous_physical_printer_id
         or connector.material_system_id != payload.previous_material_system_id
@@ -345,9 +399,7 @@ async def pair_printer_bridge(
     )
 
 
-async def require_printer_bridge_token(
-    db: AsyncSession, token: str | None
-) -> PrinterBridgeContext:
+async def require_printer_bridge_token(db: AsyncSession, token: str | None) -> PrinterBridgeContext:
     if token is None or not token.startswith("fhpb_"):
         raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
     credential = await db.scalar(
@@ -433,8 +485,20 @@ async def record_printer_bridge_usage_batch(
 
     event_results: list[PrinterUsageEventResult] = []
     adapter = f"{connector.provider}_{connector.transport}"
+    # A second helper watching the same printer is acknowledged, so its queue
+    # drains, but its reports are not deducted: the authority already counts them.
+    applies = await hold_usage_authority(db, connector)
     try:
-        for event in payload.events:
+        if not applies:
+            for event in payload.events:
+                # Still refuse forged or foreign proofs; only the deduction is skipped.
+                await resolve_usage_routes(
+                    db,
+                    connector=connector,
+                    source_instance_id=payload.source_instance_id,
+                    items=event.items,
+                )
+        for event in payload.events if applies else []:
             result = await process_printer_usage_event(
                 db,
                 connector=connector,
@@ -457,6 +521,13 @@ async def record_printer_bridge_usage_batch(
         await db.rollback()
         raise
 
+    if not applies:
+        event_results = [
+            PrinterUsageEventResult(
+                event_id=event.event_id, deduplicated=False, consumed_weight_g=0.0
+            )
+            for event in payload.events
+        ]
     response = PrinterBridgeUsageBatchResponse(
         accepted=True,
         deduplicated=False,
@@ -472,7 +543,11 @@ async def record_printer_bridge_usage_batch(
             sequence=payload.sequence,
             payload_hash=payload_hash,
             consumed_weight_g=sum(item.consumed_weight_g for item in event_results),
-            response_payload=response.model_dump(mode="json"),
+            response_payload={
+                **response.model_dump(mode="json"),
+                # Kept so an unapplied report can still be audited or replayed.
+                **({} if applies else {"not_applied_events": payload_data["events"]}),
+            },
         )
     )
     connector.last_seen_at = _now()
@@ -608,6 +683,8 @@ async def record_printer_bridge_heartbeat(
     # client-supplied observed_at must not make a live adapter look stale.
     context.connector.last_seen_at = received_at
     context.connector.active = True
+    context.connector.provider_reachable = payload.provider_reachable
+    context.connector.contact_interval_s = payload.contact_interval_s
     if payload.capabilities is not None:
         context.connector.capabilities = _safe_capabilities(
             payload.capabilities,

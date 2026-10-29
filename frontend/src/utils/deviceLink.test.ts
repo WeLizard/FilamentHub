@@ -190,3 +190,19 @@ describe('linkFromChannels', () => {
     expect(linkFromChannels([channel('unknown', null), channel('not_configured', null)]).state).toBe('never');
   });
 });
+
+describe('linkFromChannels with a degraded or lost link', () => {
+  const channel = (state: ContactChannel['state']): ContactChannel => ({
+    kind: 'connector', source: 'x', connector_id: 1, material_system_id: 1,
+    last_contact_at: '2026-10-29T09:00:00Z', state, basis: 'heartbeat',
+  });
+
+  it('tells a live helper with an unreachable printer apart from a dead link', () => {
+    expect(linkFromChannels([channel('executor_only')]).state).toBe('executor');
+  });
+
+  it('asks for action only when nothing else is live', () => {
+    expect(linkFromChannels([channel('needs_action'), channel('silent')]).state).toBe('action');
+    expect(linkFromChannels([channel('needs_action'), channel('live')]).state).toBe('active');
+  });
+});

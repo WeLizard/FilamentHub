@@ -69,7 +69,7 @@ from app.services.printer_confirmation_service import (
     confirm_printer_if_needed,
     confirmed_printer_clause,
 )
-from app.services.printer_usage_route_service import issue_usage_route_proofs
+from app.services.printer_usage_route_service import hold_usage_authority, issue_usage_route_proofs
 
 # Happy Hare and the plain Klipper adapter describe the same feed, so they share
 # one system on the printer instead of each creating its own.
@@ -760,9 +760,9 @@ async def upsert_physical_printer_connector(
             PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
             PhysicalPrinterConnector.provider == payload.provider,
             PhysicalPrinterConnector.transport == payload.transport,
-        )
+        ).order_by(PhysicalPrinterConnector.id)
     )
-    connector = result.scalar_one_or_none()
+    connector = result.scalars().first()
     if connector is None:
         connector = PhysicalPrinterConnector(
             user_id=user_id,
@@ -968,6 +968,7 @@ async def build_printer_bridge_desired_snapshot(
     if (
         system.active
         and source_instance_id
+        and await hold_usage_authority(db, connector)
         and has_capability(
             connector.capabilities or [],
             "consumption",

@@ -57,7 +57,7 @@ async def test_only_committed_contacts_escape_including_savepoints(db_session, a
     assert messages[0][1]["last_seen_at"] == now.isoformat()
     assert set(messages[0][1]) == {
         "type", "printer_id", "connector_id", "last_seen_at", "active", "reports_feed",
-        "native_ws",
+        "native_ws", "native_seen_at",
     }
 
     await db_session.refresh(printer)
@@ -232,6 +232,7 @@ async def test_spoolman_ws_only_contact_publishes_without_http_get(
         "type": "contact", "printer_id": printer.id, "connector_id": None,
         "last_seen_at": printer.last_seen_at.replace(tzinfo=timezone.utc).isoformat(),
         "active": True, "reports_feed": False, "native_ws": "open",
+        "native_seen_at": printer.last_seen_at.replace(tzinfo=timezone.utc).isoformat(),
     })]
     assert publish.await_args_list[1].args[0][0][1]["native_ws"] == "closed"
     assert printer.ws_connected_at is not None and printer.ws_disconnected_at is not None

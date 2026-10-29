@@ -56,6 +56,11 @@ class UserPrinterDevice(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Last request on the native Spoolman link only; last_seen_at merges every
+    # channel that touches the device.
+    native_last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Native Spoolman WebSocket transitions; liveness itself is a Redis lease.
     ws_connected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

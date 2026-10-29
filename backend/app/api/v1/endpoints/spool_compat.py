@@ -398,6 +398,7 @@ async def _resolve_user_and_device(
         # stops working, exactly once.
         device.api_key, device.pending_api_key = device.pending_api_key, None
     touch_device_last_seen(device)
+    device.native_last_seen_at = device.last_seen_at
     return user, device
 
 
@@ -1009,6 +1010,7 @@ async def _touch_native_contact(device_id: int) -> None:
         if device is None:
             return
         touch_device_last_seen(device)
+        device.native_last_seen_at = device.last_seen_at
         await db.execute(
             update(PhysicalPrinterConnector)
             .where(
