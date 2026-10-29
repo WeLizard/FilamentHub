@@ -309,8 +309,8 @@ export function VariantEditor({
     return <div className="space-y-1.5">
       {marketIndices.length > 0 && <div className={`grid ${gridClass} items-end gap-x-2 px-1 text-[11px] text-gray-500`}>
         <span>{label('country')}</span>
-        {columns.map((column) => <span key={column} className="truncate">{label(column)}</span>)}
-        {isBrand && <span className="truncate">{label('shop_links')}</span>}
+        {columns.map((column) => <span key={column} className="break-words leading-tight">{label(column)}</span>)}
+        {isBrand && <span className="break-words leading-tight">{label('shop_links')}</span>}
         <span />
       </div>}
       {marketIndices.map((marketIndex) => {
@@ -382,7 +382,7 @@ export function VariantEditor({
             className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm text-indigo-200 transition hover:text-white lg:hidden">
             <ArrowLeft className="h-4 w-4" />{t('adminCatalogImport.curation.backToRecords')}
           </button>}
-          <p className="min-w-0 flex-1 truncate text-xs text-gray-400 max-lg:basis-full max-lg:order-last" title={key}>
+          <p className="min-w-0 flex-1 break-all text-xs text-gray-400 max-lg:basis-full max-lg:order-last" title={key}>
             {t(`adminCatalogImport.sheets.${sheetLabelKey(sheet)}`)} · #{rowNumber} · <span className="font-mono text-gray-500">{key}</span>
           </p>
           {!standalone && <button type="button" onClick={onClose} aria-label={t('adminCatalogImport.curation.closeEditor')}

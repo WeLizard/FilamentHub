@@ -832,14 +832,14 @@ export function AdminCatalogImport() {
       )}
 
       {draft && proposal && (
-        <div className="sticky top-2 z-30 flex min-h-14 items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5 shadow-lg shadow-black/20 backdrop-blur-md sm:gap-3 sm:px-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-bold text-white sm:text-base" title={title}>{title}</h2>
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="hidden truncate text-xs text-indigo-200 sm:block">
+        <div className="sticky top-2 z-30 flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5 shadow-lg shadow-black/20 backdrop-blur-md sm:gap-3 sm:px-3">
+          <div className="min-w-0 flex-1 basis-60">
+            <h2 className="line-clamp-2 break-words text-sm font-bold text-white sm:text-base" title={title}>{title}</h2>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <p className="hidden whitespace-nowrap text-xs text-indigo-200 sm:block">
                 #{proposal.id} · {t(`adminCatalogImport.curation.status.${proposal.status}`)} · {t('adminCatalogImport.curation.revision', { revision: proposal.revision })}
               </p>
-              <span className={`truncate rounded-full px-2 py-0.5 text-[11px] font-semibold ${!dirty && errorRows.length > 0 ? '' : 'hidden sm:inline'} ${dirty ? 'bg-amber-500/15 text-amber-200' : errorRows.length > 0 ? 'bg-red-500/15 text-red-200' : preview?.confirmation_token ? 'bg-emerald-500/15 text-emerald-200' : 'bg-white/10 text-gray-300'}`}>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${!dirty && errorRows.length > 0 ? '' : 'hidden sm:inline'} ${dirty ? 'bg-amber-500/15 text-amber-200' : errorRows.length > 0 ? 'bg-red-500/15 text-red-200' : preview?.confirmation_token ? 'bg-emerald-500/15 text-emerald-200' : 'bg-white/10 text-gray-300'}`}>
                 {dirty ? t('adminCatalogImport.curation.unsaved') : errorRows.length > 0 ? t('adminCatalogImport.curation.errorsCount', { count: errorRows.length }) : preview?.confirmation_token ? t('adminCatalogImport.curation.readyToApply') : t('adminCatalogImport.curation.previewNeeded')}
               </span>
             </div>

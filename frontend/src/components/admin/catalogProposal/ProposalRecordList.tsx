@@ -132,7 +132,7 @@ export function ProposalRecordList({
         indeterminate={selectedCount > 0 && selectedCount < members.length}
         label={`${t('adminCatalogImport.curation.selectGroup')} ${title}`}
         onChange={(checked) => onSelect(members, checked)} />
-      <p className={`min-w-0 truncate ${level === 1 ? 'text-xs font-semibold uppercase tracking-wide text-indigo-200' : 'text-xs font-medium text-gray-300'}`}>
+      <p title={title} className={`min-w-0 line-clamp-2 break-words ${level === 1 ? 'text-xs font-semibold uppercase tracking-wide text-indigo-200' : 'text-xs font-medium text-gray-300'}`}>
         {title} <span className="font-normal text-gray-500">· {members.length}</span>
         {material && <span className="ml-1.5 font-normal normal-case tracking-normal"><MaterialClassification value={material} compact /></span>}
       </p>
@@ -195,9 +195,9 @@ export function ProposalRecordList({
                     {visual.colors.slice(0, 3).map((color, colorIndex) => <span key={colorIndex} className="h-4 w-4 rounded-full border border-white/50" style={{ backgroundColor: color }} />)}
                   </span>}
                   <span className="min-w-0">
-                    <span className={`block truncate text-sm ${row.enabled === false ? 'text-gray-500 line-through' : 'text-white'}`}>{title}</span>
-                    {(detail || temps.some(Boolean)) && <span className="flex min-w-0 items-baseline gap-2 text-xs text-gray-400">
-                      {detail && <span className="min-w-0 truncate">{detail}</span>}
+                    <span title={title} className={`block line-clamp-2 break-words text-sm leading-tight ${row.enabled === false ? 'text-gray-500 line-through' : 'text-white'}`}>{title}</span>
+                    {(detail || temps.some(Boolean)) && <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-gray-400">
+                      {detail && <span title={detail} className="min-w-0 line-clamp-2 break-words">{detail}</span>}
                       {temps.some(Boolean) && <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums"
                         title={t('adminCatalogImport.curation.tempsSummary')}>
                         {temps.map((temp, tempIndex) => <span key={tempIndex}>
