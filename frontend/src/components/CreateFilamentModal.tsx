@@ -6,6 +6,7 @@ import { X, Save, Loader2, Check, Download, QrCode } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { filamentsAPI, brandsAPI, qrAPI, filamentLinesAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { filamentHolderMessage, readFilamentSlugHolder } from '../utils/filamentDuplicate';
 import { MATERIAL_DENSITY } from '../utils/materialDensity';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { ColorGroupPalette } from './ColorGroupPalette';
@@ -563,7 +564,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
-      setError(translateApiError(t, err.response?.data?.detail, t('createFilament.createError')));
+      const detail = err.response?.data?.detail;
+      const holder = readFilamentSlugHolder(detail);
+      setError(
+        holder
+          ? filamentHolderMessage(t, holder)
+          : translateApiError(t, detail, t('createFilament.createError')),
+      );
     },
   });
 

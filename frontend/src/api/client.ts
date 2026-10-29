@@ -524,6 +524,16 @@ export interface AccountSessionListResponse {
   current_session_id: string;
 }
 
+export const workstationKeyAPI = {
+  create: async (name: string): Promise<{ id: number; name: string; key: string }> => {
+    const response = await api.post('/workstation-keys', { name });
+    return response.data;
+  },
+  revoke: async (keyId: number): Promise<void> => {
+    await api.delete(`/workstation-keys/${keyId}`);
+  },
+};
+
 export const authAPI = {
   register: async (data: RegistrationPayload) => {
     return withAuthSessionLock(async () => {

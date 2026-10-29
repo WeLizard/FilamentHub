@@ -273,8 +273,16 @@ async def create_brand(
     # in two; the author sees the existing brand and decides.
     similar = await find_similar_brands(db, data.name)
     # Names that differ only by case, spacing or punctuation are the same name.
-    if any(comparable_name(brand.name) == comparable_name(data.name) for brand in similar):
-        raise_error(409, ERR_BRAND_NAME_EXISTS)
+    same_name = next(
+        (brand for brand in similar if comparable_name(brand.name) == comparable_name(data.name)),
+        None,
+    )
+    if same_name is not None:
+        raise_error(
+            409,
+            ERR_BRAND_NAME_EXISTS,
+            {"id": same_name.id, "name": same_name.name, "slug": same_name.slug},
+        )
     if similar and not confirm_similar:
         raise_error(
             409,
@@ -373,13 +381,17 @@ async def update_brand(
                 raise_error(409, ERR_BRAND_NAME_CORRECTION_USED)
             else:
                 duplicate = await db.scalar(
-                    select(Brand.id).where(
+                    select(Brand).where(
                         Brand.id != brand.id,
                         func.lower(Brand.name) == requested_name.casefold(),
                     )
                 )
                 if duplicate is not None:
-                    raise_error(409, ERR_BRAND_NAME_EXISTS)
+                    raise_error(
+                        409,
+                        ERR_BRAND_NAME_EXISTS,
+                        {"id": duplicate.id, "name": duplicate.name, "slug": duplicate.slug},
+                    )
                 update_data["name"] = requested_name
                 brand.name_correction_available = False
                 brand.name_corrected_at = datetime.now(timezone.utc)

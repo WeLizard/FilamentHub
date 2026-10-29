@@ -633,6 +633,39 @@ export function reportPluginSessionToPlugin(pluginToken: string): void {
   });
 }
 
+/**
+ * The plugin says whether this machine already holds a long-lived background
+ * key (keyId) and how to label a new one. Older plugins never send it.
+ */
+export function subscribeToWorkstationKeyState(
+  onState: (state: { keyId: number | null; name: string }) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'workstation-key-state') {
+      return;
+    }
+    const { keyId, name } = data as { keyId?: unknown; name?: unknown };
+    onState({
+      keyId: typeof keyId === 'number' && Number.isInteger(keyId) && keyId > 0 ? keyId : null,
+      name: typeof name === 'string' && name.trim() ? name.trim().slice(0, 100) : 'OrcaSlicer',
+    });
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/** Hand the plugin a freshly issued background key; it is never shown to the user. */
+export function reportWorkstationKeyToPlugin(key: string, keyId: number): void {
+  if (!isPluginEmbed()) {
+    return;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'workstation-key', key, keyId });
+}
+
 /** Выход: плагин удаляет сохранённые токены. */
 export function reportLogoutToPlugin(): void {
   if (!isPluginEmbed()) {

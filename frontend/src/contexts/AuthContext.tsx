@@ -2,9 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AUTH_SESSION_EXPIRED_EVENT, authAPI, beginAuthSessionTransition, withAuthSessionLock } from '../api/client';
+import { AUTH_SESSION_EXPIRED_EVENT, authAPI, beginAuthSessionTransition, withAuthSessionLock, workstationKeyAPI } from '../api/client';
 import { getRefreshToken, getToken, hasSessionCandidate, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
-import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
+import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, reportWorkstationKeyToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout, subscribeToWorkstationKeyState } from '../utils/pluginBridge';
 import type { LegalAcceptancePayload, RegistrationPayload, Token, User } from '../types/api';
 
 interface AuthContextType {
@@ -32,6 +32,23 @@ export const useAuth = () => {
   }
   return context;
 };
+
+// The plugin keeps one long-lived report-only key per machine for background
+// work. The page owns the site session, so it issues the key when the plugin
+// holds none and revokes it on sign-out.
+let storedWorkstationKeyId: number | null = null;
+let issuingWorkstationKey = false;
+
+async function revokeWorkstationKey(): Promise<void> {
+  const keyId = storedWorkstationKeyId;
+  storedWorkstationKeyId = null;
+  if (keyId === null) return;
+  try {
+    await workstationKeyAPI.revoke(keyId);
+  } catch {
+    // Already revoked or the server is unreachable; the user can revoke it from the key list.
+  }
+}
 
 const PLUGIN_SESSION_RETRY_MS = 60_000;
 const PLUGIN_SESSION_REFRESH_MARGIN_SECONDS = 60;
@@ -250,6 +267,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!user || user.legal_onboarding_required || !isPluginEmbed()) {
+      return;
+    }
+    return subscribeToWorkstationKeyState(({ keyId, name }) => {
+      storedWorkstationKeyId = keyId;
+      if (keyId !== null || issuingWorkstationKey) return;
+      issuingWorkstationKey = true;
+      void workstationKeyAPI
+        .create(name)
+        .then((issued) => {
+          storedWorkstationKeyId = issued.id;
+          reportWorkstationKeyToPlugin(issued.key, issued.id);
+        })
+        .catch(() => {
+          // Limit reached or offline: the plugin keeps using its session capability.
+        })
+        .finally(() => {
+          issuingWorkstationKey = false;
+        });
+    });
+  }, [user]);
+
   // Внешний OAuth (Google/Yandex) идёт в системном браузере; шелл возвращает
   // account-сессию в iframe через auth-restore. Входим ею как при обычном логине.
   useEffect(() => {
@@ -404,6 +444,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     setUnauthenticatedReason(null);
     const operation = beginIdentityChange();
+    if (isPluginEmbed()) {
+      await revokeWorkstationKey();
+    }
     // Серверная инвалидация токенов (best-effort — не блокируем UI при ошибке)
     try {
       const refreshToken = getRefreshToken();

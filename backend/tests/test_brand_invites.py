@@ -371,6 +371,7 @@ async def test_first_representative_can_correct_community_brand_name_once(
     )
     assert duplicate_name.status_code == 409
     assert duplicate_name.json()["detail"]["code"] == "ERR_BRAND_NAME_EXISTS"
+    assert duplicate_name.json()["detail"]["params"]["name"] == "Existing Official Name"
 
     corrected = await admin_client.patch(
         f"/api/v1/brands/{brand.id}",

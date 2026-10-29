@@ -85,6 +85,7 @@ from app.services.catalog_merge_service import (
 from app.services.catalog_url_service import (
     choose_filament_slug,
     filament_public_path,
+    find_filament_slug_holder,
     resolve_filament_identifier,
 )
 from app.services.country_market import apply_cell, cells_for, filament_cell_has_public_data
@@ -1082,7 +1083,25 @@ async def create_filament(
     if slug is None:
         # A public slug must describe a distinguishable variant. Do not hide an
         # ambiguous identity behind an arbitrary numeric suffix.
-        raise_error(409, ERR_FILAMENT_ALREADY_EXISTS)
+        holder = await find_filament_slug_holder(
+            db,
+            brand_id=data.brand_id,
+            name=normalized_name,
+            color_name=normalized_color_name,
+        )
+        params = None
+        if holder is not None:
+            params = {
+                "filament_id": holder.id,
+                "filament_name": holder.name,
+                "brand_name": brand.name,
+                "material_type": holder.material_type,
+                "color_name": holder.color_name,
+                "color_hex": holder.color_hex,
+                "ral_code": holder.ral_code,
+                "inactive": not holder.active,
+            }
+        raise_error(409, ERR_FILAMENT_ALREADY_EXISTS, params)
 
     # Create filament
     filament_payload = data.model_dump(exclude={"country_cell"})

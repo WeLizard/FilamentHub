@@ -7,6 +7,7 @@ import { X, Save, Loader2, Check, Plus, CheckCircle, Sparkles } from 'lucide-rea
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { achievementsAPI, presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { filamentHolderMessage, readFilamentSlugHolder } from '../utils/filamentDuplicate';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   AchievementCode,
@@ -164,6 +165,7 @@ interface DuplicateFilamentSuggestion {
   materialType?: string;
   colorName?: string;
   colorHex?: string;
+  inactive?: boolean;
 }
 
 const normalizeColorName = (value?: string | null): string => (value || '').trim().toLowerCase();
@@ -215,12 +217,25 @@ interface SimilarBrand {
   name: string;
 }
 
-function readSimilarBrands(detail: unknown): SimilarBrand[] | null {
+interface SimilarBrands {
+  candidates: SimilarBrand[];
+  // The name is identical, so "it is a different manufacturer" is not an option.
+  exact: boolean;
+}
+
+export function readSimilarBrands(detail: unknown): SimilarBrands | null {
   if (!detail || typeof detail !== 'object') return null;
-  const payload = detail as { code?: string; params?: { candidates?: SimilarBrand[] } };
+  const payload = detail as {
+    code?: string;
+    params?: { candidates?: SimilarBrand[]; id?: number; name?: string };
+  };
+  if (payload.code === 'ERR_BRAND_NAME_EXISTS') {
+    const { id, name } = payload.params ?? {};
+    return typeof id === 'number' && name ? { candidates: [{ id, name }], exact: true } : null;
+  }
   if (payload.code !== 'ERR_BRAND_SIMILAR_EXISTS') return null;
   const candidates = payload.params?.candidates;
-  return Array.isArray(candidates) && candidates.length > 0 ? candidates : null;
+  return Array.isArray(candidates) && candidates.length > 0 ? { candidates, exact: false } : null;
 }
 
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
@@ -453,7 +468,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Для создания нового бренда
   const [showBrandForm, setShowBrandForm] = useState(false); // true = создать новый бренд
   const [newBrandName, setNewBrandName] = useState(''); // Название нового бренда
-  const [similarBrands, setSimilarBrands] = useState<SimilarBrand[] | null>(null);
+  const [similarBrands, setSimilarBrands] = useState<SimilarBrands | null>(null);
   const [newBrandWebsite, setNewBrandWebsite] = useState(''); // Сайт нового бренда
   
   const filamentDropdownRef = useRef<HTMLDivElement>(null);
@@ -1480,7 +1495,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const createBrandMutation = useMutation({
     // After the author has seen the similar brands, the next attempt is an
     // explicit "this is a different manufacturer".
-    mutationFn: (data: { name: string; website?: string }) => brandsAPI.create(data, similarBrands !== null),
+    mutationFn: (data: { name: string; website?: string }) => brandsAPI.create(data, similarBrands !== null && !similarBrands.exact),
     onError: (err: AxiosError<{ detail: unknown }>) => {
       const similar = readSimilarBrands(err?.response?.data?.detail);
       if (similar) {
@@ -1539,19 +1554,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       if (isDuplicateFilamentError) {
         let suggestion: DuplicateFilamentSuggestion | null = null;
 
-        if (detail && typeof detail === 'object') {
-          const params = (detail as Record<string, unknown>).params as Record<string, unknown> || {};
-          const duplicateId = Number(params.filament_id);
-          if (Number.isFinite(duplicateId) && duplicateId > 0) {
-            suggestion = {
-              id: duplicateId,
-              name: String(params.filament_name || filamentName || ''),
-              brandName: params.brand_name ? String(params.brand_name) : undefined,
-              materialType: params.material_type ? String(params.material_type) : undefined,
-              colorName: params.color_name ? String(params.color_name) : undefined,
-              colorHex: params.color_hex ? String(params.color_hex) : undefined,
-            };
-          }
+        const holder = readFilamentSlugHolder(detail);
+        if (holder) {
+          suggestion = { ...holder, name: holder.name || filamentName || '' };
         }
 
         // Fallback: если сервер вернул только код без params,
@@ -1592,7 +1597,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       } else {
         setDuplicateFilamentSuggestion(null);
       }
-      if (isDuplicateFilamentError) {
+      const inactiveHolder = readFilamentSlugHolder(detail);
+      if (inactiveHolder?.inactive) {
+        setError(filamentHolderMessage(t, inactiveHolder));
+      } else if (isDuplicateFilamentError) {
         setError(
           translateApiError(
             t,
@@ -2450,7 +2458,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               {error}
             </div>
           )}
-          {duplicateFilamentSuggestion && (
+          {duplicateFilamentSuggestion && !duplicateFilamentSuggestion.inactive && (
             <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-200 text-sm">
               <p className="font-medium">
                 {t('presetModal.duplicateFilamentFound', { defaultValue: 'Такой материал уже существует' })}
@@ -2897,9 +2905,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
                           {similarBrands && (
                             <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
-                              <p className="font-medium text-amber-200">{t('presetModal.similarBrandsTitle')}</p>
+                              <p className="font-medium text-amber-200">
+                                {t(similarBrands.exact ? 'presetModal.sameBrandTitle' : 'presetModal.similarBrandsTitle')}
+                              </p>
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {similarBrands.map((candidate) => (
+                                {similarBrands.candidates.map((candidate) => (
                                   <button
                                     key={candidate.id}
                                     type="button"
@@ -2913,11 +2923,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                     }}
                                     className="rounded-lg bg-amber-500/20 px-3 py-1.5 text-amber-50 transition-all hover:bg-amber-500/30"
                                   >
-                                    {t('presetModal.useExistingBrand', { name: candidate.name })}
+                                    {t(similarBrands.exact ? 'presetModal.useExistingManufacturer' : 'presetModal.useExistingBrand', { name: candidate.name })}
                                   </button>
                                 ))}
                               </div>
-                              <p className="mt-2 text-xs text-amber-100/70">{t('presetModal.similarBrandsConfirmHint')}</p>
+                              {!similarBrands.exact && (
+                                <p className="mt-2 text-xs text-amber-100/70">{t('presetModal.similarBrandsConfirmHint')}</p>
+                              )}
                             </div>
                           )}
                         </>

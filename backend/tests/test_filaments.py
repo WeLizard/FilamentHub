@@ -227,6 +227,61 @@ async def test_the_same_product_written_differently_is_rejected_as_a_duplicate(
 
 
 @pytest.mark.asyncio
+async def test_slug_blocked_by_inactive_filaments_points_at_the_holder(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    brand = Brand(name="Shelf Gone", slug="shelf-gone", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    holder = Filament(
+        brand_id=brand.id,
+        name="ABS",
+        slug="abs-black",
+        material_type="ABS",
+        color_name="Black",
+        color_hex="#000000",
+        diameter=2.85,
+        active=False,
+    )
+    db_session.add_all(
+        [
+            holder,
+            Filament(
+                brand_id=brand.id,
+                name="ABS retired",
+                slug="abs-black-1-75mm",
+                material_type="ABS",
+                color_name="Grey",
+                color_hex="#888888",
+                diameter=2.85,
+                active=False,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "ABS",
+            "material_type": "ABS",
+            "color_name": "Black",
+            "color_hex": "#000000",
+            "diameter": 1.75,
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "ERR_FILAMENT_ALREADY_EXISTS"
+    assert detail["params"]["filament_id"] == holder.id
+    assert detail["params"]["inactive"] is True
+    assert detail["params"]["brand_name"] == "Shelf Gone"
+
+
+@pytest.mark.asyncio
 async def test_create_filament_custom_filler_rejected_for_unverified(
     auth_client: AsyncClient, db_session: AsyncSession
 ):

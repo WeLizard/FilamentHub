@@ -36,6 +36,7 @@ import {
   subscribeToPluginSliceProgress,
   subscribeToPluginSliceReports,
   subscribeToPluginSyncResult,
+  subscribeToWorkstationKeyState,
   startPluginOAuth,
 } from './pluginBridge';
 
@@ -1133,4 +1134,34 @@ describe('pluginBridge inbound messages', () => {
     }
   });
 
+});
+
+describe('workstation key state', () => {
+  it('reports the stored key id only for a trusted plugin parent and ignores junk ids', () => {
+    const originalParent = window.parent;
+    const parent = { postMessage: vi.fn() };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    const onState = vi.fn();
+    const unsubscribe = subscribeToWorkstationKeyState(onState);
+    const send = (data: Record<string, unknown>, source: unknown) =>
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'workstation-key-state', ...data },
+        origin: window.location.origin,
+        source: source as Window,
+      }));
+    try {
+      send({ keyId: 4, name: 'OrcaSlicer on PC' }, window);
+      expect(onState).not.toHaveBeenCalled();
+
+      send({ keyId: 4, name: ' OrcaSlicer on PC ' }, parent);
+      send({ keyId: '4', name: '' }, parent);
+      expect(onState.mock.calls).toEqual([
+        [{ keyId: 4, name: 'OrcaSlicer on PC' }],
+        [{ keyId: null, name: 'OrcaSlicer' }],
+      ]);
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+    }
+  });
 });

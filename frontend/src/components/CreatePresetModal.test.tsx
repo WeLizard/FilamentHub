@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Preset, PresetDraftAnalysis, Printer } from '../types/api';
 import { loadFilamentPresetSchema } from '../utils/orcaPresetSchema';
-import { CreatePresetModal } from './CreatePresetModal';
+import { CreatePresetModal, readSimilarBrands } from './CreatePresetModal';
 
 const {
   createPresetMock,
@@ -718,5 +718,19 @@ describe('CreatePresetModal bed temperature per plate', () => {
       const hints = Array.from(document.querySelectorAll('[data-hint]')).map((el) => el.getAttribute('data-hint'));
       expect(hints).toContain(russian?.tooltip);
     });
+  });
+});
+
+describe('readSimilarBrands', () => {
+  it('turns an identical-name rejection into the existing brand with no "different brand" way out', () => {
+    expect(
+      readSimilarBrands({ code: 'ERR_BRAND_NAME_EXISTS', params: { id: 4, name: 'Bambu Lab', slug: 'bambu-lab' } }),
+    ).toEqual({ candidates: [{ id: 4, name: 'Bambu Lab' }], exact: true });
+  });
+
+  it('keeps similar-name candidates confirmable as a different manufacturer', () => {
+    expect(
+      readSimilarBrands({ code: 'ERR_BRAND_SIMILAR_EXISTS', params: { candidates: [{ id: 1, name: 'A' }] } }),
+    ).toEqual({ candidates: [{ id: 1, name: 'A' }], exact: false });
   });
 });

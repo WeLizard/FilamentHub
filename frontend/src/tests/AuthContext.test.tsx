@@ -12,6 +12,11 @@ const authApiMocks = vi.hoisted(() => ({
   getMaintenanceStatus: vi.fn(),
 }));
 
+const workstationKeyMocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  revoke: vi.fn(),
+}));
+
 const authUtilsMocks = vi.hoisted(() => ({
   getRefreshToken: vi.fn(() => 'refresh-token'),
   getToken: vi.fn(() => null),
@@ -31,6 +36,7 @@ vi.mock('../api/client', () => ({
   AUTH_SESSION_EXPIRED_EVENT: 'authSessionExpired',
   beginAuthSessionTransition: vi.fn(),
   withAuthSessionLock: (operation: () => Promise<unknown>) => operation(),
+  workstationKeyAPI: workstationKeyMocks,
 }));
 
 vi.mock('../utils/auth', () => authUtilsMocks);
@@ -41,6 +47,8 @@ const pluginBridgeMocks = vi.hoisted(() => ({
   reportPluginSessionToPlugin: vi.fn(),
   subscribeToPluginLogout: vi.fn(() => undefined),
   subscribeToPluginAuthRestore: vi.fn(() => undefined),
+  subscribeToWorkstationKeyState: vi.fn((_listener: unknown) => undefined),
+  reportWorkstationKeyToPlugin: vi.fn(),
 }));
 
 vi.mock('../utils/pluginBridge', () => pluginBridgeMocks);
@@ -324,6 +332,37 @@ describe('AuthContext', () => {
     });
 
     expect(authApiMocks.createPluginSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('issues a background key when the plugin has none and revokes it on sign-out', async () => {
+    authUtilsMocks.isCookieAuthMode.mockReturnValue(true);
+    authUtilsMocks.getCsrfToken.mockReturnValue('csrf-session-hint');
+    pluginBridgeMocks.isPluginEmbed.mockReturnValue(true);
+    authApiMocks.me.mockResolvedValue({ id: 7, email: 'user@example.com', username: 'user' });
+    authApiMocks.createPluginSession.mockResolvedValue({
+      plugin_token: 'scoped-plugin-token',
+      expires_in: 1800,
+      token_type: 'bearer',
+    });
+    authApiMocks.logout.mockResolvedValue(undefined);
+    workstationKeyMocks.create.mockResolvedValue({ id: 31, name: 'OrcaSlicer on PC', key: 'fhw_issued0123456789' });
+    workstationKeyMocks.revoke.mockResolvedValue(undefined);
+
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('is-authenticated')).toHaveTextContent('true'));
+    const state = pluginBridgeMocks.subscribeToWorkstationKeyState.mock.calls.at(-1)![0] as
+      (value: { keyId: number | null; name: string }) => void;
+
+    await act(async () => { state({ keyId: null, name: 'OrcaSlicer on PC' }); });
+    await waitFor(() => expect(pluginBridgeMocks.reportWorkstationKeyToPlugin)
+      .toHaveBeenCalledWith('fhw_issued0123456789', 31));
+    expect(workstationKeyMocks.create).toHaveBeenCalledWith('OrcaSlicer on PC');
+
+    await act(async () => { state({ keyId: 31, name: 'OrcaSlicer on PC' }); });
+    expect(workstationKeyMocks.create).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await currentAuth.logout(); });
+    expect(workstationKeyMocks.revoke).toHaveBeenCalledWith(31);
   });
 
   it('does not probe an anonymous cookie browser without a session hint', async () => {

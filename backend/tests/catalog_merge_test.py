@@ -554,6 +554,9 @@ async def test_brand_creation_points_at_existing_brand_with_typo(
         )
         assert response.status_code == 409, spelling
         assert response.json()["detail"]["code"] == "ERR_BRAND_NAME_EXISTS"
+        params = response.json()["detail"]["params"]
+        assert (params["name"], params["slug"]) == ("Bambu Lab", "bambu-lab")
+        assert isinstance(params["id"], int)
 
     for typo in ("BambuLabs", "Bambu Labb"):
         response = await auth_client.post("/api/v1/brands/", json={"name": typo})

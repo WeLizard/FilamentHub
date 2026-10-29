@@ -65,6 +65,34 @@ async def filament_slug_available(
     return alias is None or alias.filament_id == exclude_filament_id
 
 
+def filament_base_slug(name: str, color_name: str | None) -> str:
+    base = slugify(filament_slug_source(name, color_name), "filament")
+    return base[:FILAMENT_SLUG_MAX_LENGTH].strip("-") or "filament"
+
+
+async def find_filament_slug_holder(
+    db: AsyncSession,
+    *,
+    brand_id: int,
+    name: str,
+    color_name: str | None,
+) -> Filament | None:
+    """Return the filament that owns the base slug, directly or through a redirect."""
+    base = filament_base_slug(name, color_name)
+    holder = await db.scalar(
+        select(Filament).where(Filament.brand_id == brand_id, Filament.slug == base)
+    )
+    if holder is not None:
+        return holder
+    alias = await db.scalar(
+        select(FilamentSlugRedirect).where(
+            FilamentSlugRedirect.brand_id == brand_id,
+            FilamentSlugRedirect.old_slug == base,
+        )
+    )
+    return await db.get(Filament, alias.filament_id) if alias is not None else None
+
+
 async def choose_filament_slug(
     db: AsyncSession,
     *,
@@ -77,8 +105,7 @@ async def choose_filament_slug(
     allow_unlined_suffix: bool = False,
 ) -> str | None:
     """Choose an unambiguous stable slug; never invent an opaque numeric suffix."""
-    base = slugify(filament_slug_source(name, color_name), "filament")
-    base = base[:FILAMENT_SLUG_MAX_LENGTH].strip("-") or "filament"
+    base = filament_base_slug(name, color_name)
     if await filament_slug_available(db, brand_id=brand_id, slug=base):
         return base
 
