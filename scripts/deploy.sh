@@ -361,7 +361,9 @@ resolve_target() {
         ':(exclude)inbound-mail' \
         ':(exclude)inbound-mail/**' \
         ':(exclude)backend/distributions/plugins' \
-        ':(exclude)backend/distributions/plugins/**')"
+        ':(exclude)backend/distributions/plugins/**' \
+        ':(exclude)media' \
+        ':(exclude)media/**')"
     [[ -z "$dirty" ]] || {
         printf '%s\n' "$dirty" >&2
         fail "Production worktree is not clean. Resolve it manually; deployment never discards files."

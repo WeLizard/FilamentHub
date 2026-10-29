@@ -208,6 +208,7 @@ backup-key.pub.asc
 # container replacement but are never source code and must not block deploys.
 inbound-mail/
 backend/distributions/plugins/
+/media/
 .last-deploy-state
 
 # Plugin Hub gallery and promo video: sources, renders and footage stay on disk.

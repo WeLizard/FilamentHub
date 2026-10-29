@@ -23,6 +23,7 @@ RUNNER = r"""
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:WaitingPrefix = 'ОЖИДАНИЕ:'
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -325,3 +326,48 @@ $second = @(Read-ReleaseSelection)
     selection = json.loads(result.stdout.strip().splitlines()[-1])
 
     assert selection == {"first": ["orcaslicer", "print-farm"], "second": []}
+
+
+def test_site_preflight_keeps_dry_run_output_out_of_the_plan(tmp_path):
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is required")
+    runner = tmp_path / "site-preflight.ps1"
+    runner.write_text(
+        RUNNER.split("$global:events =", 1)[0]
+        + r"""
+$global:hostOutput = [System.Collections.Generic.List[string]]::new()
+function Out-Host { process { $global:hostOutput.Add([string]$_) } }
+function Get-DeploymentCandidate {
+    return [pscustomobject]@{
+        Sha = 'c' * 40; ShortSha = 'cccccccc'; CiUrl = 'https://example.invalid/ci'
+    }
+}
+function Invoke-RemoteWorker { 'server dry-run passed' }
+function Invoke-DurableDeployCommand { return [pscustomobject]@{ Status = 'running' } }
+function Get-ServerTarget { return 'server' }
+function Invoke-Checked { return 'PLUGIN_API_LEVEL = 3' }
+$plan = @(Get-SiteReleasePlan)
+@{ count = $plan.Count; plan = $plan[0]; hostOutput = @($global:hostOutput) } |
+    ConvertTo-Json -Compress -Depth 4
+""",
+        encoding="utf-8-sig",
+    )
+    temp_dir = str(tmp_path)
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(runner)],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+        env={
+            **os.environ,
+            "CONSOLE_SCRIPT": str(ROOT / "scripts/deploy-server.ps1"),
+            "TEMP": temp_dir,
+            "TMP": temp_dir,
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    result_data = json.loads(result.stdout.strip().splitlines()[-1])
+
+    assert result_data["count"] == 1
+    assert result_data["plan"]["AlreadyDeployed"] is False
+    assert result_data["plan"]["PluginApiLevel"] == 3
+    assert result_data["hostOutput"] == ["server dry-run passed"]

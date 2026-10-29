@@ -36,14 +36,36 @@ class DownloadMediaContractTest(unittest.TestCase):
         ):
             self.assertIsNone(pattern.match(path))
 
-    def test_frontend_mounts_media_read_only_and_console_uploads_there(self) -> None:
+    def test_frontend_mounts_media_read_only_and_one_time_upload_is_explicit(self) -> None:
         self.assertIn(f"- ./media/download:{MOUNT}:ro", COMPOSE.read_text(encoding="utf-8"))
 
         console = CONSOLE.read_text(encoding="utf-8")
         self.assertIn('$remoteDirectory = "$RemoteProjectDirectory/media/download"', console)
         self.assertIn(f"grep -Fx '{MOUNT}'", console)
+        self.assertIn("-w '$remoteDirectory'", console)
+        self.assertIn("создай '$remoteDirectory' на VDS", console)
+        self.assertIn("назначь SSH-пользователя владельцем '$remoteDirectory'", console)
+        self.assertIn("FH_MEDIA_DIR_NOT_WRITABLE", console)
+        self.assertIn("-Action PublishDownloadMedia", console)
         self.assertIn("sha256sum -c -", console)
         self.assertIn("'PublishDownloadMedia' { Publish-DownloadMedia }", console)
+
+        production_menu = console.split("function Show-ProductionMenu", maxsplit=1)[1].split(
+            "function Show-PluginMenu", maxsplit=1
+        )[0]
+        self.assertNotIn("Залить ролики страницы «Скачать»", production_menu)
+        self.assertNotIn("'7' { Publish-DownloadMedia }", production_menu)
+
+    def test_runtime_media_is_outside_git_and_never_blocks_a_deploy(self) -> None:
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertRegex(gitignore, r"(?m)^/media/$")
+
+        deploy = (ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
+        clean_check = deploy.split('dirty="$(git status', 1)[1].split(
+            '[[ -z "$dirty" ]]', 1
+        )[0]
+        self.assertIn("':(exclude)media'", clean_check)
+        self.assertIn("':(exclude)media/**'", clean_check)
 
 
 if __name__ == "__main__":

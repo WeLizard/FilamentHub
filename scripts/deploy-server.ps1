@@ -40,6 +40,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# git and ssh print UTF-8; without this the console shows Russian commit
+# subjects and server logs as mojibake.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 # Ожидание — это не отказ. Сообщения с этой пометкой печатаются жёлтым, чтобы
 # «CI ещё идёт» не выглядело как упавший деплой.
@@ -47,6 +50,10 @@ $script:WaitingPrefix = 'ОЖИДАНИЕ:'
 $script:DeployPollIntervalSeconds = 5
 $script:DeployReconnectGraceSeconds = 300
 $script:DeployJobTimeoutSeconds = 7200
+$script:DeploySshCommandTimeoutSeconds = 75
+$script:DeploySshHeartbeatSeconds = 20
+$script:DeployLogHeartbeatSeconds = 30
+$script:Ps5SshTimeoutWarningShown = $false
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
@@ -159,7 +166,7 @@ function Get-VerifiedPublishedMain {
         Select-Object -First 1
     if (-not $run) {
         Stop-WithFix `
-            -Problem "Проверки GitHub для последнего коммита ($($remoteHead.Substring(0, 8))) ещё не запускались." `
+            -Problem "$script:WaitingPrefix проверки GitHub для последнего коммита ($($remoteHead.Substring(0, 8))) ещё не запускались." `
             -Fix 'подожди пару минут и повтори: .\scripts\release.ps1'
     }
     if ($run.status -ne 'completed') {
@@ -273,6 +280,150 @@ function ConvertFrom-DurableDeployResponse {
     }
 }
 
+function Get-SshExecutablePath {
+    $command = @(Get-Command ssh.exe -CommandType Application -ErrorAction SilentlyContinue) |
+        Select-Object -First 1
+    if (-not $command) {
+        $command = @(Get-Command ssh -CommandType Application -ErrorAction Stop) |
+            Select-Object -First 1
+    }
+    return $command.Source
+}
+
+function Invoke-BoundedNativeCommand {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [Parameter(Mandatory)][int]$TimeoutSeconds,
+        [Parameter(Mandatory)][string]$TimeoutMessage,
+        [string]$HeartbeatMessage
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    if (-not $startInfo.GetType().GetProperty('ArgumentList')) {
+        throw 'Локальный timeout SSH требует PowerShell 7. Запусти консоль через pwsh.'
+    }
+    foreach ($argument in $Arguments) {
+        $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Не удалось запустить локальную команду '$FilePath'."
+        }
+        # Read both streams asynchronously before waiting, so a full SSH stderr
+        # pipe cannot block the remote command or the local process.
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $startedAt = [System.Diagnostics.Stopwatch]::StartNew()
+        $nextHeartbeat = $script:DeploySshHeartbeatSeconds
+
+        while (-not $process.WaitForExit(1000)) {
+            if ($startedAt.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                $localProcessId = $process.Id
+                try {
+                    $process.Kill($true)
+                } catch {
+                    try { $process.Kill() } catch { }
+                }
+                if (-not $process.WaitForExit(5000)) {
+                    $failure = [System.TimeoutException]::new(
+                        "$TimeoutMessage Не удалось подтвердить остановку локального SSH-клиента (PID $localProcessId); он может ещё работать, новый клиент не запускается."
+                    )
+                    $failure.Data['LocalProcessNotStopped'] = $true
+                    $failure.Data['LocalProcessId'] = $localProcessId
+                    throw $failure
+                }
+                $stdout = $stdoutTask.GetAwaiter().GetResult()
+                $stderr = $stderrTask.GetAwaiter().GetResult()
+                $diagnostic = @($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                $diagnostic = $diagnostic -join "`n"
+                if ($diagnostic) {
+                    $TimeoutMessage += "`n$diagnostic"
+                }
+                $failure = [System.TimeoutException]::new(
+                    "$TimeoutMessage Локальный SSH-клиент остановлен (PID $localProcessId); серверное задание не затронуто."
+                )
+                $failure.Data['LocalProcessId'] = $localProcessId
+                throw $failure
+            }
+
+            if ($HeartbeatMessage -and $startedAt.Elapsed.TotalSeconds -ge $nextHeartbeat) {
+                Write-Host "$HeartbeatMessage ($([int]$startedAt.Elapsed.TotalSeconds) секунд)." -ForegroundColor DarkGray
+                $nextHeartbeat += $script:DeploySshHeartbeatSeconds
+            }
+        }
+
+        $process.WaitForExit()
+        [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            StdOut = $stdoutTask.GetAwaiter().GetResult()
+            StdErr = $stderrTask.GetAwaiter().GetResult()
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function Invoke-BoundedSshCommand {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$RemoteCommand,
+        [string]$Purpose = 'SSH-команда'
+    )
+
+    $arguments = @(
+            '-o', 'BatchMode=yes',
+            '-o', 'ConnectTimeout=15',
+            '-o', 'ServerAliveInterval=15',
+            '-o', 'ServerAliveCountMax=4',
+            $Target, $RemoteCommand
+        )
+
+    if ($PSVersionTable.PSVersion.Major -eq 5) {
+        return Invoke-WindowsPowerShell51SshCommand -Arguments $arguments
+    }
+
+    $result = Invoke-BoundedNativeCommand `
+        -FilePath (Get-SshExecutablePath) `
+        -Arguments $arguments `
+        -TimeoutSeconds $script:DeploySshCommandTimeoutSeconds `
+        -TimeoutMessage "$Purpose не ответила за $script:DeploySshCommandTimeoutSeconds секунд; серверное задание не остановлено." `
+        -HeartbeatMessage "$Purpose ещё выполняется"
+
+    if ($result.StdErr) {
+        Write-Host $result.StdErr.TrimEnd() -ForegroundColor DarkGray
+    }
+    if ($result.ExitCode -ne 0) {
+        throw "SSH временно недоступен (код $($result.ExitCode)):`n$($result.StdOut)`n$($result.StdErr)"
+    }
+    return $result.StdOut
+}
+
+function Invoke-WindowsPowerShell51SshCommand {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    if (-not $script:Ps5SshTimeoutWarningShown) {
+        Write-Host 'Windows PowerShell 5.1 не может ограничить ожидание локального SSH; для hard timeout запусти консоль через pwsh 7.' -ForegroundColor Yellow
+        $script:Ps5SshTimeoutWarningShown = $true
+    }
+    # Windows PowerShell 5.1 turns any stderr line of a redirected native command
+    # into a terminating error under 'Stop'; git fetch reports progress there.
+    $ErrorActionPreference = 'Continue'
+    $output = & ssh @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "SSH временно недоступен (код $LASTEXITCODE):`n$($output -join "`n")"
+    }
+    return ($output -join "`n")
+}
+
 function Invoke-DurableDeployCommand {
     param(
         [Parameter(Mandatory)][string]$Target,
@@ -287,15 +438,9 @@ function Invoke-DurableDeployCommand {
         "'$_'"
     })
     $remoteCommand = "set -o pipefail && cd '$RemoteProjectDirectory' && git cat-file -e '$($Revision)^{commit}' && git show '$($Revision):scripts/run-deploy-job.sh' | awk 'NR == 2 { compatible = (`$0 == `"# FILAMENTHUB_DEPLOY_JOB_PROTOCOL=1`") } END { exit !compatible }' && git show '$($Revision):scripts/run-deploy-job.sh' | PROJECT_DIR=`"`$PWD`" bash -s -- $($quotedArguments -join ' ')"
-    $output = & ssh `
-        -o 'ConnectTimeout=15' `
-        -o 'ServerAliveInterval=15' `
-        -o 'ServerAliveCountMax=4' `
-        $Target $remoteCommand 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "SSH временно недоступен (код $LASTEXITCODE):`n$($output -join "`n")"
-    }
-    return ConvertFrom-DurableDeployResponse -Output ($output -join "`n")
+    $output = Invoke-BoundedSshCommand -Target $Target -RemoteCommand $remoteCommand `
+        -Purpose 'Проверка durable deploy'
+    return ConvertFrom-DurableDeployResponse -Output $output
 }
 
 function Invoke-DurableProductionDeploy {
@@ -322,12 +467,8 @@ function Invoke-DurableProductionDeploy {
     $startDeadline = (Get-Date).AddSeconds($script:DeployReconnectGraceSeconds)
     do {
         try {
-            Invoke-Checked ssh @(
-                '-o', 'ConnectTimeout=15',
-                '-o', 'ServerAliveInterval=15',
-                '-o', 'ServerAliveCountMax=4',
-                $target, $startCommand
-            )
+            Invoke-BoundedSshCommand -Target $target -RemoteCommand $startCommand `
+                -Purpose 'Подготовка выкладки'
             $response = Invoke-DurableDeployCommand `
                 -Target $target -Revision $Revision `
                 -RunnerArguments (@(
@@ -335,6 +476,9 @@ function Invoke-DurableProductionDeploy {
                     '--'
                 ) + $workerArguments)
         } catch {
+            if ($_.Exception.Data['LocalProcessNotStopped']) {
+                throw
+            }
             if ((Get-Date) -ge $startDeadline) {
                 throw "Не удалось запустить или обнаружить durable deploy за $script:DeployReconnectGraceSeconds секунд. Повторный запуск безопасно проверит ту же задачу. Последняя ошибка: $($_.Exception.Message)"
             }
@@ -359,11 +503,18 @@ function Invoke-DurableProductionDeploy {
     $fromLine = 0
     $startedAt = Get-Date
     $lastSuccessfulContact = Get-Date
+    $lastLogAt = Get-Date
     while ($true) {
-        foreach ($line in @($response.LogLines)) {
-            if (-not [string]::IsNullOrEmpty($line)) {
-                Write-Host $line
-            }
+        $newLines = @($response.LogLines | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        foreach ($line in $newLines) {
+            Write-Host $line
+        }
+        if ($newLines.Count -gt 0) {
+            $lastLogAt = Get-Date
+        } elseif ($response.Status -eq 'running' -and
+            ((Get-Date) - $lastLogAt).TotalSeconds -ge $script:DeployLogHeartbeatSeconds) {
+            Write-Host 'Выкладка на VDS выполняется; новых строк журнала пока нет.' -ForegroundColor DarkGray
+            $lastLogAt = Get-Date
         }
         $fromLine = $response.LineCount
 
@@ -396,6 +547,9 @@ function Invoke-DurableProductionDeploy {
                 -RunnerArguments @('--status', '--run-id', $runId, '--from-line', "$fromLine")
             $lastSuccessfulContact = Get-Date
         } catch {
+            if ($_.Exception.Data['LocalProcessNotStopped']) {
+                throw
+            }
             $disconnectedFor = ((Get-Date) - $lastSuccessfulContact).TotalSeconds
             if ($disconnectedFor -ge $script:DeployReconnectGraceSeconds) {
                 throw "SSH недоступен уже $([int]$disconnectedFor) секунд. Удалённая задача не остановлена; повторный запуск консоли подключится к ней. Последняя ошибка: $($_.Exception.Message)"
@@ -829,7 +983,7 @@ function Read-ReleaseSelection {
 function Set-ReleaseState {
     param(
         [Parameter(Mandatory)]$State,
-        [Parameter(Mandatory)][ValidateSet('READY', 'CURRENT', 'ERROR', 'SKIPPED', 'DONE')][string]$Status,
+        [Parameter(Mandatory)][ValidateSet('READY', 'CURRENT', 'WAITING', 'ERROR', 'SKIPPED', 'DONE')][string]$Status,
         [string]$Detail = '',
         [string]$Fix = ''
     )
@@ -849,9 +1003,12 @@ function Set-ReleaseFailure {
         ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $problem = if ($lines.Count) { $lines[0] } else { 'неизвестная ошибка' }
     $fix = @($lines | Where-Object { $_.StartsWith('Исправить:') } | Select-Object -First 1)
-    Set-ReleaseState -State $State -Status ERROR -Detail $problem `
+    $waiting = $problem.StartsWith($script:WaitingPrefix)
+    Set-ReleaseState -State $State -Status $(if ($waiting) { 'WAITING' } else { 'ERROR' }) -Detail $problem `
         -Fix $(if ($fix.Count) { $fix[0].Substring('Исправить:'.Length).Trim() } else { '' })
-    Write-Host "$($State.Name): СТОП — $problem" -ForegroundColor Red
+    $label = if ($waiting) { 'ожидание' } else { 'СТОП' }
+    $colour = if ($waiting) { 'Yellow' } else { 'Red' }
+    Write-Host "$($State.Name): $label — $problem" -ForegroundColor $colour
 }
 
 function Show-ReleaseSummary {
@@ -868,9 +1025,14 @@ function Show-ReleaseSummary {
             'CURRENT' { 'уже актуально', 'DarkGray' }
             'DONE' { 'готово', 'Green' }
             'SKIPPED' { 'не выпускается', 'Yellow' }
+            'WAITING' { 'ожидание', 'Yellow' }
             default { 'СТОП', 'Red' }
         }
-        Write-Host "  $($state.Name): $label — $($state.Detail)" -ForegroundColor $colour
+        $detail = $state.Detail
+        if ($state.Status -eq 'WAITING' -and $detail.StartsWith($script:WaitingPrefix)) {
+            $detail = $detail.Substring($script:WaitingPrefix.Length).Trim()
+        }
+        Write-Host "  $($state.Name): $label — $detail" -ForegroundColor $colour
         if ($state.Fix) {
             Write-Host "      Исправить: $($state.Fix)" -ForegroundColor Yellow
         }
@@ -925,7 +1087,7 @@ function Get-SiteReleasePlan {
     # The worker's dry run checks on the server what the real deploy checks
     # first: clean checkout, main branch, fast-forward and certificates.
     try {
-        Invoke-RemoteWorker -Arguments @('--revision', $candidate.Sha, '--dry-run') -WorkerRevision $candidate.Sha
+        Invoke-RemoteWorker -Arguments @('--revision', $candidate.Sha, '--dry-run') -WorkerRevision $candidate.Sha | Out-Host
     } catch {
         Stop-WithFix `
             -Problem 'Сервер не готов принять выкладку или недоступен (причина в строках выше).' `
@@ -1235,6 +1397,22 @@ function Publish-DownloadMedia {
         }
     }
 
+    $target = Get-ServerTarget
+    $remoteDirectory = "$RemoteProjectDirectory/media/download"
+    # Without the mount nginx would answer 404 even after a successful upload.
+    $mountCheck = "docker inspect filamenthub_frontend_prod --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -Fx '/usr/share/nginx/download-media' >/dev/null"
+    Invoke-Checked ssh @($target, $mountCheck)
+    $directoryStatusCommand = "if [ ! -d '$remoteDirectory' ]; then echo FH_MEDIA_DIR_MISSING; elif [ ! -w '$remoteDirectory' ]; then echo FH_MEDIA_DIR_NOT_WRITABLE; else echo FH_MEDIA_DIR_WRITABLE; fi"
+    $directoryStatus = Invoke-Checked ssh @($target, $directoryStatusCommand) -Capture
+    if ($directoryStatus -notmatch '(?m)^FH_MEDIA_DIR_WRITABLE$') {
+        $fix = if ($directoryStatus -match '(?m)^FH_MEDIA_DIR_MISSING$') {
+            "создай '$remoteDirectory' на VDS и назначь SSH-пользователя владельцем"
+        } else {
+            "назначь SSH-пользователя владельцем '$remoteDirectory' на VDS"
+        }
+        throw "Загрузка остановлена: $fix, затем повтори -Action PublishDownloadMedia."
+    }
+
     foreach ($video in $videos) {
         Write-Host "  $($video.Name): $($video.SizeMb) МБ, SHA-256 $($video.Sha256)" -ForegroundColor DarkGray
     }
@@ -1243,12 +1421,6 @@ function Publish-DownloadMedia {
         return
     }
 
-    $target = Get-ServerTarget
-    $remoteDirectory = "$RemoteProjectDirectory/media/download"
-    # Without the mount nginx would answer 404 even after a successful upload.
-    $mountCheck = "docker inspect filamenthub_frontend_prod --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -Fx '/usr/share/nginx/download-media' >/dev/null"
-    Invoke-Checked ssh @($target, $mountCheck)
-    Invoke-Checked ssh @($target, "mkdir -p '$remoteDirectory'")
     foreach ($video in $videos) {
         $remoteTemporary = "$remoteDirectory/.$($video.Name).upload-$PID"
         Invoke-Checked scp @($video.Path, "${target}:$remoteTemporary")
@@ -1329,7 +1501,6 @@ function Show-ProductionMenu {
         Write-Host '  4. Создать зашифрованный backup production-базы'
         Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
         Write-Host '  6. Задеплоить с полной пересборкой (после правки .env на VDS)'
-        Write-Host '  7. Залить ролики страницы «Скачать» (не через Git)'
         Write-Host '  0. Назад'
 
         try {
@@ -1340,7 +1511,6 @@ function Show-ProductionMenu {
                 '4' { Start-ProductionBackup }
                 '5' { Start-BuildCacheCleanup }
                 '6' { Invoke-Release -Items @('site') -RebuildAll }
-                '7' { Publish-DownloadMedia }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }

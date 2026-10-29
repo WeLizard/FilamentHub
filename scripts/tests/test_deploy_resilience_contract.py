@@ -1,4 +1,4 @@
-from pathlib import Path
+import json
 import os
 import re
 import shutil
@@ -6,9 +6,24 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+POWERSHELL_FUNCTION_LOADER = r"""
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:CONSOLE_SCRIPT, [ref]$tokens, [ref]$errors
+)
+if ($errors.Count) { throw ($errors | Out-String) }
+foreach ($statement in $ast.EndBlock.Statements) {
+    if ($statement -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+        . ([scriptblock]::Create($statement.Extent.Text))
+    }
+}
+"""
 
 
 class DeployResilienceContractTest(unittest.TestCase):
@@ -44,10 +59,102 @@ class DeployResilienceContractTest(unittest.TestCase):
             "function Invoke-DurableProductionDeploy", maxsplit=1
         )[1].split("function ", maxsplit=1)[0]
         retry_start = durable_function.index("do {")
-        bootstrap = durable_function.index("Invoke-Checked ssh")
+        bootstrap = durable_function.index("Invoke-BoundedSshCommand -Target $target")
         retry_handler = durable_function.index("} catch {")
         self.assertLess(retry_start, bootstrap)
         self.assertLess(bootstrap, retry_handler)
+
+        self.assertIn("Invoke-BoundedSshCommand -Target $Target", console)
+        self.assertIn(
+            "Invoke-BoundedSshCommand -Target $target -RemoteCommand $startCommand",
+            durable_function,
+        )
+        self.assertIn("DeploySshCommandTimeoutSeconds", console)
+        self.assertIn("DeployLogHeartbeatSeconds", console)
+        self.assertIn("$PSVersionTable.PSVersion.Major -eq 5", console)
+        self.assertIn("Windows PowerShell 5.1 не может ограничить ожидание", console)
+        self.assertIn("GetType().GetProperty('ArgumentList')", console)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "needs PowerShell 7")
+    def test_empty_running_poll_reports_progress_and_timeout_retries_same_job(self) -> None:
+        script = POWERSHELL_FUNCTION_LOADER + r"""
+$ErrorActionPreference = 'Stop'
+$RemoteProjectDirectory = 'FilamentHub'
+$script:DeployReconnectGraceSeconds = 30
+$script:DeployJobTimeoutSeconds = 60
+$script:DeployPollIntervalSeconds = 0
+$script:DeployLogHeartbeatSeconds = 0
+$global:deployCalls = [System.Collections.Generic.List[object]]::new()
+$global:messages = [System.Collections.Generic.List[string]]::new()
+
+function Assert-Command { param([string]$Name) }
+function Get-ServerTarget { return 'server' }
+function Start-Sleep { param([int]$Seconds) }
+function Write-Host { param([object]$Object, [string]$ForegroundColor); $global:messages.Add([string]$Object) }
+function Invoke-BoundedSshCommand { param([string]$Target, [string]$RemoteCommand, [string]$Purpose); return '' }
+function Invoke-DurableDeployCommand {
+    param([string]$Target, [string]$Revision, [string[]]$RunnerArguments)
+    $kind = if ('--start' -in $RunnerArguments) { 'start' } else { 'status' }
+    $global:deployCalls.Add([pscustomobject]@{ kind = $kind; args = ($RunnerArguments -join ' ') })
+    if ('--start' -in $RunnerArguments) {
+        return [pscustomobject]@{ Status = 'running'; ExitCode = '-'; LineCount = 0; LogLines = @(); LogPath = 'job.log' }
+    }
+    if ($global:deployCalls.Count -eq 2) {
+        throw [System.TimeoutException]::new('simulated local SSH timeout')
+    }
+    return [pscustomobject]@{ Status = 'succeeded'; ExitCode = '0'; LineCount = 0; LogLines = @(); LogPath = 'job.log' }
+}
+
+Invoke-DurableProductionDeploy -Revision ('c' * 40)
+@{ calls = @($global:deployCalls.ToArray()); messages = @($global:messages.ToArray()) } |
+    ConvertTo-Json -Compress -Depth 4
+"""
+        result = _run_powershell(script)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        calls = payload["calls"]
+        starts = [call for call in calls if call["kind"] == "start"]
+        status_calls = [call["args"] for call in calls if call["kind"] == "status"]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(len(status_calls), 2)
+        self.assertEqual(status_calls[0], status_calls[1])
+        self.assertIn("--from-line 0", status_calls[0])
+        self.assertIn(
+            "Выкладка на VDS выполняется; новых строк журнала пока нет.",
+            payload["messages"],
+        )
+        self.assertIn(
+            "Production deployment завершён. Журнал: job.log",
+            payload["messages"],
+        )
+
+    @unittest.skipUnless(shutil.which("pwsh"), "needs PowerShell 7")
+    def test_bounded_process_timeout_stops_local_child(self) -> None:
+        script = POWERSHELL_FUNCTION_LOADER + r"""
+$script:DeploySshHeartbeatSeconds = 30
+try {
+    Invoke-BoundedNativeCommand `
+        -FilePath $env:PWSH `
+        -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 10') `
+        -TimeoutSeconds 1 `
+        -TimeoutMessage 'simulated timeout'
+    throw 'expected timeout was not raised'
+} catch [System.TimeoutException] {
+    if ($_.Exception.Message -notmatch 'simulated timeout') { throw }
+    $timedOutProcessId = $_.Exception.Data['LocalProcessId']
+    if (-not $timedOutProcessId) { throw 'timeout did not report the local process id' }
+    if (Get-Process -Id $timedOutProcessId -ErrorAction SilentlyContinue) {
+        throw "local child $timedOutProcessId is still running"
+    }
+    if ($_.Exception.Message -notmatch 'локальный SSH-клиент остановлен') {
+        throw 'timeout did not confirm local process shutdown'
+    }
+    'timeout observed and local child stopped'
+}
+"""
+        result = _run_powershell(script, extra_env={"PWSH": shutil.which("pwsh")})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("timeout observed and local child stopped", result.stdout)
 
     def test_deploy_cleanup_keeps_current_and_previous_images(self) -> None:
         worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
@@ -158,6 +265,32 @@ def _git_bash() -> str | None:
         if candidate.is_file() and "system32" not in str(candidate).lower():
             return str(candidate)
     return None
+
+
+def _run_powershell(script: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    shell = shutil.which("pwsh")
+    assert shell is not None
+    task_temp = Path(os.environ.get("TEMP", r"F:\Temp"))
+    task_temp.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="fh-deploy-contract-", dir=task_temp) as temp_dir:
+        runner = Path(temp_dir, "runner.ps1")
+        runner.write_text(script, encoding="utf-8-sig")
+        return subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-File", str(runner)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=45,
+            env={
+                **os.environ,
+                "CONSOLE_SCRIPT": str(ROOT / "scripts/deploy-server.ps1"),
+                "TEMP": str(task_temp),
+                "TMP": str(task_temp),
+                **(extra_env or {}),
+            },
+        )
 
 
 if __name__ == "__main__":
