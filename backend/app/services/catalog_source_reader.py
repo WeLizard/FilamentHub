@@ -235,10 +235,12 @@ class _PageParser(HTMLParser):
             self._link_href = None
             self._link_title = ""
         elif tag in {"td", "th"} and self._cell is not None:
-            self._row.append(_join_text(self._cell))
+            if self._row is not None:
+                self._row.append(_join_text(self._cell))
             self._cell = None
         elif tag == "tr" and self._row is not None:
-            self._table.append(self._row)
+            if self._table is not None:
+                self._table.append(self._row)
             self._row = None
         elif tag == "table" and self._table is not None:
             self.tables.append(self._table)
