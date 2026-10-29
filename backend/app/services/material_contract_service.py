@@ -708,6 +708,9 @@ async def update_material_system(
         if system.provider in KLIPPER_PROVIDERS:
             # The legacy gate map still gates manual assignment, so it has to
             # follow the declared size or the new slots refuse every spool.
+            # The session does not autoflush, and the re-read below overwrites
+            # loaded rows: persist the slot changes made above first.
+            await db.flush()
             printer = await require_physical_printer(db, user_id, physical_printer_id)
             printer.gate_count = declared_count
 

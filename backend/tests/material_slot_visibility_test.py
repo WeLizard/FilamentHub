@@ -59,14 +59,16 @@ async def _slots(client, printer_id: int) -> list[dict]:
     return body["material_systems"][0]["slots"]
 
 
-async def _save_topology(client, printer_id: int, system_id: int, indices: list[int]):
+async def _save_topology(
+    client, printer_id: int, system_id: int, indices: list[int], provider: str = "bambu"
+):
     slots = await _slots(client, printer_id)
     return await client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-systems/{system_id}",
         json={
             "kind": "mmu",
             "slots": [
-                {"provider_index": i, "kind": "external" if i == 255 else "slot"} for i in indices
+                {"provider_index": i, "kind": ("external" if provider == "bambu" else "bypass") if i == 255 else "slot"} for i in indices
             ],
             "expected_slots": [
                 {"material_slot_id": s["id"], "expected_revision": s["assignment_revision"],
@@ -136,3 +138,34 @@ async def test_hiding_an_occupied_external_slot_is_accepted_and_keeps_it_display
     assert external["assignment"]["spool_id"] == spool.id
     assert external["user_visibility"] == "hidden"
     assert external["displayed"] is True
+
+
+@pytest.mark.asyncio
+async def test_hiding_a_bypass_slot_sticks_on_a_klipper_provider_system(
+    auth_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # The application session does not autoflush (app/db/session.py); the test
+    # session does, which would hide a mid-request re-read that drops pending rows.
+    db_session.sync_session.autoflush = False
+    printer_id = (await auth_client.post("/api/v1/physical-printers", json={"name": "Voron"})).json()["id"]
+    created = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "Happy Hare", "kind": "mmu", "provider": "happy_hare",
+            "slots": [
+                {"provider_index": 0, "kind": "slot"},
+                {"provider_index": 1, "kind": "slot"},
+                {"provider_index": 255, "kind": "bypass"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    system_id = created.json()["material_systems"][0]["id"]
+
+    saved = await _save_topology(auth_client, printer_id, system_id, [0, 1], "happy_hare")
+    assert saved.status_code == 200, saved.text
+    bypass = next(
+        s for s in (await _slots(auth_client, printer_id)) if s["provider_index"] == 255
+    )
+    assert bypass["user_visibility"] == "hidden"
+    assert bypass["displayed"] is False
