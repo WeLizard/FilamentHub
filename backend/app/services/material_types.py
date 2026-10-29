@@ -54,6 +54,7 @@ MATERIAL_TYPES: tuple[MaterialTypeEntry, ...] = (
     _entry("CPE", None, "COPOLYESTER"),
     _entry("ABS"),
     _entry("ABS+", "ABS", "ABS PLUS"),
+    _entry("ABS HF", "ABS", "HF ABS", "ABS HIGH FLOW", "HIGH FLOW ABS"),
     _entry("ABS/PC", "ABS", "ABS+PC"),
     _entry("ABS/PA", "ABS", "ABS+PA"),
     _entry("ABS/PBT", "ABS", "ABS+PBT"),

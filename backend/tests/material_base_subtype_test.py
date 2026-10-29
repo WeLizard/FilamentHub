@@ -49,6 +49,7 @@ async def _catalog(db: AsyncSession, *material_types: str) -> Brand:
         ("ABS Plus", "ABS", "ABS+"),
         ("ASA+ GF", "ASA", "ASA+"),
         ("ABS+PC", "ABS", "ABS/PC"),
+        ("ABS High Flow", "ABS", "ABS HF"),
         ("PLA/PETG", "PLA", None),
         ("Wood", None, None),
     ],
