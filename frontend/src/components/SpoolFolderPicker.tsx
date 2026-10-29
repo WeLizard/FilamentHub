@@ -51,6 +51,7 @@ export function SpoolFolderPicker({ spool, collections, userId, onClose }: Spool
     try {
       await spoolsAPI.updateCollectionMembers(folderId, add ? { add: [spool.id] } : { remove: [spool.id] });
       changed.current = true;
+      void queryClient.invalidateQueries({ queryKey: spoolQueryKeys.collections(userId) });
     } catch (error) {
       setMember(folderId, !add);
       showSpoolFolderError(t, error);
