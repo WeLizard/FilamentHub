@@ -38,6 +38,7 @@ from app.schemas.preset import PresetBase
 from app.services.brand_slug_service import canonicalize_brand_slug, suggest_brand_slug
 from app.services.catalog_color_groups import classify_color_group
 from app.services.catalog_url_service import choose_filament_slug
+from app.services.material_types import material_type_identity_key, resolve_material_type
 from app.services.orcaslicer_preset_contract import apply_structured_filament_updates
 
 MAX_WORKBOOK_BYTES = 5 * 1024 * 1024
@@ -646,7 +647,7 @@ async def build_plan(
         identity_key = (
             filament.brand_id,
             filament.name.strip().casefold(),
-            filament.material_type.strip().casefold(),
+            material_type_identity_key(filament.material_type),
             (filament.color_name or "").strip().casefold(),
         )
         filament_identity_map.setdefault(identity_key, []).append(filament)
@@ -678,6 +679,8 @@ async def build_plan(
             diameter = _number(row.get("diameter")) if _present(row.get("diameter")) else None
             if not name or not material_type:
                 raise ValueError("name and material_type are required")
+            classification = resolve_material_type(material_type)
+            item.update(material_base=classification.base, material_subtype=classification.subtype)
             brand_id = parent.get("target_id")
             target = None
             existing_ref = _text(row.get("existing_filament"))
@@ -695,7 +698,7 @@ async def build_plan(
                     (
                         brand_id,
                         name.casefold(),
-                        material_type.casefold(),
+                        material_type_identity_key(material_type),
                         (color_name or "").casefold(),
                     ),
                     [],
@@ -737,7 +740,7 @@ async def build_plan(
             identity = (
                 brand_id if brand_id is not None else brand_key,
                 name.casefold(),
-                material_type.casefold(),
+                material_type_identity_key(material_type),
                 (color_name or (target.color_name if target else "") or "").strip().casefold(),
                 (
                     diameter

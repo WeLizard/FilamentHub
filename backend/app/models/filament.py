@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -182,7 +182,11 @@ class Filament(Base):
     slug: Mapped[str] = mapped_column(String(200), index=True)
     # slug: stable URL identifier scoped to the brand (e.g., "abs-black")
     material_type: Mapped[str] = mapped_column(String(50), index=True)
-    # material_type: PLA, ABS, PETG, TPU, Nylon, ASA, PC, etc.
+    # material_type: as the manufacturer writes it ("PA6-CF", "PLA Plus"); read
+    # verbatim by the Orca plugin and Spoolman-compatible clients.
+    # Derived from material_type on every assignment; NULL when not recognised.
+    base_material_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    material_subtype: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # Visual
     color_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -342,6 +346,15 @@ class Filament(Base):
     print_profile_links: Mapped[list["PrintProfileFilament"]] = relationship(
         "PrintProfileFilament", back_populates="filament", cascade="all, delete-orphan"
     )
+
+    @validates("material_type")
+    def _derive_material_classification(self, _key: str, value: str) -> str:
+        from app.services.material_types import resolve_material_type
+
+        resolution = resolve_material_type(value)
+        self.base_material_type = resolution.base
+        self.material_subtype = resolution.subtype
+        return value
 
     def __repr__(self) -> str:
         """String representation."""

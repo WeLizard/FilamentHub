@@ -25,6 +25,7 @@ import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { ProductQrButton } from '../components/ProductQrButton';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { filamentPublicPath } from '../utils/catalogUrls';
+import { OTHER_MATERIAL_BASE, materialBaseLabel } from '../utils/materialTypeGroups';
 import { hasMetaNetworkLink } from '../utils/restrictedNetworks';
 
 interface BrandFilamentCardProps {
@@ -122,7 +123,7 @@ export const BrandDetailPage: React.FC = () => {
         size: 100,
         brand_id: brand!.id,
         search: searchQuery || undefined,
-        material_type: materialTypeFilter || undefined,
+        material_base: materialTypeFilter || undefined,
         country: readerCountry,
       }),
     enabled: !!brand?.id,
@@ -168,13 +169,13 @@ export const BrandDetailPage: React.FC = () => {
   }
 
   const filaments = filamentsData?.items || [];
-  const materialTypes = Array.from(
-    new Set(filaments.map((f) => f.material_type).filter(Boolean))
-  ).sort();
+  // Фильтр по семейству: PLA показывает и PLA+, и PLA SILK.
+  const materialFamilies = Array.from(
+    new Set(filaments.map((f) => f.base_material_type ?? OTHER_MATERIAL_BASE))
+  ).sort((a, b) => Number(a === OTHER_MATERIAL_BASE) - Number(b === OTHER_MATERIAL_BASE) || a.localeCompare(b));
 
-  // Фильтруем филаменты по материалу
   const filteredFilaments = filaments.filter((f) => {
-    if (materialTypeFilter && f.material_type !== materialTypeFilter) {
+    if (materialTypeFilter && (f.base_material_type ?? OTHER_MATERIAL_BASE) !== materialTypeFilter) {
       return false;
     }
     return true;
@@ -351,7 +352,10 @@ export const BrandDetailPage: React.FC = () => {
               value={materialTypeFilter || ''}
               options={[
                 { value: '', label: t('brandDetailPage.allMaterials') },
-                ...materialTypes.map((type) => ({ value: type, label: type })),
+                ...materialFamilies.map((base) => ({
+                  value: base,
+                  label: materialBaseLabel(t, base === OTHER_MATERIAL_BASE ? null : base),
+                })),
               ]}
               onChange={(val) => setMaterialTypeFilter(val === '' ? null : String(val))}
               placeholder={t('brandDetailPage.materialType')}

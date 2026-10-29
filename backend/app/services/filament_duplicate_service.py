@@ -14,6 +14,7 @@ from app.models.filament import Filament
 from app.models.filament_duplicate_review import FilamentDuplicateReview
 from app.services.catalog_duplicates import same_filament_kind
 from app.services.filament_identity import identity_of, probable_duplicate
+from app.services.material_types import material_type_identity_key
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,11 @@ async def scan_for_duplicates(db: AsyncSession) -> int:
     )
     groups: dict[tuple[int, float, str], list[tuple[Filament, object]]] = {}
     for filament, brand_name in rows:
-        key = (filament.brand_id, filament.diameter, filament.material_type.strip().casefold())
+        key = (
+            filament.brand_id,
+            filament.diameter,
+            material_type_identity_key(filament.material_type),
+        )
         groups.setdefault(key, []).append(
             (filament, identity_of(filament, brand_name))
         )

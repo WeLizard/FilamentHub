@@ -25,6 +25,11 @@ class MaterialProperty(Base):
     material_type: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
     # material_type: PLA, PETG, ABS, ASA, TPU, Nylon, PC, PP, etc.
 
+    base_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    # base_type: polymer family; equals material_type for a base row (PA6 -> PA).
+    aliases: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    wiki_article_slug: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     # display_name: Отображаемое имя (например, "PLA (Polylactic Acid)")
 

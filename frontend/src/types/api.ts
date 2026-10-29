@@ -113,6 +113,13 @@ export type FilamentColorGroup =
   | 'silver';
 export type FilamentColorGroupSource = 'auto' | 'manual';
 
+/** Material types of one polymer family; `base` is null for unrecognised types. */
+export interface MaterialTypeGroup {
+  base: string | null;
+  types: string[];
+  filament_count: number;
+}
+
 export interface Filament {
   id: number;
   slug?: string | null;
@@ -122,7 +129,12 @@ export interface Filament {
   brand_slug?: string | null;
   brand_verified?: boolean;
   name: string;
+  /** As the manufacturer writes it ("PA6-CF", "PLA Plus"). */
   material_type: string;
+  /** Polymer family the catalog filters by; null when not recognised. */
+  base_material_type?: string | null;
+  /** Reference subtype (PLA+, PA6, PCTG); null when not recognised. */
+  material_subtype?: string | null;
   color_name: string | null;
   color_hex: string | null;
   color_group?: FilamentColorGroup | null;

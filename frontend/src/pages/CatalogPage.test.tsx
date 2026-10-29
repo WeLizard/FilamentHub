@@ -47,6 +47,7 @@ vi.mock('../api/client', () => ({
   filamentsAPI: {
     list: (...args: unknown[]) => listFilamentsMock(...args),
     getMaterialTypes: vi.fn().mockResolvedValue(['PLA', 'PETG']),
+    getMaterialTypeGroups: vi.fn().mockResolvedValue([]),
   },
   brandsAPI: {
     list: (...args: unknown[]) => listBrandsMock(...args),
@@ -392,7 +393,7 @@ describe('CatalogPage', () => {
 
     expect(await screen.findByPlaceholderText('catalogPage.searchPlaceholder')).toHaveValue('PETG');
     await waitFor(() => expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({
-      search: 'PETG', material_type: 'PETG', color_group: 'red', brand_id: 3, printer_id: 7, country: 'DE',
+      search: 'PETG', material_base: 'PETG', color_group: 'red', brand_id: 3, printer_id: 7, country: 'DE',
     })));
     expect(navigateMock).toHaveBeenCalledWith({
       pathname: '/',

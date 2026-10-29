@@ -60,6 +60,7 @@ from app.schemas.filament import (
     FilamentResponse,
     FilamentTechnicalDataContract,
     FilamentUpdate,
+    MaterialTypeGroup,
     normalize_ral_code,
 )
 from app.services.catalog_color_groups import (
@@ -94,6 +95,12 @@ from app.services.filament_preset_summary import (
     bucket_by_kind,
     summaries_for,
     summary_query,
+)
+from app.services.material_types import (
+    BY_CODE,
+    MATERIAL_TYPES,
+    material_type_identity_key,
+    resolve_material_type,
 )
 from app.services.territorial_access import (
     active_grants_for,
@@ -359,6 +366,32 @@ async def _validate_material_features(
             raise HTTPException(status_code=400, detail=error_msg)
 
 
+OTHER_MATERIAL_BASE = "other"
+
+
+def _material_base_condition(material_base: str | None):
+    value = material_base.strip() if material_base else ""
+    if not value:
+        return None
+    if value == OTHER_MATERIAL_BASE:
+        return Filament.base_material_type.is_(None)
+    # A legacy link may carry a subtype ("PLA+"): show its whole family.
+    base = resolve_material_type(value).base or value.upper()
+    return Filament.base_material_type == base
+
+
+def _same_kind_condition(material_type: str):
+    """Narrows duplicate candidates in SQL; the exact check is the identity key."""
+    resolution = resolve_material_type(material_type)
+    if resolution.subtype is not None:
+        return Filament.material_subtype == resolution.subtype
+    if resolution.base is not None:
+        return and_(
+            Filament.base_material_type == resolution.base, Filament.material_subtype.is_(None)
+        )
+    return Filament.base_material_type.is_(None)
+
+
 def _catalog_search_filter(search: str, country: str | None):
     """Build the public catalog search condition for the reader's market."""
     search_term = like_pattern(search)
@@ -399,6 +432,13 @@ def _catalog_search_filter(search: str, country: str | None):
         )
     if feature_codes.transparent:
         conditions.append(Filament.visual_settings["transparency"].as_boolean().is_(True))
+    # "nylon" finds every PA, "PLA Plus" finds every PLA+.
+    material = resolve_material_type(search)
+    if material.subtype is not None and not material.modifiers:
+        if BY_CODE[material.subtype].is_base:
+            conditions.append(Filament.base_material_type == material.subtype)
+        else:
+            conditions.append(Filament.material_subtype == material.subtype)
 
     if country:
         market_match = (
@@ -428,6 +468,12 @@ async def list_filaments(
     active_only: bool = Query(True),
     brand_id: int | None = Query(None),
     material_type: str | None = Query(None),
+    material_base: str | None = Query(
+        None,
+        max_length=128,
+        description="Семейство материала: PLA покажет PLA, PLA+, PLA HS и т. д.; "
+        f"`{OTHER_MATERIAL_BASE}` — материалы без распознанной основы.",
+    ),
     color_group: FilamentColorGroup | None = Query(None),
     multicolor: bool = Query(False),
     printer_id: int | None = Query(None, gt=0),
@@ -454,6 +500,9 @@ async def list_filaments(
         query = query.where(Filament.brand_id == brand_id)
     if material_type:
         query = query.where(Filament.material_type == material_type)
+    base_condition = _material_base_condition(material_base)
+    if base_condition is not None:
+        query = query.where(base_condition)
     if color_group:
         query = query.where(Filament.color_group == color_group)
     if multicolor:
@@ -472,6 +521,8 @@ async def list_filaments(
         count_query = count_query.where(Filament.brand_id == brand_id)
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
+    if base_condition is not None:
+        count_query = count_query.where(base_condition)
     if color_group:
         count_query = count_query.where(Filament.color_group == color_group)
     if multicolor:
@@ -640,6 +691,56 @@ async def get_material_types(
     all_material_types = sorted(mapping_types | filament_types)
 
     return all_material_types
+
+
+@router.get("/material-types/groups", response_model=list[MaterialTypeGroup])
+async def get_material_type_groups(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    active_only: bool = Query(True),
+    include_reference: bool = Query(
+        True, description="Добавить подтипы справочника, даже если материалов с ними нет"
+    ),
+) -> list[MaterialTypeGroup]:
+    """Material types grouped by their base polymer, families with most materials first."""
+    from app.models.material_mapping import MaterialMapping
+
+    counts_query = select(
+        Filament.base_material_type, Filament.material_type, func.count(Filament.id)
+    ).group_by(Filament.base_material_type, Filament.material_type)
+    if active_only:
+        counts_query = counts_query.where(Filament.active.is_(True))
+    rows = (await db.execute(counts_query)).all()
+
+    groups: dict[str | None, MaterialTypeGroup] = {}
+
+    def group_of(base: str | None) -> MaterialTypeGroup:
+        if base not in groups:
+            groups[base] = MaterialTypeGroup(base=base, types=[], filament_count=0)
+        return groups[base]
+
+    def add_type(group: MaterialTypeGroup, material_type: str) -> None:
+        if material_type.casefold() not in {known.casefold() for known in group.types}:
+            group.types.append(material_type)
+
+    if include_reference:
+        for entry in MATERIAL_TYPES:
+            add_type(group_of(entry.base), entry.code)
+        mapping_query = select(MaterialMapping.material_type).distinct()
+        if active_only:
+            mapping_query = mapping_query.where(MaterialMapping.active.is_(True))
+        for (mapped,) in await db.execute(mapping_query):
+            if mapped:
+                add_type(group_of(resolve_material_type(mapped).base), mapped)
+    for base, material_type, count in sorted(rows, key=lambda row: row[1] or ""):
+        group = group_of(base)
+        group.filament_count += count
+        if material_type:
+            add_type(group, material_type)
+
+    return sorted(
+        groups.values(),
+        key=lambda group: (group.base is None, -group.filament_count, group.base or ""),
+    )
 
 
 async def _serialize_filament_detail(
@@ -920,10 +1021,15 @@ async def create_filament(
             Filament.brand_id == data.brand_id,
             Filament.active.is_(True),
             Filament.diameter == data.diameter,
-            func.lower(func.trim(Filament.material_type)) == normalized_material_type.lower(),
+            _same_kind_condition(normalized_material_type),
         )
     )
-    candidates = candidates_result.scalars().all()
+    incoming_material_key = material_type_identity_key(normalized_material_type)
+    candidates = [
+        candidate
+        for candidate in candidates_result.scalars().all()
+        if material_type_identity_key(candidate.material_type) == incoming_material_key
+    ]
 
     incoming_name = comparable_name(normalized_name)
     duplicate_filament = next(
@@ -1345,13 +1451,20 @@ async def get_filament_merge_candidates(
                     Filament.id != source.id,
                     Filament.id != include,
                     Filament.diameter == source.diameter,
-                    func.lower(func.trim(Filament.material_type))
-                    == source.material_type.strip().lower(),
+                    _same_kind_condition(source.material_type),
                 )
-                .limit(MERGE_CANDIDATE_POOL_LIMIT)
+                # Same subtype may still differ by additive (PA6 vs PA6-CF);
+                # those are dropped below, so read past the final limit.
+                .limit(MERGE_CANDIDATE_POOL_LIMIT * 4)
             )
         ).all()
     )
+    source_material_key = material_type_identity_key(source.material_type)
+    pool = [
+        item
+        for item in pool
+        if material_type_identity_key(item.material_type) == source_material_key
+    ][:MERGE_CANDIDATE_POOL_LIMIT]
     counts = await count_filament_contributions(
         db, [source.id, *(item.id for item in pool), *([included.id] if included else [])]
     )

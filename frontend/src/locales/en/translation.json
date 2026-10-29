@@ -8825,5 +8825,14 @@
     "nameRequestSubject": "Change of brand name {{brand}}",
     "marketCurrency": "Pricing currency on this market",
     "marketCurrencyHint": "Offered by default when you set material prices for this country. Each price keeps its own currency."
+  },
+  "materialTypes": {
+    "otherBase": "Other materials",
+    "baseHint": {
+      "PA": "nylon"
+    },
+    "familyCount_one": "{{count}} material",
+    "familyCount_other": "{{count}} materials",
+    "showFamily": "All {{base}} family materials"
   }
 }

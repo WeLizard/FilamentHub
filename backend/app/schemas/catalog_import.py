@@ -23,6 +23,9 @@ class CatalogImportPlanRow(BaseModel):
     message: str | None = None
     changes: dict[str, dict[str, Any]] = Field(default_factory=dict)
     derived_from_preset_id: int | None = None
+    # Filament rows: what material_type resolves to; both null when unrecognised.
+    material_base: str | None = None
+    material_subtype: str | None = None
 
 
 class CatalogImportPreview(BaseModel):

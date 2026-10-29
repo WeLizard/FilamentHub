@@ -90,6 +90,8 @@ def _filament(item: dict[str, Any]) -> dict[str, Any]:
         "name": item.get("name"),
         "slug": item.get("slug"),
         "material_type": item.get("material_type"),
+        "base_material_type": item.get("base_material_type"),
+        "material_subtype": item.get("material_subtype"),
         "additives": item.get("additives", []),
         "property_claims": item.get("property_claims", []),
         "color_name": item.get("color_name"),

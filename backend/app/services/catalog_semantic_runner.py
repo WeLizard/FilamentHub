@@ -1154,6 +1154,7 @@ def _inventory_prompt(
                     "slug",
                     "line",
                     "material_type",
+                    "material_subtype",
                     "color_name",
                     "diameter",
                     "availability",

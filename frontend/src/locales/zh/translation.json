@@ -8806,5 +8806,13 @@
     "nameRequestSubject": "修改品牌名称 {{brand}}",
     "marketCurrency": "该市场的计价货币",
     "marketCurrencyHint": "为该国设置材料价格时默认使用。每个价格仍保留各自的货币。"
+  },
+  "materialTypes": {
+    "otherBase": "其他材料",
+    "baseHint": {
+      "PA": "尼龙"
+    },
+    "familyCount_other": "{{count}} 种材料",
+    "showFamily": "{{base}} 系列的全部材料"
   }
 }

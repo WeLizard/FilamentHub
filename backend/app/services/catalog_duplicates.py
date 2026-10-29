@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.brand_slug_redirect import BrandSlugRedirect
+from app.services.material_types import material_type_identity_key
 
 # One typo is a duplicate only when the name is long enough for a single
 # changed letter not to produce a different real brand ("U3" vs "U4").
@@ -65,7 +66,8 @@ def same_filament_kind(
 ) -> bool:
     """Whether two records could be one product at all."""
     return (
-        left_material_type.strip().casefold() == right_material_type.strip().casefold()
+        material_type_identity_key(left_material_type)
+        == material_type_identity_key(right_material_type)
         and left_diameter == right_diameter
     )
 

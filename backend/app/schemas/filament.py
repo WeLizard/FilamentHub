@@ -543,6 +543,10 @@ class FilamentResponse(FilamentBase):
     id: int
     slug: str
     brand_id: int
+    # Derived from material_type: polymer family and reference subtype; null
+    # when the manufacturer's type names no known polymer or no known subtype.
+    base_material_type: str | None = None
+    material_subtype: str | None = None
     additional_properties: list[FilamentAdditionalProperty] = Field(default_factory=list)
     contributed_by_organization_id: int | None = None
     brand_name: str | None = Field(None)
@@ -578,6 +582,14 @@ class FilamentResponse(FilamentBase):
     purchase_links: list[dict[str, str]] | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MaterialTypeGroup(BaseModel):
+    """Material types of one base polymer; ``base`` is null for unrecognised types."""
+
+    base: str | None
+    types: list[str]
+    filament_count: int = 0
 
 
 class FilamentListResponse(BaseModel):

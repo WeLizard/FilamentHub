@@ -47,6 +47,7 @@ import { FilamentHandlingBadges } from '../components/FilamentHandlingBadges';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { sortedCountries } from '../utils/countries';
 import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
+import { OTHER_MATERIAL_BASE, materialBaseLabel, unnamedMaterialFamily } from '../utils/materialTypeGroups';
 import type { FilamentColorGroup } from '../types/api';
 import {
   catalogItemAnchorId,
@@ -265,7 +266,7 @@ export const CatalogPage: React.FC = () => {
       'filaments',
       {
         search: debouncedSearchQuery,
-        material_type: materialTypeFilter,
+        material_base: materialTypeFilter,
         color_group: colorGroupFilter,
         brand_id: brandFilter,
         printer_id: printerFilter,
@@ -277,7 +278,7 @@ export const CatalogPage: React.FC = () => {
       filamentsAPI.list({
         active_only: true,
         search: debouncedSearchQuery || undefined,
-        material_type: materialTypeFilter || undefined,
+        material_base: materialTypeFilter || undefined,
         color_group: colorGroupFilter && colorGroupFilter !== 'multicolor'
           ? colorGroupFilter
           : undefined,
@@ -328,9 +329,10 @@ export const CatalogPage: React.FC = () => {
     return Array.from(byId, ([value, label]) => ({ value, label }));
   }, [brandsData, selectedBrand]);
 
-  const { data: materialTypes = [] } = useQuery({
-    queryKey: ['filament-material-types'],
-    queryFn: filamentsAPI.getMaterialTypes,
+  // Фильтр по семейству: PLA показывает и PLA+, и PLA HS.
+  const { data: materialFamilies = [] } = useQuery({
+    queryKey: ['filaments', 'material-types', 'families'],
+    queryFn: () => filamentsAPI.getMaterialTypeGroups({ include_reference: false }),
   });
 
   const countryOptions = useMemo(
@@ -500,7 +502,16 @@ export const CatalogPage: React.FC = () => {
               }}
               options={[
                 { value: '', label: t('catalogPage.allTypes') },
-                ...materialTypes.map((type) => ({ value: type, label: type })),
+                ...materialFamilies.map((family) => ({
+                  value: family.base ?? OTHER_MATERIAL_BASE,
+                  label: materialBaseLabel(t, family.base),
+                })),
+                // Старая ссылка с подтипом (?material=PLA+): сервер покажет семейство.
+                ...(materialTypeFilter
+                  && materialFamilies.length > 0
+                  && !materialFamilies.some((family) => (family.base ?? OTHER_MATERIAL_BASE) === materialTypeFilter)
+                  ? [{ value: materialTypeFilter, label: materialTypeFilter }]
+                  : []),
               ]}
               placeholder={t('catalogPage.allTypes')}
             />
@@ -857,6 +868,9 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 sm:py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
               {filament.material_type}
+              {unnamedMaterialFamily(filament.material_type, filament.base_material_type) && (
+                <span className="text-purple-300/60"> · {filament.base_material_type}</span>
+              )}
             </span>
             {fitsPrinter && (
               <span className="px-2 py-0.5 sm:py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded-full border border-emerald-500/30">

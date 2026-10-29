@@ -1146,12 +1146,21 @@ export const filamentsAPI = {
     const response = await api.get<string[]>('/filaments/material-types');
     return response.data;
   },
+  getMaterialTypeGroups: async (params?: { include_reference?: boolean }) => {
+    const response = await api.get<import('../types/api').MaterialTypeGroup[]>(
+      '/filaments/material-types/groups',
+      { params },
+    );
+    return response.data;
+  },
   list: async (params?: {
     page?: number;
     size?: number;
     active_only?: boolean;
     brand_id?: number;
     material_type?: string;
+    /** Polymer family: PLA also returns PLA+, PLA HS…; `other` — unrecognised types. */
+    material_base?: string;
     printer_id?: number;
     search?: string;
     country?: string;

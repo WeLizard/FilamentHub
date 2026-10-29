@@ -8888,5 +8888,16 @@
     "nameRequestSubject": "Изменение названия бренда {{brand}}",
     "marketCurrency": "Валюта цен на этом рынке",
     "marketCurrencyHint": "Подставляется по умолчанию, когда вы задаёте цены материалов для этой страны. У каждой цены валюта остаётся своя."
+  },
+  "materialTypes": {
+    "otherBase": "Другие материалы",
+    "baseHint": {
+      "PA": "нейлон"
+    },
+    "familyCount_one": "{{count}} материал",
+    "familyCount_few": "{{count}} материала",
+    "familyCount_many": "{{count}} материалов",
+    "familyCount_other": "{{count}} материала",
+    "showFamily": "Все материалы семейства {{base}}"
   }
 }

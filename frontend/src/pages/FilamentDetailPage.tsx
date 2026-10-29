@@ -7,7 +7,8 @@ import { InfoHint } from '../components/InfoHint';
 import { ProductQrButton } from '../components/ProductQrButton';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { isNozzleTooSoft } from '../utils/nozzleHardness';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
+import { unnamedMaterialFamily } from '../utils/materialTypeGroups';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
@@ -613,9 +614,22 @@ export const FilamentDetailPage: React.FC = () => {
                 </>
               )}
               <h1 className="text-xl md:text-4xl font-bold text-white">{filament.name}</h1>
-              <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
-                {filament.material_type}
-              </span>
+              {filament.base_material_type ? (
+                <Link
+                  to={`/?material=${encodeURIComponent(filament.base_material_type)}`}
+                  title={t('materialTypes.showFamily', { base: filament.base_material_type })}
+                  className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30 transition-colors hover:bg-purple-500/30 hover:text-purple-200"
+                >
+                  {filament.material_type}
+                  {unnamedMaterialFamily(filament.material_type, filament.base_material_type) && (
+                    <span className="text-purple-300/60"> · {filament.base_material_type}</span>
+                  )}
+                </Link>
+              ) : (
+                <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
+                  {filament.material_type}
+                </span>
+              )}
               {/* Стандартный пруток есть у всех и потому ничего не говорит;
                   сказать стоит ровно тогда, когда он другой. */}
               {filament.diameter && filament.diameter !== DEFAULT_DIAMETER && (
