@@ -149,7 +149,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
     const lowered = filter.toLowerCase();
     return options.filter((opt) => 
       opt.label.toLowerCase().includes(lowered) ||
-      String(opt.value).toLowerCase().includes(lowered)
+      String(opt.value).toLowerCase().includes(lowered) ||
+      (opt.group?.toLowerCase().includes(lowered) ?? false)
     );
   }, [filter, filterable, options]);
 

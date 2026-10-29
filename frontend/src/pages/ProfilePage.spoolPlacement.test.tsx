@@ -7,6 +7,7 @@ const apiMocks = vi.hoisted(() => ({
   createSpool: vi.fn(),
   updateSpool: vi.fn(),
   listPresets: vi.fn(),
+  getFilament: vi.fn(),
   listPrinters: vi.fn(),
   toastSuccess: vi.fn(),
 }));
@@ -33,6 +34,10 @@ vi.mock('../api/client', async (importOriginal) => {
     physicalPrintersAPI: {
       ...original.physicalPrintersAPI,
       list: apiMocks.listPrinters,
+    },
+    filamentsAPI: {
+      ...original.filamentsAPI,
+      get: apiMocks.getFilament,
     },
     presetsAPI: {
       ...original.presetsAPI,
@@ -279,5 +284,43 @@ describe('SpoolForm printer placement', () => {
       expected_initial_weight_g: 1000,
       expected_used_weight_g: 5,
     }));
+  });
+
+  it('groups the filament picker under alphabetical brand headings with brandless last', async () => {
+    const filaments: Record<number, { brand_name: string | null; name: string }> = {
+      1: { brand_name: 'Polymaker', name: 'PLA Pro' },
+      2: { brand_name: 'eSUN', name: 'PETG' },
+      3: { brand_name: null, name: 'Mystery PLA' },
+      4: { brand_name: 'eSUN', name: 'ABS' },
+    };
+    apiMocks.listPresets.mockResolvedValue({
+      items: Object.keys(filaments).map((id) => ({ filament_id: Number(id) })),
+    });
+    apiMocks.getFilament.mockImplementation(async (id: number) => ({
+      id,
+      color_name: null,
+      ...filaments[id],
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SpoolForm mode="create" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const picker = screen.getByPlaceholderText('profilePage.spoolAddModal.filamentPlaceholder');
+    await waitFor(() => expect(apiMocks.getFilament).toHaveBeenCalledTimes(4));
+    fireEvent.focus(picker);
+    await screen.findByRole('button', { name: 'PETG' });
+
+    const listText = screen.getByRole('button', { name: 'PETG' }).closest('.scrollbar-contained')!;
+    expect(
+      Array.from(listText.children).map((row) => row.textContent),
+    ).toEqual([
+      'eSUNABS',
+      'PETG',
+      'PolymakerPLA Pro',
+      'profilePage.spoolAddModal.otherBrandMystery PLA',
+    ]);
   });
 });

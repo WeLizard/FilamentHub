@@ -3913,6 +3913,7 @@
       "filamentLabel": "Filament from my presets",
       "filamentPlaceholder": "Select from your presets or leave empty",
       "noPresetFilaments": "No material-linked presets found in your profile yet.",
+      "otherBrand": "Other",
       "scanQr": "Scan QR",
       "scanQrHint": "Scan using a QR scanner or paste a code/link like /qr/CODE.",
       "scanQrOrEnterCode": "or enter the code manually",

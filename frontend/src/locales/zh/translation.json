@@ -3907,6 +3907,7 @@
       "filamentLabel": "来自我的预设的耗材",
       "filamentPlaceholder": "从您的预设中选择或留空",
       "noPresetFilaments": "您的配置文件中尚未找到与材料相关联的预设。",
+      "otherBrand": "其他",
       "scanQr": "扫描二维码",
       "scanQrHint": "使用二维码扫描器扫描或粘贴代码/链接，例如/qr/CODE。",
       "scanQrOrEnterCode": "或手动输入代码",

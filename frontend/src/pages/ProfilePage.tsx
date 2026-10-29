@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Dropdown } from '../components/Dropdown';
 import { PresetTestedOn } from '../components/PresetTestedOn';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -2436,6 +2437,36 @@ const collectFeedTargets = (printers: PhysicalPrinter[]): FeedTarget[] => {
   return targets;
 };
 
+interface FilamentBrandOption {
+  value: string;
+  label: string;
+  group: string;
+}
+
+/** Brand headings A-Z, entries by name within a brand, brandless entries last under `otherLabel`. */
+export function groupFilamentOptionsByBrand(
+  filaments: Filament[],
+  otherLabel: string,
+): FilamentBrandOption[] {
+  const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+  const entries = filaments.map((filament) => ({
+    value: String(filament.id),
+    label: [filament.name, filament.color_name].filter(Boolean).join(' · ') || filament.name,
+    brand: filament.brand_name?.trim() || '',
+  }));
+  entries.sort((a, b) => {
+    if (!a.brand !== !b.brand) return a.brand ? -1 : 1;
+    return collator.compare(a.brand, b.brand) || collator.compare(a.label, b.label);
+  });
+  // One heading per brand even when spellings differ only in case ("eSUN" / "Esun").
+  const headings = new Map<string, string>();
+  return entries.map(({ value, label, brand }) => {
+    const key = brand.toLocaleLowerCase();
+    if (brand && !headings.has(key)) headings.set(key, brand);
+    return { value, label, group: brand ? headings.get(key)! : otherLabel };
+  });
+}
+
 // Shown until the account's own limit arrives; the server enforces the real one.
 const DEFAULT_SPOOL_BATCH_LIMIT = 20;
 const SPOOL_BATCH_ATTEMPT_KEY = 'spool-batch-create';
@@ -2625,6 +2656,11 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     }
     return list;
   }, [presetFilaments, scannedFilament, spool?.filament]);
+
+  const groupedFilamentOptions = useMemo(
+    () => groupFilamentOptionsByBrand(filamentOptions, t('profilePage.spoolAddModal.otherBrand')),
+    [filamentOptions, t],
+  );
 
   useEffect(() => {
     if (!spool) {
@@ -3247,22 +3283,17 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           </div>
         )}
 
-        <select
+        <Dropdown
           value={filamentId}
-          onChange={(e) => {
-            setFilamentId(e.target.value);
+          options={groupedFilamentOptions}
+          onChange={(next) => {
+            setFilamentId(String(next));
             setScannedFilament(null);
             setSource('manual');
           }}
-          className={inputCls}
-        >
-          <option value="">{t('profilePage.spoolAddModal.filamentPlaceholder')}</option>
-          {filamentOptions.map((filament) => (
-            <option key={filament.id} value={filament.id}>
-              {[filament.brand_name, filament.name, filament.color_name].filter(Boolean).join(' · ') || filament.name}
-            </option>
-          ))}
-        </select>
+          placeholder={t('profilePage.spoolAddModal.filamentPlaceholder')}
+          filterable
+        />
         {filamentOptions.length === 0 && (
           <p className="mt-1 text-xs text-gray-500">{t('profilePage.spoolAddModal.noPresetFilaments')}</p>
         )}
