@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { crmAPI } from '../api/client';
+import { formatMonthLabel } from '../utils/monthLabel';
 
 function formatAmounts(amounts: Record<string, number>, language: string): string {
   const entries = Object.entries(amounts).filter(([, value]) => value !== 0);
@@ -35,7 +36,7 @@ export function RevenueStrip({ userId }: { userId: number | undefined }) {
         </div>
         {[...months].reverse().slice(0, 3).map((item) => (
           <div key={item.month} className="min-w-0">
-            <p className="truncate text-[11px] text-gray-400">{item.month}</p>
+            <p className="truncate text-[11px] text-gray-400">{formatMonthLabel(item.month, i18n.language)}</p>
             <p className="text-base font-semibold text-white">{formatAmounts(item.amounts, i18n.language)}</p>
           </div>
         ))}

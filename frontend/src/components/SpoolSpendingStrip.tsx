@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { spoolsAPI, type SpoolSpendingCurrency, type SpoolSpendingGroup } from '../api/client';
 import { currencySymbol } from '../utils/currency';
+import { formatMonthLabel } from '../utils/monthLabel';
 import { spoolQueryKeys } from '../utils/spoolQueries';
 
 function formatMoney(amount: number, currency: string | null, language: string): string {
@@ -143,7 +144,7 @@ export function SpoolSpendingStrip({ userId }: { userId: number | undefined }) {
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
               {[...data.by_month].reverse().filter((item) => item.currencies.length > 0).map((item) => (
                 <div key={item.month} className="flex items-baseline justify-between gap-2">
-                  <span className="text-gray-400">{item.month}</span>
+                  <span className="text-gray-400">{formatMonthLabel(item.month, language)}</span>
                   <span className="text-white">
                     {item.currencies.map((row) => formatMoney(row.bought_total, row.currency, language)).join(' · ')}
                   </span>
