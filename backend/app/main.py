@@ -273,6 +273,7 @@ class PublicStaticFiles(StaticFiles):
         "printer_requests/",
         "database_dumps/",
         "wiki_media/",
+        "feedback_media/",
         "calculator_gcode_artifacts/",
     )
     _immutable_prefixes = (

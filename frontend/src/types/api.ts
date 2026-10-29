@@ -1227,11 +1227,20 @@ export interface Feedback {
   plugin_log_size?: number | null;
   status: FeedbackStatus;
   admin_unread_count?: number;
+  awaiting_reply?: boolean;
+  user_language?: string | null;
   admin_response: string | null;
   admin_response_at: string | null;
   responded_by: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FeedbackAttachment {
+  public_id: string;
+  url: string;
+  width: number;
+  height: number;
 }
 
 export interface FeedbackMessage {
@@ -1240,6 +1249,7 @@ export interface FeedbackMessage {
   author_type: 'user' | 'admin';
   message: string;
   created_at: string;
+  attachments?: FeedbackAttachment[];
 }
 
 export interface FeedbackDetail extends Feedback {

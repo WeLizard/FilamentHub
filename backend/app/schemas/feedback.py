@@ -124,6 +124,17 @@ class FeedbackMarkRead(BaseModel):
     through_message_id: int = Field(..., gt=0)
 
 
+class FeedbackAttachmentResponse(BaseModel):
+    """Image attached to a feedback message."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    public_id: str
+    url: str = ""
+    width: int
+    height: int
+
+
 class FeedbackMessageResponse(BaseModel):
     """One message in a feedback conversation."""
 
@@ -134,6 +145,7 @@ class FeedbackMessageResponse(BaseModel):
     author_type: str
     message: str
     created_at: datetime
+    attachments: list[FeedbackAttachmentResponse] = Field(default_factory=list)
 
 
 class FeedbackResponse(BaseModel):
@@ -156,6 +168,8 @@ class FeedbackResponse(BaseModel):
     # Status
     status: str
     admin_unread_count: int = 0
+    awaiting_reply: bool = False
+    user_language: str | None = None
     admin_response: str | None
     admin_response_at: datetime | None
     responded_by: int | None

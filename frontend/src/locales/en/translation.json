@@ -1317,7 +1317,7 @@
     "filter_feature": "Suggestions",
     "filter_question": "Questions",
     "filter_other": "Other",
-    "search_placeholder": "Search by subject, text, or email...",
+    "search_placeholder": "Search: #number, subject, text, user",
     "total_messages": "Total messages: {{count}}",
     "status_label": "Status: ",
     "type_label": "Type: ",
@@ -1353,7 +1353,31 @@
     "confirmDelete": "Delete this message? This action cannot be undone.",
     "pluginLog": "Plugin log · {{size}} KB",
     "downloadPluginLog": "Download .log",
-    "pluginLogDownloadError": "Could not download the plugin log"
+    "pluginLogDownloadError": "Could not download the plugin log",
+    "awaitingOnly": "Awaiting reply",
+    "awaiting": "awaiting reply",
+    "selectThread": "Select a thread from the list",
+    "keyboardHint": "↑↓ to move, Enter to open, / to search, Esc to go back, Ctrl+Enter to send",
+    "back": "Back to list",
+    "refresh": "Refresh",
+    "languageTitle": "User language",
+    "sourcePage": "Page",
+    "attachImages": "Screenshot",
+    "attachHint": "PNG, JPEG or WebP up to 8 MB; you can also paste with Ctrl+V or drag a file here",
+    "dropImages": "Drop to attach",
+    "removeImage": "Remove {{name}}",
+    "imagesLimit": "You can attach up to {{count}} images",
+    "imageRejected": "Only PNG, JPEG or WebP up to 8 MB can be attached",
+    "sendHint": "Ctrl+Enter to send",
+    "send": "Send",
+    "sending": "Sending…",
+    "showPluginLog": "Show",
+    "hidePluginLog": "Hide",
+    "pluginLogLoadError": "Could not load the log"
+  },
+  "feedbackImages": {
+    "open": "Open image",
+    "close": "Close image"
   },
   "feedbackThread": {
     "back": "Back",
@@ -6607,6 +6631,12 @@
     "copyLink": "Copy link"
   },
   "notifications": {
+    "feedbackThreadTitle": "Feedback #{{id}}",
+    "newReplies": "New replies: {{count}}",
+    "sections": {
+      "support": "Support conversations",
+      "other": "Other notifications"
+    },
     "title": "Notifications",
     "empty": "No notifications",
     "loading": "Loading notifications...",
@@ -6657,6 +6687,8 @@
       "openResponse": "Open response"
     },
     "keys": {
+      "feedback_response": "Reply to your feedback",
+      "feedback_response_images": "The FilamentHub team sent an image in reply to your feedback.",
       "preset_updated": "Preset updated",
       "preset_updated_message": "Preset \"{{preset_name}}\" was updated.",
       "preset_deleted": "Preset deleted",

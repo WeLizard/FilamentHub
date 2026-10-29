@@ -174,9 +174,47 @@ class FeedbackMessage(Base):
 
     feedback: Mapped["Feedback"] = relationship("Feedback", back_populates="messages")
     author: Mapped["User | None"] = relationship("User", foreign_keys=[author_user_id])
+    attachments: Mapped[list["FeedbackMessageAttachment"]] = relationship(
+        "FeedbackMessageAttachment",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="FeedbackMessageAttachment.id",
+    )
 
     def __repr__(self) -> str:
         return (
             f"<FeedbackMessage(id={self.id}, feedback_id={self.feedback_id}, "
             f"author_type={self.author_type})>"
         )
+
+
+class FeedbackMessageAttachment(Base):
+    """A server-normalized WebP image attached to a feedback message."""
+
+    __tablename__ = "feedback_message_attachments"
+    __table_args__ = (
+        Index("ix_fb_attach_message", "message_id"),
+        UniqueConstraint("public_id", name="uq_fb_attach_public_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("feedback_messages.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    public_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="image/webp", server_default="image/webp"
+    )
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    message: Mapped["FeedbackMessage"] = relationship(
+        "FeedbackMessage", back_populates="attachments"
+    )

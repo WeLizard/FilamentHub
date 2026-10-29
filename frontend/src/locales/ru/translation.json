@@ -1476,7 +1476,7 @@
     "filter_feature": "Предложения",
     "filter_question": "Вопросы",
     "filter_other": "Другое",
-    "search_placeholder": "Поиск по теме, тексту или email...",
+    "search_placeholder": "Поиск: #номер, тема, текст, пользователь",
     "total_messages": "Всего сообщений: {{count}}",
     "status_label": "Статус: ",
     "type_label": "Тип: ",
@@ -1512,7 +1512,31 @@
     "confirmDelete": "Удалить это сообщение? Действие необратимо.",
     "pluginLog": "Журнал плагина · {{size}} КБ",
     "downloadPluginLog": "Скачать .log",
-    "pluginLogDownloadError": "Не удалось скачать журнал плагина"
+    "pluginLogDownloadError": "Не удалось скачать журнал плагина",
+    "awaitingOnly": "Ждут ответа",
+    "awaiting": "ждёт ответа",
+    "selectThread": "Выберите обращение в списке",
+    "keyboardHint": "↑↓ — по списку, Enter — открыть, / — поиск, Esc — назад, Ctrl+Enter — отправить",
+    "back": "К списку",
+    "refresh": "Обновить",
+    "languageTitle": "Язык пользователя",
+    "sourcePage": "Страница",
+    "attachImages": "Скриншот",
+    "attachHint": "PNG, JPEG или WebP до 8 МБ; можно вставить через Ctrl+V или перетащить",
+    "dropImages": "Отпустите, чтобы приложить",
+    "removeImage": "Убрать {{name}}",
+    "imagesLimit": "Можно приложить не больше {{count}} картинок",
+    "imageRejected": "Подходят только PNG, JPEG или WebP до 8 МБ",
+    "sendHint": "Ctrl+Enter — отправить",
+    "send": "Отправить",
+    "sending": "Отправка…",
+    "showPluginLog": "Показать",
+    "hidePluginLog": "Скрыть",
+    "pluginLogLoadError": "Не удалось загрузить журнал"
+  },
+  "feedbackImages": {
+    "open": "Открыть картинку",
+    "close": "Закрыть картинку"
   },
   "feedbackThread": {
     "back": "Назад",
@@ -6790,6 +6814,12 @@
     "copyLink": "Копировать ссылку"
   },
   "notifications": {
+    "feedbackThreadTitle": "Обращение #{{id}}",
+    "newReplies": "Новых ответов: {{count}}",
+    "sections": {
+      "support": "Переписка с поддержкой",
+      "other": "Другие уведомления"
+    },
     "title": "Уведомления",
     "empty": "Нет уведомлений",
     "loading": "Загрузка уведомлений...",
@@ -6840,6 +6870,8 @@
       "openResponse": "Открыть ответ"
     },
     "keys": {
+      "feedback_response": "Ответ на обращение",
+      "feedback_response_images": "Команда FilamentHub прислала изображение в ответ на ваше обращение.",
       "preset_updated": "Пресет обновлён",
       "preset_updated_message": "Пресет «{{preset_name}}» был обновлён.",
       "preset_deleted": "Пресет удалён",

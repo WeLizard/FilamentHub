@@ -1317,7 +1317,7 @@
     "filter_feature": "建议",
     "filter_question": "问题",
     "filter_other": "其他",
-    "search_placeholder": "按主题、内容或邮箱搜索...",
+    "search_placeholder": "搜索：#编号、主题、内容、用户",
     "total_messages": "总消息数：{{count}}",
     "status_label": "状态：",
     "type_label": "类型：",
@@ -1353,7 +1353,31 @@
     "confirmDelete": "删除此消息？此操作无法撤销。",
     "pluginLog": "插件日志 · {{size}} KB",
     "downloadPluginLog": "下载 .log",
-    "pluginLogDownloadError": "无法下载插件日志"
+    "pluginLogDownloadError": "无法下载插件日志",
+    "awaitingOnly": "待回复",
+    "awaiting": "待回复",
+    "selectThread": "请从列表中选择一条反馈",
+    "keyboardHint": "↑↓ 切换，Enter 打开，/ 搜索，Esc 返回，Ctrl+Enter 发送",
+    "back": "返回列表",
+    "refresh": "刷新",
+    "languageTitle": "用户语言",
+    "sourcePage": "来源页面",
+    "attachImages": "截图",
+    "attachHint": "PNG、JPEG 或 WebP，不超过 8 MB；也可以用 Ctrl+V 粘贴或拖入文件",
+    "dropImages": "松开即可添加",
+    "removeImage": "移除 {{name}}",
+    "imagesLimit": "最多可添加 {{count}} 张图片",
+    "imageRejected": "仅支持不超过 8 MB 的 PNG、JPEG 或 WebP",
+    "sendHint": "Ctrl+Enter 发送",
+    "send": "发送",
+    "sending": "发送中…",
+    "showPluginLog": "查看",
+    "hidePluginLog": "收起",
+    "pluginLogLoadError": "无法加载日志"
+  },
+  "feedbackImages": {
+    "open": "查看图片",
+    "close": "关闭图片"
   },
   "feedbackThread": {
     "back": "返回",
@@ -6593,6 +6617,12 @@
     "copyLink": "复制链接"
   },
   "notifications": {
+    "feedbackThreadTitle": "反馈 #{{id}}",
+    "newReplies": "{{count}} 条新回复",
+    "sections": {
+      "support": "与支持团队的对话",
+      "other": "其他通知"
+    },
     "title": "通知",
     "empty": "暂无通知",
     "loading": "正在加载通知...",
@@ -6643,6 +6673,8 @@
       "openResponse": "打开回复"
     },
     "keys": {
+      "feedback_response": "反馈回复",
+      "feedback_response_images": "FilamentHub 团队在回复您的反馈时发送了一张图片。",
       "preset_updated": "预设已更新",
       "preset_updated_message": "预设“{{preset_name}}”已更新。",
       "preset_deleted": "预设已删除",

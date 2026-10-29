@@ -32,6 +32,7 @@ from app.models.user_spool import UserSpool
 from app.models.wiki_article import WikiArticle
 from app.models.wiki_revision import WikiRevision, WikiRevisionReview, WikiRevisionStatus
 from app.services.email_service import outbound_send_is_stale
+from app.services.feedback_media import feedback_media_storage_paths, remove_feedback_media
 from app.services.wiki_media_service import delete_unpublished_user_wiki_media
 
 logger = logging.getLogger(__name__)
@@ -436,9 +437,12 @@ async def delete_user_account(
         .values(email=None)
     )
 
+    feedback_media = await feedback_media_storage_paths(db, Feedback.user_id == user_id)
+
     await db.delete(user)
 
     await db.commit()
+    remove_feedback_media(feedback_media)
     if stored_mail_event_ids:
         from app.services.inbound_mail_service import delete_stored_messages
 

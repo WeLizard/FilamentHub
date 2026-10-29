@@ -21,6 +21,8 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { notificationsAPI } from '../api/client';
 import type { Notification, NotificationType } from '../types/api';
 import { DeletedPresetsModal } from './DeletedPresetsModal';
+import { FeedbackThreadView } from './FeedbackThreadView';
+import { NotificationFeedList } from './NotificationFeedList';
 
 interface NotificationsProps {
   floating?: boolean; // Плавающая версия для OrcaSlicer (когда нет хедера)
@@ -31,6 +33,8 @@ interface NotificationPresentation {
   typeKey: string;
   actionKey: string;
 }
+
+const DIRECT_LINK_MAX_MESSAGE = 140;
 
 const getNotificationPresentation = (
   notification: Notification,
@@ -103,6 +107,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   const lastAccountRefreshNotificationId = useRef<number | null>(null);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [viewNotification, setViewNotification] = useState<Notification | null>(null);
+  const [threadFeedbackId, setThreadFeedbackId] = useState<number | null>(null);
+  const threadTitleId = useId();
   
   // Для плавающей версии используем внутренний счётчик (обновляется через postMessage от C++)
   const [externalUnreadCount, setExternalUnreadCount] = useState<number | null>(null);
@@ -189,6 +195,20 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     },
   });
 
+  const deleteNotificationsMutation = useMutation({
+    mutationFn: (ids: number[]) => Promise.all(ids.map((id) => notificationsAPI.delete(id))),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    },
+  });
+
+  const markNotificationsReadMutation = useMutation({
+    mutationFn: (ids: number[]) => Promise.all(ids.map((id) => notificationsAPI.markAsRead(id))),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] });
+    },
+  });
+
   // Мутация для удаления всех уведомлений
   const deleteAllNotificationsMutation = useMutation({
     mutationFn: () => notificationsAPI.deleteAll(),
@@ -271,14 +291,33 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       return;
     }
 
-    // Отмечаем обычное уведомление как прочитанное при клике
-    if (!notification.read) {
-      markAsReadMutation.mutate(notification.id);
-    }
-    
-    // Для всех остальных уведомлений открываем модалку для просмотра
-    setViewNotification(notification);
     setIsOpen(false);
+
+    // A short notice with a destination goes straight there; long texts and
+    // messages without a link are read in the dialog first.
+    const { message } = getNotificationText(notification);
+    const link = notification.link;
+    if (link && message.length <= DIRECT_LINK_MAX_MESSAGE) {
+      // Leaving the site would cancel the read request, so external links wait for it.
+      if (!notification.read && !link.trim().startsWith('/')) {
+        void markAsReadMutation.mutateAsync(notification.id)
+          .catch(() => undefined)
+          .finally(() => handleOpenLink(link));
+        return;
+      }
+      if (!notification.read) markAsReadMutation.mutate(notification.id);
+      handleOpenLink(link);
+      return;
+    }
+    if (!notification.read) markAsReadMutation.mutate(notification.id);
+    setViewNotification(notification);
+  };
+
+  const openFeedbackThread = (feedbackId: number, items: Notification[]) => {
+    const unreadIds = items.filter((item) => !item.read).map((item) => item.id);
+    if (unreadIds.length) markNotificationsReadMutation.mutate(unreadIds);
+    setIsOpen(false);
+    setThreadFeedbackId(feedbackId);
   };
 
   const handleOpenLink = (link: string) => {
@@ -361,6 +400,23 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     </div>
   ) : null;
 
+  const threadModal = threadFeedbackId !== null ? (
+    <ModalOverlay onClose={() => setThreadFeedbackId(null)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={threadTitleId}
+        className="w-full max-w-3xl"
+      >
+        <FeedbackThreadView
+          feedbackId={threadFeedbackId}
+          titleId={threadTitleId}
+          onClose={() => setThreadFeedbackId(null)}
+        />
+      </div>
+    </ModalOverlay>
+  ) : null;
+
   // Плавающая версия (для OrcaSlicer)
   if (floating) {
     return (
@@ -390,7 +446,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             id={panelId}
             role="region"
             aria-label={t('notifications.title')}
-            className="absolute right-0 bottom-full mb-4 w-96 max-w-[calc(100vw-24px)] bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[80vh] overflow-hidden flex flex-col"
+            className="absolute right-0 bottom-full mb-4 w-[26rem] max-w-[calc(100vw-24px)] bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[80vh] overflow-hidden flex flex-col"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
@@ -427,89 +483,16 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   <p>{t('notifications.empty')}</p>
                 </div>
               ) : (
-                <div className="divide-y divide-white/10">
-                  {notifications.map((notification) => {
-                    const { title, message } = getNotificationText(notification);
-                    const presentation = getNotificationPresentation(notification);
-                    const previewLength = 150;
-                    const messagePreview = message.length > previewLength
-                      ? message.substring(0, previewLength) + '...'
-                      : message;
-                    const isLongMessage = message.length > previewLength;
-                    const hasLink = !!notification.link;
-                    
-                    return (
-                      <div
-                        key={notification.id}
-                        className={`min-h-11 p-4 transition-all hover:bg-white/10 cursor-pointer ${
-                          !notification.read ? 'bg-white/5' : ''
-                        }`}
-                        onClick={() => handleNotificationClick(notification)}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start space-x-3">
-                              <div className="flex-shrink-0 mt-0.5">
-                                {getNotificationIcon(notification.type)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-xs text-purple-200/75">
-                                  <span>{t(presentation.sourceKey)}</span>
-                                  <span aria-hidden="true">·</span>
-                                  <span>{t(presentation.typeKey)}</span>
-                                </div>
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                  <p className="text-sm font-semibold text-white">
-                                    {title}
-                                  </p>
-                                  {!notification.read && (
-                                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
-                                  )}
-                                </div>
-                                <p className="text-sm text-gray-300 mb-2">
-                                  {messagePreview}
-                                  {isLongMessage && (
-                                    <span className="text-purple-400 ml-1">{t('notifications.clickForFull')}</span>
-                                  )}
-                                </p>
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs text-gray-400">
-                                    {formatTime(notification.created_at)}
-                                  </p>
-                                </div>
-                                {hasLink && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenLink(notification.link!);
-                                    }}
-                                    className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded text-xs font-medium text-purple-300 transition-colors hover:text-purple-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
-                                  >
-                                    {t(presentation.actionKey)}
-                                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          {notification.type !== 'preset_locally_deleted' && <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteNotificationMutation.mutate(notification.id);
-                            }}
-                            disabled={deleteNotificationMutation.isPending}
-                            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-gray-400 transition-all hover:bg-white/10 hover:text-red-400"
-                            title={t('notifications.deleteOne')}
-                            aria-label={t('notifications.deleteOne')}
-                          >
-                            <X className="w-4 h-4" />
-                          </button>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <NotificationFeedList
+                  notifications={notifications}
+                  getText={getNotificationText}
+                  getIcon={(notification) => getNotificationIcon(notification.type)}
+                  formatTime={formatTime}
+                  onOpen={handleNotificationClick}
+                  onOpenThread={openFeedbackThread}
+                  onDelete={(ids) => deleteNotificationsMutation.mutate(ids)}
+                  deletePending={deleteNotificationsMutation.isPending}
+                />
               )}
             </div>
 
@@ -553,6 +536,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           </div>
         )}
         
+        {threadModal}
+
         {/* Modal for deleted presets */}
         {selectedNotification && (
           <DeletedPresetsModal
@@ -679,7 +664,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           id={panelId}
           role="region"
           aria-label={t('notifications.title')}
-          className="app-shell-header-popover fixed mx-auto flex max-h-[70vh] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-purple-900 to-indigo-900 shadow-2xl z-[10000] md:absolute md:mx-0 md:max-h-[80vh] md:w-96 md:max-w-none"
+          className="app-shell-header-popover fixed mx-auto flex max-h-[70vh] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-purple-900 to-indigo-900 shadow-2xl z-[10000] md:absolute md:mx-0 md:max-h-[80vh] md:w-[26rem] md:max-w-none"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-3 md:p-4 border-b border-white/10">
@@ -716,90 +701,16 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 <p className="text-sm md:text-base">{t('notifications.empty')}</p>
               </div>
             ) : (
-              <div className="divide-y divide-white/10">
-                {notifications.map((notification) => {
-                  const { title, message } = getNotificationText(notification);
-                  const presentation = getNotificationPresentation(notification);
-                  // Обрезаем текст для предпросмотра (максимум 150 символов)
-                  const previewLength = 150;
-                  const messagePreview = message.length > previewLength
-                    ? message.substring(0, previewLength) + '...'
-                    : message;
-                  const isLongMessage = message.length > previewLength;
-                  const hasLink = !!notification.link;
-                  
-                  return (
-                    <div
-                      key={notification.id}
-                      className={`min-h-11 p-3 transition-all hover:bg-white/10 cursor-pointer md:p-4 ${
-                        !notification.read ? 'bg-white/5' : ''
-                      }`}
-                      onClick={() => handleNotificationClick(notification)}
-                    >
-                      <div className="flex items-start space-x-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start space-x-2 md:space-x-3">
-                            <div className="flex-shrink-0 mt-0.5">
-                              {getNotificationIcon(notification.type)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-[10px] md:text-xs text-purple-200/75">
-                                <span>{t(presentation.sourceKey)}</span>
-                                <span aria-hidden="true">·</span>
-                                <span>{t(presentation.typeKey)}</span>
-                              </div>
-                              <div className="flex items-start justify-between gap-2 mb-1">
-                                <p className="text-xs md:text-sm font-semibold text-white">
-                                  {title}
-                                </p>
-                                {!notification.read && (
-                                  <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
-                                )}
-                              </div>
-                              <p className="text-xs md:text-sm text-gray-300 mb-2">
-                                {messagePreview}
-                                {isLongMessage && (
-                                  <span className="text-purple-400 ml-1">{t('notifications.clickForFull')}</span>
-                                )}
-                              </p>
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-[10px] md:text-xs text-gray-400">
-                                  {formatTime(notification.created_at)}
-                                </p>
-                              </div>
-                              {hasLink && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenLink(notification.link!);
-                                  }}
-                                  className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded text-xs font-medium text-purple-300 transition-colors hover:text-purple-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
-                                >
-                                  {t(presentation.actionKey)}
-                                  <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        {notification.type !== 'preset_locally_deleted' && <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotificationMutation.mutate(notification.id);
-                          }}
-                          disabled={deleteNotificationMutation.isPending}
-                          className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-gray-400 transition-all hover:bg-white/10 hover:text-red-400"
-                          title={t('notifications.deleteOne')}
-                          aria-label={t('notifications.deleteOne')}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <NotificationFeedList
+                notifications={notifications}
+                getText={getNotificationText}
+                getIcon={(notification) => getNotificationIcon(notification.type)}
+                formatTime={formatTime}
+                onOpen={handleNotificationClick}
+                onOpenThread={openFeedbackThread}
+                onDelete={(ids) => deleteNotificationsMutation.mutate(ids)}
+                deletePending={deleteNotificationsMutation.isPending}
+              />
             )}
           </div>
 
@@ -842,6 +753,8 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           )}
         </div>
       )}
+
+      {threadModal}
 
       {/* Modal for deleted presets */}
       {selectedNotification && (

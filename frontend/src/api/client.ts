@@ -3394,6 +3394,12 @@ export const feedbackAPI = {
     const response = await api.post<FeedbackDetail>(`/feedback/${feedbackId}/messages`, data);
     return response.data;
   },
+
+  getAttachmentBlob: async (url: string): Promise<Blob> => {
+    const endpoint = url.startsWith(API_BASE_URL) ? url.slice(API_BASE_URL.length) : url;
+    const response = await api.get(endpoint, { responseType: 'blob' });
+    return response.data;
+  },
 };
 
 export const adminCatalogCurationAPI = {
@@ -3486,8 +3492,11 @@ export const adminFeedbackAPI = {
     status?: string;
     type?: FeedbackType;
     source?: string;
-  }): Promise<FeedbackListResponse> => {
-    const response = await api.get<FeedbackListResponse>('/feedback/', { params });
+    search?: string;
+    awaiting_reply?: boolean;
+    sort?: 'updated' | 'attention';
+  }, signal?: AbortSignal): Promise<FeedbackListResponse> => {
+    const response = await api.get<FeedbackListResponse>('/feedback/', { params, signal });
     return response.data;
   },
 
@@ -3511,6 +3520,21 @@ export const adminFeedbackAPI = {
     reply_idempotency_key?: string | null;
   }): Promise<FeedbackDetail> => {
     const response = await api.patch<FeedbackDetail>(`/feedback/${feedbackId}`, data);
+    return response.data;
+  },
+
+  reply: async (feedbackId: number, data: {
+    message: string;
+    idempotency_key: string;
+    images: File[];
+  }): Promise<FeedbackDetail> => {
+    const form = new FormData();
+    form.append('message', data.message);
+    form.append('idempotency_key', data.idempotency_key);
+    data.images.forEach((image) => form.append('images', image));
+    const response = await api.post<FeedbackDetail>(`/feedback/${feedbackId}/admin-reply`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 

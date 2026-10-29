@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Notification, NotificationFeedResponse } from '../types/api';
@@ -36,6 +36,12 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('./FeedbackThreadView', () => ({
+  FeedbackThreadView: ({ feedbackId }: { feedbackId: number }) => (
+    <div data-testid="feedback-thread">{`thread ${feedbackId}`}</div>
+  ),
+}));
+
 vi.mock('./DeletedPresetsModal', () => ({
   DeletedPresetsModal: ({ isOpen }: { isOpen: boolean }) =>
     isOpen ? <div data-testid="deleted-presets-modal" /> : null,
@@ -56,6 +62,10 @@ function notification(id: number, title: string): Notification {
   };
 }
 
+function LocationProbe() {
+  return <div data-testid="location">{useLocation().pathname}</div>;
+}
+
 function renderNotifications(floating: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -64,6 +74,7 @@ function renderNotifications(floating: boolean) {
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
         <Notifications floating={floating} />
+        <LocationProbe />
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -186,5 +197,49 @@ describe('Notifications cursor feed', () => {
 
     expect(await screen.findByTestId('deleted-presets-modal')).toBeInTheDocument();
     expect(mocks.markAsRead).not.toHaveBeenCalled();
+  });
+
+  it('groups support replies per thread and opens the conversation in place', async () => {
+    const reply = (id: number, read: boolean): Notification => ({
+      ...notification(id, 'feedback_response'),
+      message: `Reply ${id}`,
+      link: '/feedback/10',
+      read,
+      extra_data: { feedback_id: 10, feedback_subject: 'Sync failed' },
+    });
+    mocks.listFeed.mockResolvedValue({
+      items: [reply(31, false), reply(30, false), notification(29, 'Broadcast')],
+      next_cursor: null,
+      unread_count: 2,
+    });
+    renderNotifications(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'notifications.title' }));
+    const threadRows = await screen.findAllByText('#10 · Sync failed');
+    expect(threadRows).toHaveLength(1);
+    expect(screen.getByText('Reply 31')).toBeInTheDocument();
+    expect(screen.queryByText('Reply 30')).not.toBeInTheDocument();
+
+    fireEvent.click(threadRows[0]);
+    expect(await screen.findByTestId('feedback-thread')).toHaveTextContent('thread 10');
+    await waitFor(() => expect(mocks.markAsRead).toHaveBeenCalledTimes(2));
+    expect(mocks.markAsRead).toHaveBeenCalledWith(31);
+    expect(mocks.markAsRead).toHaveBeenCalledWith(30);
+  });
+
+  it('follows the link of a short notice without an extra dialog', async () => {
+    mocks.listFeed.mockResolvedValue({
+      items: [{ ...notification(40, 'Preset updated'), link: '/presets/5', read: false }],
+      next_cursor: null,
+      unread_count: 1,
+    });
+    renderNotifications(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'notifications.title' }));
+    fireEvent.click(await screen.findByText('Preset updated'));
+
+    await waitFor(() => expect(mocks.markAsRead).toHaveBeenCalledWith(40));
+    expect(screen.getByTestId('location')).toHaveTextContent('/presets/5');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

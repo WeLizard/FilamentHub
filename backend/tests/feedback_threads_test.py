@@ -59,6 +59,7 @@ async def test_feedback_owner_and_admin_can_read_the_thread(
             "author_type": "user",
             "message": "Are these physical gates?",
             "created_at": owner_response.json()["messages"][0]["created_at"],
+            "attachments": [],
         }
     ]
 
@@ -295,3 +296,83 @@ async def test_stale_admin_read_cannot_restore_unread_or_clear_a_new_reply(
         )
         assert stale_marked.status_code == 200
         assert stale_marked.json()["admin_unread_count"] == 1
+
+
+async def _make_thread(client: AsyncClient, user: User, subject: str, message: str) -> int:
+    response = await client.post(
+        "/api/v1/feedback/",
+        headers=_headers(user),
+        json={"type": "question", "subject": subject, "message": message},
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+async def _admin_reply(client: AsyncClient, admin: User, feedback_id: int) -> None:
+    response = await client.patch(
+        f"/api/v1/feedback/{feedback_id}",
+        headers=_headers(admin),
+        json={"admin_response": "Answer"},
+    )
+    assert response.status_code == 200
+
+
+async def test_admin_list_search_matches_id_text_and_username(
+    client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+) -> None:
+    first = await _make_thread(client, auth_user, "Spool holder", "Does not fit")
+    second = await _make_thread(client, admin_user, "Nozzle", "Clogs often")
+
+    async def ids(**params) -> tuple[list[int], int]:
+        response = await client.get(
+            "/api/v1/feedback/", headers=_headers(admin_user), params=params
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        return [item["id"] for item in body["items"]], body["total"]
+
+    assert await ids(search=f"#{second}") == ([second], 1)
+    assert await ids(search=str(first)) == ([first], 1)
+    assert await ids(search="clogs") == ([second], 1)
+    assert await ids(search=auth_user.username.upper()) == ([first], 1)
+    assert await ids(search="100%") == ([], 0)
+    assert (await ids(search="  "))[1] == 2
+
+
+async def test_awaiting_reply_filter_and_attention_sort(
+    client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+) -> None:
+    answered = await _make_thread(client, auth_user, "Answered", "First")
+    waiting = await _make_thread(client, auth_user, "Waiting", "Second")
+    resolved = await _make_thread(client, auth_user, "Resolved", "Third")
+    await _admin_reply(client, admin_user, answered)
+    closed = await client.patch(
+        f"/api/v1/feedback/{resolved}",
+        headers=_headers(admin_user),
+        json={"status": "resolved"},
+    )
+    assert closed.status_code == 200
+
+    listing = await client.get(
+        "/api/v1/feedback/", headers=_headers(admin_user), params={"awaiting_reply": True}
+    )
+    assert [item["id"] for item in listing.json()["items"]] == [waiting]
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["awaiting_reply"] is True
+
+    # Touch the answered thread so plain recency would put it first.
+    await _admin_reply(client, admin_user, answered)
+    attention = await client.get(
+        "/api/v1/feedback/", headers=_headers(admin_user), params={"sort": "attention"}
+    )
+    items = attention.json()["items"]
+    assert items[0]["id"] == waiting
+    assert {item["id"]: item["awaiting_reply"] for item in items} == {
+        waiting: True,
+        answered: False,
+        resolved: False,
+    }

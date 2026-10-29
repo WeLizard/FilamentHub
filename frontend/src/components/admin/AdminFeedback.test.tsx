@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
+  reply: vi.fn(),
+  markRead: vi.fn(),
   remove: vi.fn(),
   downloadLog: vi.fn(),
   downloadBlob: vi.fn(),
@@ -27,6 +29,8 @@ vi.mock('../../api/client', () => ({
     list: (...args: unknown[]) => mocks.list(...args),
     get: (...args: unknown[]) => mocks.get(...args),
     update: (...args: unknown[]) => mocks.update(...args),
+    reply: (...args: unknown[]) => mocks.reply(...args),
+    markRead: (...args: unknown[]) => mocks.markRead(...args),
     delete: (...args: unknown[]) => mocks.remove(...args),
     downloadPluginLog: (...args: unknown[]) => mocks.downloadLog(...args),
   },
@@ -38,6 +42,7 @@ vi.mock('../Toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
   },
 }));
 
@@ -120,7 +125,71 @@ describe('AdminFeedback emoji picker', () => {
     expect(screen.queryByText(/User #4|Пользователь #4/)).not.toBeInTheDocument();
   });
 
-  it('offers an attached plugin log only as a file download', async () => {
+  it('keeps the search field mounted and focused while results reload', async () => {
+    renderFeedback();
+    const search = await screen.findByPlaceholderText('adminFeedback.search_placeholder');
+    search.focus();
+
+    fireEvent.change(search, { target: { value: '#17' } });
+    await waitFor(() => (
+      expect(mocks.list).toHaveBeenCalledWith(
+        expect.objectContaining({ search: '#17', sort: 'attention' }),
+        expect.anything(),
+      )
+    ));
+
+    expect(screen.getByPlaceholderText('adminFeedback.search_placeholder')).toBe(search);
+    expect(search).toHaveFocus();
+  });
+
+  it('sends pasted screenshots together with the reply', async () => {
+    mocks.reply.mockResolvedValue(feedback);
+    renderFeedback();
+
+    fireEvent.click(await screen.findByText(feedback.subject));
+    const textarea = screen.getByPlaceholderText('adminFeedback.modal_response_placeholder');
+    const image = new File(['png'], 'screen.png', { type: 'image/png' });
+    fireEvent.paste(textarea, { clipboardData: { files: [image] } });
+    fireEvent.change(textarea, { target: { value: 'See the screenshot' } });
+    fireEvent.click(screen.getByRole('button', { name: /adminFeedback.send$/ }));
+
+    await waitFor(() => expect(mocks.reply).toHaveBeenCalledTimes(1));
+    expect(mocks.reply).toHaveBeenCalledWith(17, expect.objectContaining({
+      message: 'See the screenshot',
+      images: [image],
+    }));
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the newly opened thread and its draft when an earlier reply finishes', async () => {
+    const other: FeedbackDetail = { ...feedback, id: 18, subject: 'Second thread', messages: [] };
+    let finishReply: (value: FeedbackDetail) => void = () => {};
+    mocks.list.mockResolvedValue({ items: [feedback, other], total: 2, page: 1, size: 20, pages: 1 });
+    mocks.get.mockImplementation((id: number) => Promise.resolve(id === 18 ? other : feedback));
+    mocks.reply.mockReturnValue(new Promise((resolve) => { finishReply = resolve; }));
+    renderFeedback();
+
+    fireEvent.click(await screen.findByText(feedback.subject));
+    const textarea = screen.getByPlaceholderText('adminFeedback.modal_response_placeholder');
+    fireEvent.change(textarea, { target: { value: 'First answer' } });
+    fireEvent.click(screen.getByRole('button', { name: /adminFeedback.send$/ }));
+    await waitFor(() => expect(mocks.reply).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText('Second thread'));
+    fireEvent.change(
+      screen.getByPlaceholderText('adminFeedback.modal_response_placeholder'),
+      { target: { value: 'Draft for the second thread' } },
+    );
+    finishReply(feedback);
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(18));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('heading', { name: 'Second thread' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('adminFeedback.modal_response_placeholder'))
+      .toHaveValue('Draft for the second thread');
+  });
+
+  it('shows an attached plugin log as plain text only on request', async () => {
     const withLog = { ...feedback, plugin_log_size: 12_288 };
     const blob = new Blob(['FilamentHub plugin 0.2.0']);
     mocks.list.mockResolvedValue({ items: [withLog], total: 1, page: 1, size: 20, pages: 1 });
@@ -129,6 +198,7 @@ describe('AdminFeedback emoji picker', () => {
     renderFeedback();
 
     fireEvent.click(await screen.findByText(feedback.subject));
+    expect(screen.queryByText('FilamentHub plugin 0.2.0')).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /adminFeedback.downloadPluginLog/ }));
 
     await waitFor(() => (
@@ -136,5 +206,8 @@ describe('AdminFeedback emoji picker', () => {
     ));
     expect(mocks.downloadLog).toHaveBeenCalledWith(17);
     expect(screen.queryByText('FilamentHub plugin 0.2.0')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'adminFeedback.showPluginLog' }));
+    expect(await screen.findByText('FilamentHub plugin 0.2.0')).toBeInTheDocument();
   });
 });
