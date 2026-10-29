@@ -1,23 +1,23 @@
 """A QIDI Box reported by Edge as a legacy Klipper feed (no new provider)."""
 
+import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 
-EDGE = Path(__file__).resolve().parents[2] / "edge-agent"
-FIXTURES = EDGE / "tests" / "fixtures" / "qidi_box"
+ROOT = Path(__file__).resolve().parents[2]
+QIDI_BOX = ROOT / "edge-agent" / "src" / "filamenthub_edge" / "providers" / "qidi_box.py"
+FIXTURES = ROOT / "edge-agent" / "tests" / "fixtures" / "qidi_box"
 
 
 @pytest.mark.asyncio
 async def test_legacy_edge_accepts_qidi_box_slots(auth_client: AsyncClient) -> None:
-    sys.path.insert(0, str(EDGE / "src"))
-    try:
-        from filamenthub_edge.providers import qidi_box
-    finally:
-        sys.path.remove(str(EDGE / "src"))
+    spec = importlib.util.spec_from_file_location("edge_qidi_box", QIDI_BOX)
+    assert spec is not None and spec.loader is not None
+    qidi_box = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(qidi_box)
 
     printer_id = (
         await auth_client.post("/api/v1/physical-printers", json={"name": "Qidi Q2"})

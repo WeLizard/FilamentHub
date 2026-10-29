@@ -36,6 +36,12 @@ def select_components(paths: list[str]) -> set[str]:
                 selected.add("backend")
         elif path.startswith("edge-agent/") or path == "repository.yaml":
             selected.add("edge")
+            # The backend contract imports the Edge QIDI Box parser, and both the
+            # backend and the plugin tests read its captured printer responses.
+            if path.startswith("edge-agent/src/filamenthub_edge/providers/qidi_box."):
+                selected.add("backend")
+            elif path.startswith("edge-agent/tests/fixtures/qidi_box/"):
+                selected.update(("backend", "plugins"))
         elif path.startswith(("orca-plugin/", "octoprint-plugin/")):
             selected.add("plugins")
         elif path != "README.md":

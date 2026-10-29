@@ -104,7 +104,7 @@ class MoonrakerProvider:
         return list(self._capabilities)
 
     def observe(self) -> ProviderSnapshot:
-        objects: dict[str, list[str]] = {
+        objects: dict[str, list[str] | None] = {
             "print_stats": [
                 "state",
                 "filename",
