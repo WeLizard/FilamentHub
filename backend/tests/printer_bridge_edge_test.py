@@ -1072,6 +1072,8 @@ async def test_edge_sequence_orders_snapshots_independently_from_clock_and_liven
     assert out_of_order.status_code == 200
     assert out_of_order.json()["accepted"] is False
     assert out_of_order.json()["stale"] is True
+    # A stale answer names the server's sequence so the helper can move past it.
+    assert out_of_order.json()["last_sequence"] == 2
 
     clock_moved_back = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",

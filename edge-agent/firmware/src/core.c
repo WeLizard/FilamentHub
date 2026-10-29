@@ -218,3 +218,29 @@ uint64_t fh_next_sequence(uint64_t *next, uint64_t *reserved_high,
     }
     return (*next)++;
 }
+
+uint32_t fh_backoff_ms(uint32_t previous, uint32_t initial, uint32_t cap)
+{
+    if (initial > cap) initial = cap;
+    if (previous < initial) return initial;
+    if (previous >= cap / 2) return cap;
+    return previous * 2;
+}
+
+bool fh_auth_failure_is_final(uint32_t failures, uint64_t first_ms, uint64_t now_ms)
+{
+    return failures >= FH_AUTH_FAILURES_BEFORE_CLEAR && now_ms >= first_ms &&
+           now_ms - first_ms >= FH_AUTH_FAILURE_SPAN_MS;
+}
+
+bool fh_heartbeat_due(bool sent_before, uint64_t last_ms, uint64_t now_ms)
+{
+    return !sent_before || now_ms < last_ms || now_ms - last_ms >= FH_HEARTBEAT_INTERVAL_MS;
+}
+
+uint64_t fh_resync_sequence(uint64_t next, uint64_t server_last)
+{
+    const uint64_t exact_json_limit = 9007199254740991ULL;
+    if (server_last >= exact_json_limit - 1023) return next;
+    return server_last + 1 > next ? server_last + 1 : next;
+}

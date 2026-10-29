@@ -84,6 +84,35 @@ int main(void)
     next = 9007199254740992ULL;
     assert(fh_next_sequence(&next, &high, reserve, NULL) == 0);
 
+    /* A refusal slows the cloud link down; it never ends it. */
+    uint32_t delay = 0;
+    delay = fh_backoff_ms(delay, FH_RETRY_INITIAL_MS, FH_RETRY_MAX_MS);
+    assert(delay == 5000);
+    delay = fh_backoff_ms(delay, FH_RETRY_INITIAL_MS, FH_RETRY_MAX_MS);
+    assert(delay == 10000);
+    for (int i = 0; i < 20; i++)
+        delay = fh_backoff_ms(delay, FH_RETRY_INITIAL_MS, FH_RETRY_MAX_MS);
+    assert(delay == FH_RETRY_MAX_MS);
+    assert(fh_backoff_ms(0, FH_REJECT_INITIAL_MS, FH_REJECT_MAX_MS) == 60000);
+    assert(fh_backoff_ms(1800000, FH_REJECT_INITIAL_MS, FH_REJECT_MAX_MS) == FH_REJECT_MAX_MS);
+
+    /* One or two 401s, or a burst inside a few minutes, never erase a token. */
+    assert(!fh_auth_failure_is_final(1, 1000, 1000));
+    assert(!fh_auth_failure_is_final(2, 1000, 1000 + FH_AUTH_FAILURE_SPAN_MS));
+    assert(!fh_auth_failure_is_final(5, 1000, 1000 + FH_AUTH_FAILURE_SPAN_MS - 1));
+    assert(fh_auth_failure_is_final(3, 1000, 1000 + FH_AUTH_FAILURE_SPAN_MS));
+    assert(!fh_auth_failure_is_final(9, 5000, 4000)); /* clock went backwards */
+
+    /* The heartbeat goes first, then once per interval. */
+    assert(fh_heartbeat_due(false, 0, 0));
+    assert(!fh_heartbeat_due(true, 1000, 1000 + FH_HEARTBEAT_INTERVAL_MS - 1));
+    assert(fh_heartbeat_due(true, 1000, 1000 + FH_HEARTBEAT_INTERVAL_MS));
+
+    /* A stale answer moves the sequence past the server's, never backwards. */
+    assert(fh_resync_sequence(5, 40) == 41);
+    assert(fh_resync_sequence(100, 40) == 100);
+    assert(fh_resync_sequence(7, 9007199254740991ULL) == 7);
+
     printf("Core host tests passed; config=%lu bytes\n", (unsigned long)sizeof(fh_config));
     return 0;
 }

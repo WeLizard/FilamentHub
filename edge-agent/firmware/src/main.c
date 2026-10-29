@@ -39,6 +39,13 @@ static uint64_t retry_at[FH_MAX_CONNECTIONS];
 static uint32_t retry_delay[FH_MAX_CONNECTIONS];
 static uint64_t last_upload_at[FH_MAX_CONNECTIONS];
 static bool cloud_disabled[FH_MAX_CONNECTIONS];
+static uint32_t reject_delay[FH_MAX_CONNECTIONS];
+static uint64_t cloud_retry_at[FH_MAX_CONNECTIONS];
+static uint32_t auth_failures[FH_MAX_CONNECTIONS];
+static uint64_t first_auth_failure_at[FH_MAX_CONNECTIONS];
+static uint64_t last_heartbeat_at[FH_MAX_CONNECTIONS];
+static bool heartbeat_sent[FH_MAX_CONNECTIONS];
+static bool printer_unreachable[FH_MAX_CONNECTIONS];
 static fh_ams_state diagnostic_feed;
 static bool journal_warning_issued;
 
@@ -98,15 +105,25 @@ static bool time_ready(void)
 
 static void retry_later(int index)
 {
-    uint32_t delay = retry_delay[index] ? retry_delay[index] * 2 : 5000;
-    if (delay > 300000) delay = 300000;
-    retry_delay[index] = delay;
-    retry_at[index] = monotonic_ms() + delay;
+    retry_delay[index] = fh_backoff_ms(retry_delay[index], FH_RETRY_INITIAL_MS,
+                                       FH_RETRY_MAX_MS);
+    retry_at[index] = monotonic_ms() + retry_delay[index];
+}
+
+/* The server answered but refused this request: wait longer, never give up.
+ * Only cloud traffic waits; the printer is still observed locally meanwhile. */
+static void reject_later(int index)
+{
+    reject_delay[index] = fh_backoff_ms(reject_delay[index], FH_REJECT_INITIAL_MS,
+                                        FH_REJECT_MAX_MS);
+    cloud_retry_at[index] = monotonic_ms() + reject_delay[index];
 }
 
 static void clear_retry(int index)
 {
     retry_delay[index] = 0;
+    reject_delay[index] = 0;
+    cloud_retry_at[index] = 0;
     retry_at[index] = 0;
 }
 
@@ -122,6 +139,70 @@ static void revoke_token(int index)
     }
     cloud_disabled[index] = true;
     clear_retry(index);
+}
+
+/* One place decides what a cloud answer means for the link, so a snapshot, a
+ * heartbeat and a pairing request cannot disagree. The link is only ever
+ * switched off for good by a credential the server repeatedly refuses. */
+static void handle_cloud_result(int index, fh_cloud_result result)
+{
+    if (result != FH_CLOUD_REVOKED && result != FH_CLOUD_RETRY) auth_failures[index] = 0;
+    switch (result) {
+    case FH_CLOUD_OK:
+        clear_retry(index);
+        break;
+    case FH_CLOUD_STALE:
+        retry_at[index] = monotonic_ms() + FH_RETRY_INITIAL_MS;
+        break;
+    case FH_CLOUD_REVOKED:
+        if (auth_failures[index] == 0) first_auth_failure_at[index] = monotonic_ms();
+        auth_failures[index]++;
+        if (fh_auth_failure_is_final(auth_failures[index], first_auth_failure_at[index],
+                                     monotonic_ms())) {
+            ESP_LOGW(TAG, "Token refused repeatedly; provision a new pairing code for connection %d",
+                     index + 1);
+            revoke_token(index);
+            auth_failures[index] = 0;
+        } else {
+            reject_later(index);
+        }
+        break;
+    case FH_CLOUD_REJECTED:
+        ESP_LOGW(TAG, "Request refused by the server for connection %d; retrying later",
+                 index + 1);
+        reject_later(index);
+        break;
+    default:
+        retry_later(index);
+        break;
+    }
+}
+
+static bool utc_now_text(char output[32])
+{
+    time_t now = time(NULL);
+    if (now < 1704067200) return false;
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    return strftime(output, 32, "%Y-%m-%dT%H:%M:%S+00:00", &utc) > 0;
+}
+
+/* While the printer cannot be read the helper still reports in, flagged as
+ * "printer unreachable", so a switched-off printer is not mistaken for a dead
+ * link. Runs on its own clock, independent of the observation back-off. */
+static void heartbeat_if_due(int index)
+{
+    fh_connection *connection = &config.connections[index];
+    char observed_at[32];
+    if (!printer_unreachable[index] || cloud_disabled[index] || !connection->bridge_token[0] ||
+        monotonic_ms() < cloud_retry_at[index] ||
+        !(xEventGroupGetBits(wifi_events) & FH_WIFI_CONNECTED) || !utc_now_text(observed_at) ||
+        !fh_heartbeat_due(heartbeat_sent[index], last_heartbeat_at[index], monotonic_ms()))
+        return;
+    heartbeat_sent[index] = true;
+    last_heartbeat_at[index] = monotonic_ms();
+    fh_cloud_result result = fh_cloud_heartbeat(&config, index, false, observed_at);
+    if (result == FH_CLOUD_REVOKED) handle_cloud_result(index, result);
 }
 
 static void print_ams_line(char *line)
@@ -175,6 +256,7 @@ static void observe_connection(int index)
     fh_connection *connection = &config.connections[index];
     if (!fh_bambu_start(connection)) {
         print_ams_line(fh_ams_lifecycle_json(connection->id, true));
+        printer_unreachable[index] = true;
         retry_later(index);
         return;
     }
@@ -213,9 +295,11 @@ static void observe_connection(int index)
     fh_bambu_stop();
     print_ams_line(fh_ams_lifecycle_json(connection->id, failed || wifi_lost));
     if (failed || wifi_lost || (!have_observation && !have_ams)) {
+        printer_unreachable[index] = !wifi_lost;
         retry_later(index);
         return;
     }
+    printer_unreachable[index] = false;
     if (!connection->bridge_token[0] || cloud_disabled[index] ||
         !have_observation || !fh_telemetry_fresh(&latest, monotonic_ms())) {
         clear_retry(index);
@@ -225,18 +309,13 @@ static void observe_connection(int index)
         retry_later(index);
         return;
     }
+    if (monotonic_ms() < cloud_retry_at[index]) return;
     if (last_upload_at[index] && monotonic_ms() - last_upload_at[index] <
         FH_UPLOAD_INTERVAL_MS) return;
     fh_cloud_result result = fh_cloud_snapshot(&config, index, &latest,
                                                 monotonic_ms(), observed_at);
     last_upload_at[index] = monotonic_ms();
-    if (result == FH_CLOUD_OK) clear_retry(index);
-    else if (result == FH_CLOUD_REVOKED) revoke_token(index);
-    else if (result == FH_CLOUD_REJECTED) {
-        ESP_LOGW(TAG, "Observation rejected; repair connection %d", index + 1);
-        cloud_disabled[index] = true;
-        clear_retry(index);
-    } else retry_later(index);
+    handle_cloud_result(index, result);
 }
 
 void app_main(void)
@@ -281,17 +360,18 @@ void app_main(void)
             continue;
         }
         for (int index = 0; index < config.connection_count; index++) {
+            heartbeat_if_due(index);
             if (monotonic_ms() < retry_at[index]) continue;
             fh_connection *connection = &config.connections[index];
             if (!connection->bridge_token[0] && !cloud_disabled[index]) {
                 if (connection->pairing_code[0] && time_ready()) {
                     fh_cloud_result result = fh_cloud_pair(&config, index);
-                    if (result == FH_CLOUD_OK) clear_retry(index);
-                    else if (result == FH_CLOUD_REJECTED) {
+                    if (result == FH_CLOUD_REJECTED) {
+                        /* A spent or invalid one-time code cannot heal by waiting. */
                         ESP_LOGW(TAG, "Pairing rejected; provision a new code for connection %d",
                                  index + 1);
                         cloud_disabled[index] = true;
-                    } else retry_later(index);
+                    } else handle_cloud_result(index, result);
                 }
             }
             observe_connection(index);

@@ -43,6 +43,22 @@ framework-generated `flasher_args.json` uses different intermediate filenames;
 use this build's manifest with the three existing images. No real printer or
 board is exercised by a cross-build or host test.
 
+## Cloud link recovery
+
+An unexpected cloud answer never switches the upload off until the next reboot.
+Network errors, 5xx, 429 and any answer that is not an explicit client error
+back off from 5 s up to 5 min and retry. A request the server explicitly refuses
+(400, 409, 422) backs off from 1 min up to 30 min; only cloud traffic waits,
+the printer is still observed locally. A 401 on the stored token is believed
+only after three refusals spread over at least ten minutes; then the token is
+erased and a new one-time pairing code has to be provisioned over USB (a
+pairing code is single-use, so that step cannot be avoided). A stale-snapshot
+answer carries the server's last sequence and the firmware continues after it.
+While the printer cannot be read, a heartbeat flagged `provider_reachable=false`
+is sent every two minutes so the site can tell a switched-off printer from a
+dead link. The pure pacing rules live in `core.c` and are covered by
+`tests/test_core.c`.
+
 ## Provisioning
 
 The USB serial console accepts one JSON line. It never echoes the line or

@@ -664,3 +664,5 @@ class PrinterBridgeSnapshotResponse(BaseModel):
     connector_id: int
     material_system_id: int
     slots_seen: int
+    # Set on a stale answer so a helper can move its sequence past the server's.
+    last_sequence: int | None = None

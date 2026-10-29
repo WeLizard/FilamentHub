@@ -76,10 +76,14 @@ static fh_cloud_result post_json(const fh_config *config, const char *path,
     *status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
     esp_http_client_cleanup(client);
     if (err != ESP_OK || response->oversized) return FH_CLOUD_RETRY;
+    if (*status == 200) return FH_CLOUD_OK;
     if (*status == 401 && token) return FH_CLOUD_REVOKED;
-    if (*status >= 500 || *status == 429) return FH_CLOUD_RETRY;
-    if (*status != 200) return FH_CLOUD_REJECTED;
-    return FH_CLOUD_OK;
+    /* Only answers that say "this request is wrong" are a rejection. Anything
+     * else unexpected (a proxy page, 403, 404, a redirect) is treated like an
+     * outage: the link backs off and tries again instead of staying off. */
+    if (*status == 400 || *status == 401 || *status == 409 || *status == 422)
+        return FH_CLOUD_REJECTED;
+    return FH_CLOUD_RETRY;
 }
 
 fh_cloud_result fh_cloud_pair(fh_config *config, int index)
@@ -183,7 +187,46 @@ fh_cloud_result fh_cloud_snapshot(fh_config *config, int index,
     if (!fh_json_shape_ok(response.body, response.length, 8)) return FH_CLOUD_RETRY;
     cJSON *reply = cJSON_ParseWithLength(response.body, response.length);
     const cJSON *accepted = cJSON_GetObjectItemCaseSensitive(reply, "accepted");
-    result = cJSON_IsTrue(accepted) ? FH_CLOUD_OK : FH_CLOUD_REJECTED;
+    if (cJSON_IsTrue(accepted)) {
+        result = FH_CLOUD_OK;
+    } else if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(reply, "stale"))) {
+        const cJSON *last = cJSON_GetObjectItemCaseSensitive(reply, "last_sequence");
+        if (cJSON_IsNumber(last) && last->valuedouble >= 1 &&
+            last->valuedouble <= 9007199254740991.0 &&
+            floor(last->valuedouble) == last->valuedouble)
+            conn->sequence_next = fh_resync_sequence(conn->sequence_next,
+                                                     (uint64_t)last->valuedouble);
+        result = FH_CLOUD_STALE;
+    } else {
+        result = FH_CLOUD_REJECTED;
+    }
     cJSON_Delete(reply);
+    return result;
+}
+
+fh_cloud_result fh_cloud_heartbeat(const fh_config *config, int index,
+                                   bool provider_reachable, const char *observed_at)
+{
+    const fh_connection *conn = &config->connections[index];
+    if (!conn->bridge_token[0] || conn->material_system_id < 1 || !observed_at ||
+        !*observed_at) return FH_CLOUD_REJECTED;
+    cJSON *request = cJSON_CreateObject();
+    if (!request) return FH_CLOUD_RETRY;
+    cJSON_AddNumberToObject(request, "material_system_id", conn->material_system_id);
+    cJSON_AddStringToObject(request, "provider", "bambu");
+    cJSON_AddStringToObject(request, "transport", "edge_agent");
+    cJSON_AddStringToObject(request, "source_instance_id", conn->source_instance_id);
+    cJSON_AddStringToObject(request, "observed_at", observed_at);
+    cJSON_AddBoolToObject(request, "provider_reachable", provider_reachable);
+    cJSON_AddNumberToObject(request, "contact_interval_s",
+                            (double)(FH_HEARTBEAT_INTERVAL_MS / 1000ULL));
+    char *body = cJSON_PrintUnformatted(request);
+    cJSON_Delete(request);
+    if (!body) return FH_CLOUD_RETRY;
+    response_buffer response = {0};
+    int status = 0;
+    fh_cloud_result result = post_json(config, "/api/v1/printer-bridge/heartbeat",
+                                       conn->bridge_token, body, &response, &status);
+    free(body);
     return result;
 }

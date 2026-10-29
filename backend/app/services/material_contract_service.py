@@ -1105,6 +1105,11 @@ async def ingest_printer_bridge_snapshot(
             connector_id=connector.id,
             material_system_id=system.id,
             slots_seen=len(payload.slots),
+            last_sequence=(
+                connector.last_snapshot_sequence
+                if connector.last_snapshot_source_instance_id == payload.source_instance_id
+                else None
+            ),
         )
 
     topology_report = payload.slot_topology_complete and bool(payload.slots)
