@@ -106,17 +106,34 @@ services:
       - filamenthub_dev
 
   frontend-dev:
-    image: node:20-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
     container_name: filamenthub_frontend_dev
     restart: unless-stopped
     # Kept off the mirrored pair: production serves the built site from nginx and
     # has no bundler running, so letting one compete for those cores here would
     # tax every measurement with work the server never does.
     cpuset: "2,3"
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    # No bind mount: a Windows host folder delivers no change events into the
+    # container, and polling it through the Docker file bridge stalls Vite.
+    # Compose Watch copies changed files into the container's own filesystem.
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .npm-cache/
+            - dist/
+            - dist-ssr/
+            - .tmp/
+            - coverage/
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
     ports:
       - "3000:3000"
     environment:
@@ -125,8 +142,6 @@ services:
       VITE_RECAPTCHA_SITE_KEY: ""
       VITE_AUTH_WEB_MODE: dual
       VITE_AUTH_CSRF_HEADER_NAME: X-CSRF-Token
-      CHOKIDAR_USEPOLLING: "true"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       backend-dev:
         condition: service_healthy

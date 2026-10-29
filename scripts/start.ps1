@@ -8,7 +8,9 @@ production-compose.
 
 .PARAMETER Command
 Команда для выполнения. Допустимые значения:
-- up: Собрать (при необходимости) и запустить все сервисы в фоновом режиме.
+- up: Собрать (при необходимости) и запустить все сервисы в фоновом режиме
+  и включить синхронизацию кода фронтенда.
+- watch: Только включить синхронизацию кода фронтенда, если dev уже запущен.
 - down: Остановить все сервисы.
 - clean: Остановить все сервисы и УДАЛИТЬ все данные (включая базу данных).
 - logs: Показать логи всех запущенных сервисов.
@@ -28,8 +30,8 @@ production-compose.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, HelpMessage = "Команда для выполнения (up, down, clean, logs, ps)")]
-    [ValidateSet('up', 'down', 'clean', 'logs', 'ps')]
+    [Parameter(Mandatory = $true, HelpMessage = "Команда для выполнения (up, watch, down, clean, logs, ps)")]
+    [ValidateSet('up', 'watch', 'down', 'clean', 'logs', 'ps')]
     [string]$Command
 )
 
@@ -60,6 +62,15 @@ function Invoke-DevCompose {
     }
 }
 
+# The frontend container has no bind mount, so edits reach it only while this
+# watcher runs; without it the site keeps serving the code of the last build.
+function Start-FrontendWatch {
+    $watchArguments = $composeArguments + @('watch', '--no-up', 'frontend-dev')
+    Start-Process -FilePath 'docker' -ArgumentList $watchArguments `
+        -WorkingDirectory $projectRoot -WindowStyle Minimized | Out-Null
+    Write-Log "Синхронизация кода фронтенда запущена в свёрнутом окне. Пока оно открыто, правки попадают на http://127.0.0.1:3000." -Color "Green"
+}
+
 Push-Location $projectRoot
 
 try {
@@ -68,6 +79,10 @@ try {
             Write-Log "Сборка и запуск local dev в фоновом режиме..." -Color "Cyan"
             Invoke-DevCompose @('up', '--build', '-d')
             Write-Log "Local dev запущен: frontend http://127.0.0.1:3000, backend http://127.0.0.1:8001" -Color "Green"
+            Start-FrontendWatch
+        }
+        "watch" {
+            Start-FrontendWatch
         }
         "down" {
             Write-Log "Остановка local dev..." -Color "Cyan"
