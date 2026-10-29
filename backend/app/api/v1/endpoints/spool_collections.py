@@ -40,6 +40,7 @@ async def get_spool_groups(
     state_group: Annotated[str | None, Query(pattern="^(available|archived)$")] = None,
     collection_id: Annotated[int | None, Query(ge=1)] = None,
     no_collection: bool = False,
+    group_by: Annotated[str, Query(pattern="^(product|brand|type)$")] = "product",
 ) -> SpoolGroupFeedResponse:
     """Spools grouped by catalog material; expand one group with /feed?group_key=."""
     if (state is not None and state_group is not None) or (
@@ -55,6 +56,7 @@ async def get_spool_groups(
         state_group=state_group,
         collection_id=collection_id,
         no_collection=no_collection,
+        group_by=group_by,
     )
 
 

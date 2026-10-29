@@ -9,11 +9,15 @@ import { SpoolIcon } from './icons/SpoolIcon';
 import { formatNetWeight } from '../utils/packaging';
 import { mergeSpoolFeedPages, spoolQueryKeys } from '../utils/spoolQueries';
 
-type GroupFilters = Omit<SpoolGroupsParams, 'cursor' | 'limit'>;
+type GroupFilters = Omit<SpoolGroupsParams, 'cursor' | 'limit' | 'group_by'>;
+
+export type SpoolGrouping = NonNullable<SpoolGroupsParams['group_by']>;
 
 interface SpoolGroupListProps {
   userId: number | null | undefined;
   filters: GroupFilters;
+  /** How the shelf is folded; the default is one group per product. */
+  groupBy?: SpoolGrouping;
   viewMode: ViewMode;
   renderSpool: (spool: UserSpool) => ReactNode;
   /** Material alert state for f:/c: groups; lone s: groups have no material rule. */
@@ -22,6 +26,11 @@ interface SpoolGroupListProps {
 }
 
 export const isMaterialGroupKey = (key: string) => /^[fc]:\d+$/.test(key);
+
+/** Spools with no catalog card (or no manufacturer/type to fold by): always a group of their own. */
+export const isUncardedGroupKey = (key: string) => key === 'n:0' || key === 'b:0' || key === 't:_none';
+
+const isFoldKey = (key: string) => /^[bt]:/.test(key);
 
 export const spoolGroupName = (spool: UserSpool, fallback: string) => (
   spool.filament?.name || spool.extra?.display_name || fallback
@@ -110,14 +119,21 @@ interface GroupHeaderProps {
 function GroupHeader({ group, expanded, onToggle, panelId, alertOn, onOpenAlert }: GroupHeaderProps) {
   const { t, i18n } = useTranslation();
   const spool = group.latest_spool;
-  const color = spool.filament?.color_hex
-    ? `#${spool.filament.color_hex.replace('#', '')}`
-    : spool.extra?.color_hex || '#9333ea';
-  const name = spoolGroupName(spool, t('profilePage.spoolNoFilament'));
+  const color = group.key.startsWith('f:') || group.key.startsWith('c:')
+    ? (spool.filament?.color_hex
+      ? `#${spool.filament.color_hex.replace('#', '')}`
+      : spool.extra?.color_hex || '#9333ea')
+    : '#9333ea';
+  const uncarded = isUncardedGroupKey(group.key);
+  const folded = isFoldKey(group.key);
+  let name = spoolGroupName(spool, t('profilePage.spoolNoFilament'));
+  if (uncarded) name = t('profilePage.spoolShelf.noCatalogCard');
+  else if (group.key.startsWith('b:')) name = spool.filament?.brand_name || name;
+  else if (group.key.startsWith('t:')) name = group.key.slice(2);
   const details = spool.filament
     ? [spool.filament.brand_name, spool.filament.material_type]
     : [spool.extra?.vendor, spool.extra?.material];
-  const detailText = details.filter(Boolean).join(' · ');
+  const detailText = folded || uncarded ? '' : details.filter(Boolean).join(' · ');
   const availableCount = group.state_counts.active + group.state_counts.shelf;
   const showGrams = availableCount > 0
     && (group.available_remaining_weight_g > 0 || group.unknown_mass_count === 0);
@@ -177,10 +193,10 @@ function GroupHeader({ group, expanded, onToggle, panelId, alertOn, onOpenAlert 
 }
 
 export function SpoolGroupList(props: SpoolGroupListProps) {
-  const { userId, filters, viewMode, renderSpool, materialAlertOn, onOpenMaterialAlert } = props;
+  const { userId, filters, groupBy = 'product', viewMode, renderSpool, materialAlertOn, onOpenMaterialAlert } = props;
   const { t } = useTranslation();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
-  const params = useMemo(() => ({ ...filters, limit: PAGE_SIZE }), [filters]);
+  const params = useMemo(() => ({ ...filters, group_by: groupBy, limit: PAGE_SIZE }), [filters, groupBy]);
 
   const query = useInfiniteQuery({
     queryKey: spoolQueryKeys.groups(userId, params),
@@ -204,7 +220,7 @@ export function SpoolGroupList(props: SpoolGroupListProps) {
   const runs = useMemo(() => {
     const result: Array<{ single: boolean; items: SpoolGroup[] }> = [];
     for (const group of groups) {
-      const single = group.spool_count === 1;
+      const single = group.spool_count === 1 && !isUncardedGroupKey(group.key);
       const last = result[result.length - 1];
       if (last && last.single && single) last.items.push(group);
       else result.push({ single, items: [group] });

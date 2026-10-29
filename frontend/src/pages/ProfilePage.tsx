@@ -155,6 +155,7 @@ type PresetFilter = (typeof PRESET_FILTERS)[number];
 const SPOOL_TABS = ['active', 'shelf', 'archived'] as const;
 type SpoolTab = (typeof SPOOL_TABS)[number];
 const SPOOL_GROUP_MODES = ['flat', 'material'] as const;
+const SPOOL_GROUPINGS = ['product', 'brand', 'type'] as const;
 
 const PROFILE_TABS = [
   'dashboard',
@@ -3666,6 +3667,12 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
     SPOOL_GROUP_MODES,
     'flat',
   );
+  const [spoolGrouping, setSpoolGrouping] = useStoredUiChoice(
+    pluginEmbedded ? 'plugin.spoolsGrouping' : 'profile.spoolsGrouping',
+    user?.id,
+    SPOOL_GROUPINGS,
+    'product',
+  );
   const groupedByMaterial = spoolGroupMode === 'material';
   const collectionsQuery = useQuery({
     queryKey: spoolQueryKeys.collections(user?.id),
@@ -3807,6 +3814,7 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
     <SpoolGroupList
       userId={user?.id}
       filters={stateFilters}
+      groupBy={spoolGrouping}
       viewMode={spoolsViewMode}
       renderSpool={renderSpoolCard}
       materialAlertOn={(key) => !!stockAlerts.materialRule(key)}
@@ -4004,6 +4012,26 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
               <Layers className="h-4 w-4" />
               <span>{t('profilePage.spoolShelf.groupToggle')}</span>
             </button>
+            {groupedByMaterial && (
+              <div role="group" aria-label={t('profilePage.spoolShelf.groupingLabel')} className="inline-flex overflow-hidden rounded-lg border border-white/15">
+                {SPOOL_GROUPINGS.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSpoolGrouping(mode)}
+                    aria-pressed={spoolGrouping === mode}
+                    className={[
+                      'px-2.5 py-1.5 text-sm transition-colors',
+                      spoolGrouping === mode
+                        ? 'bg-purple-500/20 text-white'
+                        : 'bg-white/5 text-gray-300 hover:bg-white/10',
+                    ].join(' ')}
+                  >
+                    {t(`profilePage.spoolShelf.grouping.${mode}`)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

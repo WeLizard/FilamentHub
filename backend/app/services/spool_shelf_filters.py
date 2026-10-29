@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 
-from sqlalchemy import ColumnElement, exists, select
+from sqlalchemy import ColumnElement, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ERR_SPOOL_GROUP_KEY_INVALID, raise_error
+from app.models.filament import Filament
 from app.models.spool_collection import SpoolCollectionMember
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -16,12 +17,28 @@ AVAILABLE_STATES = (UserSpoolState.active, UserSpoolState.shelf)
 ARCHIVED_STATES = (UserSpoolState.archived, UserSpoolState.empty)
 
 
+NO_TYPE_KEY = "t:_none"
+
+
 def group_key_filter(group_key: str) -> ColumnElement[bool]:
-    """Spools of one material group: catalog variant, imported ref, or one lone spool."""
+    """Spools of one shelf group: material, manufacturer, base type, or one lone spool."""
     kind, _, raw = group_key.partition(":")
-    if kind not in {"f", "c", "s"} or not raw.isdigit() or not 0 < int(raw) <= 2_147_483_647:
+    if kind == "t" and raw and len(raw) <= 50:
+        typed = select(Filament.id).where(Filament.base_material_type.is_not(None))
+        if raw == "_none":
+            return or_(UserSpool.filament_id.is_(None), UserSpool.filament_id.not_in(typed))
+        return UserSpool.filament_id.in_(typed.where(Filament.base_material_type == raw))
+    if kind not in {"f", "c", "s", "b", "n"} or not raw.isdigit() or not 0 <= int(raw) <= 2_147_483_647:
         raise_error(422, ERR_SPOOL_GROUP_KEY_INVALID)
     value = int(raw)
+    if kind == "b":
+        if value == 0:
+            return UserSpool.filament_id.is_(None)
+        return UserSpool.filament_id.in_(select(Filament.id).where(Filament.brand_id == value))
+    if kind == "n":
+        return UserSpool.filament_id.is_(None) & UserSpool.compat_filament_ref_id.is_(None)
+    if value == 0:
+        raise_error(422, ERR_SPOOL_GROUP_KEY_INVALID)
     if kind == "f":
         return UserSpool.filament_id == value
     if kind == "c":

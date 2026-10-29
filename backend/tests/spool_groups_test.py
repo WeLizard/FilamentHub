@@ -53,12 +53,12 @@ async def test_many_identical_spools_form_one_group_with_exact_totals(
     db_session.add(_spool(auth_user.id, first.id, initial=0))  # size unknown
     await db_session.commit()
 
-    body = (await auth_client.get("/api/v1/spools/groups", params={"limit": 2})).json()
-    assert body["summary"]["group_count"] == 3  # two SKUs plus one lone unknown spool
+    body = (await auth_client.get("/api/v1/spools/groups", params={"limit": 1})).json()
+    assert body["summary"]["group_count"] == 3  # two SKUs plus the uncarded bucket
     assert body["summary"]["total"] == 34
-    assert len(body["items"]) == 2 and body["next_cursor"]
+    assert len(body["items"]) == 1 and body["next_cursor"]
     page_two = (
-        await auth_client.get("/api/v1/spools/groups", params={"limit": 2, "cursor": body["next_cursor"]})
+        await auth_client.get("/api/v1/spools/groups", params={"limit": 1, "cursor": body["next_cursor"]})
     ).json()
     keys = [item["key"] for item in body["items"] + page_two["items"]]
     assert len(keys) == len(set(keys)) == 3 and page_two["next_cursor"] is None
@@ -137,3 +137,70 @@ async def test_folders_never_touch_another_owners_spools_or_folders(
 
     fake = await auth_client.post("/api/v1/spools/collections/99999/members", json={"add": [mine.id]})
     assert fake.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_shelf_folds_by_manufacturer_and_type_and_lists_uncarded_spools_last(
+    auth_client: AsyncClient, auth_user: User, db_session: AsyncSession
+) -> None:
+    acme = Brand(name="Acme", slug="acme-fold", active=True)
+    zed = Brand(name="Zed", slug="zed-fold", active=True)
+    pla_red = Filament(brand=acme, name="Red", slug="red", material_type="PLA", active=True)
+    pla_blue = Filament(brand=acme, name="Blue", slug="blue", material_type="PLA Matte", active=True)
+    petg = Filament(brand=zed, name="Clear", slug="clear", material_type="PETG", active=True)
+    for item in (pla_red, pla_blue, petg):
+        item.base_material_type = "PETG" if item is petg else "PLA"
+    db_session.add_all([acme, zed, pla_red, pla_blue, petg])
+    await db_session.flush()
+    # The uncarded spool is the newest one, yet must still come last.
+    db_session.add_all(
+        [
+            _spool(auth_user.id, pla_red.id),
+            _spool(auth_user.id, pla_red.id, state=UserSpoolState.archived),
+            _spool(auth_user.id, pla_blue.id),
+            _spool(auth_user.id, petg.id),
+            _spool(auth_user.id, None),
+        ]
+    )
+    await db_session.commit()
+
+    async def fetch(mode: str, **extra):
+        response = await auth_client.get(
+            "/api/v1/spools/groups", params={"group_by": mode, "limit": 1, **extra}
+        )
+        assert response.status_code == 200, response.json()
+        return response.json()
+
+    by_brand = await fetch("brand")
+    assert by_brand["summary"]["group_count"] == 3 and by_brand["summary"]["total"] == 5
+    assert by_brand["next_cursor"]
+    pages = [by_brand]
+    while pages[-1]["next_cursor"]:
+        pages.append(await fetch("brand", cursor=pages[-1]["next_cursor"]))
+    keys = [item["key"] for page in pages for item in page["items"]]
+    assert len(keys) == len(set(keys)) == 3 and keys[-1] == "b:0"
+    assert {item["key"]: item["spool_count"] for page in pages for item in page["items"]} == {
+        f"b:{acme.id}": 3,
+        f"b:{zed.id}": 1,
+        "b:0": 1,
+    }
+
+    by_type = await fetch("type", limit=10)
+    assert {item["key"]: item["spool_count"] for item in by_type["items"]} == {
+        "t:PLA": 3,
+        "t:PETG": 1,
+        "t:_none": 1,
+    }
+    assert by_type["items"][-1]["key"] == "t:_none"
+
+    product = await fetch("product", limit=10)
+    assert product["items"][-1]["key"] == "n:0"
+
+    # Each key opens exactly its own spools, and archived ones stay countable.
+    for key, expected in ((f"b:{acme.id}", 3), ("t:PLA", 3), ("t:_none", 1), ("b:0", 1), ("n:0", 1)):
+        feed = (await auth_client.get("/api/v1/spools/feed", params={"group_key": key})).json()
+        assert feed["summary"]["total"] == expected, key
+    # Filters still apply inside a fold, and totals count each spool once.
+    available = await fetch("type", limit=10, state_group="available")
+    assert available["summary"]["total"] == 4
+    assert (await auth_client.get("/api/v1/spools/groups", params={"group_by": "x"})).status_code == 422

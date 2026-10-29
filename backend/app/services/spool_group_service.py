@@ -13,7 +13,7 @@ import binascii
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import String, and_, case, cast, delete, func, literal_column, or_, select
+from sqlalchemy import String, and_, case, cast, delete, func, literal, literal_column, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -39,11 +39,24 @@ from app.schemas.spool import (
 from app.services.spool_service import _build_response
 from app.services.spool_shelf_filters import (
     AVAILABLE_STATES,
+    NO_TYPE_KEY,
     collection_ids_by_spool,
     shelf_filters,
 )
 
 MAX_COLLECTIONS = 100
+
+# How the shelf is folded: one group per product (default), per manufacturer,
+# or per base material type. Spools without a catalog filament share one
+# "none" bucket in the last two modes.
+_BRAND_KEY = case(
+    (Filament.brand_id.is_not(None), "b:" + cast(Filament.brand_id, String)),
+    else_="b:0",
+)
+_TYPE_KEY = case(
+    (Filament.base_material_type.is_not(None), "t:" + Filament.base_material_type),
+    else_=NO_TYPE_KEY,
+)
 
 _GROUP_KEY = case(
     (UserSpool.filament_id.is_not(None), "f:" + cast(UserSpool.filament_id, String)),
@@ -51,7 +64,8 @@ _GROUP_KEY = case(
         UserSpool.compat_filament_ref_id.is_not(None),
         "c:" + cast(UserSpool.compat_filament_ref_id, String),
     ),
-    else_="s:" + cast(UserSpool.id, String),
+    # Spools with no catalog card share one bucket, shown last.
+    else_=literal("n:0"),
 )
 # Mass is unknown when the spool has no usable size; it never counts as 0 g.
 _MASS_KNOWN = UserSpool.initial_weight_g > 0
@@ -102,6 +116,7 @@ async def list_spool_groups(
     state_group: str | None = None,
     collection_id: int | None = None,
     no_collection: bool = False,
+    group_by: str = "product",
 ) -> SpoolGroupFeedResponse:
     filters = shelf_filters(
         user_id,
@@ -121,9 +136,11 @@ async def list_spool_groups(
     unknown_mass = func.coalesce(func.sum(case((~_MASS_KNOWN, 1), else_=0)), 0)
     latest = func.max(UserSpool.created_at).label("latest")
     latest_id = func.max(UserSpool.id).label("latest_id")
+    group_key = {"brand": _BRAND_KEY, "type": _TYPE_KEY}.get(group_by, _GROUP_KEY)
+    none_key = {"brand": "b:0", "type": NO_TYPE_KEY}.get(group_by, "n:0")
     grouped = (
         select(
-            _GROUP_KEY.label("key"),
+            group_key.label("key"),
             func.count(UserSpool.id).label("spool_count"),
             latest,
             latest_id,
@@ -139,7 +156,11 @@ async def list_spool_groups(
         # parameterised CASE expressions in SELECT and GROUP BY.
         .group_by(literal_column("key"))
     )
-    paged = grouped
+    if group_by in {"brand", "type"}:
+        grouped = grouped.outerjoin(Filament, Filament.id == UserSpool.filament_id)
+    # The "no catalog card" bucket is not part of the keyset order; it closes the
+    # final page so it is always listed last.
+    paged = grouped.where(group_key != none_key)
     if cursor is not None:
         cursor_at, cursor_id = _decode_cursor(cursor)
         paged = paged.having(
@@ -150,6 +171,9 @@ async def list_spool_groups(
     ).all()
     has_more = len(rows) > limit
     rows = rows[:limit]
+    next_cursor = _encode_cursor(rows[-1].latest, rows[-1].latest_id) if has_more and rows else None
+    if not has_more:
+        rows += (await db.execute(grouped.where(group_key == none_key))).all()
 
     totals = (
         await db.execute(
@@ -199,9 +223,7 @@ async def list_spool_groups(
         )
     return SpoolGroupFeedResponse(
         items=items,
-        next_cursor=(
-            _encode_cursor(rows[-1].latest, rows[-1].latest_id) if has_more and rows else None
-        ),
+        next_cursor=next_cursor,
         summary=SpoolGroupSummary(
             total=int(totals[0]),
             group_count=int(group_count),

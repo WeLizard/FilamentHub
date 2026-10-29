@@ -4092,6 +4092,7 @@ export interface SpoolGroupsParams {
   state_group?: SpoolStateGroup;
   collection_id?: number;
   no_collection?: boolean;
+  group_by?: 'product' | 'brand' | 'type';
 }
 
 export interface SpoolGroup {

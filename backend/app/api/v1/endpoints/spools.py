@@ -95,7 +95,7 @@ async def get_spool_feed(
     state: Annotated[UserSpoolState | None, Query()] = None,
     state_group: Annotated[str | None, Query(pattern="^(available|archived)$")] = None,
     filament_id: Annotated[int | None, Query(ge=1)] = None,
-    group_key: Annotated[str | None, Query(max_length=40)] = None,
+    group_key: Annotated[str | None, Query(max_length=64)] = None,
     collection_id: Annotated[int | None, Query(ge=1)] = None,
     no_collection: bool = False,
 ) -> SpoolFeedResponse:
