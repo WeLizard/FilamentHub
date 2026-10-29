@@ -7601,6 +7601,8 @@
     "ERR_AUTH_REQUIRED": "Authentication required",
     "ERR_ACCOUNT_INACTIVE": "Account is inactive",
     "ERR_ACCESS_DENIED": "Access denied",
+    "ERR_WORKSTATION_KEY_LIMIT": "Too many workstation keys. Revoke one you no longer use.",
+    "ERR_WORKSTATION_KEY_NOT_FOUND": "Workstation key not found",
     "ERR_NO_PERMISSION": "Insufficient permissions",
     "ERR_ONLY_ADMIN_OFFICIAL": "Only an administrator can set the official status",
     "ERR_ONLY_ADMIN_REASSIGN": "Only an administrator can reassign ownership",

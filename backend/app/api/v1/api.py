@@ -53,6 +53,7 @@ from app.api.v1.endpoints import (
     spools,
     wiki,
     wiki_authoring,
+    workstation_keys,
 )
 
 api_router = APIRouter()
@@ -67,6 +68,7 @@ api_router.include_router(brand_invites.router)
 api_router.include_router(brand_invites.admin_router)
 api_router.include_router(email_communications.admin_router)
 api_router.include_router(devices.router)
+api_router.include_router(workstation_keys.router)
 api_router.include_router(physical_printers.router)
 api_router.include_router(printer_bridge.router)
 api_router.include_router(printer_connections.router)

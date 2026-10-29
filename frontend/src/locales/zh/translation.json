@@ -7584,6 +7584,8 @@
     "ERR_AUTH_REQUIRED": "需要身份验证",
     "ERR_ACCOUNT_INACTIVE": "账户未激活",
     "ERR_ACCESS_DENIED": "访问被拒绝",
+    "ERR_WORKSTATION_KEY_LIMIT": "工作站密钥过多，请撤销不再使用的密钥。",
+    "ERR_WORKSTATION_KEY_NOT_FOUND": "未找到工作站密钥",
     "ERR_NO_PERMISSION": "权限不足",
     "ERR_ONLY_ADMIN_OFFICIAL": "只有管理员可以设置官方状态",
     "ERR_ONLY_ADMIN_REASSIGN": "只有管理员可以重新分配所有权",

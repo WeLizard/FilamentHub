@@ -37,6 +37,10 @@ from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.services.account_session_service import validate_access_family
 from app.services.legal_acceptance_service import requires_current_legal_acceptance
+from app.services.workstation_key_service import (
+    WORKSTATION_KEY_PREFIX,
+    authenticate_workstation_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +187,9 @@ async def _get_current_user_or_plugin_scope(
             ERR_COULD_NOT_VALIDATE,
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if token.startswith(WORKSTATION_KEY_PREFIX) and not using_cookie_auth:
+        return await authenticate_workstation_key(db, token, required_scope)
 
     if using_cookie_auth:
         _validate_cookie_csrf(request)

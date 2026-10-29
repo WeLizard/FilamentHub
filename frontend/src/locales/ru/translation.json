@@ -7790,6 +7790,8 @@
     "ERR_AUTH_REQUIRED": "Требуется авторизация",
     "ERR_ACCOUNT_INACTIVE": "Аккаунт неактивен",
     "ERR_ACCESS_DENIED": "Доступ запрещён",
+    "ERR_WORKSTATION_KEY_LIMIT": "Слишком много ключей рабочих мест. Отзовите ненужный.",
+    "ERR_WORKSTATION_KEY_NOT_FOUND": "Ключ рабочего места не найден",
     "ERR_NO_PERMISSION": "Недостаточно прав",
     "ERR_ONLY_ADMIN_OFFICIAL": "Только администратор может устанавливать официальный статус",
     "ERR_ONLY_ADMIN_REASSIGN": "Только администратор может назначать владельца",
