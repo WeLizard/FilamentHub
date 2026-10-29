@@ -36,6 +36,7 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import (
+    SpoolCreateFields,
     SpoolCreateRequest,
     SpoolFeedResponse,
     SpoolFeedSummary,
@@ -647,11 +648,7 @@ async def list_spool_feed(
     )
 
 
-async def create_spool(
-    db: AsyncSession,
-    user: User,
-    payload: SpoolCreateRequest,
-) -> SpoolResponse:
+def validate_new_spool_fields(payload: SpoolCreateFields) -> None:
     _validate_spool_weights(payload.initial_weight_g, payload.used_weight_g)
     if (
         payload.used_weight_g >= payload.initial_weight_g
@@ -659,19 +656,20 @@ async def create_spool(
     ):
         raise_error(400, ERR_SPOOL_EMPTY_ON_CREATE)
 
-    if payload.filament_id is not None:
-        filament = await _load_filament_info(db, payload.filament_id)
-        if filament is None:
-            raise_error(404, ERR_FILAMENT_NOT_FOUND)
-    else:
-        filament = None
 
+async def stage_new_spool(
+    db: AsyncSession,
+    user: User,
+    payload: SpoolCreateFields,
+    price: float | None,
+) -> UserSpool:
+    """Add a spool and its opening usage event to the session without committing."""
     spool = UserSpool(
         user_id=user.id,
         filament_id=payload.filament_id,
         initial_weight_g=payload.initial_weight_g,
         used_weight_g=payload.used_weight_g,
-        price=payload.price,
+        price=price,
         empty_spool_weight_g=payload.empty_spool_weight_g,
         extra={"currency": payload.currency} if payload.currency is not None else {},
         state=UserSpoolState(payload.state),
@@ -693,6 +691,24 @@ async def create_spool(
                 "measured_remaining_g": spool.remaining_weight_g,
             },
         )
+    return spool
+
+
+async def create_spool(
+    db: AsyncSession,
+    user: User,
+    payload: SpoolCreateRequest,
+) -> SpoolResponse:
+    validate_new_spool_fields(payload)
+
+    if payload.filament_id is not None:
+        filament = await _load_filament_info(db, payload.filament_id)
+        if filament is None:
+            raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    else:
+        filament = None
+
+    spool = await stage_new_spool(db, user, payload, payload.price)
     await db.commit()
     await db.refresh(spool)
     return _build_response(spool, filament)

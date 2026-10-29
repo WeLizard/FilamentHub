@@ -20,6 +20,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.user_spool import UserSpoolState
 from app.schemas.spool import (
+    SpoolBatchCreateRequest,
+    SpoolBatchResponse,
     SpoolCreateRequest,
     SpoolFeedResponse,
     SpoolImportColumnMapping,
@@ -32,6 +34,7 @@ from app.schemas.spool import (
     SpoolUsageEventResponse,
     SpoolUseRequest,
 )
+from app.services.spool_batch_service import create_spool_batch, effective_spool_batch_limit
 from app.services.spool_import_service import import_spool_file, preview_spool_import
 from app.services.spool_service import (
     create_spool,
@@ -104,6 +107,14 @@ async def get_spool_feed(
     )
 
 
+@router.get("/batch-limit")
+async def get_spool_batch_limit(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, int]:
+    return {"limit": await effective_spool_batch_limit(db, current_user.id)}
+
+
 @router.get("/{spool_id}", response_model=SpoolResponse)
 async def get_owned_spool(
     spool_id: int,
@@ -121,6 +132,16 @@ async def add_spool(
 ) -> SpoolResponse:
     """Add a new spool to the user's inventory."""
     return await create_spool(db, current_user, payload)
+
+
+@router.post("/batch", response_model=SpoolBatchResponse, status_code=status.HTTP_201_CREATED)
+async def add_spool_batch(
+    payload: SpoolBatchCreateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SpoolBatchResponse:
+    """Add several identical spools in one idempotent operation."""
+    return await create_spool_batch(db, current_user, payload)
 
 
 @router.post("/import/preview", response_model=SpoolImportPreviewResponse)

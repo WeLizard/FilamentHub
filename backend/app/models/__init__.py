@@ -116,6 +116,7 @@ from app.models.qr_identity import (
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
+from app.models.spool_batch_receipt import SpoolBatchReceipt
 from app.models.spool_compat_resource import (
     SpoolCompatFieldDefinition,
     SpoolCompatResource,
@@ -132,6 +133,7 @@ from app.models.user import User, UserRole
 from app.models.user_achievement import UserAchievement
 from app.models.user_label_preset import UserLabelPreset
 from app.models.user_legal_acceptance import UserLegalAcceptance
+from app.models.user_limit import UserLimit
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -306,6 +308,8 @@ __all__ = [
     "UserRole",
     "UserSavedPreset",
     "UserSavedPresetTarget",
+    "SpoolBatchReceipt",
+    "UserLimit",
     "UserSpool",
     "UserSpoolState",
     "WeightedPresetRefreshJob",

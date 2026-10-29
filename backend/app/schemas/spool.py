@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -114,19 +115,43 @@ class SpoolFeedResponse(BaseModel):
     summary: SpoolFeedSummary
 
 
-class SpoolCreateRequest(BaseModel):
-    """Create a new spool."""
+class SpoolCreateFields(BaseModel):
+    """Per-spool fields shared by single and batch creation."""
 
     filament_id: int | None = Field(default=None, ge=1)
     initial_weight_g: float = Field(..., gt=0, le=10_000)
     used_weight_g: float = Field(default=0.0, ge=0)
-    price: float | None = Field(default=None, ge=0)
     empty_spool_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     state: SpoolState = "shelf"
     source: SpoolSource = "manual"
     lot_nr: str | None = Field(default=None, max_length=100)
     comment: str | None = Field(default=None, max_length=500)
+
+
+class SpoolCreateRequest(SpoolCreateFields):
+    """Create a new spool."""
+
+    price: float | None = Field(default=None, ge=0)
+
+
+class SpoolBatchCreateRequest(SpoolCreateFields):
+    """Create several identical spools in one idempotent operation."""
+
+    idempotency_key: str = Field(..., min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    quantity: int = Field(..., ge=1, le=100)
+    price_mode: Literal["per_spool", "total"] = "per_spool"
+    price: Decimal | None = Field(
+        default=None, ge=0, max_digits=14, decimal_places=4, allow_inf_nan=False
+    )
+
+
+class SpoolBatchResponse(BaseModel):
+    spools: list[SpoolResponse]
+    replayed: bool
+    price_mode: Literal["per_spool", "total"]
+    total_price: Decimal | None = None
+    currency: str | None = None
 
 
 class SpoolUpdateRequest(BaseModel):

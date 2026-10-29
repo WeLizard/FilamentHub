@@ -61,7 +61,7 @@ import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
-import { currencySymbol, normalizeCurrency } from '../utils/currency';
+import { currencyFractionDigits, currencySymbol, normalizeCurrency, splitTotalPrice } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import {
@@ -72,6 +72,7 @@ import {
 } from '../utils/uiPreferences';
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
+import { clearIdempotencyAttempt, idempotencyKeyForAttempt } from '../utils/idempotencyAttempt';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { calculatorHistoryKeys } from '../utils/calculatorHistoryQueries';
 import { mergeSpoolFeedPages, spoolQueryKeys } from '../utils/spoolQueries';
@@ -2435,6 +2436,10 @@ const collectFeedTargets = (printers: PhysicalPrinter[]): FeedTarget[] => {
   return targets;
 };
 
+// Shown until the account's own limit arrives; the server enforces the real one.
+const DEFAULT_SPOOL_BATCH_LIMIT = 20;
+const SPOOL_BATCH_ATTEMPT_KEY = 'spool-batch-create';
+
 interface SpoolFormProps {
   mode: 'create' | 'edit';
   spool?: UserSpool;
@@ -2461,7 +2466,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   // Nobody photographs a spool with a desktop camera from inside OrcaSlicer, and
   // its embedded browser may not expose the camera at all.
   const cameraScanAvailable = !isPluginEmbed();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [filamentId, setFilamentId] = useState<string>(spool?.filament_id ? String(spool.filament_id) : '');
   const [initialWeight, setInitialWeight] = useState<string>(
@@ -2475,6 +2480,15 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const [state, setState] = useState<SpoolState>(spool?.state ?? 'shelf');
   const [source, setSource] = useState(spool?.source ?? initialSource);
   const [price, setPrice] = useState<string>(spool?.price != null ? String(spool.price) : '');
+  const [quantity, setQuantity] = useState('1');
+  const [priceMode, setPriceMode] = useState<'per_spool' | 'total'>('per_spool');
+  const batchLimitQuery = useQuery({
+    queryKey: ['spools', 'batch-limit'],
+    queryFn: spoolsAPI.batchLimit,
+    staleTime: 10 * 60_000,
+    enabled: mode === 'create',
+  });
+  const batchLimit = batchLimitQuery.data?.limit ?? DEFAULT_SPOOL_BATCH_LIMIT;
   const [lotNr, setLotNr] = useState<string>(spool?.lot_nr ?? '');
   const [comment, setComment] = useState<string>(spool?.comment ?? '');
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(false);
@@ -2842,6 +2856,11 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       setErrorText(t('profilePage.spoolActions.emptyOnCreate'));
       return;
     }
+    const parsedQuantity = mode === 'create' ? Number(quantity) : 1;
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > batchLimit) {
+      setErrorText(t('profilePage.spoolAddModal.invalidQuantity', { max: batchLimit }));
+      return;
+    }
 
     setSaving(true);
     try {
@@ -2885,6 +2904,22 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           lot_nr: lotNr || null,
           comment: comment || null,
         };
+        if (parsedQuantity > 1) {
+          const batch = {
+            ...payload,
+            state: 'shelf' as const,
+            quantity: parsedQuantity,
+            price_mode: priceMode,
+          };
+          await spoolsAPI.createBatch({
+            ...batch,
+            idempotency_key: idempotencyKeyForAttempt(SPOOL_BATCH_ATTEMPT_KEY, 'spool-batch', batch),
+          });
+          clearIdempotencyAttempt(SPOOL_BATCH_ATTEMPT_KEY);
+          queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+          onSaved();
+          return;
+        }
         const newSpool = await spoolsAPI.create(payload);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
         if (initialPlacement === 'shelf') {
@@ -3066,6 +3101,35 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     );
   }
 
+  const batchCount = Number(quantity);
+  const isBatch = mode === 'create' && Number.isInteger(batchCount) && batchCount > 1 && batchCount <= batchLimit;
+  const quantityOverLimit = mode === 'create' && batchCount > batchLimit;
+  const batchPreview = (() => {
+    if (!isBatch) return null;
+    const fractionDigits = currencyFractionDigits(priceCurrencyCode);
+    const money = (amount: number) => `${amount.toLocaleString(i18n.language, {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    })} ${priceCurrency}`;
+    const head = t('profilePage.spoolAddModal.previewCreate', {
+      count: batchCount,
+      weight: formatDecimalInput(parseDecimalInput(initialWeight) || 0),
+    });
+    const parsedPrice = price !== '' ? Number(price) : NaN;
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      return `${head} · ${t('profilePage.spoolAddModal.previewNoPrice')}`;
+    }
+    if (priceMode === 'per_spool') {
+      const scale = 10 ** fractionDigits;
+      const total = (Math.round(parsedPrice * scale) * batchCount) / scale;
+      return `${head} · ${t('profilePage.spoolAddModal.previewPerSpool', { count: batchCount, price: money(parsedPrice), total: money(total) })}`;
+    }
+    const shares = splitTotalPrice(parsedPrice, batchCount, priceCurrencyCode)
+      .map(share => `${money(share.amount)} × ${share.count}`)
+      .join(', ');
+    return `${head} · ${t('profilePage.spoolAddModal.previewTotal', { total: money(parsedPrice), shares })}`;
+  })();
+
   return (
     <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
       {qrScanResult && (
@@ -3245,15 +3309,43 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           </div>
         )}
 
-        <div>
-          <label className={labelCls}>
-            {t('profilePage.spoolAddModal.price', { currency: priceCurrency })}
-          </label>
-          <input type="number" min="0" step="1" value={price}
-            onChange={e => setPrice(e.target.value)}
-            placeholder={t('profilePage.spoolAddModal.pricePlaceholder')} className={inputCls} />
+        <div className={mode === 'create' ? 'flex flex-wrap items-end gap-3' : ''}>
+          {mode === 'create' && (
+            <div className="w-28">
+              <label className={labelCls}>{t('profilePage.spoolAddModal.quantity')}</label>
+              <input type="number" min="1" max={batchLimit} step="1" value={quantity}
+                onChange={e => setQuantity(e.target.value)} className={inputCls} />
+            </div>
+          )}
+          <div className={mode === 'create' ? 'min-w-[12rem] flex-1' : ''}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className={labelCls}>
+                {t('profilePage.spoolAddModal.price', { currency: priceCurrency })}
+              </label>
+              {isBatch && (
+                <div className="mb-1 inline-flex rounded-lg border border-white/15 p-0.5 text-[11px]">
+                  {(['per_spool', 'total'] as const).map(option => (
+                    <button key={option} type="button" onClick={() => setPriceMode(option)}
+                      className={`rounded-md px-2 py-0.5 transition-colors ${priceMode === option ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                      {t(option === 'per_spool' ? 'profilePage.spoolAddModal.pricePerSpool' : 'profilePage.spoolAddModal.priceTotal')}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input type="number" min="0" step="1" value={price}
+              onChange={e => setPrice(e.target.value)}
+              placeholder={t('profilePage.spoolAddModal.pricePlaceholder')} className={inputCls} />
+          </div>
         </div>
       </div>
+
+      {quantityOverLimit && (
+        <p className="text-xs text-amber-200">{t('profilePage.spoolAddModal.invalidQuantity', { max: batchLimit })}</p>
+      )}
+      {batchPreview && (
+        <p className="text-xs text-gray-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2">{batchPreview}</p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>

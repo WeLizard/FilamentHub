@@ -4122,6 +4122,18 @@ export interface SpoolCreatePayload {
   comment?: string | null;
 }
 
+export interface SpoolBatchCreatePayload extends Omit<SpoolCreatePayload, 'price'> {
+  idempotency_key: string;
+  quantity: number;
+  price_mode: 'per_spool' | 'total';
+  price: number | null;
+}
+
+export interface SpoolBatchCreateResult {
+  spools: UserSpool[];
+  replayed: boolean;
+}
+
 export interface SpoolUpdatePayload {
   filament_id?: number | null;
   initial_weight_g?: number;
@@ -4344,6 +4356,16 @@ export const spoolsAPI = {
 
   create: async (payload: SpoolCreatePayload): Promise<UserSpool> => {
     const response = await api.post<UserSpool>('/spools', payload);
+    return response.data;
+  },
+
+  batchLimit: async (): Promise<{ limit: number }> => {
+    const response = await api.get<{ limit: number }>('/spools/batch-limit');
+    return response.data;
+  },
+
+  createBatch: async (payload: SpoolBatchCreatePayload): Promise<SpoolBatchCreateResult> => {
+    const response = await api.post<SpoolBatchCreateResult>('/spools/batch', payload);
     return response.data;
   },
 
