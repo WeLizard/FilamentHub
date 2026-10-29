@@ -2,6 +2,9 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.2.7
+- QIDI printers with a QIDI Box: the plugin now reads which slots hold filament, and their material and colour, straight from the printer over your network and shows them in the printer's material system. Nothing is sent to the printer. It needs no extra setup beyond the printer connection you already use; usage is still counted by the printer's own Spoolman connection.
+
 ## 0.2.6
 - FilamentHub now tells OrcaSlicer up front that it needs a background thread, so the permission question appears once when the plugin loads instead of when you first open its tab. If you answer "No", OrcaSlicer does not load the plugin.
 - The plugin no longer saves quotation PDFs or opens any program for them. A quotation is previewed and printed inside the FilamentHub tab: press Print and choose Save as PDF to get a file. In the workspace, Open in browser opens the quotation on the site after you sign in.

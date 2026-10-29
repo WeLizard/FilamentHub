@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.6"
+# version = "0.2.7"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -619,7 +619,7 @@ def push_native_notification(level_name, text):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.6"
+PLUGIN_VERSION = "0.2.7"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -5270,7 +5270,11 @@ def probe_printer_setup(context, connection, origin):
     objects = result.get("objects") if isinstance(result, dict) else None
     if status != 200 or not isinstance(objects, list):
         raise ValueError("printer_auth" if status in {401, 403} else "unreachable")
-    snapshot = read_happy_hare_snapshot(connection) if "mmu" in objects else None
+    snapshot = None
+    if "mmu" in objects:
+        snapshot = read_happy_hare_snapshot(connection)
+    elif _qidi_box_present(objects):
+        snapshot = read_qidi_box_snapshot(connection)
     identity = _observe_moonraker_identity(connection)
     if origin == "local_manual" and not identity:
         raise ValueError("identity_unavailable")
@@ -5325,7 +5329,7 @@ def _moonraker_base_url(value):
     )
 
 
-def _moonraker_json(connection, path, payload=None, timeout=None):
+def _moonraker_json(connection, path, payload=None, timeout=None, raw_text=False):
     """Call only the endpoint read from Orca's local machine preset."""
     base_url = _moonraker_base_url(connection.get("print_host"))
     headers = {
@@ -5359,6 +5363,8 @@ def _moonraker_json(connection, path, payload=None, timeout=None):
         body = exc.read(MAX_RESPONSE_BYTES)
     except (OSError, ValueError, urllib.error.URLError) as exc:
         return 0, {}, str(exc)
+    if raw_text:
+        return status, body.decode("utf-8", errors="replace"), ""
     try:
         decoded = json.loads(body.decode("utf-8")) if body else {}
     except (UnicodeDecodeError, ValueError):
@@ -5580,6 +5586,152 @@ def read_happy_hare_snapshot(connection):
     }
 
 
+# QIDI Box through Moonraker. Pinned to OrcaSlicer's QidiPrinterAgent
+# (OrcaSlicer/OrcaSlicer a65ae5fe, src/slic3r/Utils/QidiPrinterAgent.cpp:86-216
+# slot variables and presence, 218-330 dictionary, 390-412 type normalisation).
+_QIDI_STEPPER_PREFIX = "box_stepper slot"
+_QIDI_SLOTS_PER_BOX = 4
+_QIDI_MAX_SLOTS = 16
+_QIDI_DICT_PATH = "/server/files/config/officiall_filas_list.cfg"
+
+
+def _qidi_box_present(objects):
+    return any(
+        isinstance(name, str) and name.startswith(_QIDI_STEPPER_PREFIX)
+        for name in objects
+    )
+
+
+def _qidi_parse_dictionary(text):
+    colors, filaments, section = {}, {}, ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line[0] in "#;":
+            continue
+        if line.startswith("["):
+            section = line.strip("[]").strip().lower()
+            continue
+        key, separator, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not separator:
+            continue
+        if section == "colordict" and key.isdigit():
+            colors[int(key)] = value
+        elif section.startswith("fila") and section[4:].isdigit() and key == "filament":
+            if int(section[4:]) > 0:
+                filaments[int(section[4:])] = value
+    return colors, filaments
+
+
+def _qidi_material(name):
+    upper = name.strip().upper()
+    for known in ("PLA", "ABS", "PETG", "TPU", "ASA"):
+        if known in upper:
+            return known
+    if "PA" in upper or "NYLON" in upper:
+        return "PA"
+    for known in ("PC", "PVA"):
+        if known in upper:
+            return known
+    return upper
+
+
+def _qidi_int(value, default):
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def read_qidi_box_snapshot(connection):
+    """Read QIDI Box slots through Moonraker, without writes."""
+    query = {"save_variables": ["variables"]}
+    for index in range(_QIDI_MAX_SLOTS):
+        query["%s%d" % (_QIDI_STEPPER_PREFIX, index)] = ["runout_button"]
+    status, body, error = _moonraker_json(
+        connection, "/printer/objects/query", {"objects": query}
+    )
+    if status != 200:
+        raise RuntimeError(error or "Moonraker query HTTP %s" % status)
+    result = body.get("result")
+    state = result.get("status") if isinstance(result, dict) else None
+    saved = state.get("save_variables") if isinstance(state, dict) else None
+    variables = saved.get("variables") if isinstance(saved, dict) else None
+    if not isinstance(variables, dict):
+        raise ValueError("QIDI Box save_variables are unavailable")
+    dict_status, text, _dict_error = _moonraker_json(
+        connection, _QIDI_DICT_PATH, raw_text=True
+    )
+    colors, filaments = (
+        _qidi_parse_dictionary(text) if dict_status == 200 else ({}, {})
+    )
+    slot_count = min(
+        max(0, _qidi_int(variables.get("box_count"), 1)) * _QIDI_SLOTS_PER_BOX,
+        _QIDI_MAX_SLOTS,
+    )
+    slots = []
+    for index in range(slot_count):
+        stepper = state.get("%s%d" % (_QIDI_STEPPER_PREFIX, index))
+        runout = stepper.get("runout_button") if isinstance(stepper, dict) else None
+        present = None
+        if isinstance(runout, (int, float)) and not isinstance(runout, bool):
+            # A closed runout button (0) means filament is in the slot.
+            present = runout == 0
+        slot = {
+            "provider_index": index,
+            "label": "Box %d slot %d" % (
+                index // _QIDI_SLOTS_PER_BOX + 1, index % _QIDI_SLOTS_PER_BOX + 1
+            ),
+            "kind": "slot",
+            "present": present,
+            "spool_identity_known": False,
+        }
+        if present:
+            name = filaments.get(_qidi_int(variables.get("filament_slot%d" % index), 1))
+            if name:
+                slot["material"] = _qidi_material(name)[:80]
+            color = str(colors.get(_qidi_int(variables.get("color_slot%d" % index), 1)) or "")
+            color = color.strip().lstrip("#").upper()
+            if re.fullmatch(r"[0-9A-F]{6}([0-9A-F]{2})?", color):
+                slot["color_hex"] = color[:6]
+        slots.append(slot)
+    return {"qidi_slots": slots}
+
+
+def read_printer_material_snapshot(connection):
+    """Happy Hare snapshot, or {"qidi_slots": [...]} for a QIDI Box printer."""
+    status, body, error = _moonraker_json(connection, "/printer/objects/list")
+    result = body.get("result")
+    objects = result.get("objects") if isinstance(result, dict) else None
+    if status != 200 or not isinstance(objects, list):
+        raise RuntimeError(error or "Moonraker objects HTTP %s" % status)
+    if "mmu" in objects:
+        return read_happy_hare_snapshot(connection)
+    if _qidi_box_present(objects):
+        return read_qidi_box_snapshot(connection)
+    raise ValueError("no supported material system")
+
+
+def upload_qidi_box_snapshot(token, physical_printer_id, snapshot):
+    return http_post_json(
+        "/orcaslicer/preset-slot-sync/moonraker/snapshot",
+        token,
+        {
+            "physical_printer_id": physical_printer_id,
+            "snapshot_ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "slots": snapshot["qidi_slots"],
+        },
+    )
+
+
+def upload_printer_material_snapshot(token, physical_printer_id, snapshot):
+    if "qidi_slots" in snapshot:
+        return upload_qidi_box_snapshot(token, physical_printer_id, snapshot)
+    return upload_happy_hare_snapshot(token, physical_printer_id, snapshot)
+
+
 def upload_happy_hare_snapshot(token, physical_printer_id, snapshot):
     payload = {
         "physical_printer_id": physical_printer_id,
@@ -5756,6 +5908,7 @@ def resolve_happy_hare_connection(
     local_connections,
     physical_printer_id,
     inventory=None,
+    reader=None,
 ):
     """Resolve one server-owned printer to one local Orca connection.
 
@@ -5812,7 +5965,7 @@ def resolve_happy_hare_connection(
     if len(unique_exact) == 1:
         connection = next(iter(unique_exact.values()))
         try:
-            snapshot = read_happy_hare_snapshot(connection)
+            snapshot = (reader or read_happy_hare_snapshot)(connection)
         except (RuntimeError, ValueError) as exc:
             fh_log("Happy Hare read failed for bound connection: %s" % exc)
             return None, None, device, "unreachable"
@@ -5994,12 +6147,13 @@ def sync_happy_hare_topologies(token, local_connections):
             local_connections,
             physical_printer_id,
             inventory=inventory,
+            reader=read_printer_material_snapshot,
         )
         if error or snapshot is None:
             if error not in {"connection_not_found"}:
                 failed += 1
             continue
-        status, _result = upload_happy_hare_snapshot(
+        status, _result = upload_printer_material_snapshot(
             token, physical_printer_id, snapshot
         )
         if status == 200:
@@ -12633,8 +12787,8 @@ class FilamentHubCatalog(
                     "evidence": evidence, "expires": time.monotonic() + 600,
                 }
                 finish(ok=True, probeId=probe_id, connection=evidence,
-                       provider="happy_hare" if snapshot else "manual",
-                       gateCount=snapshot["gate_count"] if snapshot else None,
+                       provider="happy_hare" if snapshot and "gate_count" in snapshot else "manual",
+                       gateCount=snapshot["gate_count"] if snapshot and "gate_count" in snapshot else None,
                        printerHostname=snapshot.get("printer_hostname") if snapshot else None,
                        spoolmanSupport=snapshot.get("spoolman_support") if snapshot else None,
                        inventoryLinked=setup_inventory_linked(context, connection["connection_ref"], snapshot))
@@ -12664,7 +12818,7 @@ class FilamentHubCatalog(
             if evidence["origin"] == "local_manual":
                 save_local_setup_connection(context, connection, printer_id, evidence)
             if snapshot is not None:
-                status, _result = upload_happy_hare_snapshot(token, printer_id, snapshot)
+                status, _result = upload_printer_material_snapshot(token, printer_id, snapshot)
                 if status != 200:
                     raise ValueError("snapshot_failed")
             # Keep a bounded retry token until expiry: response loss is not a new setup.
