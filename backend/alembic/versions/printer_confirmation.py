@@ -6,7 +6,8 @@ Revises: material_base_subtype
 ``confirmed_at`` marks a physical printer a person or a real device vouched for;
 ``dismissed_at`` hides a proposal without deleting it. Existing rows are
 confirmed except ghosts: rows created only by connection discovery that never
-received any device signal, user-entered data or dependent record.
+received any device signal, user-entered data, slice report, recommendation
+choice or dependent record.
 """
 
 import sqlalchemy as sa
@@ -55,6 +56,10 @@ def upgrade() -> None:
             AND NOT EXISTS (SELECT 1 FROM material_systems m WHERE m.physical_printer_id = d.id)
             AND NOT EXISTS (SELECT 1 FROM physical_printer_connectors c
                             WHERE c.physical_printer_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM orca_slice_reports r
+                            WHERE r.physical_printer_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM users u
+                            WHERE u.recommend_physical_printer_id = d.id)
         )
         """
     )
