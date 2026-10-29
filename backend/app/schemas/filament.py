@@ -18,98 +18,21 @@ from pydantic import (
 
 from app.schemas.country_cell import FilamentCountryCellCreate
 from app.services.catalog_color_groups import ColorGroupSource, FilamentColorGroup
+from app.services.filament_features import canonical_code, known_codes
 
-# Legacy visual filler values. New clients use ``effects`` but ``filler`` remains
-# in the contract so old Orca/plugin and web clients continue to round-trip data.
-KNOWN_FILLERS = frozenset(
-    {
-        "none",
-        "wood",
-        "carbon",
-        "glitter",
-        "metallic",
-        "luminescent",
-        "fibers",
-        "stone",
-        "glass",
-        "microspheres",
-        "carbonaceous",
-        "particles",
-        "pattern1",
-        "pattern2",
-        "pattern3",
-        "pattern4",
-        "pattern5",
-        "pattern6",
-        "pattern7",
-        "pattern8",
-        "pattern9",
-        "pattern10",
-        "pattern11",
-        "pattern12",
-    }
-)
-
-KNOWN_ADDITIVES = frozenset(
-    {
-        "active_foaming_agent",
-        "antimicrobial_additives",
-        "antioxidants_heat_stabilizers",
-        "aramid_fiber",
-        "bamboo",
-        "basalt_fiber",
-        "bismuth_fill",
-        "carbon_black",
-        "carbon_fiber",
-        "carbon_nanotubes",
-        "ceramic",
-        "chain_extenders",
-        "compatibilizers",
-        "cork",
-        "debinding_metal",
-        "flame_retardant_additives",
-        "glass_beads",
-        "glass_fiber",
-        "graphene",
-        "hollow_spheres",
-        "impact_modifiers",
-        "laser_marking_additives",
-        "metal_powder",
-        "mineral",
-        "natural_fiber",
-        "nucleating_agents",
-        "phosphor",
-        "ptfe",
-        "tungsten_fill",
-        "uv_stabilizers_hals",
-        "wood",
-    }
-)
-
-KNOWN_PROPERTY_CLAIMS = frozenset(
-    {
-        "antimicrobial",
-        "chemical_resistant",
-        "electrically_conductive",
-        "emi_shielding",
-        "esd",
-        "flame_retardant",
-        "food_contact",
-        "foaming",
-        "heat_resistant",
-        "lightweight",
-        "low_friction",
-        "magnetically_detectable",
-        "uv_resistant",
-        "wear_resistant",
-    }
-)
+# ``filler`` is the legacy primary visual effect: new clients use ``effects``,
+# but old Orca/plugin and web clients still round-trip it.
+KNOWN_FILLERS = known_codes("effect")
+KNOWN_ADDITIVES = known_codes("additive")
+KNOWN_PROPERTY_CLAIMS = known_codes("claim")
 
 
-def _normalize_code(value: object) -> object:
-    if isinstance(value, str):
-        return value.strip().lower().replace(" ", "_")
-    return value
+def _additive_code(value: object) -> object:
+    return canonical_code("additive", value)
+
+
+def _claim_code(value: object) -> object:
+    return canonical_code("claim", value)
 
 
 _RAL_CODE_RE = re.compile(r"^(?:RAL[\s_-]*)?(\d{4})$", re.IGNORECASE)
@@ -142,7 +65,7 @@ class FilamentAdditive(BaseModel):
     content_percent: float | None = Field(None, ge=0, le=100)
     content_basis: Literal["weight", "volume"] | None = None
 
-    _normalize_additive_code = field_validator("code", mode="before")(_normalize_code)
+    _normalize_additive_code = field_validator("code", mode="before")(_additive_code)
 
 
 class FilamentPropertyClaim(BaseModel):
@@ -153,7 +76,7 @@ class FilamentPropertyClaim(BaseModel):
     standard: str | None = Field(None, max_length=100)
     rating: str | None = Field(None, max_length=80)
 
-    _normalize_claim_code = field_validator("code", mode="before")(_normalize_code)
+    _normalize_claim_code = field_validator("code", mode="before")(_claim_code)
 
 
 class FilamentChemicalGuidance(BaseModel):
@@ -277,21 +200,22 @@ def normalize_bed_adhesives(value: object) -> object:
 class FilamentVisualSettings(BaseModel):
     """Schema for extended visual settings (только для сайта, не передается в OrcaSlicer)."""
 
-    color_type: Literal["single", "two", "three", "gradient", "transition", "thermochromic"] = (
-        Field("single")
-    )
-    # Тип цвета: одноцветный, двухцветный, трёхцветный, многоцветный градиент, переходной (любой цвет), термохромный (меняет цвет при нагреве)
+    color_type: Literal[
+        "single", "two", "three", "four", "gradient", "transition", "thermochromic"
+    ] = Field("single")
+    # Тип цвета: одноцветный, двух-, трёх-, четырёхцветный (цвета в сечении нити), многоцветный градиент, переходной (любой цвет), термохромный (меняет цвет при нагреве)
 
     colors: list[str] = Field(default_factory=lambda: ["#FFFFFF"], max_length=5)
     # Массив HEX цветов (до 5 цветов для градиента/перехода)
     # Для "single": 1 цвет
     # Для "two": 2 цвета
     # Для "three": 3 цвета
+    # Для "four": 4 цвета
     # Для "gradient": до 5 цветов (градиент)
     # Для "transition": до 5 цветов (переходной цвет, может быть любой)
 
-    finish: Literal["matte", "glossy"] = Field("matte")
-    # Финиш поверхности: матовый или глянцевый
+    finish: Literal["matte", "satin", "glossy", "silk"] = Field("matte")
+    # Финиш поверхности: матовый, сатиновый (полуматовый), глянцевый или шёлковый
 
     filler: str = Field("none", max_length=40)
     # Legacy primary visual effect. Kept for backward compatibility.
@@ -302,15 +226,23 @@ class FilamentVisualSettings(BaseModel):
     transparency: bool = Field(False)
     # Прозрачность: да/нет (True = прозрачный, False = непрозрачный)
 
+    @field_validator("color_type", mode="before")
+    @classmethod
+    def _normalize_color_type(cls, value: object) -> object:
+        return canonical_code("color_type", value)
+
+    @field_validator("finish", mode="before")
+    @classmethod
+    def _normalize_finish(cls, value: object) -> object:
+        return canonical_code("finish", value)
+
     @field_validator("filler", mode="before")
     @classmethod
     def _normalize_filler(cls, v: object) -> object:
         # Пустой наполнитель трактуем как "none" (а не 422).
         if v is None or (isinstance(v, str) and not v.strip()):
             return "none"
-        if isinstance(v, str):
-            return _normalize_code(v)
-        return v
+        return canonical_code("effect", v)
 
     @field_validator("effects", mode="before")
     @classmethod
@@ -321,7 +253,7 @@ class FilamentVisualSettings(BaseModel):
             return value
         normalized: list[str] = []
         for item in value:
-            code = _normalize_code(item)
+            code = canonical_code("effect", item)
             if isinstance(code, str) and code and code != "none" and code not in normalized:
                 normalized.append(code)
         return normalized

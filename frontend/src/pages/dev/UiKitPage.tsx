@@ -518,6 +518,32 @@ export function UiKitPage() {
               </article>
             ))}
           </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+            {[
+              { title: 'Satin', color: '#2563EB', settings: { finish: 'satin' as const } },
+              { title: 'Silk', color: '#D4A017', settings: { finish: 'silk' as const } },
+              { title: 'Four-color', color: '#EF4444', settings: { color_type: 'four' as const, colors: ['#EF4444', '#3B82F6', '#22C55E', '#FACC15'], finish: 'silk' as const } },
+              { title: 'Pearlescent', color: '#E9D5FF', settings: { finish: 'glossy' as const, effects: ['pearlescent'] } },
+              { title: 'Chameleon', color: '#7C3AED', settings: { finish: 'glossy' as const, effects: ['color_shift'] } },
+              { title: 'Fluorescent', color: '#84CC16', settings: { effects: ['fluorescent'] } },
+              { title: 'UV-reactive', color: '#F1F5F9', settings: { effects: ['uv_reactive'] } },
+              { title: 'Photochromic', color: '#3B82F6', settings: { effects: ['photochromic'] } },
+              { title: 'Stone look', color: '#D6D3D1', settings: { effects: ['stone'] } },
+              { title: 'Glow', color: '#BEF264', settings: { effects: ['luminescent'] } },
+              { title: 'Glitter', color: '#1E1B4B', settings: { finish: 'glossy' as const, effects: ['glitter'] } },
+              { title: 'Metallic', color: '#94A3B8', settings: { effects: ['metallic'] } },
+            ].map((sample) => (
+              <figure key={sample.title} className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                <FilamentPreview
+                  colorHex={sample.color}
+                  visualSettings={{ color_type: 'single', colors: [sample.color], finish: 'matte', ...sample.settings }}
+                  size="medium"
+                />
+                <figcaption className="text-xs text-slate-300">{sample.title}</figcaption>
+              </figure>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 sm:p-6">

@@ -2285,11 +2285,14 @@
       "luminescent": "Glow",
       "glitter": "Glitter",
       "fibers": "Fibrous texture",
-      "stone": "Stone texture",
+      "stone": "Stone look",
       "carbonaceous": "Carbon particles",
       "microspheres": "Microspheres",
       "particles": "Fine particles",
-        "fluorescent": "Fluorescent", "pearlescent": "Pearlescent"
+        "fluorescent": "Fluorescent", "pearlescent": "Pearlescent",
+      "color_shift": "Color shift (chameleon)",
+      "uv_reactive": "Glows under UV",
+      "photochromic": "Photochromic"
     },
     "additives": {
       "carbon_fiber": "Carbon fibre",
@@ -2385,14 +2388,17 @@
       "transition": "Transition",
       "transitionHint": "Transition color: manufacturer changes spool color, part of old color remains on new spool",
       "thermochromic": "Thermochromic",
-      "thermochromicHint": "Thermochromic: changes color when heated (210-230°C)"
+      "thermochromicHint": "Thermochromic: changes color when heated (210-230°C)",
+      "four": "Four-color"
     },
     "colorNamePlaceholder": "e.g. Red, Blue, Green",
     "clickToPickColor": "Click to pick color",
     "surfaceTypeLabel": "Surface type",
     "surface": {
       "matte": "Matte",
-      "glossy": "Glossy"
+      "glossy": "Glossy",
+      "satin": "Satin",
+      "silk": "Silk"
     },
     "fillerLabel": "Filler",
     "selectFiller": "Select filler",
@@ -2696,7 +2702,10 @@
       "exampleWeight": "E.g.: 1000"
     },
     "defaultMinusOne": "-1 = default",
-    "printersHint": "Tested printers inform recommendations; they do not exclude other printers."
+    "printersHint": "Tested printers inform recommendations; they do not exclude other printers.",
+    "satin": "Satin",
+    "silk": "Silk",
+    "colorFour": "Four-color"
   },
   "dropdown": {
     "placeholder": "Select...",
@@ -6209,8 +6218,8 @@
       "addColor": "Add color",
       "removeListItem": "Remove value",
       "modes": { "auto": "Choose automatically", "create": "Create", "update": "Update", "fork": "Create a copy" },
-      "colorTypes": { "single": "Single color", "two": "Two colors", "three": "Three colors", "gradient": "Gradient", "transition": "Color transition", "thermochromic": "Thermochromic" },
-      "visualTerms": { "matte": "Matte", "glossy": "Glossy", "silk": "Silk", "metallic": "Metallic", "glitter": "Glitter", "sparkle": "Sparkle", "wood": "Wood", "carbon_fiber": "Carbon fiber" },
+      "colorTypes": { "single": "Single color", "two": "Two colors", "three": "Three colors", "gradient": "Gradient", "transition": "Color transition", "thermochromic": "Thermochromic", "four": "Four colors" },
+      "visualTerms": { "matte": "Matte", "glossy": "Glossy", "silk": "Silk", "metallic": "Metallic", "glitter": "Glitter", "sparkle": "Sparkle", "wood": "Wood", "carbon_fiber": "Carbon fiber", "satin": "Satin" },
       "chooseField": "Choose a field",
       "groups": { "identity": "Identity and range", "appearance": "Color and surface", "properties": "Material properties", "printing": "Printing guidance", "care": "Drying and storage", "description": "Description", "other": "Technical fields", "links": "Links", "markets": "Markets" },
       "fieldNames": {

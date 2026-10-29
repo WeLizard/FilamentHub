@@ -44,9 +44,9 @@ export interface BrandAnalytics {
 }
 
 export interface FilamentVisualSettings {
-  color_type?: 'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic';
+  color_type?: 'single' | 'two' | 'three' | 'four' | 'gradient' | 'transition' | 'thermochromic';
   colors?: string[]; // До 5 цветов для градиента/перехода
-  finish?: 'matte' | 'glossy';
+  finish?: 'matte' | 'satin' | 'glossy' | 'silk';
   filler?: string; // известный набор (none/wood/carbon/...) или кастомное значение (только верифиц. бренд)
   effects?: string[]; // независимые визуальные эффекты; filler остаётся legacy primary
   transparency?: boolean; // Прозрачный/непрозрачный (да/нет)

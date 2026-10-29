@@ -2279,11 +2279,14 @@
       "luminescent": "夜光",
       "glitter": "闪粉",
       "fibers": "纤维纹理",
-      "stone": "石纹",
+      "stone": "仿石纹",
       "carbonaceous": "碳颗粒",
       "microspheres": "微球",
       "particles": "细颗粒",
-        "fluorescent": "荧光", "pearlescent": "珠光"
+        "fluorescent": "荧光", "pearlescent": "珠光",
+      "color_shift": "变色龙（随角度变色）",
+      "uv_reactive": "紫外线下发光",
+      "photochromic": "光致变色"
     },
     "additives": {
       "carbon_fiber": "碳纤维",
@@ -2379,14 +2382,17 @@
       "transition": "过渡",
       "transitionHint": "过渡颜色：制造商改变线轴颜色，旧颜色的一部分保留在新线轴上",
       "thermochromic": "温变色",
-      "thermochromicHint": "温变色：加热时改变颜色（210-230°C）"
+      "thermochromicHint": "温变色：加热时改变颜色（210-230°C）",
+      "four": "四色"
     },
     "colorNamePlaceholder": "例如 红色、蓝色、绿色",
     "clickToPickColor": "点击选择颜色",
     "surfaceTypeLabel": "表面类型",
     "surface": {
       "matte": "哑光",
-      "glossy": "光泽"
+      "glossy": "光泽",
+      "satin": "缎面",
+      "silk": "丝绸"
     },
     "fillerLabel": "填充物",
     "selectFiller": "选择填充物",
@@ -2690,7 +2696,10 @@
       "exampleWeight": "例如：1000"
     },
     "defaultMinusOne": "-1 = 默认",
-    "printersHint": "这些打印机上的测试结果用于推荐，并不限制在其他打印机上使用。"
+    "printersHint": "这些打印机上的测试结果用于推荐，并不限制在其他打印机上使用。",
+    "satin": "缎面",
+    "silk": "丝绸",
+    "colorFour": "四色"
   },
   "dropdown": {
     "placeholder": "请选择...",
@@ -6193,8 +6202,8 @@
       "addColor": "添加颜色",
       "removeListItem": "移除值",
       "modes": { "auto": "自动决定", "create": "创建", "update": "更新", "fork": "创建副本" },
-      "colorTypes": { "single": "单色", "two": "双色", "three": "三色", "gradient": "渐变", "transition": "颜色过渡", "thermochromic": "热变色" },
-      "visualTerms": { "matte": "哑光", "glossy": "亮光", "silk": "丝绸质感", "metallic": "金属质感", "glitter": "闪粉", "sparkle": "闪烁", "wood": "木质", "carbon_fiber": "碳纤维" },
+      "colorTypes": { "single": "单色", "two": "双色", "three": "三色", "gradient": "渐变", "transition": "颜色过渡", "thermochromic": "热变色", "four": "四色" },
+      "visualTerms": { "matte": "哑光", "glossy": "亮光", "silk": "丝绸", "metallic": "金属质感", "glitter": "闪粉", "sparkle": "闪烁", "wood": "木质", "carbon_fiber": "碳纤维", "satin": "缎面" },
       "chooseField": "选择字段",
       "groups": { "identity": "标识与产品范围", "appearance": "颜色与表面", "properties": "材料属性", "printing": "打印建议", "care": "干燥与储存", "description": "描述", "other": "技术字段", "links": "链接", "markets": "市场" },
       "fieldNames": {

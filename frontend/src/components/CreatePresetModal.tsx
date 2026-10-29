@@ -39,7 +39,14 @@ import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
-import { mergeVisualEffects } from '../data/filamentFeatures';
+import {
+  COLOR_TYPE_CODES,
+  FINISH_CODES,
+  mergeVisualEffects,
+  requiredColorCount,
+  type ColorTypeCode,
+  type FinishCode,
+} from '../data/filamentFeatures';
 import { currencySymbol } from '../utils/currency';
 import { normalizeFilamentColor } from '../utils/calculatorMaterialColors';
 import { hasNonStandardDiameter } from '../utils/filamentFacts';
@@ -401,9 +408,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [draftHasColorEvidence, setDraftHasColorEvidence] = useState(false);
   const [filamentRalCode, setFilamentRalCode] = useState('');
   // Расширенные характеристики цвета для нового филамента
-  const [filamentVisualColorType, setFilamentVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
+  const [filamentVisualColorType, setFilamentVisualColorType] = useState<ColorTypeCode>('single');
   const [filamentVisualColors, setFilamentVisualColors] = useState<string[]>(['#FF0000']);
-  const [filamentVisualFinish, setFilamentVisualFinish] = useState<'matte' | 'glossy'>('matte');
+  const [filamentVisualFinish, setFilamentVisualFinish] = useState<FinishCode>('matte');
   const [filamentVisualEffects, setFilamentVisualEffects] = useState<string[]>([]);
   const [filamentAdditives, setFilamentAdditives] = useState<FilamentAdditive[]>([]);
   const resolvedFilamentVisualEffects = mergeVisualEffects(filamentVisualEffects, filamentAdditives);
@@ -3002,13 +3009,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         {/* Тип цвета */}
                         <div>
                           <div className="grid grid-cols-2 gap-2">
-                            {(['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'] as const).map((type) => (
+                            {COLOR_TYPE_CODES.map((type) => (
                               <button
                                 key={type}
                                 type="button"
                                 onClick={() => {
                                   setFilamentVisualColorType(type);
-                                  const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
+                                  const requiredColors = requiredColorCount(type);
                                   setFilamentVisualColors((prevColors) => {
                                     const base = filamentColorHex || prevColors[0] || '#FF0000';
                                     const nextColors = [...prevColors];
@@ -3039,6 +3046,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                 {type === 'single' && t('presetModal.colorSingle')}
                                 {type === 'two' && t('presetModal.colorTwo')}
                                 {type === 'three' && t('presetModal.colorThree')}
+                                {type === 'four' && t('presetModal.colorFour')}
                                 {type === 'gradient' && t('presetModal.colorGradient')}
                                 {type === 'transition' && (
                                   <span title={t('presetModal.colorTransitionHint')}>
@@ -3058,10 +3066,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         {/* Цвета (до 5) */}
                         <div>
                           <label className="block text-gray-300 mb-2 text-sm font-medium">
-                            {t('presetModal.colors')} ({filamentVisualColorType === 'single' ? 1 : filamentVisualColorType === 'two' ? 2 : filamentVisualColorType === 'three' ? 3 : filamentVisualColorType === 'transition' || filamentVisualColorType === 'thermochromic' ? 2 : 5})
+                            {t('presetModal.colors')} ({requiredColorCount(filamentVisualColorType)})
                           </label>
                           <div className="grid grid-cols-5 gap-2">
-                            {Array.from({ length: filamentVisualColorType === 'single' ? 1 : filamentVisualColorType === 'two' ? 2 : filamentVisualColorType === 'three' ? 3 : filamentVisualColorType === 'transition' || filamentVisualColorType === 'thermochromic' ? 2 : 5 }).map((_, idx) => {
+                            {Array.from({ length: requiredColorCount(filamentVisualColorType) }).map((_, idx) => {
                               const currentColor = filamentVisualColors[idx] || '#FF0000';
                               const isPickerOpen = openColorPickers[idx] || false;
                               
@@ -3140,7 +3148,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         <div>
                           <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.surfaceType')}</label>
                           <div className="inline-grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/15 p-1">
-                            {(['matte', 'glossy'] as const).map((finish) => (
+                            {FINISH_CODES.map((finish) => (
                               <button
                                 key={finish}
                                 type="button"
@@ -3151,7 +3159,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                     : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
                                 }`}
                               >
-                                {finish === 'matte' ? t('presetModal.matte') : t('presetModal.glossy')}
+                                {t(`presetModal.${finish}`)}
                               </button>
                             ))}
                           </div>

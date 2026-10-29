@@ -42,7 +42,7 @@ const MUTED_COLOR_ANCHORS: Partial<Record<FilamentColorGroup, readonly string[]>
   brown: ['#B87333', '#B8895A', '#C2A277', '#D2B48C'],
 };
 
-export const MULTICOLOR_TYPES = ['two', 'three', 'gradient', 'transition'] as const;
+export const MULTICOLOR_TYPES = ['two', 'three', 'four', 'gradient', 'transition'] as const;
 
 const CHROMATIC_COLOR_GROUPS = FILAMENT_COLOR_GROUPS.filter(
   (group) => !['black', 'white', 'gray', 'silver'].includes(group),

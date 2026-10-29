@@ -1,4 +1,5 @@
 import type { CatalogImportSheet } from '../../../types/api';
+import { COLOR_TYPE_CODES, FINISH_CODES } from '../../../data/filamentFeatures';
 
 export type FieldKind =
   | 'text' | 'textarea' | 'number' | 'bool' | 'select' | 'availability' | 'marketAvailability'
@@ -51,12 +52,12 @@ export function fieldSpec(sheet: CatalogImportSheet, field: string): FieldSpec {
   if (field === 'color_type') {
     return {
       kind: 'select', span: 3,
-      options: ['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'],
+      options: [...COLOR_TYPE_CODES],
       optionsKey: 'adminCatalogImport.curation.colorTypes.',
     };
   }
   if (field === 'finish') {
-    return { kind: 'select', span: 3, options: ['matte', 'glossy'], optionsKey: 'adminCatalogImport.curation.visualTerms.' };
+    return { kind: 'select', span: 3, options: [...FINISH_CODES], optionsKey: 'adminCatalogImport.curation.visualTerms.' };
   }
   if (TEXTAREA_FIELDS.has(field)) return { kind: 'textarea', span: 6 };
   if (NUMBER_FIELD.test(field)) return { kind: 'number', span: 2 };

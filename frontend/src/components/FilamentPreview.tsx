@@ -1,7 +1,7 @@
 import React, { useMemo, useId } from 'react';
-import { Thermometer } from 'lucide-react';
+import { Sun, Thermometer } from 'lucide-react';
 import type { FilamentVisualSettings } from '../types/api';
-import { sanitizeColor, adjustLightness, getLuminance } from '../utils/color';
+import { sanitizeColor, adjustLightness, getLuminance, hexToHsl, hslToHex } from '../utils/color';
 
 type SizeKey = 'small' | 'medium' | 'large';
 
@@ -9,6 +9,11 @@ const SIZE_CONFIG: Record<SizeKey, { height: number; bodyLength: number; strokeW
   small: { height: 40, bodyLength: 90, strokeWidth: 2 },
   medium: { height: 60, bodyLength: 120, strokeWidth: 3 },
   large: { height: 90, bodyLength: 200, strokeWidth: 4 },
+};
+
+const shiftHue = (hex: string, degrees: number, saturation?: number): string => {
+  const { h, s, l } = hexToHsl(hex);
+  return hslToHex((h + degrees + 360) % 360, saturation ?? Math.max(s, 55), Math.min(Math.max(l, 35), 70));
 };
 
 type ExtraEndSegment = {
@@ -46,6 +51,8 @@ const createColorDefinitions = (
         return palette.slice(0, 2);
       case 'three':
         return palette.slice(0, 3);
+      case 'four':
+        return palette.slice(0, 4);
       case 'transition':
       case 'thermochromic':
         return palette.slice(0, 2);
@@ -105,6 +112,27 @@ const createColorDefinitions = (
       extraEndSegments = [
         { startAngle: 0, endAngle: 120, color: ensure(2) },
         { startAngle: 120, endAngle: 240, color: ensure(1) },
+      ];
+      break;
+    }
+    case 'four': {
+      // Four strands in the cross-section: the side shows the two nearest strands, split
+      // where they meet on the end face, so each side band continues its quarter.
+      const segmentId = makeId('four-segments');
+      defs.push(
+        <linearGradient id={segmentId} key={segmentId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(0)} />
+          <stop offset="50%" stopColor={ensure(1)} />
+          <stop offset="100%" stopColor={ensure(1)} />
+        </linearGradient>,
+      );
+      bodyFill = `url(#${segmentId})`;
+      endFill = ensure(0);
+      extraEndSegments = [
+        { startAngle: 0, endAngle: 90, color: ensure(3) },
+        { startAngle: 90, endAngle: 180, color: ensure(2) },
+        { startAngle: 180, endAngle: 270, color: ensure(1) },
       ];
       break;
     }
@@ -527,6 +555,121 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
       patternOpacity = 0.78;
       break;
     }
+    case 'pearlescent': {
+      // Soft white-pink-cyan sheen over the base colour, strongest where light hits.
+      const bodyGradientId = makeId('pearl-body');
+      const endGradientId = makeId('pearl-end');
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.55" />
+          <stop offset="30%" stopColor="#FCE7F3" stopOpacity="0.4" />
+          <stop offset="55%" stopColor="#E0F2FE" stopOpacity="0.32" />
+          <stop offset="80%" stopColor="#FEF9C3" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.08" />
+        </linearGradient>,
+      );
+      defs.push(
+        <radialGradient id={endGradientId} key={endGradientId} cx="38%" cy="34%" r="78%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
+          <stop offset="45%" stopColor="#FCE7F3" stopOpacity="0.36" />
+          <stop offset="100%" stopColor="#E0F2FE" stopOpacity="0.18" />
+        </radialGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      endPatternFill = `url(#${endGradientId})`;
+      patternOpacity = 1;
+      break;
+    }
+    case 'color_shift': {
+      // Chameleon: the hue turns across the spool as the viewing angle changes.
+      const base = sanitizeColor(colors[0] ?? '#7C3AED');
+      const bodyGradientId = makeId('shift-body');
+      const endGradientId = makeId('shift-end');
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={shiftHue(base, -70)} />
+          <stop offset="35%" stopColor={shiftHue(base, 0)} />
+          <stop offset="70%" stopColor={shiftHue(base, 70)} />
+          <stop offset="100%" stopColor={shiftHue(base, 140)} />
+        </linearGradient>,
+      );
+      defs.push(
+        <linearGradient id={endGradientId} key={endGradientId} x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={shiftHue(base, -40)} />
+          <stop offset="100%" stopColor={shiftHue(base, 100)} />
+        </linearGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      endPatternFill = `url(#${endGradientId})`;
+      patternOpacity = 0.82;
+      break;
+    }
+    case 'fluorescent': {
+      // Neon: the base colour itself is the light source, so it brightens and blooms.
+      const neon = shiftHue(sanitizeColor(colors[0] ?? '#A3E635'), 0, 100);
+      const filterId = makeId('neon');
+      const bodyGradientId = makeId('neon-body');
+      defs.push(
+        <filter id={filterId} key={filterId} x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3.4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>,
+      );
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={adjustLightness(neon, 0.22)} stopOpacity="0.85" />
+          <stop offset="50%" stopColor={neon} stopOpacity="0.7" />
+          <stop offset="100%" stopColor={neon} stopOpacity="0.45" />
+        </linearGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      endPatternFill = `url(#${bodyGradientId})`;
+      glowFilterId = filterId;
+      patternOpacity = 0.8;
+      break;
+    }
+    case 'uv_reactive': {
+      // Shown as it looks under a UV lamp: a violet rim around a lit core.
+      const bodyGradientId = makeId('uv-body');
+      const endGradientId = makeId('uv-end');
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#A855F7" stopOpacity="0.55" />
+          <stop offset="22%" stopColor="#A855F7" stopOpacity="0" />
+          <stop offset="78%" stopColor="#A855F7" stopOpacity="0" />
+          <stop offset="100%" stopColor="#7C3AED" stopOpacity="0.6" />
+        </linearGradient>,
+      );
+      defs.push(
+        <radialGradient id={endGradientId} key={endGradientId} cx="50%" cy="50%" r="50%">
+          <stop offset="60%" stopColor="#A855F7" stopOpacity="0" />
+          <stop offset="100%" stopColor="#7C3AED" stopOpacity="0.65" />
+        </radialGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      endPatternFill = `url(#${endGradientId})`;
+      patternOpacity = 1;
+      break;
+    }
+    case 'photochromic': {
+      // Colour that appears in sunlight: a pale part fading into the activated colour.
+      const base = sanitizeColor(colors[0] ?? '#3B82F6');
+      const bodyGradientId = makeId('photo-body');
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#F8FAFC" stopOpacity="0.85" />
+          <stop offset="45%" stopColor="#F8FAFC" stopOpacity="0.5" />
+          <stop offset="100%" stopColor={base} stopOpacity="0" />
+        </linearGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      patternOpacity = 1;
+      endPatternOpacity = 0;
+      break;
+    }
     default: {
       const patternMap: Record<string, [number, number, number]> = {
         pattern1: [-45, 1, 5],
@@ -606,12 +749,20 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
       fibers: 20,
       wood: 20,
       stone: 20,
+      color_shift: 15,
       luminescent: 30,
+      fluorescent: 32,
+      uv_reactive: 33,
+      photochromic: 34,
+      pearlescent: 36,
       glitter: 40,
     };
     return [...new Set(source)].sort((left, right) => (layerOrder[left] ?? 25) - (layerOrder[right] ?? 25));
   }, [visualSettings?.effects, filler]);
-  const isGlossy = finish === 'glossy';
+  // Satin is a muted gloss; silk adds a bright band along the strand.
+  const sheenStrength = finish === 'satin' ? 0.45 : finish === 'glossy' || finish === 'silk' ? 0.8 : 0;
+  const isGlossy = sheenStrength > 0;
+  const isSilk = finish === 'silk';
   const isTransparent = visualSettings?.transparency ?? false;
   const mainColor = colors[0] ?? '#FFFFFF';
   const luminance = getLuminance(mainColor);
@@ -661,6 +812,7 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
         endSoftnessId: null as string | null,
         bodyGlossClipId: null as string | null,
         endGlossClipId: null as string | null,
+        silkBandId: null as string | null,
       };
     }
 
@@ -672,7 +824,9 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
     const endSoftnessId = `${svgId}-end-softness`;
     const bodyGlossClipId = `${svgId}-body-gloss-clip`;
     const endGlossClipId = `${svgId}-end-gloss-clip`;
+    const silkBandId = isSilk ? `${svgId}-silk-band` : null;
     return {
+      silkBandId,
       bodyHighlightId,
       endHighlightId,
       bodyShadowId,
@@ -722,9 +876,20 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
         <clipPath id={endGlossClipId} key={endGlossClipId}>
           <circle cx={bodyEnd} cy={radius} r={radius} />
         </clipPath>,
+        ...(silkBandId ? [
+          <linearGradient id={silkBandId} key={silkBandId} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="14%" stopColor="#FFFFFF" stopOpacity="0" />
+            <stop offset="27%" stopColor="#FFFFFF" stopOpacity="0.7" />
+            <stop offset="33%" stopColor="#FFFFFF" stopOpacity="0.7" />
+            <stop offset="46%" stopColor="#FFFFFF" stopOpacity="0" />
+            <stop offset="74%" stopColor="#FFFFFF" stopOpacity="0" />
+            <stop offset="82%" stopColor="#FFFFFF" stopOpacity="0.22" />
+            <stop offset="90%" stopColor="#FFFFFF" stopOpacity="0" />
+          </linearGradient>,
+        ] : []),
       ],
     };
-  }, [isGlossy, svgId, bodyEnd, radius, height]);
+  }, [isGlossy, isSilk, svgId, bodyEnd, radius, height]);
 
   const defs = useMemo(
     () => [...colorDefs, ...fillerDefs, ...highlightDefs.defs],
@@ -810,7 +975,7 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
               <path
                 d={bodyPath}
                 fill={`url(#${highlightDefs.bodyShadowId})`}
-                opacity={isTransparent ? 0.35 : 0.9}
+                opacity={isTransparent ? 0.35 : Math.min(0.9, sheenStrength + 0.1)}
               />
             )}
             {highlightDefs.bodyHighlightId && (
@@ -818,9 +983,12 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
                 <path
                   d={bodyPath}
                   fill={`url(#${highlightDefs.bodyHighlightId})`}
-                  opacity={isTransparent ? 0.45 : 0.8}
+                  opacity={isTransparent ? 0.45 : sheenStrength}
                   filter={highlightDefs.bodySoftnessId ? `url(#${highlightDefs.bodySoftnessId})` : undefined}
                 />
+                {highlightDefs.silkBandId && (
+                  <path d={bodyPath} fill={`url(#${highlightDefs.silkBandId})`} opacity={isTransparent ? 0.5 : 0.9} />
+                )}
               </g>
             )}
             <path d={bodyPath} fill="none" stroke={borderColor} strokeWidth={strokeWidth} />
@@ -863,7 +1031,7 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
                   cy={radius}
                   r={radius}
                   fill={`url(#${highlightDefs.endHighlightId})`}
-                  opacity={isTransparent ? 0.45 : 0.8}
+                  opacity={isTransparent ? 0.45 : sheenStrength}
                   filter={highlightDefs.endSoftnessId ? `url(#${highlightDefs.endSoftnessId})` : undefined}
                 />
               </g>
@@ -879,6 +1047,17 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
           </g>
         </g>
       </svg>
+      {effects.includes('photochromic') && colorType !== 'thermochromic' && (
+        <div
+          className="pointer-events-none absolute flex items-center justify-center"
+          style={{
+            left: canvasPadding + bodyEnd - radius - strokeWidth / 2,
+            width: radius * 3 + strokeWidth,
+          }}
+        >
+          <Sun size={radius} color={borderColor} strokeWidth={strokeWidth} />
+        </div>
+      )}
       {colorType === 'thermochromic' && (
         <div
           className="pointer-events-none absolute flex items-center justify-center"

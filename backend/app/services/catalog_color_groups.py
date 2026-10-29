@@ -23,7 +23,7 @@ FilamentColorGroup = Literal[
     "silver",
 ]
 ColorGroupSource = Literal["auto", "manual"]
-MULTICOLOR_COLOR_TYPES = ("two", "three", "gradient", "transition")
+MULTICOLOR_COLOR_TYPES = ("two", "three", "four", "gradient", "transition")
 
 COLOR_GROUPS: tuple[FilamentColorGroup, ...] = (
     "black",

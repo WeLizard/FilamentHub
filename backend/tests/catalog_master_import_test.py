@@ -432,8 +432,8 @@ async def test_curation_import_creates_filler_and_effects_together(db_session, a
             "color_type": "single",
             "colors": ["#112233"],
             "finish": "glossy",
-            "filler": "sparkle",
-            "effects": ["sparkle", "glitter"],
+            "filler": "confetti",
+            "effects": ["confetti", "glitter"],
             "transparency": False,
         }
     )
@@ -444,8 +444,8 @@ async def test_curation_import_creates_filler_and_effects_together(db_session, a
 
     filament = await db_session.scalar(select(Filament))
     assert filament is not None
-    assert filament.visual_settings["filler"] == "sparkle"
-    assert filament.visual_settings["effects"] == ["sparkle", "glitter"]
+    assert filament.visual_settings["filler"] == "confetti"
+    assert filament.visual_settings["effects"] == ["confetti", "glitter"]
 
 
 async def test_curation_import_updates_filler_without_dropping_other_effects(
@@ -462,15 +462,15 @@ async def test_curation_import_updates_filler_without_dropping_other_effects(
     }
     await db_session.commit()
     row = draft.filaments[0]
-    row.update({"mode": "update", "filler": "sparkle", "overwrite": True})
+    row.update({"mode": "update", "filler": "confetti", "overwrite": True})
 
     plan = await build_plan(db_session, draft, admin_user_id=admin_user.id, curation=True)
     assert summarize(plan)["error"] == 0, plan
     await apply_plan(db_session, draft, plan, admin_user_id=admin_user.id, curation=True)
     await db_session.commit()
     await db_session.refresh(filament)
-    assert filament.visual_settings["filler"] == "sparkle"
-    assert filament.visual_settings["effects"] == ["sparkle", "silk"]
+    assert filament.visual_settings["filler"] == "confetti"
+    assert filament.visual_settings["effects"] == ["confetti", "silk"]
     assert filament.visual_settings["colors"] == ["#112233"]
     assert filament.visual_settings["finish"] == "glossy"
 

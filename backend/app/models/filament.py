@@ -203,9 +203,9 @@ class Filament(Base):
     # Extended visual settings (JSON) - только для сайта
     visual_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # visual_settings: {
-    #   "color_type": "single" | "two" | "three" | "gradient" | "transition" | "thermochromic",
+    #   "color_type": "single" | "two" | "three" | "four" | "gradient" | "transition" | "thermochromic",
     #   "colors": ["#FF0000", "#00FF00", ...], // до 5 цветов
-    #   "finish": "matte" | "glossy",
+    #   "finish": "matte" | "satin" | "glossy" | "silk",
     #   "filler": "none" | ... (legacy primary visual effect),
     #   "effects": ["metallic", "glitter", ...],
     #   "transparency": true | false

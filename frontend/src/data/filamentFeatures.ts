@@ -1,6 +1,21 @@
 export const DECORATIVE_VISUAL_EFFECT_CODES = [
-  'metallic', 'luminescent', 'glitter',
+  'metallic', 'luminescent', 'glitter', 'pearlescent', 'color_shift', 'fluorescent',
+  'uv_reactive', 'photochromic', 'stone',
 ] as const;
+
+export const COLOR_TYPE_CODES = [
+  'single', 'two', 'three', 'four', 'gradient', 'transition', 'thermochromic',
+] as const;
+export type ColorTypeCode = typeof COLOR_TYPE_CODES[number];
+
+export const FINISH_CODES = ['matte', 'satin', 'glossy', 'silk'] as const;
+export type FinishCode = typeof FINISH_CODES[number];
+
+const COLOR_COUNTS: Record<ColorTypeCode, number> = {
+  single: 1, two: 2, three: 3, four: 4, gradient: 5, transition: 2, thermochromic: 2,
+};
+
+export const requiredColorCount = (type: ColorTypeCode): number => COLOR_COUNTS[type];
 
 export const ADDITIVE_CODES = [
   'carbon_fiber', 'glass_fiber', 'aramid_fiber', 'basalt_fiber', 'natural_fiber',

@@ -36,7 +36,15 @@ import {
   normalizeChemicalGuidance,
   parseBedAdhesives,
 } from './FilamentHandlingEditor';
-import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
+import {
+  COLOR_TYPE_CODES,
+  FINISH_CODES,
+  deriveVisualEffectsFromAdditives,
+  mergeVisualEffects,
+  requiredColorCount,
+  type ColorTypeCode,
+  type FinishCode,
+} from '../data/filamentFeatures';
 import {
   classifyFilamentColorGroup,
   FILAMENT_COLOR_GROUPS,
@@ -98,9 +106,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [colorGroupSource, setColorGroupSource] = useState<FilamentColorGroupSource>('auto');
   const [ralCode, setRalCode] = useState('');
   // Расширенные характеристики цвета
-  const [visualColorType, setVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
+  const [visualColorType, setVisualColorType] = useState<ColorTypeCode>('single');
   const [visualColors, setVisualColors] = useState<string[]>(['#808080']);
-  const [visualFinish, setVisualFinish] = useState<'matte' | 'glossy'>('matte');
+  const [visualFinish, setVisualFinish] = useState<FinishCode>('matte');
   const [visualEffects, setVisualEffects] = useState<string[]>([]);
   const [additives, setAdditives] = useState<FilamentAdditive[]>([]);
   const [propertyClaims, setPropertyClaims] = useState<FilamentPropertyClaim[]>([]);
@@ -1188,7 +1196,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-300">{t('createFilament.colorTypeLabel')}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'] as const).map((type) => (
+                    {COLOR_TYPE_CODES.map((type) => (
                       <button
                         key={type}
                         type="button"
@@ -1202,7 +1210,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                           ) {
                             setColorGroupSource('auto');
                           }
-                          const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
+                          const requiredColors = requiredColorCount(type);
                           setVisualColors((prevColors) => {
                             const base = colorHex || prevColors[0] || '#FFFFFF';
                             const nextColors = [...prevColors];
@@ -1234,6 +1242,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         {type === 'single' ? t('createFilament.colorType.single') :
                          type === 'two' ? t('createFilament.colorType.two') :
                          type === 'three' ? t('createFilament.colorType.three') :
+                         type === 'four' ? t('createFilament.colorType.four') :
                          type === 'gradient' ? t('createFilament.colorType.gradient') :
                          type === 'transition' ? (
                           <span title={t('createFilament.colorType.transitionHint')}>
@@ -1253,7 +1262,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 {/* Цвета (до 5) */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-300">
-                    {t('createFilament.colors')} ({visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5})
+                    {t('createFilament.colors')} ({requiredColorCount(visualColorType)})
                   </label>
                   {visualColorType !== 'single' && (
                     <p className="mb-2 text-xs leading-relaxed text-gray-400">
@@ -1261,7 +1270,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     </p>
                   )}
                   <div className="grid grid-cols-5 gap-2">
-                    {Array.from({ length: visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5 }).map((_, idx) => {
+                    {Array.from({ length: requiredColorCount(visualColorType) }).map((_, idx) => {
                       const currentColor = visualColors[idx] || '#FF0000';
                       const isPickerOpen = openColorPickers[idx] || false;
                       
@@ -1342,7 +1351,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-300">{t('createFilament.surfaceTypeLabel')}</label>
                   <div className="inline-grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/15 p-1">
-                    {(['matte', 'glossy'] as const).map((finish) => (
+                    {FINISH_CODES.map((finish) => (
                       <button
                         key={finish}
                         type="button"
@@ -1353,7 +1362,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
                         }`}
                       >
-                        {finish === 'matte' ? t('createFilament.surface.matte') : t('createFilament.surface.glossy')}
+                        {t(`createFilament.surface.${finish}`)}
                       </button>
                     ))}
                   </div>
