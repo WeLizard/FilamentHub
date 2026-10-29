@@ -306,6 +306,20 @@ async def require_printer_bundle_read(
     )
 
 
+async def require_stock_alerts_read(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Read the account's low-stock alerts (site session, plugin capability or workstation key)."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="stock-alerts:read",
+    )
+
+
 async def require_material_topology_read(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],

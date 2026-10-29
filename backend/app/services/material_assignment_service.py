@@ -35,6 +35,7 @@ from app.services.spool_service import (
     lock_material_slots_for_spools,
     shelf_spool_if_unassigned,
 )
+from app.services.stock_alert_service import refresh_stock_alerts
 
 
 async def require_accessible_preset(
@@ -352,6 +353,7 @@ async def update_material_slot_assignment(
         await shelf_spool_if_unassigned(db, old_spool)
     if next_spool is not None:
         next_spool.state = UserSpoolState.active
+        await refresh_stock_alerts(db, next_spool)
     await db.commit()
 
 

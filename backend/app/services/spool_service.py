@@ -48,6 +48,7 @@ from app.schemas.spool import (
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
 from app.services.spool_shelf_filters import collection_ids_by_spool, shelf_filters
 from app.services.spool_usage_service import record_spool_usage
+from app.services.stock_alert_service import refresh_stock_alerts
 
 
 def _read_projected_location(extra: dict) -> tuple[str, int]:
@@ -169,6 +170,7 @@ async def shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
     clear_spool_location_projection(spool)
     if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
         spool.state = UserSpoolState.shelf
+    await refresh_stock_alerts(db, spool)
 
 
 async def assign_spool_to_gate(
@@ -279,6 +281,7 @@ async def assign_spool_to_gate(
 
     set_spool_location_projection(spool, device, gate_index)
     spool.state = UserSpoolState.active
+    await refresh_stock_alerts(db, spool)
     return target_state, displaced_spool_id
 
 
@@ -298,6 +301,7 @@ async def release_spool_location(
     clear_spool_location_projection(spool)
     if spool.state not in {UserSpoolState.archived, UserSpoolState.empty}:
         spool.state = UserSpoolState.shelf
+    await refresh_stock_alerts(db, spool)
 
 
 async def clear_spool_gate_assignments(
@@ -691,8 +695,10 @@ async def stage_new_spool(
         comment=payload.comment,
     )
     db.add(spool)
+    await db.flush()
+    # A new spool is stock arriving, never a crossing: it starts armed or fired silently.
+    await refresh_stock_alerts(db, spool, announce=False)
     if payload.used_weight_g > 0:
-        await db.flush()
         await record_spool_usage(
             db,
             spool=spool,
@@ -851,6 +857,7 @@ async def update_spool(
         await clear_spool_gate_assignments(db, spool)
         clear_spool_location_projection(spool)
 
+    await refresh_stock_alerts(db, spool)
     await db.commit()
     await db.refresh(spool)
     return _build_response(spool, filament)

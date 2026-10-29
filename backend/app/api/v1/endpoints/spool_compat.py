@@ -90,6 +90,7 @@ from app.services.spool_usage_service import (
     resolve_assigned_preset_id,
     spoolman_usage_checkpoint_meta,
 )
+from app.services.stock_alert_service import refresh_stock_alerts
 
 from . import spool_compat_catalog, spool_compat_fields
 from .spool_compat_ws import spool_ws_manager
@@ -1691,6 +1692,8 @@ async def patch_spool(
         if not ok:
             await db.rollback()
             return _err(status.HTTP_400_BAD_REQUEST, err or "Failed to assign spool location.")
+
+    await refresh_stock_alerts(db, spool)
 
     if body.extra is not None:
         merged_extra = assignment_extra if assignment_extra is not None else dict(spool.extra or {})

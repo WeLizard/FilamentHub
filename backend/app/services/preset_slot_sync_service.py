@@ -80,6 +80,7 @@ from app.services.spool_service import (
     set_spool_location_projection,
     shelf_spool_if_unassigned,
 )
+from app.services.stock_alert_service import refresh_stock_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -1334,6 +1335,7 @@ async def handle_manual_assignment(
             if new_spool is not None:
                 set_spool_location_projection(new_spool, resolved_device, payload.gate)
                 new_spool.state = UserSpoolState.active
+                await refresh_stock_alerts(db, new_spool)
                 logger.debug(
                     "Set HH extra fields on spool %d: printer_device_id=%s gate=%d",
                     new_spool_id,

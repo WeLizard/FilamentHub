@@ -27,7 +27,9 @@ from app.services.legal_acceptance_service import requires_current_legal_accepta
 WORKSTATION_KEY_PREFIX = "fhw_"
 # Observation and report only: a workstation key never edits presets, never
 # confirms an assignment and never touches the account.
-WORKSTATION_SCOPES = frozenset({"sync:report", "material-topology:read", "material-topology:report"})
+WORKSTATION_SCOPES = frozenset(
+    {"sync:report", "material-topology:read", "material-topology:report", "stock-alerts:read"}
+)
 MAX_ACTIVE_KEYS = 10
 _LAST_USED_RESOLUTION = timedelta(minutes=5)
 
@@ -36,7 +38,9 @@ def _digest(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
-async def issue_workstation_key(db: AsyncSession, user: User, name: str) -> tuple[WorkstationKey, str]:
+async def issue_workstation_key(
+    db: AsyncSession, user: User, name: str
+) -> tuple[WorkstationKey, str]:
     active = await db.scalar(
         select(func.count())
         .select_from(WorkstationKey)
@@ -73,21 +77,28 @@ async def revoke_workstation_key(db: AsyncSession, user_id: int, key_id: int) ->
 
 
 async def authenticate_workstation_key(db: AsyncSession, key: str, required_scope: str) -> User:
-    unauthorized = {"status_code": status.HTTP_401_UNAUTHORIZED, "headers": {"WWW-Authenticate": "Bearer"}}
+    unauthorized = {
+        "status_code": status.HTTP_401_UNAUTHORIZED,
+        "headers": {"WWW-Authenticate": "Bearer"},
+    }
     row = await db.scalar(
         select(WorkstationKey).where(
             WorkstationKey.key_digest == _digest(key), WorkstationKey.revoked_at.is_(None)
         )
     )
     if row is None:
-        raise_error(unauthorized["status_code"], ERR_COULD_NOT_VALIDATE, headers=unauthorized["headers"])
+        raise_error(
+            unauthorized["status_code"], ERR_COULD_NOT_VALIDATE, headers=unauthorized["headers"]
+        )
     if required_scope not in WORKSTATION_SCOPES:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     user = await db.scalar(
         select(User).options(selectinload(User.subscription)).where(User.id == row.user_id)
     )
     if user is None:
-        raise_error(unauthorized["status_code"], ERR_COULD_NOT_VALIDATE, headers=unauthorized["headers"])
+        raise_error(
+            unauthorized["status_code"], ERR_COULD_NOT_VALIDATE, headers=unauthorized["headers"]
+        )
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
     if requires_current_legal_acceptance(user):

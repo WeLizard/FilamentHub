@@ -21,6 +21,7 @@ from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolUsageEventResponse
+from app.services.stock_alert_service import refresh_stock_alerts
 
 _OCTOPRINT_IDEMPOTENCY_PREFIX = "octoprint:"
 _RETRY_REPLAY_WINDOW = timedelta(seconds=15)
@@ -386,6 +387,8 @@ async def record_spool_usage(
             from app.services.preset_funnel_metrics import record_preset_funnel_event
 
             record_preset_funnel_event(db, "confirmed_after_print")
+    # An opening balance describes a spool as it arrives; it is not a drop.
+    await refresh_stock_alerts(db, spool, announce=notes.get("reason") != "opening_balance")
     return event
 
 

@@ -1300,6 +1300,7 @@ async def create_plugin_session(
             "material-topology:read",
             "material-topology:report",
             "material-topology:write",
+            "stock-alerts:read",
         ],
     )
     response.headers["Cache-Control"] = "no-store"

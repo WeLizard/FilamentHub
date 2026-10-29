@@ -125,6 +125,7 @@ from app.models.spool_compat_resource import (
     SpoolCompatWireCounter,
 )
 from app.models.spool_tag import SpoolTag
+from app.models.stock_alert_rule import StockAlertRule
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
@@ -257,6 +258,7 @@ __all__ = [
     "PasswordResetToken",
     "RefreshSession",
     "SpoolCollection",
+    "StockAlertRule",
     "SpoolCollectionMember",
     "WorkstationKey",
     "RevokedToken",

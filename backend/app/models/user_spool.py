@@ -4,9 +4,9 @@ import enum
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import expression, func
 
 from app.db.base import Base
 
@@ -48,6 +48,11 @@ class UserSpool(Base):
         default=UserSpoolState.shelf,
         nullable=False,
         index=True,
+    )
+    # True from the moment a low-stock alert fired until the spool is refilled or
+    # replaced; it keeps one alert per crossing, however many readings follow.
+    low_stock_fired: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=expression.false()
     )
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -66,6 +66,8 @@ class NotificationType(str, Enum):
     BRAND_REQUEST_APPROVED = "brand_request_approved"  # Заявка на бренд одобрена
     BRAND_REQUEST_REJECTED = "brand_request_rejected"  # Заявка на бренд отклонена
     ADMIN_MESSAGE = "admin_message"  # Сообщение от админа (массовая рассылка)
+    LOW_STOCK_SPOOL = "low_stock_spool"  # A spool dropped below its threshold
+    LOW_STOCK_MATERIAL = "low_stock_material"  # Shelf stock of a material dropped below its threshold
 
 
 class Notification(Base):
