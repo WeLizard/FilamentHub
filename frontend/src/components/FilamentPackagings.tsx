@@ -1,7 +1,7 @@
 import { Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentPackaging } from '../types/api';
-import { formatNetWeight, packagingWeightLabel } from '../utils/packaging';
+import { formatNetWeight, packagingKey, packagingWeightLabel } from '../utils/packaging';
 
 interface FilamentPackagingsProps {
   packagings: FilamentPackaging[];
@@ -58,7 +58,7 @@ export function FilamentPackagings({ packagings, className = '' }: FilamentPacka
       <ul className="flex flex-wrap gap-2">
         {packagings.map(item => (
           <li
-            key={`${item.package_type ?? 'spool'}-${item.net_weight_g}-${item.units_per_package ?? 1}`}
+            key={packagingKey(item)}
             className="min-w-[7.5rem] rounded-lg border border-white/10 bg-black/15 px-3 py-2"
           >
             <div className="text-base font-semibold text-white">{packagingWeightLabel(item, t, locale)}</div>

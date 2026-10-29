@@ -181,17 +181,25 @@ class FilamentPackaging(BaseModel):
 
 
 def packaging_key(item: dict) -> str:
-    """Identity of a packaging within one filament, also used to address its evidence."""
+    """Identity of a packaging within one filament, also used to address its evidence.
+
+    The same weight on a plastic and on a cardboard spool are two packagings.
+    """
     weight = float(item.get("net_weight_g") or 0)
     units = item.get("units_per_package")
-    return f"{item.get('package_type') or 'spool'}:{weight:g}" + (f"x{units}" if units else "")
+    material = item.get("spool_material")
+    return (
+        f"{item.get('package_type') or 'spool'}:{weight:g}"
+        + (f"x{units}" if units else "")
+        + (f":{material}" if material else "")
+    )
 
 
 def _unique_packagings(value: list[FilamentPackaging] | None) -> list[FilamentPackaging] | None:
     if value is not None:
         keys = [item.key for item in value]
         if len(keys) != len(set(keys)):
-            raise ValueError("each packaging must differ in type, weight or unit count")
+            raise ValueError("each packaging must differ in type, weight, unit count or spool")
     return value
 
 

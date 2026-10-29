@@ -24,7 +24,10 @@ export const singleSpoolWeights = (packagings: FilamentPackaging[] | undefined):
 ];
 
 /** Same identity as the server's packaging_key: addresses one packaging's evidence. */
-export const packagingKey = (item: Pick<FilamentPackaging, 'net_weight_g' | 'package_type' | 'units_per_package'>): string => {
+export const packagingKey = (
+  item: Pick<FilamentPackaging, 'net_weight_g' | 'package_type' | 'units_per_package' | 'spool_material'>,
+): string => {
   const weight = String(Number(Number(item.net_weight_g || 0).toPrecision(6)));
-  return `${item.package_type || 'spool'}:${weight}${item.units_per_package ? `x${item.units_per_package}` : ''}`;
+  return `${item.package_type || 'spool'}:${weight}${item.units_per_package ? `x${item.units_per_package}` : ''}`
+    + (item.spool_material ? `:${item.spool_material}` : '');
 };

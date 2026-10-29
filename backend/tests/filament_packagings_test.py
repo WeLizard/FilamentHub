@@ -39,3 +39,17 @@ def test_main_spool_weight_outside_the_listed_sizes_is_rejected():
 def test_impossible_packagings_are_rejected(packaging):
     with pytest.raises(ValidationError):
         _create(packagings=[packaging])
+
+
+def test_same_weight_on_different_spools_are_two_packagings():
+    created = _create(
+        packagings=[
+            {"net_weight_g": 1000, "spool_material": "plastic"},
+            {"net_weight_g": 1000, "spool_material": "cardboard"},
+        ]
+    )
+
+    assert [item.key for item in created.packagings] == [
+        "spool:1000:plastic",
+        "spool:1000:cardboard",
+    ]

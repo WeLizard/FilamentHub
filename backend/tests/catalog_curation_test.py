@@ -1219,7 +1219,7 @@ def _with_packagings(payload: dict, evidenced: list[str]) -> dict:
 
 async def test_each_packaging_needs_its_own_evidence(client: AsyncClient, admin_user):
     # One quote for the whole list must not vouch for every weight.
-    payload = _with_packagings(proposal(), ["packagings", "packagings[spool:1000]"])
+    payload = _with_packagings(proposal(), ["packagings", "packagings[spool:1000:plastic]"])
     created = await client.post(BASE, json=payload, headers=headers(admin_user))
     assert created.status_code == 201, created.text
     preview = await client.post(
@@ -1228,13 +1228,15 @@ async def test_each_packaging_needs_its_own_evidence(client: AsyncClient, admin_
     row = next(row for row in preview.json()["rows"] if row["key"] == "maker:pla:black")
     assert row["status"] == "error"
     assert "packagings[spool:750]" in row["message"]
-    assert "packagings[spool:1000]" not in row["message"]
+    assert "packagings[spool:1000:plastic]" not in row["message"]
 
 
 async def test_evidenced_packagings_apply_and_fill_the_main_spool(
     client: AsyncClient, db_session: AsyncSession, admin_user
 ):
-    payload = _with_packagings(proposal(), ["packagings[spool:1000]", "packagings[spool:750]"])
+    payload = _with_packagings(
+        proposal(), ["packagings[spool:1000:plastic]", "packagings[spool:750]"]
+    )
     created = await client.post(BASE, json=payload, headers=headers(admin_user))
     assert created.status_code == 201, created.text
     path = f"{BASE}/{created.json()['id']}"
