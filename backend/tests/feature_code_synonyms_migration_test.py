@@ -46,7 +46,11 @@ def test_upgrade_rewrites_spellings_and_downgrade_keeps_old_schema_valid() -> No
                     "effects": ["sparkle", "glitter", "my_custom"],
                 },
                 [{"code": "glass fibre", "content_percent": 20}, {"code": "GF"}],
-                [{"code": "esd safe"}],
+                [
+                    {"code": "esd safe"},
+                    {"code": "FR", "standard": "UL94 V-0"},
+                    {"code": "flame_retardant", "standard": "UL94 V-2"},
+                ],
             ),
             (2, "PLA Basic", {"finish": "glossy", "effects": []}, [], []),
         ]
@@ -68,8 +72,15 @@ def test_upgrade_rewrites_spellings_and_downgrade_keeps_old_schema_valid() -> No
             assert visual["finish"] == "silk"
             assert visual["filler"] == "glitter"
             assert visual["effects"] == ["glitter", "my_custom"]
-            assert additives == [{"code": "glass_fiber", "content_percent": 20}]
-            assert claims == [{"code": "esd"}]
+            assert additives == [
+                {"code": "glass_fiber", "content_percent": 20},
+                {"code": "glass_fiber"},
+            ]
+            assert claims == [
+                {"code": "esd"},
+                {"code": "flame_retardant", "standard": "UL94 V-0"},
+                {"code": "flame_retardant", "standard": "UL94 V-2"},
+            ]
             assert _row(connection, 2)[0]["finish"] == "glossy"
 
             migration.downgrade()

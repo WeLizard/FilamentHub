@@ -10,6 +10,7 @@ which the schema now applies on every write. Unknown custom codes stay as they
 are. A glossy filament whose name has the word Silk gets the new silk finish.
 """
 
+import json
 import re
 
 import sqlalchemy as sa
@@ -59,11 +60,14 @@ def _coded(items: list, kind: str) -> list:
         if not isinstance(item, dict):
             result.append(item)
             continue
-        code = _known(kind, item.get("code"))
-        if code in seen:
+        coded = {**item, "code": _known(kind, item.get("code"))}
+        # Only an exact repeat is dropped: the same code with another share,
+        # value or standard is a separate statement.
+        identity = json.dumps(coded, sort_keys=True, default=str)
+        if identity in seen:
             continue
-        seen.add(code)
-        result.append({**item, "code": code})
+        seen.add(identity)
+        result.append(coded)
     return result
 
 
