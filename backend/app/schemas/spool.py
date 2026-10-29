@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -88,6 +88,7 @@ class SpoolResponse(BaseModel):
     source: str
     lot_nr: str | None
     comment: str | None
+    purchased_on: date | None = None
     created_at: datetime
     updated_at: datetime
     last_used_at: datetime | None

@@ -443,6 +443,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         source=spool.source,
         lot_nr=spool.lot_nr,
         comment=spool.comment,
+        purchased_on=spool.purchased_on,
         created_at=spool.created_at,
         updated_at=spool.updated_at,
         last_used_at=spool.last_used_at,

@@ -1,10 +1,10 @@
 """UserSpool model — physical filament spool owned by a user."""
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -56,6 +56,7 @@ class UserSpool(Base):
         String(30), default="manual", nullable=False
     )
     lot_nr: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    purchased_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra: Mapped[dict | None] = mapped_column(JSON, nullable=True, server_default="{}")
 

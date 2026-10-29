@@ -4122,6 +4122,45 @@ export interface SpoolCreatePayload {
   comment?: string | null;
 }
 
+export interface SpoolSpendingCurrency {
+  currency: string | null;
+  bought_total: number;
+  bought_count: number;
+  bought_priced_count: number;
+  consumed_value: number;
+  consumed_grams_priced: number;
+  shelf_value: number;
+  shelf_grams: number;
+}
+
+export interface SpoolSpendingGroup {
+  key: string | null;
+  currency: string | null;
+  bought_total: number;
+  bought_count: number;
+  initial_weight_g: number;
+  price_per_kg: number | null;
+  catalog_price_per_kg: number | null;
+}
+
+export interface SpoolSpending {
+  months: number;
+  currencies: SpoolSpendingCurrency[];
+  unpriced: {
+    spools_without_price: number;
+    spools_total: number;
+    consumed_grams_without_price: number;
+    unreconciled_grams: number;
+    shelf_grams_without_price: number;
+  };
+  by_month: Array<{
+    month: string;
+    currencies: Array<{ currency: string | null; bought_total: number; consumed_value: number }>;
+  }>;
+  by_brand: SpoolSpendingGroup[];
+  by_material: SpoolSpendingGroup[];
+}
+
 export interface SpoolBatchCreatePayload extends Omit<SpoolCreatePayload, 'price'> {
   idempotency_key: string;
   quantity: number;
@@ -4356,6 +4395,11 @@ export const spoolsAPI = {
 
   create: async (payload: SpoolCreatePayload): Promise<UserSpool> => {
     const response = await api.post<UserSpool>('/spools', payload);
+    return response.data;
+  },
+
+  spending: async (months = 12): Promise<SpoolSpending> => {
+    const response = await api.get<SpoolSpending>('/spools/spending', { params: { months } });
     return response.data;
   },
 

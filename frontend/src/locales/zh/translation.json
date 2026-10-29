@@ -316,6 +316,7 @@
     "search": "编号、订单或客户…",
     "metrics": {
       "awaiting": "等待决定",
+      "revenueMonth": "本月收入",
       "accepted": "已接受报价",
       "activeOrders": "进行中",
       "customers": "客户"
@@ -2950,6 +2951,29 @@
     "continue": "继续",
     "login": "登录",
     "close": "关闭"
+  },
+  "revenueStrip": {
+    "title": "收入",
+    "thisMonth": "本月收入",
+    "note": "收入为已完成订单的合计。待订单与打印关联后，将显示按实际耗材消耗计算的利润。"
+  },
+  "spoolSpending": {
+    "title": "耗材支出",
+    "details": "详情",
+    "hide": "收起",
+    "boughtMonth": "本月购入",
+    "consumedMonth": "本月消耗",
+    "shelf": "库存价值",
+    "boughtYear": "年度购入",
+    "unpriced_other": "{{total}} 个线轴中有 {{count}} 个未填写价格",
+    "currencyUnknown": "部分线轴未填写货币，已单独统计并标记“?”",
+    "consumedUnpriced": "{{grams}} 克无价格的消耗未计入",
+    "unreconciled": "打印机上报的 {{grams}} 克尚未核对，未计入",
+    "byBrand": "按品牌",
+    "byMaterial": "按材料类型",
+    "byMonth": "按月购入",
+    "unlinked": "未关联目录",
+    "catalog": "目录"
   },
   "profilePage": {
     "calculator": {

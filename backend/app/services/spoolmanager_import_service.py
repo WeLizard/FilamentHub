@@ -10,7 +10,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -604,6 +604,17 @@ async def preview_parsed_spool_import(
     )
 
 
+def parse_purchase_date(value: str | None) -> date | None:
+    """A purchase day written dd.mm.yyyy (or ISO); anything else is unknown."""
+    text = (value or "").strip()
+    for pattern in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _import_extra(
     row: _ParsedRow,
     file_sha256: str,
@@ -739,6 +750,7 @@ async def import_parsed_spool_rows(
             state=state,
             source=source,
             lot_nr=None,
+            purchased_on=parse_purchase_date(row.raw.get("Purchased on [dd.mm.yyyy]")),
             comment=note[:500] if note else None,
             extra=_import_extra(
                 row,

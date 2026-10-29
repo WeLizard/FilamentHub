@@ -284,6 +284,11 @@ class CrmOrderListResponse(BaseModel):
     total: int
 
 
+class CrmRevenueMonth(BaseModel):
+    month: str
+    amounts: dict[str, float]
+
+
 class CrmWorkspaceSummary(BaseModel):
     customers_total: int
     quotes_draft: int
@@ -293,6 +298,8 @@ class CrmWorkspaceSummary(BaseModel):
     orders_completed: int
     amount_awaiting_decision: dict[str, float]
     accepted_amount: dict[str, float]
+    revenue_month: dict[str, float] = Field(default_factory=dict)
+    revenue_by_month: list[CrmRevenueMonth] = Field(default_factory=list)
 
 
 class CrmShareQuoteResponse(BaseModel):

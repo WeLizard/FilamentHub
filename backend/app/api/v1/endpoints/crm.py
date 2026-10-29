@@ -69,6 +69,7 @@ from app.schemas.crm import (
     CrmQuoteVersionCreate,
     CrmQuoteVersionPayload,
     CrmQuoteVersionResponse,
+    CrmRevenueMonth,
     CrmShareQuoteResponse,
     CrmWorkspaceSummary,
 )
@@ -80,6 +81,19 @@ from app.services.crm_order_service import create_order
 from app.services.crm_spool_reservation_service import (
     release_order_reservations,
     replace_order_reservations,
+)
+from app.services.month_buckets import (
+    last_month_indexes,
+    month_index_expr,
+    month_label,
+    month_start,
+)
+
+_ACCEPTED_ORDER_STATUSES = (
+    CrmOrderStatus.PLANNED,
+    CrmOrderStatus.IN_PRODUCTION,
+    CrmOrderStatus.READY,
+    CrmOrderStatus.COMPLETED,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -522,10 +536,32 @@ async def get_workspace_summary(
     accepted_rows = (
         await db.execute(
             select(CrmOrder.currency, func.sum(CrmOrder.total))
-            .where(CrmOrder.user_id == current_user.id)
+            .where(
+                CrmOrder.user_id == current_user.id,
+                CrmOrder.status.in_(_ACCEPTED_ORDER_STATUSES),
+            )
             .group_by(CrmOrder.currency)
         )
     ).all()
+    now = datetime.now(timezone.utc)
+    window = last_month_indexes(now, 12)
+    completed_month = month_index_expr(CrmOrder.completed_at, db.get_bind().dialect.name)
+    revenue_rows = (
+        await db.execute(
+            select(CrmOrder.currency, completed_month, func.sum(CrmOrder.total))
+            .where(
+                CrmOrder.user_id == current_user.id,
+                CrmOrder.status == CrmOrderStatus.COMPLETED,
+                CrmOrder.completed_at.is_not(None),
+                CrmOrder.completed_at >= month_start(window[0]),
+            )
+            .group_by(CrmOrder.currency, completed_month)
+        )
+    ).all()
+    revenue: dict[int, dict[str, Decimal]] = {index: {} for index in window}
+    for currency, index, total in revenue_rows:
+        if int(index) in revenue:
+            revenue[int(index)][currency] = Decimal(str(total))
     active_statuses = {
         CrmOrderStatus.NEW,
         CrmOrderStatus.PLANNED,
@@ -541,6 +577,14 @@ async def get_workspace_summary(
         orders_completed=order_counts.get(CrmOrderStatus.COMPLETED, 0),
         amount_awaiting_decision={currency: float(total) for currency, total in awaiting_by_currency.items()},
         accepted_amount={currency: float(total) for currency, total in accepted_rows},
+        revenue_month={currency: float(total) for currency, total in revenue[window[-1]].items()},
+        revenue_by_month=[
+            CrmRevenueMonth(
+                month=month_label(index),
+                amounts={currency: float(total) for currency, total in revenue[index].items()},
+            )
+            for index in window
+        ],
     )
 
 

@@ -91,6 +91,8 @@ import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
 import { SpoolImportButton } from '../components/SpoolManagerImportButton';
+import { RevenueStrip } from '../components/RevenueStrip';
+import { SpoolSpendingStrip } from '../components/SpoolSpendingStrip';
 import { SpoolImportResolveModal } from '../components/SpoolImportResolveModal';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
@@ -1099,6 +1101,8 @@ export const ProfilePage: React.FC = () => {
       {/* Dashboard Tab */}
       {userTab === 'dashboard' && (
         <div className="space-y-4 md:space-y-6">
+          <SpoolSpendingStrip userId={user?.id} />
+          <RevenueStrip userId={user?.id} />
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
             <StatCard

@@ -317,6 +317,7 @@
     "search": "Number, order, or customer…",
     "metrics": {
       "awaiting": "Awaiting decision",
+      "revenueMonth": "Revenue this month",
       "accepted": "Accepted quotes",
       "activeOrders": "In progress",
       "customers": "Customers"
@@ -2956,6 +2957,30 @@
     "continue": "Continue",
     "login": "Sign in",
     "close": "Close"
+  },
+  "revenueStrip": {
+    "title": "Revenue",
+    "thisMonth": "Revenue this month",
+    "note": "Revenue is the total of completed orders. Profit from actual filament use will appear once orders are linked to prints."
+  },
+  "spoolSpending": {
+    "title": "Filament spending",
+    "details": "Details",
+    "hide": "Hide",
+    "boughtMonth": "Bought this month",
+    "consumedMonth": "Used this month",
+    "shelf": "On the shelf",
+    "boughtYear": "Bought this year",
+    "unpriced_one": "No price on {{count}} spool of {{total}}",
+    "unpriced_other": "No price on {{count}} spools of {{total}}",
+    "currencyUnknown": "Some spools have no currency — they are counted separately, marked with \"?\"",
+    "consumedUnpriced": "{{grams}} g of usage without a price is not included",
+    "unreconciled": "{{grams}} g reported by the printer is not reconciled yet and not counted",
+    "byBrand": "By brand",
+    "byMaterial": "By material type",
+    "byMonth": "Bought by month",
+    "unlinked": "Not linked to the catalog",
+    "catalog": "catalog"
   },
   "profilePage": {
     "calculator": {

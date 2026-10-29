@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -353,6 +354,14 @@ async def record_spool_usage(
             }
     if reported_weight_g is not None:
         notes["reported_weight_g"] = reported_weight_g
+    if "price_per_g" not in notes and spool.price is not None and spool.initial_weight_g > 0:
+        # The cost of these grams outlives the spool and later price edits.
+        notes["price_per_g"] = float(
+            Decimal(str(spool.price)) / Decimal(str(spool.initial_weight_g))
+        )
+        currency = (spool.extra or {}).get("currency")
+        if isinstance(currency, str) and currency:
+            notes["currency"] = currency
 
     event = PresetUsageEvent(
         user_id=spool.user_id,
@@ -476,6 +485,7 @@ async def revert_spool_usage(
         print_job_id=event.print_job_id,
         meta={
             "reverts_event_id": event.id,
+            **{key: notes[key] for key in ("price_per_g", "currency") if key in notes},
             # Only a spool-level correction was a weighing; a printer report that
             # carries the key (prorated) must not turn its reversal into one.
             **({"balance_observed_at": datetime.now(timezone.utc).isoformat()}

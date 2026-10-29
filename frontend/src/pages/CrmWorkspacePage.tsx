@@ -20,6 +20,7 @@ import {
   FileText,
   Loader2,
   PackageCheck,
+  Wallet,
   Plus,
   RefreshCw,
   Search,
@@ -434,9 +435,10 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
             </NewCalculationAction>
           </div>
 
-          <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <MetricCard icon={<Send />} label={t('crmWorkspace.metrics.awaiting')} value={formatCurrencyBreakdown(summary?.amount_awaiting_decision)} />
             <MetricCard icon={<FileCheck2 />} label={t('crmWorkspace.metrics.accepted')} value={summary ? String(summary.quotes_accepted) : '—'} />
+            <MetricCard icon={<Wallet />} label={t('crmWorkspace.metrics.revenueMonth')} value={formatCurrencyBreakdown(summary?.revenue_month)} />
             <MetricCard icon={<PackageCheck />} label={t('crmWorkspace.metrics.activeOrders')} value={summary ? String(summary.orders_active) : '—'} />
             <MetricCard icon={<UsersRound />} label={t('crmWorkspace.metrics.customers')} value={summary ? String(summary.customers_total) : '—'} />
           </div>

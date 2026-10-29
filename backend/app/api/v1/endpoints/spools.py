@@ -34,6 +34,7 @@ from app.schemas.spool import (
     SpoolUsageEventResponse,
     SpoolUseRequest,
 )
+from app.schemas.spool_spending import SpoolSpendingResponse
 from app.services.spool_batch_service import create_spool_batch, effective_spool_batch_limit
 from app.services.spool_import_service import import_spool_file, preview_spool_import
 from app.services.spool_service import (
@@ -45,6 +46,7 @@ from app.services.spool_service import (
     update_spool,
     use_spool,
 )
+from app.services.spool_spending_service import spool_spending
 from app.services.spool_usage_service import list_spool_usage, revert_spool_usage
 from app.services.spoolmanager_import_service import (
     import_spoolmanager_csv,
@@ -113,6 +115,16 @@ async def get_spool_batch_limit(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, int]:
     return {"limit": await effective_spool_batch_limit(db, current_user.id)}
+
+
+@router.get("/spending", response_model=SpoolSpendingResponse)
+async def get_spool_spending(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    months: Annotated[int, Query(ge=1, le=24)] = 12,
+) -> SpoolSpendingResponse:
+    """What the current user bought, used and has on the shelf, per currency."""
+    return await spool_spending(db, current_user.id, months)
 
 
 @router.get("/{spool_id}", response_model=SpoolResponse)

@@ -399,7 +399,7 @@ async def test_quote_acceptance_creates_order_and_preserves_version(
     assert summary["customers_total"] == 1
     assert summary["quotes_accepted"] == 1
     assert summary["orders_active"] == 1
-    assert summary["accepted_amount"] == {"RUB": 2500.0}
+    assert summary["accepted_amount"] == {}  # a new order is not yet planned work
 
 
 @pytest.mark.asyncio
@@ -748,3 +748,44 @@ async def test_calculator_and_crm_stay_open_with_the_paywall_switch_on(
     assert me.json()["subscription"] is None
     assert history.status_code == 200, history.text
     assert summary.status_code == 200, summary.text
+
+
+@pytest.mark.asyncio
+async def test_summary_counts_accepted_money_and_monthly_revenue(
+    auth_client,
+    auth_user,
+    db_session: AsyncSession,
+) -> None:
+    """Unaccepted and cancelled orders are not money earned or promised."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.crm import CrmOrder, CrmOrderStatus
+
+    now = datetime.now(timezone.utc)
+    this_month = now.replace(day=1, hour=12)
+    earlier = this_month - timedelta(days=5)
+    rows = [
+        ("new", CrmOrderStatus.NEW, "RUB", 100, None),
+        ("cancelled", CrmOrderStatus.CANCELLED, "RUB", 200, None),
+        ("planned", CrmOrderStatus.PLANNED, "RUB", 400, None),
+        ("done-now", CrmOrderStatus.COMPLETED, "RUB", 1000, this_month),
+        ("done-usd", CrmOrderStatus.COMPLETED, "USD", 30, this_month),
+        ("done-before", CrmOrderStatus.COMPLETED, "RUB", 700, earlier),
+    ]
+    for number, status, currency, total, completed_at in rows:
+        db_session.add(
+            CrmOrder(
+                user_id=auth_user.id, number=number, title=number, status=status,
+                currency=currency, total=total, completed_at=completed_at,
+            )
+        )
+    await db_session.commit()
+
+    summary = (await auth_client.get("/api/v1/crm/summary")).json()
+    assert summary["accepted_amount"] == {"RUB": 2100.0, "USD": 30.0}
+    assert summary["revenue_month"] == {"RUB": 1000.0, "USD": 30.0}
+    months = summary["revenue_by_month"]
+    assert len(months) == 12
+    assert months[-1]["month"] == this_month.strftime("%Y-%m")
+    assert months[-1]["amounts"] == {"RUB": 1000.0, "USD": 30.0}
+    assert months[-2]["amounts"] == {"RUB": 700.0}

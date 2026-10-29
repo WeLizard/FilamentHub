@@ -2496,6 +2496,8 @@ export interface CrmWorkspaceSummary {
   orders_completed: number;
   amount_awaiting_decision: Record<string, number>;
   accepted_amount: Record<string, number>;
+  revenue_month: Record<string, number>;
+  revenue_by_month: Array<{ month: string; amounts: Record<string, number> }>;
 }
 
 export interface PluginDownload {
