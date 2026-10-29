@@ -23,7 +23,7 @@ from app.models.catalog_quote_check import (
     CatalogQuoteCheck,
     CatalogQuoteCheckJob,
 )
-from app.services.catalog_curation_service import SHEETS, row_key
+from app.services.catalog_curation_service import SHEETS, item_value, row_key
 from app.services.catalog_quote_matching import leading_quote
 
 VERIFIED = "verified"
@@ -160,7 +160,10 @@ def _evidence_value(
 ) -> tuple[str, Any]:
     if item.get("kind") == "inferred":
         return "none", None
-    value = (rows.get((item["sheet"], item["key"])) or {}).get(item["field"])
+    row = rows.get((item["sheet"], item["key"])) or {}
+    value = row.get(item["field"])
+    if value is None:
+        value = item_value(row, item["field"])
     if isinstance(value, bool) or value is None:
         return "none", None
     if isinstance(value, (int, float)):

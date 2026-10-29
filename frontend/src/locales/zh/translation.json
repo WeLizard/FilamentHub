@@ -6110,7 +6110,9 @@
         "c": "°C",
         "hours": "小时",
         "percent": "%",
-        "months": "个月"
+        "months": "个月",
+        "g": "克",
+        "mm": "毫米"
       },
       "rangeMissingMin": "缺少最小值",
       "rangeMissingMax": "缺少最大值",
@@ -6205,9 +6207,19 @@
       "colorTypes": { "single": "单色", "two": "双色", "three": "三色", "gradient": "渐变", "transition": "颜色过渡", "thermochromic": "热变色", "four": "四色" },
       "visualTerms": { "matte": "哑光", "glossy": "亮光", "silk": "丝绸", "metallic": "金属质感", "glitter": "闪粉", "sparkle": "闪烁", "wood": "木质", "carbon_fiber": "碳纤维", "satin": "缎面" },
       "chooseField": "选择字段",
-      "groups": { "identity": "标识与产品范围", "appearance": "颜色与表面", "properties": "材料属性", "printing": "打印建议", "care": "干燥与储存", "description": "描述", "other": "技术字段", "links": "链接", "markets": "市场" },
+      "groups": { "identity": "标识与产品范围", "appearance": "颜色与表面", "properties": "材料属性", "printing": "打印建议", "care": "干燥与储存", "description": "描述", "other": "技术字段", "links": "链接", "markets": "市场", "packaging": "包装规格", "technicalData": "技术数据" },
       "fieldNames": {
-        "brand_key": "品牌键", "filament_key": "材料键", "preset_key": "预设键", "mode": "操作", "existing_brand": "现有品牌", "existing_filament": "现有材料", "existing_preset": "现有预设", "overwrite": "更新现有记录", "name": "名称", "slug": "页面标识", "description": "描述", "website": "网站", "logo_url": "徽标网址", "logo_bg": "徽标背景", "price_hidden": "隐藏价格", "active": "启用", "published": "已发布", "social_media_urls": "社交媒体", "shop_links": "商店", "country": "国家", "line": "产品系列", "material_type": "材料", "color_name": "颜色名称", "color_hex": "颜色代码", "ral_code": "RAL 色号", "color_group": "颜色组", "color_group_source": "颜色组来源", "diameter": "直径（毫米）", "density": "密度（克/立方厘米）", "availability": "供应状态", "color_type": "颜色类型", "colors": "颜色", "finish": "表面效果", "effects": "效果", "filler": "填料", "transparency": "透明度", "additives": "添加剂", "property_claims": "性能声明", "recommended_nozzle_temp_min": "喷嘴最低温度（°C）", "recommended_nozzle_temp_max": "喷嘴最高温度（°C）", "recommended_bed_temp_min": "热床最低温度（°C）", "recommended_bed_temp_max": "热床最高温度（°C）", "enclosure_requirement": "封闭腔要求", "chamber_temperature_c": "腔体温度（°C）", "bed_adhesives": "热床粘附剂", "required_nozzle_hrc": "喷嘴硬度要求（HRC）", "post_processing_chemicals": "后处理化学品", "drying_required": "需要干燥", "drying_temperature_c": "干燥温度（°C）", "drying_duration_hours": "干燥时间（小时）", "storage_temperature_min_c": "最低储存温度（°C）", "storage_temperature_max_c": "最高储存温度（°C）", "storage_relative_humidity_max_percent": "最高湿度（%）", "storage_relative_humidity_target_percent": "目标湿度（%）", "storage_airtight_required": "密封储存", "storage_desiccant_recommended": "建议使用干燥剂", "storage_light_protection_required": "避光储存", "storage_after_opening_guidance": "开封后储存建议", "unopened_shelf_life_months": "未开封保质期（月）", "product_url": "材料页面", "purchase_links": "购买链接", "market_note": "市场备注", "market_color_name": "市场颜色名称", "extruder_temp": "喷嘴温度（°C）", "bed_temp": "热床温度（°C）", "flow_rate": "流量", "fan_speed": "风扇速度", "retraction_length": "回抽长度", "retraction_speed": "回抽速度", "printer_ids": "打印机", "orcaslicer_settings": "切片设置", "external_id": "外部 ID"
+        "brand_key": "品牌键", "filament_key": "材料键", "preset_key": "预设键", "mode": "操作", "existing_brand": "现有品牌", "existing_filament": "现有材料", "existing_preset": "现有预设", "overwrite": "更新现有记录", "name": "名称", "slug": "页面标识", "description": "描述", "website": "网站", "logo_url": "徽标网址", "logo_bg": "徽标背景", "price_hidden": "隐藏价格", "active": "启用", "published": "已发布", "social_media_urls": "社交媒体", "shop_links": "商店", "country": "国家", "line": "产品系列", "material_type": "材料", "color_name": "颜色名称", "color_hex": "颜色代码", "ral_code": "RAL 色号", "color_group": "颜色组", "color_group_source": "颜色组来源", "diameter": "直径（毫米）", "density": "密度（克/立方厘米）", "availability": "供应状态", "color_type": "颜色类型", "colors": "颜色", "finish": "表面效果", "effects": "效果", "filler": "填料", "transparency": "透明度", "additives": "添加剂", "property_claims": "性能声明", "recommended_nozzle_temp_min": "喷嘴最低温度（°C）", "recommended_nozzle_temp_max": "喷嘴最高温度（°C）", "recommended_bed_temp_min": "热床最低温度（°C）", "recommended_bed_temp_max": "热床最高温度（°C）", "enclosure_requirement": "封闭腔要求", "chamber_temperature_c": "腔体温度（°C）", "bed_adhesives": "热床粘附剂", "required_nozzle_hrc": "喷嘴硬度要求（HRC）", "post_processing_chemicals": "后处理化学品", "drying_required": "需要干燥", "drying_temperature_c": "干燥温度（°C）", "drying_duration_hours": "干燥时间（小时）", "storage_temperature_min_c": "最低储存温度（°C）", "storage_temperature_max_c": "最高储存温度（°C）", "storage_relative_humidity_max_percent": "最高湿度（%）", "storage_relative_humidity_target_percent": "目标湿度（%）", "storage_airtight_required": "密封储存", "storage_desiccant_recommended": "建议使用干燥剂", "storage_light_protection_required": "避光储存", "storage_after_opening_guidance": "开封后储存建议", "unopened_shelf_life_months": "未开封保质期（月）", "product_url": "材料页面", "purchase_links": "购买链接", "market_note": "市场备注", "market_color_name": "市场颜色名称", "extruder_temp": "喷嘴温度（°C）", "bed_temp": "热床温度（°C）", "flow_rate": "流量", "fan_speed": "风扇速度", "retraction_length": "回抽长度", "retraction_speed": "回抽速度", "printer_ids": "打印机", "orcaslicer_settings": "切片设置", "external_id": "外部 ID",
+        "packagings": "包装规格",
+        "spool_weight": "净重",
+        "empty_spool_weight_g": "空盘重量",
+        "spool_outer_diameter_mm": "线盘直径",
+        "spool_width_mm": "线盘宽度",
+        "spool_core_diameter_mm": "线盘内孔",
+        "packaged_gross_weight_g": "毛重",
+        "technical_data_source_ref": "技术数据表链接",
+        "technical_data_version": "技术数据表版本",
+        "technical_data_effective_date": "技术数据表日期"
       },
       "saved": "提案已保存",
       "savedState": "已保存",
@@ -6642,6 +6654,111 @@
     "spoolWeight": "线轴重量",
     "g": "g"
   },
+    "filamentPackaging": {
+      "title": "包装规格",
+      "type": {
+        "spool": "线盘",
+        "refill": "替换装（无线盘）",
+        "coil": "无盘线卷",
+        "multipack": "多盘装"
+      },
+      "spoolMaterial": {
+        "plastic": "塑料线盘",
+        "cardboard": "纸质线盘",
+        "metal": "金属线盘"
+      },
+      "emptySpool": "空盘 {{weight}}",
+      "core": "内孔 {{value}} 毫米",
+      "gross": "毛重 {{weight}}",
+      "sku": "货号 {{code}}",
+      "editorHint": "制造商销售的所有规格。上方的线盘重量（供计算器和 OrcaSlicer 使用）取自第一个规格。",
+      "netWeight": "净重",
+      "packageType": "包装",
+      "units": "每套线盘数",
+      "spoolMaterialLabel": "线盘材质",
+      "spoolMaterialUnknown": "未注明线盘",
+      "emptySpoolShort": "空盘",
+      "remove": "删除规格",
+      "add": "添加规格"
+    },
+    "technicalProperties": {
+      "title": "技术数据",
+      "codes": {
+        "tensile_strength": "拉伸强度",
+        "tensile_modulus": "拉伸模量",
+        "elongation": "伸长率",
+        "flexural_strength": "弯曲强度",
+        "flexural_modulus": "弯曲模量",
+        "compressive_strength": "压缩强度",
+        "impact_charpy": "简支梁冲击强度",
+        "impact_izod": "悬臂梁冲击强度",
+        "shore_hardness": "邵氏硬度",
+        "hdt": "热变形温度",
+        "vicat": "维卡软化温度",
+        "melting_temperature": "熔点",
+        "glass_transition": "玻璃化转变温度",
+        "service_temperature_max": "最高使用温度",
+        "melt_flow_rate": "熔体质量流动速率",
+        "melt_volume_rate": "熔体体积流动速率",
+        "shrinkage": "收缩率",
+        "water_absorption": "吸水率",
+        "diameter_tolerance": "直径公差",
+        "ovality": "圆度偏差",
+        "surface_resistivity": "表面电阻率",
+        "light_transmission": "透光率"
+      },
+      "categories": {
+        "mechanical": "力学性能",
+        "thermal": "热性能",
+        "physical": "物理性能",
+        "electrical": "电性能",
+        "optical": "光学性能"
+      },
+      "conditions": {
+        "load_mpa": "{{value}} MPa 载荷",
+        "load_n": "{{value}} N 载荷",
+        "load_kg": "{{value}} kg 载荷",
+        "temperature_c": "{{value}} °C",
+        "rate_c_per_h": "{{value}} °C/小时"
+      },
+      "conditionValues": {
+        "direction": {
+          "xy": "XY",
+          "yx": "YX",
+          "xz": "XZ",
+          "zx": "ZX",
+          "z": "Z（层间）",
+          "along_layers": "沿层方向",
+          "across_layers": "垂直层方向",
+          "not_stated": "未注明方向"
+        },
+        "specimen": {
+          "printed": "打印试样",
+          "injection_moulded": "注塑试样",
+          "not_stated": "未注明试样"
+        },
+        "point": {
+          "yield": "屈服",
+          "break": "断裂"
+        },
+        "notch": {
+          "notched": "缺口",
+          "unnotched": "无缺口"
+        },
+        "method": {
+          "A": "方法 A",
+          "B": "方法 B",
+          "A50": "方法 A50",
+          "A120": "方法 A120",
+          "B50": "方法 B50",
+          "B120": "方法 B120"
+        },
+        "scale": {
+          "A": "A 标度",
+          "D": "D 标度"
+        }
+      }
+    },
   "filamentHandling": {
     "title": "打印前准备与安全",
     "editorHint": "这些建议仅适用于这一具体耗材，不代表整个材料类别。",

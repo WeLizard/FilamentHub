@@ -994,7 +994,7 @@ def test_inventory_drops_unverified_discovered_url_and_marks_gap(monkeypatch):
     assert invented not in [str(gap.url) for gap in report.coverage.gaps]
 
 
-def test_batch_omits_price_packaging_and_verification_even_with_evidence():
+def test_batch_omits_price_and_verification_even_with_evidence():
     source_bundle, inventory, _ = _batch_fixture(count=1)
     report = _batch_report(
         source_bundle, inventory, [inventory["variants"][0]["filament_key"]]
@@ -1003,12 +1003,10 @@ def test_batch_omits_price_packaging_and_verification_even_with_evidence():
     filament = report["proposal"]["draft"]["filaments"][0]
     brand["verified"] = True
     filament["price"] = "100"
-    filament["spool_weight"] = 1000
     parsed = semantic_runner.SemanticReport.model_validate(report)
 
     semantic_runner._omit_batch_fields_without_evidence(parsed)
 
     assert "verified" not in parsed.proposal.draft.brands[0]
     assert "price" not in parsed.proposal.draft.filaments[0]
-    assert "spool_weight" not in parsed.proposal.draft.filaments[0]
-    assert sum(item.kind == "unsupported" for item in parsed.issues) >= 3
+    assert sum(item.kind == "unsupported" for item in parsed.issues) >= 2

@@ -19,6 +19,13 @@ from pydantic import (
 from app.schemas.country_cell import FilamentCountryCellCreate
 from app.services.catalog_color_groups import ColorGroupSource, FilamentColorGroup
 from app.services.filament_features import canonical_code, known_codes
+from app.services.technical_properties import (
+    CONDITION_VALUES,
+    NUMERIC_CONDITIONS,
+    TECHNICAL_PROPERTIES,
+    canonical_value,
+    technical_property_key,
+)
 
 # ``filler`` is the legacy primary visual effect: new clients use ``effects``,
 # but old Orca/plugin and web clients still round-trip it.
@@ -100,6 +107,178 @@ class FilamentChemicalGuidance(BaseModel):
             raise ValueError("safety_note is required for hazardous chemicals")
         return self
 
+_GTIN_RE = re.compile(r"^(?:\d{8}|\d{12,14})$")
+
+
+def _gtin_check_digit_ok(code: str) -> bool:
+    digits = [int(char) for char in code]
+    total = sum(
+        digit * (1 if index % 2 else 3) for index, digit in enumerate(reversed(digits[:-1]))
+    )
+    return (10 - total % 10) % 10 == digits[-1]
+
+
+class FilamentPackaging(BaseModel):
+    """One way the manufacturer sells this filament: weight, carrier and codes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    net_weight_g: float = Field(..., gt=0, le=100000)
+    package_type: Literal["spool", "refill", "coil", "multipack"] = "spool"
+    # Spools in one multipack; the other values describe one spool of it.
+    units_per_package: int | None = Field(None, ge=2, le=100)
+    spool_material: Literal["plastic", "cardboard", "metal", "none"] | None = None
+    empty_spool_weight_g: float | None = Field(None, ge=0, le=20000)
+    spool_outer_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    spool_width_mm: float | None = Field(None, gt=0, le=2000)
+    spool_core_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    gross_weight_g: float | None = Field(None, gt=0, le=200000)
+    sku: str | None = Field(None, max_length=100)
+    ean: str | None = Field(None, max_length=14)
+
+    _normalize_text = field_validator("sku", "ean", mode="before")(normalize_optional_text)
+
+    @field_validator("ean")
+    @classmethod
+    def _valid_gtin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not _GTIN_RE.fullmatch(value) or not _gtin_check_digit_ok(value):
+            raise ValueError("EAN/GTIN must be 8, 12, 13 or 14 digits with a valid check digit")
+        return value
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "FilamentPackaging":
+        if (self.package_type == "multipack") != (self.units_per_package is not None):
+            raise ValueError("units_per_package is set exactly for a multipack")
+        spool_values = (
+            self.empty_spool_weight_g,
+            self.spool_outer_diameter_mm,
+            self.spool_width_mm,
+            self.spool_core_diameter_mm,
+        )
+        if self.package_type in ("refill", "coil") and (
+            any(value for value in spool_values) or self.spool_material not in (None, "none")
+        ):
+            raise ValueError("a refill or coil has no spool")
+        if (
+            self.spool_outer_diameter_mm is not None
+            and self.spool_core_diameter_mm is not None
+            and self.spool_core_diameter_mm > self.spool_outer_diameter_mm
+        ):
+            raise ValueError("spool core diameter exceeds outer diameter")
+        if self.gross_weight_g is not None:
+            contents = (self.net_weight_g + (self.empty_spool_weight_g or 0)) * (
+                self.units_per_package or 1
+            )
+            if self.gross_weight_g < contents:
+                raise ValueError("gross weight is below the package contents")
+        return self
+
+    @property
+    def key(self) -> str:
+        return packaging_key(self.model_dump())
+
+
+def packaging_key(item: dict) -> str:
+    """Identity of a packaging within one filament, also used to address its evidence."""
+    weight = float(item.get("net_weight_g") or 0)
+    units = item.get("units_per_package")
+    return f"{item.get('package_type') or 'spool'}:{weight:g}" + (f"x{units}" if units else "")
+
+
+def _unique_packagings(value: list[FilamentPackaging] | None) -> list[FilamentPackaging] | None:
+    if value is not None:
+        keys = [item.key for item in value]
+        if len(keys) != len(set(keys)):
+            raise ValueError("each packaging must differ in type, weight or unit count")
+    return value
+
+
+def main_packaging_values(packagings: list[FilamentPackaging]) -> dict[str, float]:
+    """Single-spool card fields taken from the first listed packaging.
+
+    Spoolman-compatible clients, the calculator and Orca read one spool weight;
+    a manufacturer listing several sizes names its main one first.
+    """
+    first = next((item for item in packagings if item.package_type != "multipack"), None)
+    if first is None:
+        return {}
+    values = {
+        "spool_weight": first.net_weight_g,
+        "empty_spool_weight_g": first.empty_spool_weight_g,
+        "spool_outer_diameter_mm": first.spool_outer_diameter_mm,
+        "spool_width_mm": first.spool_width_mm,
+        "spool_core_diameter_mm": first.spool_core_diameter_mm,
+        "packaged_gross_weight_g": first.gross_weight_g,
+    }
+    return {field: value for field, value in values.items() if value is not None}
+
+
+
+class FilamentTechnicalProperty(BaseModel):
+    """One measured value from the manufacturer's data sheet, as written there."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., min_length=1, max_length=40)
+    value: float | None = None
+    min: float | None = None
+    max: float | None = None
+    # "52 ± 3": the published spread around ``value``.
+    tolerance: float | None = Field(None, ge=0)
+    unit: str = Field(..., min_length=1, max_length=20)
+    standard: str | None = Field(None, max_length=60)
+    conditions: dict[str, str | float] = Field(default_factory=dict)
+    # Derived: the value in the property's canonical unit when it converts exactly.
+    canonical_value: float | None = None
+    canonical_min: float | None = None
+    canonical_max: float | None = None
+
+    _normalize_standard = field_validator("standard", mode="before")(normalize_optional_text)
+
+    @model_validator(mode="after")
+    def _known_and_consistent(self) -> "FilamentTechnicalProperty":
+        reference = TECHNICAL_PROPERTIES.get(self.code)
+        if reference is None:
+            raise ValueError(f"unknown technical property: {self.code}")
+        if self.unit not in reference.units:
+            raise ValueError(f"{self.code} is not measured in {self.unit}")
+        single = self.value is not None
+        ranged = self.min is not None or self.max is not None
+        if single == ranged:
+            raise ValueError("give either a value or a min-max range")
+        if ranged and (self.min is None or self.max is None or self.min > self.max):
+            raise ValueError("a range needs min not above max")
+        if self.tolerance is not None and not single:
+            raise ValueError("a tolerance belongs to a single value")
+        for name, condition in self.conditions.items():
+            if name not in reference.conditions:
+                raise ValueError(f"{self.code} has no condition {name}")
+            if name in NUMERIC_CONDITIONS:
+                if isinstance(condition, str) or condition <= 0:
+                    raise ValueError(f"{name} must be a positive number")
+            elif condition not in CONDITION_VALUES[name]:
+                raise ValueError(f"{name} cannot be {condition}")
+        self.canonical_value = canonical_value(self.code, self.unit, self.value)
+        self.canonical_min = canonical_value(self.code, self.unit, self.min)
+        self.canonical_max = canonical_value(self.code, self.unit, self.max)
+        return self
+
+    @property
+    def key(self) -> str:
+        return technical_property_key(self.model_dump())
+
+
+def _unique_technical_properties(
+    value: list[FilamentTechnicalProperty] | None,
+) -> list[FilamentTechnicalProperty] | None:
+    if value is not None:
+        keys = [item.key for item in value]
+        if len(keys) != len(set(keys)):
+            raise ValueError("a property is listed twice with the same conditions and standard")
+    return value
+
 
 class FilamentTechnicalDataContract(BaseModel):
     drying_required: bool | None = None
@@ -121,9 +300,19 @@ class FilamentTechnicalDataContract(BaseModel):
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
     recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
+    packagings: list[FilamentPackaging] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_consistency(self) -> "FilamentTechnicalDataContract":
+        single_weights = {
+            item.net_weight_g for item in self.packagings if item.package_type != "multipack"
+        }
+        if (
+            self.spool_weight is not None
+            and single_weights
+            and self.spool_weight not in single_weights
+        ):
+            raise ValueError("the main spool weight must be one of the listed packagings")
         drying_pair = (self.drying_temperature_c, self.drying_duration_hours)
         if (drying_pair[0] is None) != (drying_pair[1] is None):
             raise ValueError("drying temperature and duration must be provided together")
@@ -283,6 +472,10 @@ class FilamentBase(BaseModel):
     # visual_settings: расширенные визуальные эффекты (только для сайта)
     additives: list[FilamentAdditive] = Field(default_factory=list, max_length=24)
     property_claims: list[FilamentPropertyClaim] = Field(default_factory=list, max_length=24)
+    packagings: list[FilamentPackaging] = Field(default_factory=list, max_length=12)
+    technical_properties: list[FilamentTechnicalProperty] = Field(
+        default_factory=list, max_length=80
+    )
     diameter: float = Field(1.75, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
     drying_required: bool | None = None
@@ -330,6 +523,10 @@ class FilamentBase(BaseModel):
     _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
         normalize_bed_adhesives
     )
+    _unique_packagings = field_validator("packagings")(_unique_packagings)
+    _unique_technical_properties = field_validator("technical_properties")(
+        _unique_technical_properties
+    )
     _normalize_technical_text = field_validator(
         "storage_after_opening_guidance",
         "technical_data_source_ref",
@@ -349,6 +546,9 @@ class FilamentCreate(FilamentBase):
 
     @model_validator(mode="after")
     def validate_handling_parameters(self) -> FilamentCreate:
+        for field, value in main_packaging_values(self.packagings).items():
+            if getattr(self, field) is None:
+                setattr(self, field, value)
         FilamentTechnicalDataContract.model_validate(self.model_dump())
         return self
 
@@ -366,6 +566,8 @@ class FilamentUpdate(BaseModel):
     visual_settings: FilamentVisualSettings | None = None
     additives: list[FilamentAdditive] | None = Field(None, max_length=24)
     property_claims: list[FilamentPropertyClaim] | None = Field(None, max_length=24)
+    packagings: list[FilamentPackaging] | None = Field(None, max_length=12)
+    technical_properties: list[FilamentTechnicalProperty] | None = Field(None, max_length=80)
     diameter: float | None = Field(None, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
     drying_required: bool | None = None
@@ -408,6 +610,10 @@ class FilamentUpdate(BaseModel):
     _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
     _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
         normalize_bed_adhesives
+    )
+    _unique_packagings = field_validator("packagings")(_unique_packagings)
+    _unique_technical_properties = field_validator("technical_properties")(
+        _unique_technical_properties
     )
     _normalize_technical_text = field_validator(
         "storage_after_opening_guidance",

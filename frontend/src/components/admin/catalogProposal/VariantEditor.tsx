@@ -11,8 +11,14 @@ import type {
   CatalogImportSheet,
   CatalogQuoteCheckItem,
   FilamentAdditive,
+  FilamentPackaging,
   FilamentPropertyClaim,
+  FilamentTechnicalProperty,
 } from '../../../types/api';
+import { packagingKey, packagingWeightLabel } from '../../../utils/packaging';
+import {
+  formatTechnicalValue, sortTechnicalProperties, technicalConditions, technicalPropertyKey,
+} from '../../../utils/technicalProperties';
 import {
   HIDDEN_FIELDS, MARKET_CHILD, cellText, filamentVisual, listValues, marketIndicesFor, rowKey,
   type CellEdit, type ProposalRow,
@@ -20,7 +26,7 @@ import {
 import { countryName, sortedCountries } from '../../../utils/countries';
 import { FilamentFeaturesEditor } from '../../FilamentFeaturesEditor';
 import {
-  COMPOUND_FIELDS, FEATURE_FIELDS, PROPOSAL_FIELDS, SHEET_GROUPS, TECHNICAL_KEYS, fieldSpec, rangeFor, unitOf,
+  COMPOUND_FIELDS, FEATURE_FIELDS, ITEMIZED_FIELDS, PROPOSAL_FIELDS, SHEET_GROUPS, TECHNICAL_KEYS, fieldSpec, rangeFor, unitOf,
   type FieldGroup, type RangeFields,
 } from './fieldSpecs';
 import { MaterialClassification, type MaterialClass } from './MaterialClassification';
@@ -109,7 +115,7 @@ export function VariantEditor({
   const groups = SHEET_GROUPS[sheet];
   const known = new Set<string>([
     'enabled', 'active', 'name', ...TECHNICAL_KEYS[sheet], ...groups.flatMap((group) => group.fields),
-    ...(sheet === 'filaments' ? ['density', ...FEATURE_FIELDS] : []),
+    ...(sheet === 'filaments' ? ['density', ...FEATURE_FIELDS, ...ITEMIZED_FIELDS] : []),
   ]);
   const leftover = Object.keys(row).filter((field) => !HIDDEN_FIELDS.has(field) && !known.has(field));
   const technical = [...TECHNICAL_KEYS[sheet].filter((field) => field in row), ...leftover];
@@ -271,6 +277,9 @@ export function VariantEditor({
   const marketIndices = child ? marketIndicesFor(draft, sheet, key) : [];
   const additives = Array.isArray(row.additives) ? row.additives as FilamentAdditive[] : [];
   const claims = Array.isArray(row.property_claims) ? row.property_claims as FilamentPropertyClaim[] : [];
+  const packagings = sheet === 'filaments' && Array.isArray(row.packagings) ? row.packagings as FilamentPackaging[] : [];
+  const measurements = sheet === 'filaments' && Array.isArray(row.technical_properties)
+    ? sortTechnicalProperties(row.technical_properties as FilamentTechnicalProperty[]) : [];
   const unnamedTitle = cellText(row.name) || key;
   const logoUrl = sheet === 'brands' ? cellText(row.logo_url) : '';
 
@@ -443,6 +452,44 @@ export function VariantEditor({
             </span>)}
             {renderGroup(group)}
           </div>;
+        }
+        if (sheet === 'filaments' && group.key === 'packaging' && packagings.length > 0) {
+          return <div key={group.key}>{section(t('adminCatalogImport.curation.groups.packaging'), <div className="space-y-3">
+            <ul className="flex flex-wrap gap-2">
+              {packagings.map((item) => {
+                const path = `packagings[${packagingKey(item)}]`;
+                return <li key={path} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/15 px-2.5 py-1.5 text-sm text-gray-100">
+                  <span className="font-medium">{packagingWeightLabel(item, t, i18n?.language ?? 'en')}</span>
+                  <span className="text-xs text-gray-400">{t(`filamentPackaging.type.${item.package_type ?? 'spool'}`)}</span>
+                  <ProvenanceButton label={`${label('packagings')} ${packagingWeightLabel(item, t, i18n?.language ?? 'en')}`}
+                    readonly={readonly} entries={evidence.forField(sheet, key, path)} check={evidence.checkFor?.(sheet, key, path)}
+                    onConfirmImage={evidence.confirmImage ? (confirmed) => evidence.confirmImage?.(sheet, key, path, confirmed) : undefined}
+                    onAdd={() => evidence.add(sheet, key, path)} onUpdate={evidence.update} onRemove={evidence.remove} />
+                </li>;
+              })}
+            </ul>
+            {grid(group.fields)}
+          </div>)}</div>;
+        }
+        if (sheet === 'filaments' && group.key === 'technicalData' && measurements.length > 0) {
+          return <div key={group.key}>{section(t('adminCatalogImport.curation.groups.technicalData'), <div className="space-y-3">
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-x-6 gap-y-1">
+              {measurements.map((item) => {
+                const path = `technical_properties[${technicalPropertyKey(item)}]`;
+                const name = t(`technicalProperties.codes.${item.code}`, { defaultValue: item.code });
+                const notes = [...technicalConditions(item, t, i18n?.language ?? 'en'), item.standard].filter(Boolean).join(' · ');
+                return <li key={path} className="flex min-w-0 items-center gap-1.5 text-sm">
+                  <span className="min-w-0 truncate text-gray-300" title={notes}>{name}{notes && <span className="text-xs text-gray-500"> · {notes}</span>}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-white">{formatTechnicalValue(item, i18n?.language ?? 'en')}</span>
+                  <ProvenanceButton label={`${name} ${notes}`.trim()} readonly={readonly}
+                    entries={evidence.forField(sheet, key, path)} check={evidence.checkFor?.(sheet, key, path)}
+                    onConfirmImage={evidence.confirmImage ? (confirmed) => evidence.confirmImage?.(sheet, key, path, confirmed) : undefined}
+                    onAdd={() => evidence.add(sheet, key, path)} onUpdate={evidence.update} onRemove={evidence.remove} />
+                </li>;
+              })}
+            </ul>
+            {grid(group.fields)}
+          </div>)}</div>;
         }
         return renderGroup(group);
       })}

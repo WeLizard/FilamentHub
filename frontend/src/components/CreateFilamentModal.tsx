@@ -12,7 +12,8 @@ import { ColorGroupPalette } from './ColorGroupPalette';
 import { FilamentPaletteForm } from './FilamentPaletteForm';
 import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { PriceUnitField } from './PriceUnitField';
-import type { CountryAvailability, FilamentAdditive, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
+import { FilamentPackagingsEditor } from './FilamentPackagingsEditor';
+import type { CountryAvailability, FilamentAdditive, FilamentPackaging, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
 import { countryName } from '../utils/countries';
@@ -214,6 +215,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(1000);
   const [emptySpoolWeight, setEmptySpoolWeight] = useState<number | null>(null);
+  const [packagings, setPackagings] = useState<FilamentPackaging[]>([]);
   const [recTemps, setRecTemps] = useState<RecommendedTemps>(EMPTY_RECOMMENDED_TEMPS);
   const [nozzleHrc, setNozzleHrc] = useState<number | null>(null);
   const [description, setDescription] = useState('');
@@ -405,6 +407,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPricePerKg(initialPricePerKg);
       setSpoolWeight(initialSpoolWeight);
       setEmptySpoolWeight(filament.empty_spool_weight_g ?? null);
+      setPackagings(filament.packagings ?? []);
       setRecTemps({
         nozzleMin: filament.recommended_nozzle_temp_min ?? null,
         nozzleMax: filament.recommended_nozzle_temp_max ?? null,
@@ -457,6 +460,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setPricePerSpool(0);
       setSpoolWeight(1000);
       setEmptySpoolWeight(null);
+      setPackagings([]);
       setRecTemps(EMPTY_RECOMMENDED_TEMPS);
       setPriceMode('per_kg');
       setDescription('');
@@ -585,6 +589,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     },
   });
 
+  const filledPackagings = packagings.filter(item => item.net_weight_g > 0);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -660,6 +666,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         if (touched.has('empty_spool_weight_g') && filament.empty_spool_weight_g == null && emptySpoolWeight != null) {
           commonGaps.empty_spool_weight_g = emptySpoolWeight;
         }
+        if (touched.has('packagings') && (filament.packagings?.length ?? 0) === 0 && filledPackagings.length > 0) {
+          commonGaps.packagings = filledPackagings;
+        }
         if (touched.has('recommended_temps')) {
           if (filament.recommended_nozzle_temp_min == null && recTemps.nozzleMin != null) commonGaps.recommended_nozzle_temp_min = recTemps.nozzleMin;
           if (filament.recommended_nozzle_temp_max == null && recTemps.nozzleMax != null) commonGaps.recommended_nozzle_temp_max = recTemps.nozzleMax;
@@ -720,6 +729,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           price_per_kg: priceKg || undefined,
           spool_weight: spoolWeight || undefined,
           empty_spool_weight_g: emptySpoolWeight ?? undefined,
+          packagings: filledPackagings,
           recommended_nozzle_temp_min: recTemps.nozzleMin ?? undefined,
           recommended_nozzle_temp_max: recTemps.nozzleMax ?? undefined,
           recommended_bed_temp_min: recTemps.bedMin ?? undefined,
@@ -776,6 +786,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         price_per_kg: scopeCountry ? undefined : priceKg || undefined,
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
+        packagings: filledPackagings,
         recommended_nozzle_temp_min: recTemps.nozzleMin ?? undefined,
         recommended_nozzle_temp_max: recTemps.nozzleMax ?? undefined,
         recommended_bed_temp_min: recTemps.bedMin ?? undefined,
@@ -810,6 +821,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const densityLocked = Boolean(commonLocked && filament?.density != null);
   const spoolWeightLocked = Boolean(commonLocked && filament?.spool_weight != null);
   const emptySpoolWeightLocked = Boolean(commonLocked && filament?.empty_spool_weight_g != null);
+  const packagingsLocked = Boolean(commonLocked && (filament?.packagings?.length ?? 0) > 0);
   const temperatureLocks = {
     nozzleMin: Boolean(commonLocked && filament?.recommended_nozzle_temp_min != null),
     nozzleMax: Boolean(commonLocked && filament?.recommended_nozzle_temp_max != null),
@@ -1442,6 +1454,26 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               spoolWeightDisabled={spoolWeightLocked}
               emptySpoolWeightDisabled={emptySpoolWeightLocked}
             />
+            <div className="mt-3">
+              <FilamentPackagingsEditor
+                value={packagings}
+                onChange={(value) => {
+                  touchCommonGap('packagings');
+                  setPackagings(value);
+                  // The main spool weight must be one of the sizes sold: follow the first one.
+                  const main = value.find(item => item.package_type !== 'multipack' && item.net_weight_g > 0);
+                  if (main && !spoolWeightLocked) {
+                    touchCommonGap('spool_weight');
+                    setSpoolWeight(main.net_weight_g);
+                    if (main.empty_spool_weight_g != null && !emptySpoolWeightLocked) {
+                      touchCommonGap('empty_spool_weight_g');
+                      setEmptySpoolWeight(main.empty_spool_weight_g);
+                    }
+                  }
+                }}
+                disabled={packagingsLocked}
+              />
+            </div>
             {scopeCountry && (
               <div className="flex flex-col">
                 <div className="mb-2 flex h-[34px] items-end">

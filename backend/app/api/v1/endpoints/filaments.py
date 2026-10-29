@@ -61,6 +61,7 @@ from app.schemas.filament import (
     FilamentTechnicalDataContract,
     FilamentUpdate,
     MaterialTypeGroup,
+    main_packaging_values,
     normalize_ral_code,
 )
 from app.services.catalog_color_groups import (
@@ -146,6 +147,8 @@ TECHNICAL_DATA_FACT_FIELDS = frozenset(
         "spool_width_mm",
         "spool_core_diameter_mm",
         "packaged_gross_weight_g",
+        "packagings",
+        "technical_properties",
     }
 )
 TECHNICAL_DATA_SOURCE_FIELDS = frozenset(
@@ -178,6 +181,8 @@ REPRESENTATIVE_ONLY_FILAMENT_FACTS = frozenset(
         "spool_width_mm",
         "spool_core_diameter_mm",
         "packaged_gross_weight_g",
+        "packagings",
+        "technical_properties",
     }
     | TECHNICAL_DATA_SOURCE_FIELDS
 )
@@ -944,13 +949,17 @@ async def create_filament(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
+    # An empty list states nothing: it must not count as publishing a fact.
+    stated_fields = {
+        field for field in data.model_fields_set if getattr(data, field) not in (None, [])
+    }
     requested_technical_data = bool(
-        (TECHNICAL_DATA_FACT_FIELDS | TECHNICAL_DATA_SOURCE_FIELDS) & data.model_fields_set
+        (TECHNICAL_DATA_FACT_FIELDS | TECHNICAL_DATA_SOURCE_FIELDS) & stated_fields
     )
     may_verify_technical_data = requested_technical_data and await can_represent_brand(
         db, current_user, data.brand_id
     )
-    requested_representative_fact = bool(REPRESENTATIVE_ONLY_FILAMENT_FACTS & data.model_fields_set)
+    requested_representative_fact = bool(REPRESENTATIVE_ONLY_FILAMENT_FACTS & stated_fields)
     if requested_representative_fact and not may_verify_technical_data:
         # The catalogue remains open: a community member may add the missing
         # product shell, but cannot publish authoritative physical or safety
@@ -1285,6 +1294,9 @@ async def update_filament(
     from app.services.preset_moderation import validate_text_field
 
     update_data = data.model_dump(exclude_unset=True)
+    for field, value in main_packaging_values(data.packagings or []).items():
+        if field not in update_data and getattr(filament, field) is None:
+            update_data[field] = value
 
     if may_fill_gaps:
         # A territorial representative may enrich genuinely missing shared

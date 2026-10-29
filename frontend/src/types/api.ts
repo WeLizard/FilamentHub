@@ -58,6 +58,34 @@ export interface FilamentAdditive {
   content_basis?: 'weight' | 'volume' | null;
 }
 
+export interface FilamentPackaging {
+  net_weight_g: number;
+  package_type?: 'spool' | 'refill' | 'coil' | 'multipack';
+  units_per_package?: number | null;
+  spool_material?: 'plastic' | 'cardboard' | 'metal' | 'none' | null;
+  empty_spool_weight_g?: number | null;
+  spool_outer_diameter_mm?: number | null;
+  spool_width_mm?: number | null;
+  spool_core_diameter_mm?: number | null;
+  gross_weight_g?: number | null;
+  sku?: string | null;
+  ean?: string | null;
+}
+
+export interface FilamentTechnicalProperty {
+  code: string;
+  value?: number | null;
+  min?: number | null;
+  max?: number | null;
+  tolerance?: number | null;
+  unit: string;
+  standard?: string | null;
+  conditions?: Record<string, string | number>;
+  canonical_value?: number | null;
+  canonical_min?: number | null;
+  canonical_max?: number | null;
+}
+
 export interface FilamentPropertyClaim {
   code: string;
   value?: string | null;
@@ -145,6 +173,8 @@ export interface Filament {
   visual_settings: FilamentVisualSettings | null; // Расширенные визуальные эффекты (только для сайта)
   additives?: FilamentAdditive[];
   property_claims?: FilamentPropertyClaim[];
+  packagings?: FilamentPackaging[];
+  technical_properties?: FilamentTechnicalProperty[];
   diameter: number;
   density: number | null;
   drying_required?: boolean | null;

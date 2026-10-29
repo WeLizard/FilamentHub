@@ -1144,7 +1144,7 @@ async def test_preset_patch_preserves_unproposed_settings(
 
 @pytest.mark.parametrize(
     "change",
-    ["price", "inference", "url", "orphan", "verified", "spool_weight", "empty_spool_weight_g"],
+    ["price", "inference", "url", "orphan", "verified"],
 )
 async def test_invalid_source_claims_and_prices_are_rejected(
     client: AsyncClient, admin_user, change
@@ -1160,8 +1160,6 @@ async def test_invalid_source_claims_and_prices_are_rejected(
         payload["evidence"][0]["source_urls"] = ["javascript:alert(1)"]
     elif change == "verified":
         payload["draft"]["brands"][0]["verified"] = True
-    elif change in {"spool_weight", "empty_spool_weight_g"}:
-        payload["draft"]["filaments"][0][change] = 1000
     else:
         payload["evidence"][0]["field"] = "fabricated_field"
     response = await client.post(BASE, json=payload, headers=headers(admin_user))
@@ -1198,3 +1196,121 @@ async def test_explicit_wrong_update_reference_cannot_fallback_to_natural_identi
         for row in preview.json()["rows"]
     )
     assert await db_session.scalar(select(func.count()).select_from(CatalogCurationProposal)) == 1
+
+
+def _with_packagings(payload: dict, evidenced: list[str]) -> dict:
+    row = payload["draft"]["filaments"][0]
+    row["packagings"] = [
+        {"net_weight_g": 1000, "empty_spool_weight_g": 210, "spool_material": "plastic"},
+        {"net_weight_g": 750},
+    ]
+    payload["evidence"] += [
+        {
+            "sheet": "Filaments",
+            "key": "maker:pla:black",
+            "field": field,
+            "kind": "direct",
+            "source_urls": ["https://maker.example/products/pla"],
+        }
+        for field in evidenced
+    ]
+    return payload
+
+
+async def test_each_packaging_needs_its_own_evidence(client: AsyncClient, admin_user):
+    # One quote for the whole list must not vouch for every weight.
+    payload = _with_packagings(proposal(), ["packagings", "packagings[spool:1000]"])
+    created = await client.post(BASE, json=payload, headers=headers(admin_user))
+    assert created.status_code == 201, created.text
+    preview = await client.post(
+        f"{BASE}/{created.json()['id']}/preview", json={"revision": 1}, headers=headers(admin_user)
+    )
+    row = next(row for row in preview.json()["rows"] if row["key"] == "maker:pla:black")
+    assert row["status"] == "error"
+    assert "packagings[spool:750]" in row["message"]
+    assert "packagings[spool:1000]" not in row["message"]
+
+
+async def test_evidenced_packagings_apply_and_fill_the_main_spool(
+    client: AsyncClient, db_session: AsyncSession, admin_user
+):
+    payload = _with_packagings(proposal(), ["packagings[spool:1000]", "packagings[spool:750]"])
+    created = await client.post(BASE, json=payload, headers=headers(admin_user))
+    assert created.status_code == 201, created.text
+    path = f"{BASE}/{created.json()['id']}"
+    preview = await client.post(path + "/preview", json={"revision": 1}, headers=headers(admin_user))
+    assert preview.json()["summary"]["error"] == 0, preview.json()["rows"]
+    applied = await client.post(
+        path + "/apply",
+        json={"revision": 1, "confirmation_token": preview.json()["confirmation_token"]},
+        headers=headers(admin_user),
+    )
+    assert applied.status_code == 200, applied.text
+    filament = await db_session.scalar(select(Filament))
+    assert [item["net_weight_g"] for item in filament.packagings] == [1000, 750]
+    assert (filament.spool_weight, filament.empty_spool_weight_g) == (1000, 210)
+
+
+async def test_each_technical_property_is_evidenced_and_applied(
+    client: AsyncClient, db_session: AsyncSession, admin_user
+):
+    payload = proposal()
+    payload["draft"]["filaments"][0]["technical_properties"] = [
+        {"code": "hdt", "value": 55, "unit": "°C", "conditions": {"load_mpa": 0.45}},
+        {"code": "hdt", "value": 50, "unit": "°C", "conditions": {"load_mpa": 1.8}},
+    ]
+    payload["evidence"].append(
+        {
+            "sheet": "Filaments",
+            "key": "maker:pla:black",
+            "field": "technical_properties[hdt;load_mpa=0.45]",
+            "kind": "direct",
+            "source_urls": ["https://maker.example/products/pla"],
+        }
+    )
+    created = await client.post(BASE, json=payload, headers=headers(admin_user))
+    assert created.status_code == 201, created.text
+    path = f"{BASE}/{created.json()['id']}"
+    preview = await client.post(path + "/preview", json={"revision": 1}, headers=headers(admin_user))
+    row = next(row for row in preview.json()["rows"] if row["key"] == "maker:pla:black")
+    assert "technical_properties[hdt;load_mpa=1.8]" in row["message"]
+
+    payload["evidence"].append(
+        {**payload["evidence"][-1], "field": "technical_properties[hdt;load_mpa=1.8]"}
+    )
+    revised = await client.patch(
+        path,
+        json={"revision": 1, "evidence": payload["evidence"]},
+        headers=headers(admin_user),
+    )
+    assert revised.status_code == 200, revised.text
+    preview = await client.post(path + "/preview", json={"revision": 2}, headers=headers(admin_user))
+    assert preview.json()["summary"]["error"] == 0, preview.json()["rows"]
+    applied = await client.post(
+        path + "/apply",
+        json={"revision": 2, "confirmation_token": preview.json()["confirmation_token"]},
+        headers=headers(admin_user),
+    )
+    assert applied.status_code == 200, applied.text
+    filament = await db_session.scalar(select(Filament))
+    assert [item["conditions"] for item in filament.technical_properties] == [
+        {"load_mpa": 0.45},
+        {"load_mpa": 1.8},
+    ]
+
+
+async def test_malformed_list_items_are_a_row_error_not_a_server_error(
+    client: AsyncClient, admin_user
+):
+    payload = proposal()
+    payload["draft"]["filaments"][0]["packagings"] = [{"net_weight_g": "1 кг"}]
+    payload["draft"]["filaments"][0]["technical_properties"] = [
+        {"code": "hdt", "value": 55, "unit": "°C", "conditions": ["load"]}
+    ]
+    created = await client.post(BASE, json=payload, headers=headers(admin_user))
+    assert created.status_code == 201, created.text
+    preview = await client.post(
+        f"{BASE}/{created.json()['id']}/preview", json={"revision": 1}, headers=headers(admin_user)
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["summary"]["error"] == 1

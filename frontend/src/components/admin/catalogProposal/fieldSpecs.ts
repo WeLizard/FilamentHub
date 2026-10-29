@@ -23,7 +23,7 @@ const BOOLEAN_FIELDS = new Set([
   'enabled', 'overwrite', 'active', 'published', 'price_hidden', 'drying_required', 'transparency',
   'storage_airtight_required', 'storage_desiccant_recommended', 'storage_light_protection_required',
 ]);
-const NUMBER_FIELD = /(?:temp|temperature|humidity|density|diameter|duration|months|hrc|flow_rate|fan_speed|retraction)/;
+const NUMBER_FIELD = /(?:temp|temperature|humidity|density|diameter|duration|months|hrc|flow_rate|fan_speed|retraction|weight|_mm$)/;
 const TEXTAREA_FIELDS = new Set(['description', 'storage_after_opening_guidance', 'market_note']);
 const FULL_ROW_FIELDS = new Set(['name', 'product_url', 'orcaslicer_settings', 'printer_ids']);
 
@@ -102,6 +102,8 @@ export function unitOf(field: string): string | null {
   if (/_hours$/.test(field)) return 'hours';
   if (/_percent$/.test(field)) return 'percent';
   if (/_months$/.test(field)) return 'months';
+  if (/_mm$/.test(field)) return 'mm';
+  if (/weight/.test(field)) return 'g';
   return null;
 }
 
@@ -116,8 +118,13 @@ export const FILAMENT_GROUPS: FieldGroup[] = [
   { key: 'appearance', fields: ['color_name', 'color_hex', 'ral_code', 'color_group', 'color_type', 'finish', 'transparency', 'colors'] },
   { key: 'printing', fields: ['recommended_nozzle_temp_min', 'recommended_nozzle_temp_max', 'recommended_bed_temp_min', 'recommended_bed_temp_max', 'enclosure_requirement', 'chamber_temperature_c', 'bed_adhesives', 'required_nozzle_hrc', 'post_processing_chemicals'] },
   { key: 'care', collapsed: true, fields: ['drying_required', 'drying_temperature_c', 'drying_duration_hours', 'storage_temperature_min_c', 'storage_temperature_max_c', 'storage_relative_humidity_max_percent', 'storage_relative_humidity_target_percent', 'storage_airtight_required', 'storage_desiccant_recommended', 'storage_light_protection_required', 'storage_after_opening_guidance', 'unopened_shelf_life_months'] },
+  { key: 'packaging', collapsed: true, fields: ['spool_weight', 'empty_spool_weight_g', 'spool_outer_diameter_mm', 'spool_width_mm', 'spool_core_diameter_mm', 'packaged_gross_weight_g'] },
+  { key: 'technicalData', collapsed: true, fields: ['technical_data_source_ref', 'technical_data_version', 'technical_data_effective_date'] },
   { key: 'description', fields: ['description'] },
 ];
+
+/** List fields whose every item carries its own source, addressed as "field[item key]". */
+export const ITEMIZED_FIELDS = ['packagings', 'technical_properties'] as const;
 
 /** Fields drawn by the composition block instead of the plain grid. */
 export const FEATURE_FIELDS = ['effects', 'additives', 'property_claims'] as const;
@@ -202,6 +209,9 @@ export const PROPOSAL_FIELDS: Record<CatalogImportSheet, string[]> = {
     'required_nozzle_hrc',
     'availability', 'description', 'active', 'color_type', 'colors', 'finish', 'effects', 'filler', 'transparency',
     'additives', 'property_claims', 'post_processing_chemicals',
+    'spool_weight', 'empty_spool_weight_g', 'spool_outer_diameter_mm', 'spool_width_mm',
+    'spool_core_diameter_mm', 'packaged_gross_weight_g',
+    'technical_data_source_ref', 'technical_data_version', 'technical_data_effective_date',
   ],
   brand_markets: [
     'enabled', 'brand_key', 'country', 'overwrite', 'website', 'description', 'social_media_urls',

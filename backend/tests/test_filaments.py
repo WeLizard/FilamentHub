@@ -113,6 +113,33 @@ async def test_community_user_can_add_filament_to_verified_brand(
 
 
 @pytest.mark.asyncio
+async def test_community_form_sending_empty_packaging_lists_still_creates_but_values_need_a_grant(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    # The web form always sends the list fields; an empty list states no fact.
+    brand = Brand(name="Open Brand", slug="open-brand", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    payload = {
+        "brand_id": brand.id,
+        "name": "Community PLA",
+        "material_type": "PLA",
+        "packagings": [],
+        "technical_properties": [],
+    }
+
+    created = await auth_client.post("/api/v1/filaments/", json=payload)
+    assert created.status_code == 201, created.text
+
+    stated = await auth_client.post(
+        "/api/v1/filaments/",
+        json={**payload, "name": "Community PLA 2", "packagings": [{"net_weight_g": 1000}]},
+    )
+    assert stated.status_code == 403
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("existing_name", "existing_color", "new_name", "new_color"),
     [

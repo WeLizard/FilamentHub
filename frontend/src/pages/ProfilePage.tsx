@@ -49,6 +49,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
+import { formatNetWeight, singleSpoolWeights } from '../utils/packaging';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type {
   UserSpool,
@@ -2665,6 +2666,10 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     () => groupFilamentOptionsByBrand(filamentOptions, t('profilePage.spoolAddModal.otherBrand')),
     [filamentOptions, t],
   );
+  const packagingWeights = useMemo(
+    () => singleSpoolWeights(filamentOptions.find(item => String(item.id) === filamentId)?.packagings),
+    [filamentOptions, filamentId],
+  );
 
   useEffect(() => {
     if (!spool) {
@@ -3317,6 +3322,27 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
               initialWeightEditedRef.current = true;
               setInitialWeight(e.target.value);
             }} className={inputCls} required />
+          {packagingWeights.length > 1 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t('filamentPackaging.title')}>
+              {packagingWeights.map(weight => (
+                <button
+                  key={weight}
+                  type="button"
+                  onClick={() => {
+                    initialWeightEditedRef.current = true;
+                    setInitialWeight(formatDecimalInput(weight));
+                  }}
+                  className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
+                    parseDecimalInput(initialWeight) === weight
+                      ? 'border-purple-400 bg-purple-600/40 text-white'
+                      : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  {formatNetWeight(weight, t, i18n.language)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <label className={labelCls}>{t('profilePage.spoolAddModal.usedWeight')}</label>

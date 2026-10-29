@@ -33,7 +33,12 @@ from app.models import (
 from app.models.preset import PUBLIC_PRESET_STATUSES, PresetModerationStatus
 from app.schemas.catalog_import import CatalogImportDraft, CatalogImportPlanRow
 from app.schemas.country_cell import BrandCountryCellBase, FilamentCountryCellBase
-from app.schemas.filament import FilamentBase, FilamentTechnicalDataContract
+from app.schemas.filament import (
+    FilamentBase,
+    FilamentPackaging,
+    FilamentTechnicalDataContract,
+    main_packaging_values,
+)
 from app.schemas.preset import PresetBase
 from app.services.brand_slug_service import canonicalize_brand_slug, suggest_brand_slug
 from app.services.catalog_color_groups import classify_color_group
@@ -106,6 +111,15 @@ SHEET_COLUMNS: dict[str, list[str]] = {
         "price_per_kg",
         "spool_weight",
         "empty_spool_weight_g",
+        "spool_outer_diameter_mm",
+        "spool_width_mm",
+        "spool_core_diameter_mm",
+        "packaged_gross_weight_g",
+        "packagings",
+        "technical_properties",
+        "technical_data_source_ref",
+        "technical_data_version",
+        "technical_data_effective_date",
         "price_display_unit",
         "availability",
         "description",
@@ -781,6 +795,9 @@ async def build_plan(
                 "availability",
                 "description",
                 "storage_after_opening_guidance",
+                "technical_data_source_ref",
+                "technical_data_version",
+                "technical_data_effective_date",
             )
             for field in text_fields:
                 value = _text(row.get(field))
@@ -799,6 +816,10 @@ async def build_plan(
                 "price_per_kg",
                 "spool_weight",
                 "empty_spool_weight_g",
+                "spool_outer_diameter_mm",
+                "spool_width_mm",
+                "spool_core_diameter_mm",
+                "packaged_gross_weight_g",
             ):
                 if _present(row.get(field)):
                     raw[field] = _number(row.get(field))
@@ -829,6 +850,8 @@ async def build_plan(
                 "additives",
                 "property_claims",
                 "post_processing_chemicals",
+                "packagings",
+                "technical_properties",
             ):
                 if _present(row.get(field)):
                     raw[field] = (
@@ -883,6 +906,11 @@ async def build_plan(
                 else {}
             )
             effective.update(raw)
+            if raw.get("packagings"):
+                packagings = [FilamentPackaging.model_validate(item) for item in raw["packagings"]]
+                for field, value in main_packaging_values(packagings).items():
+                    if effective.get(field) is None:
+                        raw[field] = effective[field] = value
             validated = FilamentBase(**effective).model_dump(mode="json", exclude_unset=curation)
             FilamentTechnicalDataContract.model_validate(validated)
             explicit_fields = {field for field in raw if field in validated}

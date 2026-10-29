@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Brand, CatalogCurationProposal, Filament, Preset
 from app.schemas.catalog_curation import CatalogCurationCreate
 from app.schemas.catalog_import import CatalogImportDraft
+from app.schemas.filament import packaging_key
 from app.services.catalog_master_import_service import (
     MAX_ROWS,
     SHEET_COLUMNS,
@@ -16,6 +18,7 @@ from app.services.catalog_master_import_service import (
     _present,
     build_plan,
 )
+from app.services.technical_properties import technical_property_key
 
 SHEETS = {
     "Brands": ("brands", "brand_key"),
@@ -43,13 +46,59 @@ CONTROL_FIELDS = {
     "external_id",
 }
 PRICE_FIELDS = {"price", "price_per_kg", "currency", "price_display_unit"}
-PACKAGING_FIELDS = {"spool_weight", "empty_spool_weight_g"}
-SOURCE_FACT_FIELDS = (
-    set(SHEET_COLUMNS["Filaments"])
-    - CONTROL_FIELDS
-    - PRICE_FIELDS
-    - PACKAGING_FIELDS
-)
+SOURCE_FACT_FIELDS = set(SHEET_COLUMNS["Filaments"]) - CONTROL_FIELDS - PRICE_FIELDS
+# List fields whose items carry their own evidence, addressed as "field[item key]":
+# one quote must not vouch for every weight or measured property at once.
+ITEMIZED_FIELDS: dict[str, Callable[[dict[str, Any]], str]] = {
+    "packagings": packaging_key,
+    "technical_properties": technical_property_key,
+}
+
+
+# The number in an item that its quote must contain.
+ITEM_QUOTED_VALUE = {"packagings": "net_weight_g", "technical_properties": "value"}
+
+
+def item_path(field: str, key: str) -> str:
+    return f"{field}[{key}]"
+
+
+def item_paths(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Evidence address of every item of the row's itemized fields."""
+    paths: dict[str, dict[str, Any]] = {}
+    for field, key_of in ITEMIZED_FIELDS.items():
+        items = row.get(field)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                paths[item_path(field, key_of(item))] = item
+            except (TypeError, ValueError):
+                # A malformed item has no address; the planner reports it as a row error.
+                continue
+    return paths
+
+
+def item_value(row: dict[str, Any], path: str) -> Any:
+    """Quoted value of an itemized evidence address, or None for a plain field."""
+    item = item_paths(row).get(path)
+    if item is None:
+        return None
+    value = item.get(ITEM_QUOTED_VALUE[path.split("[", 1)[0]])
+    # A range is quoted by its lower end.
+    return value if value is not None else item.get("min")
+
+
+def evidence_fields(row: dict[str, Any]) -> list[str]:
+    """Names that need evidence: plain present fields and each item of a list field."""
+    names = [
+        name
+        for name, value in row.items()
+        if name not in CONTROL_FIELDS and name not in ITEMIZED_FIELDS and _present(value)
+    ]
+    return names + list(item_paths(row))
 
 
 def row_key(sheet: str, row: dict[str, Any]) -> str:
@@ -86,11 +135,6 @@ def validate_proposal(data: CatalogCurationCreate) -> None:
                     "ERR_CATALOG_CURATION_INVALID",
                     "Curation proposals cannot set prices or currency",
                 )
-            if sheet == "Filaments" and any(_present(row.get(name)) for name in PACKAGING_FIELDS):
-                raise CatalogMasterImportError(
-                    "ERR_CATALOG_CURATION_INVALID",
-                    "Curation materials cannot set packaging properties",
-                )
             # Curation does not confer manufacturer verification.
             if sheet == "Brands" and _present(row.get("verified")):
                 raise CatalogMasterImportError(
@@ -101,7 +145,7 @@ def validate_proposal(data: CatalogCurationCreate) -> None:
                 raise CatalogMasterImportError(
                     "ERR_CATALOG_CURATION_INVALID", "Duplicate proposal row key"
                 )
-            fields_by_row[key] = set(row)
+            fields_by_row[key] = set(row) | set(item_paths(row))
     seen = set()
     for item in data.evidence:
         identity = (item.sheet, item.key, item.field)
@@ -160,13 +204,14 @@ def validate_proposal(data: CatalogCurationCreate) -> None:
             row = next(
                 row for row in data.draft.filaments if row_key("Filaments", row) == fact.filament_key
             )
+            items = item_paths(row)
             for field in fact.mapped_fields:
-                if field not in SOURCE_FACT_FIELDS:
+                if field not in SOURCE_FACT_FIELDS - set(ITEMIZED_FIELDS) and field not in items:
                     raise CatalogMasterImportError(
                         "ERR_CATALOG_CURATION_INVALID",
                         f"Source fact references a non-mappable Filaments field: {field}",
                     )
-                value = row.get(field)
+                value = items.get(field, row.get(field))
                 if value in (None, "", [], {}):
                     raise CatalogMasterImportError(
                         "ERR_CATALOG_CURATION_INVALID",
@@ -269,20 +314,14 @@ async def build_curation_plan(
                                 + f"; resolve {unresolved_count} unresolved manufacturer source fact(s)"
                             )
             missing = sorted(
-                name
-                for name, value in row.items()
-                if name not in CONTROL_FIELDS
-                and _present(value)
-                and (sheet, key, name) not in evidence
+                name for name in evidence_fields(row) if (sheet, key, name) not in evidence
             )
             if missing:
                 problems.append("Missing evidence for: " + ", ".join(missing))
             unverified = sorted(
                 f"{name} ({gate.blocking('evidence', sheet, key, name)})"
-                for name, value in row.items()
-                if name not in CONTROL_FIELDS
-                and _present(value)
-                and gate.blocking("evidence", sheet, key, name)
+                for name in evidence_fields(row)
+                if gate.blocking("evidence", sheet, key, name)
             )
             if sheet == "Filaments":
                 unverified += sorted(

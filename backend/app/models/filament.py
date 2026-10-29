@@ -219,6 +219,17 @@ class Filament(Base):
     property_claims: Mapped[list[dict]] = mapped_column(
         JSON, default=list, server_default="[]", nullable=False
     )
+    # Ways the manufacturer sells this filament (weights, carrier, codes). The
+    # single spool_* columns below stay the main packaging read by Spoolman
+    # clients, the calculator and Orca.
+    packagings: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+    # Measured data-sheet values (strength, HDT, MFR...) with unit, standard and
+    # conditions as the manufacturer wrote them; codes from technical_properties.
+    technical_properties: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
     # Public manufacturer properties that do not have a dedicated catalog
     # field. Values are reviewed, source-linked and scoped to this exact variant.
     additional_properties: Mapped[list[dict]] = mapped_column(

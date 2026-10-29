@@ -59,6 +59,8 @@ import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
 import { FilamentCorrectionRequestModal } from '../components/FilamentCorrectionRequestModal';
 import { FilamentHandlingDetails } from '../components/FilamentHandlingDetails';
+import { FilamentPackagings } from '../components/FilamentPackagings';
+import { FilamentTechnicalProperties } from '../components/FilamentTechnicalProperties';
 import {
   brandPublicPath,
   filamentPublicPath,
@@ -921,6 +923,10 @@ export const FilamentDetailPage: React.FC = () => {
         )}
 
         <FilamentHandlingDetails filament={filament} className="mb-4 md:mb-6" />
+
+        <FilamentTechnicalProperties properties={filament.technical_properties ?? []} className="mb-4 md:mb-6" />
+
+        <FilamentPackagings packagings={filament.packagings ?? []} className="mb-4 md:mb-6" />
 
         {user && (
           <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.04] p-3.5">

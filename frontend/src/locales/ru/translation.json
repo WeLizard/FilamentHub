@@ -6295,7 +6295,9 @@
         "c": "°C",
         "hours": "ч",
         "percent": "%",
-        "months": "мес."
+        "months": "мес.",
+        "g": "г",
+        "mm": "мм"
       },
       "rangeMissingMin": "нет минимума",
       "rangeMissingMax": "нет максимума",
@@ -6408,9 +6410,19 @@
       "colorTypes": { "single": "Одноцветный", "two": "Два цвета", "three": "Три цвета", "gradient": "Градиент", "transition": "Переход цвета", "thermochromic": "Термохромный", "four": "Четыре цвета" },
       "visualTerms": { "matte": "Матовый", "glossy": "Глянцевый", "silk": "Шёлковый", "metallic": "Металлик", "glitter": "Блёстки", "sparkle": "Мерцание", "wood": "Древесный", "carbon_fiber": "Углеволокно", "satin": "Сатиновый" },
       "chooseField": "Выбрать поле",
-      "groups": { "identity": "Идентичность и ассортимент", "appearance": "Цвет и поверхность", "properties": "Свойства материала", "printing": "Рекомендации по печати", "care": "Сушка и хранение", "description": "Описание", "other": "Технические поля", "links": "Ссылки", "markets": "Рынки" },
+      "groups": { "identity": "Идентичность и ассортимент", "appearance": "Цвет и поверхность", "properties": "Свойства материала", "printing": "Рекомендации по печати", "care": "Сушка и хранение", "description": "Описание", "other": "Технические поля", "links": "Ссылки", "markets": "Рынки", "packaging": "Фасовка", "technicalData": "Технические данные" },
       "fieldNames": {
-        "brand_key": "Ключ бренда", "filament_key": "Ключ материала", "preset_key": "Ключ пресета", "mode": "Действие", "existing_brand": "Существующий бренд", "existing_filament": "Существующий материал", "existing_preset": "Существующий пресет", "overwrite": "Обновить существующее", "name": "Название", "slug": "Адрес страницы", "description": "Описание", "website": "Сайт", "logo_url": "URL логотипа", "logo_bg": "Фон логотипа", "price_hidden": "Скрыть цены", "active": "Активен", "published": "Опубликован", "social_media_urls": "Социальные сети", "shop_links": "Магазины", "country": "Страна", "line": "Линейка", "material_type": "Материал", "color_name": "Название цвета", "color_hex": "Код цвета", "ral_code": "Код RAL", "color_group": "Группа цветов", "color_group_source": "Источник группы цветов", "diameter": "Диаметр (мм)", "density": "Плотность (г/см³)", "availability": "Доступность", "color_type": "Тип окраски", "colors": "Цвета", "finish": "Поверхность", "effects": "Эффекты", "filler": "Наполнитель", "transparency": "Прозрачность", "additives": "Добавки", "property_claims": "Заявленные свойства", "recommended_nozzle_temp_min": "Сопло: минимум (°C)", "recommended_nozzle_temp_max": "Сопло: максимум (°C)", "recommended_bed_temp_min": "Стол: минимум (°C)", "recommended_bed_temp_max": "Стол: максимум (°C)", "enclosure_requirement": "Требование к камере", "chamber_temperature_c": "Температура камеры (°C)", "bed_adhesives": "Адгезивы для стола", "required_nozzle_hrc": "Твёрдость сопла (HRC)", "post_processing_chemicals": "Вещества для постобработки", "drying_required": "Требуется сушка", "drying_temperature_c": "Температура сушки (°C)", "drying_duration_hours": "Время сушки (ч)", "storage_temperature_min_c": "Хранение: минимум (°C)", "storage_temperature_max_c": "Хранение: максимум (°C)", "storage_relative_humidity_max_percent": "Максимальная влажность (%)", "storage_relative_humidity_target_percent": "Целевая влажность (%)", "storage_airtight_required": "Герметичное хранение", "storage_desiccant_recommended": "Рекомендован осушитель", "storage_light_protection_required": "Защита от света", "storage_after_opening_guidance": "Хранение после вскрытия", "unopened_shelf_life_months": "Срок хранения закрытой упаковки (мес)", "product_url": "Страница материала", "purchase_links": "Ссылки для покупки", "market_note": "Примечание для рынка", "market_color_name": "Название цвета для рынка", "extruder_temp": "Температура сопла (°C)", "bed_temp": "Температура стола (°C)", "flow_rate": "Поток", "fan_speed": "Обдув", "retraction_length": "Длина ретракта", "retraction_speed": "Скорость ретракта", "printer_ids": "Принтеры", "orcaslicer_settings": "Настройки слайсера", "external_id": "Внешний ID"
+        "brand_key": "Ключ бренда", "filament_key": "Ключ материала", "preset_key": "Ключ пресета", "mode": "Действие", "existing_brand": "Существующий бренд", "existing_filament": "Существующий материал", "existing_preset": "Существующий пресет", "overwrite": "Обновить существующее", "name": "Название", "slug": "Адрес страницы", "description": "Описание", "website": "Сайт", "logo_url": "URL логотипа", "logo_bg": "Фон логотипа", "price_hidden": "Скрыть цены", "active": "Активен", "published": "Опубликован", "social_media_urls": "Социальные сети", "shop_links": "Магазины", "country": "Страна", "line": "Линейка", "material_type": "Материал", "color_name": "Название цвета", "color_hex": "Код цвета", "ral_code": "Код RAL", "color_group": "Группа цветов", "color_group_source": "Источник группы цветов", "diameter": "Диаметр (мм)", "density": "Плотность (г/см³)", "availability": "Доступность", "color_type": "Тип окраски", "colors": "Цвета", "finish": "Поверхность", "effects": "Эффекты", "filler": "Наполнитель", "transparency": "Прозрачность", "additives": "Добавки", "property_claims": "Заявленные свойства", "recommended_nozzle_temp_min": "Сопло: минимум (°C)", "recommended_nozzle_temp_max": "Сопло: максимум (°C)", "recommended_bed_temp_min": "Стол: минимум (°C)", "recommended_bed_temp_max": "Стол: максимум (°C)", "enclosure_requirement": "Требование к камере", "chamber_temperature_c": "Температура камеры (°C)", "bed_adhesives": "Адгезивы для стола", "required_nozzle_hrc": "Твёрдость сопла (HRC)", "post_processing_chemicals": "Вещества для постобработки", "drying_required": "Требуется сушка", "drying_temperature_c": "Температура сушки (°C)", "drying_duration_hours": "Время сушки (ч)", "storage_temperature_min_c": "Хранение: минимум (°C)", "storage_temperature_max_c": "Хранение: максимум (°C)", "storage_relative_humidity_max_percent": "Максимальная влажность (%)", "storage_relative_humidity_target_percent": "Целевая влажность (%)", "storage_airtight_required": "Герметичное хранение", "storage_desiccant_recommended": "Рекомендован осушитель", "storage_light_protection_required": "Защита от света", "storage_after_opening_guidance": "Хранение после вскрытия", "unopened_shelf_life_months": "Срок хранения закрытой упаковки (мес)", "product_url": "Страница материала", "purchase_links": "Ссылки для покупки", "market_note": "Примечание для рынка", "market_color_name": "Название цвета для рынка", "extruder_temp": "Температура сопла (°C)", "bed_temp": "Температура стола (°C)", "flow_rate": "Поток", "fan_speed": "Обдув", "retraction_length": "Длина ретракта", "retraction_speed": "Скорость ретракта", "printer_ids": "Принтеры", "orcaslicer_settings": "Настройки слайсера", "external_id": "Внешний ID",
+        "packagings": "Фасовка",
+        "spool_weight": "Вес нетто",
+        "empty_spool_weight_g": "Пустая катушка",
+        "spool_outer_diameter_mm": "Диаметр катушки",
+        "spool_width_mm": "Ширина катушки",
+        "spool_core_diameter_mm": "Отверстие катушки",
+        "packaged_gross_weight_g": "Вес брутто",
+        "technical_data_source_ref": "Ссылка на техпаспорт",
+        "technical_data_version": "Версия техпаспорта",
+        "technical_data_effective_date": "Дата техпаспорта"
       },
       "saved": "Предложение сохранено",
       "savedState": "Сохранено",
@@ -6848,6 +6860,111 @@
     "spoolWeight": "Вес катушки",
     "g": "г"
   },
+    "filamentPackaging": {
+      "title": "Фасовка",
+      "type": {
+        "spool": "Катушка",
+        "refill": "Сменный моток",
+        "coil": "Моток без катушки",
+        "multipack": "Набор катушек"
+      },
+      "spoolMaterial": {
+        "plastic": "Пластиковая катушка",
+        "cardboard": "Картонная катушка",
+        "metal": "Металлическая катушка"
+      },
+      "emptySpool": "Пустая катушка {{weight}}",
+      "core": "Отверстие {{value}} мм",
+      "gross": "Брутто {{weight}}",
+      "sku": "Артикул {{code}}",
+      "editorHint": "Все размеры, которые продаёт производитель. Вес катушки выше — для калькулятора и OrcaSlicer — берётся из первого размера.",
+      "netWeight": "Вес нетто",
+      "packageType": "Упаковка",
+      "units": "Катушек в наборе",
+      "spoolMaterialLabel": "Материал катушки",
+      "spoolMaterialUnknown": "Катушка не указана",
+      "emptySpoolShort": "пустая катушка",
+      "remove": "Убрать фасовку",
+      "add": "Добавить размер"
+    },
+    "technicalProperties": {
+      "title": "Технические данные",
+      "codes": {
+        "tensile_strength": "Прочность на растяжение",
+        "tensile_modulus": "Модуль упругости при растяжении",
+        "elongation": "Относительное удлинение",
+        "flexural_strength": "Прочность на изгиб",
+        "flexural_modulus": "Модуль упругости при изгибе",
+        "compressive_strength": "Прочность на сжатие",
+        "impact_charpy": "Ударная вязкость по Шарпи",
+        "impact_izod": "Ударная вязкость по Изоду",
+        "shore_hardness": "Твёрдость по Шору",
+        "hdt": "Температура изгиба под нагрузкой (HDT)",
+        "vicat": "Температура размягчения по Вика",
+        "melting_temperature": "Температура плавления",
+        "glass_transition": "Температура стеклования",
+        "service_temperature_max": "Максимальная рабочая температура",
+        "melt_flow_rate": "Показатель текучести расплава (ПТР)",
+        "melt_volume_rate": "Объёмная скорость течения расплава",
+        "shrinkage": "Усадка",
+        "water_absorption": "Водопоглощение",
+        "diameter_tolerance": "Допуск диаметра",
+        "ovality": "Овальность",
+        "surface_resistivity": "Поверхностное сопротивление",
+        "light_transmission": "Светопропускание"
+      },
+      "categories": {
+        "mechanical": "Механика",
+        "thermal": "Термостойкость",
+        "physical": "Физические свойства",
+        "electrical": "Электрические свойства",
+        "optical": "Оптические свойства"
+      },
+      "conditions": {
+        "load_mpa": "при {{value}} МПа",
+        "load_n": "нагрузка {{value}} Н",
+        "load_kg": "груз {{value}} кг",
+        "temperature_c": "при {{value}} °C",
+        "rate_c_per_h": "{{value}} °C/ч"
+      },
+      "conditionValues": {
+        "direction": {
+          "xy": "XY",
+          "yx": "YX",
+          "xz": "XZ",
+          "zx": "ZX",
+          "z": "Z (поперёк слоёв)",
+          "along_layers": "вдоль слоёв",
+          "across_layers": "поперёк слоёв",
+          "not_stated": "направление не указано"
+        },
+        "specimen": {
+          "printed": "напечатанный образец",
+          "injection_moulded": "литой образец",
+          "not_stated": "образец не указан"
+        },
+        "point": {
+          "yield": "предел текучести",
+          "break": "при разрыве"
+        },
+        "notch": {
+          "notched": "с надрезом",
+          "unnotched": "без надреза"
+        },
+        "method": {
+          "A": "метод A",
+          "B": "метод B",
+          "A50": "метод A50",
+          "A120": "метод A120",
+          "B50": "метод B50",
+          "B120": "метод B120"
+        },
+        "scale": {
+          "A": "шкала A",
+          "D": "шкала D"
+        }
+      }
+    },
   "filamentHandling": {
     "title": "Подготовка и безопасная работа",
     "editorHint": "Рекомендации относятся к этому конкретному филаменту, а не ко всему типу материала.",

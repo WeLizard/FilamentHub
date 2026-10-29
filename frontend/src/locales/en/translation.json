@@ -6120,7 +6120,9 @@
         "c": "°C",
         "hours": "h",
         "percent": "%",
-        "months": "mo"
+        "months": "mo",
+        "g": "g",
+        "mm": "mm"
       },
       "rangeMissingMin": "no minimum",
       "rangeMissingMax": "no maximum",
@@ -6221,9 +6223,19 @@
       "colorTypes": { "single": "Single color", "two": "Two colors", "three": "Three colors", "gradient": "Gradient", "transition": "Color transition", "thermochromic": "Thermochromic", "four": "Four colors" },
       "visualTerms": { "matte": "Matte", "glossy": "Glossy", "silk": "Silk", "metallic": "Metallic", "glitter": "Glitter", "sparkle": "Sparkle", "wood": "Wood", "carbon_fiber": "Carbon fiber", "satin": "Satin" },
       "chooseField": "Choose a field",
-      "groups": { "identity": "Identity and range", "appearance": "Color and surface", "properties": "Material properties", "printing": "Printing guidance", "care": "Drying and storage", "description": "Description", "other": "Technical fields", "links": "Links", "markets": "Markets" },
+      "groups": { "identity": "Identity and range", "appearance": "Color and surface", "properties": "Material properties", "printing": "Printing guidance", "care": "Drying and storage", "description": "Description", "other": "Technical fields", "links": "Links", "markets": "Markets", "packaging": "Packaging", "technicalData": "Technical data" },
       "fieldNames": {
-        "brand_key": "Brand key", "filament_key": "Material key", "preset_key": "Preset key", "mode": "Action", "existing_brand": "Existing brand", "existing_filament": "Existing material", "existing_preset": "Existing preset", "overwrite": "Update existing", "name": "Name", "slug": "Page slug", "description": "Description", "website": "Website", "logo_url": "Logo URL", "logo_bg": "Logo background", "price_hidden": "Hide prices", "active": "Active", "published": "Published", "social_media_urls": "Social media", "shop_links": "Stores", "country": "Country", "line": "Product line", "material_type": "Material", "color_name": "Color name", "color_hex": "Color code", "ral_code": "RAL code", "color_group": "Color group", "color_group_source": "Color group source", "diameter": "Diameter (mm)", "density": "Density (g/cm³)", "availability": "Availability", "color_type": "Color type", "colors": "Colors", "finish": "Finish", "effects": "Effects", "filler": "Filler", "transparency": "Transparency", "additives": "Additives", "property_claims": "Property claims", "recommended_nozzle_temp_min": "Nozzle minimum (°C)", "recommended_nozzle_temp_max": "Nozzle maximum (°C)", "recommended_bed_temp_min": "Bed minimum (°C)", "recommended_bed_temp_max": "Bed maximum (°C)", "enclosure_requirement": "Enclosure requirement", "chamber_temperature_c": "Chamber temperature (°C)", "bed_adhesives": "Bed adhesives", "required_nozzle_hrc": "Required nozzle hardness (HRC)", "post_processing_chemicals": "Post-processing chemicals", "drying_required": "Drying required", "drying_temperature_c": "Drying temperature (°C)", "drying_duration_hours": "Drying duration (h)", "storage_temperature_min_c": "Storage minimum (°C)", "storage_temperature_max_c": "Storage maximum (°C)", "storage_relative_humidity_max_percent": "Maximum humidity (%)", "storage_relative_humidity_target_percent": "Target humidity (%)", "storage_airtight_required": "Airtight storage", "storage_desiccant_recommended": "Desiccant recommended", "storage_light_protection_required": "Protect from light", "storage_after_opening_guidance": "Storage after opening", "unopened_shelf_life_months": "Unopened shelf life (months)", "product_url": "Material page", "purchase_links": "Purchase links", "market_note": "Market note", "market_color_name": "Market color name", "extruder_temp": "Nozzle temperature (°C)", "bed_temp": "Bed temperature (°C)", "flow_rate": "Flow rate", "fan_speed": "Fan speed", "retraction_length": "Retraction length", "retraction_speed": "Retraction speed", "printer_ids": "Printers", "orcaslicer_settings": "Slicer settings", "external_id": "External ID"
+        "brand_key": "Brand key", "filament_key": "Material key", "preset_key": "Preset key", "mode": "Action", "existing_brand": "Existing brand", "existing_filament": "Existing material", "existing_preset": "Existing preset", "overwrite": "Update existing", "name": "Name", "slug": "Page slug", "description": "Description", "website": "Website", "logo_url": "Logo URL", "logo_bg": "Logo background", "price_hidden": "Hide prices", "active": "Active", "published": "Published", "social_media_urls": "Social media", "shop_links": "Stores", "country": "Country", "line": "Product line", "material_type": "Material", "color_name": "Color name", "color_hex": "Color code", "ral_code": "RAL code", "color_group": "Color group", "color_group_source": "Color group source", "diameter": "Diameter (mm)", "density": "Density (g/cm³)", "availability": "Availability", "color_type": "Color type", "colors": "Colors", "finish": "Finish", "effects": "Effects", "filler": "Filler", "transparency": "Transparency", "additives": "Additives", "property_claims": "Property claims", "recommended_nozzle_temp_min": "Nozzle minimum (°C)", "recommended_nozzle_temp_max": "Nozzle maximum (°C)", "recommended_bed_temp_min": "Bed minimum (°C)", "recommended_bed_temp_max": "Bed maximum (°C)", "enclosure_requirement": "Enclosure requirement", "chamber_temperature_c": "Chamber temperature (°C)", "bed_adhesives": "Bed adhesives", "required_nozzle_hrc": "Required nozzle hardness (HRC)", "post_processing_chemicals": "Post-processing chemicals", "drying_required": "Drying required", "drying_temperature_c": "Drying temperature (°C)", "drying_duration_hours": "Drying duration (h)", "storage_temperature_min_c": "Storage minimum (°C)", "storage_temperature_max_c": "Storage maximum (°C)", "storage_relative_humidity_max_percent": "Maximum humidity (%)", "storage_relative_humidity_target_percent": "Target humidity (%)", "storage_airtight_required": "Airtight storage", "storage_desiccant_recommended": "Desiccant recommended", "storage_light_protection_required": "Protect from light", "storage_after_opening_guidance": "Storage after opening", "unopened_shelf_life_months": "Unopened shelf life (months)", "product_url": "Material page", "purchase_links": "Purchase links", "market_note": "Market note", "market_color_name": "Market color name", "extruder_temp": "Nozzle temperature (°C)", "bed_temp": "Bed temperature (°C)", "flow_rate": "Flow rate", "fan_speed": "Fan speed", "retraction_length": "Retraction length", "retraction_speed": "Retraction speed", "printer_ids": "Printers", "orcaslicer_settings": "Slicer settings", "external_id": "External ID",
+        "packagings": "Packaging",
+        "spool_weight": "Net weight",
+        "empty_spool_weight_g": "Empty spool",
+        "spool_outer_diameter_mm": "Spool diameter",
+        "spool_width_mm": "Spool width",
+        "spool_core_diameter_mm": "Spool hub",
+        "packaged_gross_weight_g": "Gross weight",
+        "technical_data_source_ref": "Data sheet link",
+        "technical_data_version": "Data sheet version",
+        "technical_data_effective_date": "Data sheet date"
       },
       "saved": "Proposal saved",
       "savedState": "Saved",
@@ -6659,6 +6671,111 @@
     "spoolWeight": "Spool weight",
     "g": "g"
   },
+    "filamentPackaging": {
+      "title": "Packaging",
+      "type": {
+        "spool": "Spool",
+        "refill": "Refill (no spool)",
+        "coil": "Coil without spool",
+        "multipack": "Spool set"
+      },
+      "spoolMaterial": {
+        "plastic": "Plastic spool",
+        "cardboard": "Cardboard spool",
+        "metal": "Metal spool"
+      },
+      "emptySpool": "Empty spool {{weight}}",
+      "core": "Hub {{value}} mm",
+      "gross": "Gross {{weight}}",
+      "sku": "SKU {{code}}",
+      "editorHint": "Every size the manufacturer sells. The spool weight above, used by the calculator and OrcaSlicer, follows the first size.",
+      "netWeight": "Net weight",
+      "packageType": "Package",
+      "units": "Spools in the set",
+      "spoolMaterialLabel": "Spool material",
+      "spoolMaterialUnknown": "Spool not stated",
+      "emptySpoolShort": "empty spool",
+      "remove": "Remove packaging",
+      "add": "Add a size"
+    },
+    "technicalProperties": {
+      "title": "Technical data",
+      "codes": {
+        "tensile_strength": "Tensile strength",
+        "tensile_modulus": "Tensile modulus",
+        "elongation": "Elongation",
+        "flexural_strength": "Flexural strength",
+        "flexural_modulus": "Flexural modulus",
+        "compressive_strength": "Compressive strength",
+        "impact_charpy": "Charpy impact strength",
+        "impact_izod": "Izod impact strength",
+        "shore_hardness": "Shore hardness",
+        "hdt": "Heat deflection temperature",
+        "vicat": "Vicat softening temperature",
+        "melting_temperature": "Melting temperature",
+        "glass_transition": "Glass transition temperature",
+        "service_temperature_max": "Maximum service temperature",
+        "melt_flow_rate": "Melt flow rate (MFR)",
+        "melt_volume_rate": "Melt volume rate (MVR)",
+        "shrinkage": "Shrinkage",
+        "water_absorption": "Water absorption",
+        "diameter_tolerance": "Diameter tolerance",
+        "ovality": "Ovality",
+        "surface_resistivity": "Surface resistivity",
+        "light_transmission": "Light transmission"
+      },
+      "categories": {
+        "mechanical": "Mechanical",
+        "thermal": "Thermal",
+        "physical": "Physical",
+        "electrical": "Electrical",
+        "optical": "Optical"
+      },
+      "conditions": {
+        "load_mpa": "at {{value}} MPa",
+        "load_n": "{{value}} N load",
+        "load_kg": "{{value}} kg load",
+        "temperature_c": "at {{value}} °C",
+        "rate_c_per_h": "{{value}} °C/h"
+      },
+      "conditionValues": {
+        "direction": {
+          "xy": "XY",
+          "yx": "YX",
+          "xz": "XZ",
+          "zx": "ZX",
+          "z": "Z (across layers)",
+          "along_layers": "along the layers",
+          "across_layers": "across the layers",
+          "not_stated": "direction not stated"
+        },
+        "specimen": {
+          "printed": "printed specimen",
+          "injection_moulded": "injection-moulded specimen",
+          "not_stated": "specimen not stated"
+        },
+        "point": {
+          "yield": "at yield",
+          "break": "at break"
+        },
+        "notch": {
+          "notched": "notched",
+          "unnotched": "unnotched"
+        },
+        "method": {
+          "A": "method A",
+          "B": "method B",
+          "A50": "method A50",
+          "A120": "method A120",
+          "B50": "method B50",
+          "B120": "method B120"
+        },
+        "scale": {
+          "A": "scale A",
+          "D": "scale D"
+        }
+      }
+    },
   "filamentHandling": {
     "title": "Preparation and safe handling",
     "editorHint": "These recommendations apply to this exact filament, not to the whole material type.",

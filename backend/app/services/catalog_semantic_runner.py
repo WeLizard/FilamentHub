@@ -19,7 +19,6 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError
 from app.schemas.catalog_curation import CatalogCurationCreate
 from app.services.catalog_curation_service import (
     CONTROL_FIELDS,
-    PACKAGING_FIELDS,
     PRICE_FIELDS,
     row_key,
     validate_proposal,
@@ -1856,11 +1855,7 @@ def _omit_batch_fields_without_evidence(report: SemanticReport) -> None:
         for row in getattr(report.proposal.draft, field):
             key = row_key(sheet, row)
             for name, value in list(row.items()):
-                forbidden = (
-                    name in PRICE_FIELDS
-                    or (sheet == "Filaments" and name in PACKAGING_FIELDS)
-                    or (sheet == "Brands" and name == "verified")
-                )
+                forbidden = name in PRICE_FIELDS or (sheet == "Brands" and name == "verified")
                 if forbidden:
                     row.pop(name)
                     report.issues.append(
