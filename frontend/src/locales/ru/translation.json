@@ -3490,8 +3490,6 @@
       "groupingLabel": "Как группировать",
       "grouping": { "product": "По товару", "brand": "По производителю", "type": "По типу" },
       "noCatalogCard": "Без карточки каталога",
-      "collapseGroup": "Свернуть группу",
-      "expandGroup": "Развернуть группу",
       "spoolCount_one": "{{count}} катушка",
       "spoolCount_few": "{{count}} катушки",
       "spoolCount_many": "{{count}} катушек",
@@ -6336,6 +6334,8 @@
       "materialResolved": "Распознан как {{base}}, подтип {{subtype}}",
       "materialResolvedBase": "Распознан как {{base}}",
       "materialUnrecognised": "Тип не распознан",
+      "collapseGroup": "Свернуть группу",
+      "expandGroup": "Развернуть группу",
       "tempsSummary": "Сопло / стол, °C",
       "rangeNames": {
         "recommended_nozzle_temp": "Сопло, °C",

@@ -3964,8 +3964,6 @@
       "groupingLabel": "分组方式",
       "grouping": { "product": "按商品", "brand": "按厂商", "type": "按类型" },
       "noCatalogCard": "无目录卡片",
-      "collapseGroup": "折叠分组",
-      "expandGroup": "展开分组",
       "spoolCount_other": "{{count}} 卷",
       "gramsLeft": "剩余 {{weight}}",
       "unknownMass": "重量未知：{{count}}",
@@ -6148,6 +6146,8 @@
       "materialResolved": "识别为 {{base}}，子类型 {{subtype}}",
       "materialResolvedBase": "识别为 {{base}}",
       "materialUnrecognised": "未识别的类型",
+      "collapseGroup": "折叠分组",
+      "expandGroup": "展开分组",
       "tempsSummary": "喷嘴 / 热床，°C",
       "rangeNames": {
         "recommended_nozzle_temp": "喷嘴，°C",
