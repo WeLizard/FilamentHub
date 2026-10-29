@@ -51,6 +51,7 @@ from app.schemas.preset_slot_sync import (
     HHReconciliationUnresolved,
     HHSnapshotRequest,
     ManualAssignmentRequest,
+    MoonrakerSlotsSnapshotRequest,
     PluginMaterialSlotContext,
     PluginMaterialSystemContext,
     PluginMaterialTopologyContextResponse,
@@ -63,6 +64,7 @@ from app.services.material_assignment_service import (
 )
 from app.services.material_contract_service import (
     HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+    KLIPPER_PROVIDERS,
     ensure_material_topology,
     ingest_printer_bridge_snapshot,
     list_physical_printers,
@@ -742,6 +744,61 @@ async def handle_hh_snapshot(
     await db.commit()
     await db.refresh(device)
     return device, updated, mismatches
+
+
+async def handle_moonraker_slots_snapshot(
+    db: AsyncSession,
+    user: User,
+    payload: MoonrakerSlotsSnapshotRequest,
+) -> tuple[UserPrinterDevice, int]:
+    """Record slot facts the plugin read from a Klipper feeder that is not Happy Hare."""
+    from app.services.orca_import_guard import hold_account_import_lock
+
+    await hold_account_import_lock(db, user.id)
+    device = await require_device(db, user.id, payload.physical_printer_id)
+    system_id = await _klipper_system_id(db, user.id, device.id)
+    if system_id is None:
+        await ensure_material_topology(
+            db,
+            device,
+            provider="legacy",
+            gate_indices={slot.provider_index for slot in payload.slots},
+        )
+        system_id = await _klipper_system_id(db, user.id, device.id)
+    if system_id is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    device.reports_feed = True
+    touch_device_last_seen(device)
+    result = await ingest_printer_bridge_snapshot(
+        db,
+        user.id,
+        device.id,
+        PrinterBridgeSnapshotRequest(
+            material_system_id=system_id,
+            provider="legacy",
+            transport="orca_plugin_lan",
+            source_instance_id=f"moonraker-plugin-{device.logical_id}",
+            capabilities=["read", "presence"],
+            observed_at=payload.snapshot_ts,
+            slots=payload.slots,
+            slot_topology_complete=True,
+        ),
+    )
+    await db.refresh(device)
+    return device, result.slots_seen
+
+
+async def _klipper_system_id(db: AsyncSession, user_id: int, device_id: int) -> int | None:
+    return await db.scalar(
+        select(MaterialSystem.id)
+        .where(
+            MaterialSystem.physical_printer_id == device_id,
+            MaterialSystem.user_id == user_id,
+            MaterialSystem.provider.in_([*KLIPPER_PROVIDERS, "manual"]),
+        )
+        .order_by(MaterialSystem.id)
+        .limit(1)
+    )
 
 
 async def build_plugin_material_topology_context(

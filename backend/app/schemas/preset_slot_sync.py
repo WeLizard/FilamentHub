@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.material_contract import PrinterBridgeSlotSnapshot
+
 # ── Device schemas ─────────────────────────────────────────────────────────
 
 
@@ -209,6 +211,26 @@ class HHSnapshotResponse(BaseModel):
     device_id: int
     updated_gates: int
     mismatches: list[int] = Field(default_factory=list)
+
+
+class MoonrakerSlotsSnapshotRequest(BaseModel):
+    """Normalized slots read through Moonraker from a non-Happy-Hare feeder."""
+
+    physical_printer_id: int = Field(..., ge=1)
+    snapshot_ts: datetime
+    slots: list[PrinterBridgeSlotSnapshot] = Field(..., min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def unique_slot_indices(self) -> "MoonrakerSlotsSnapshotRequest":
+        indices = [slot.provider_index for slot in self.slots]
+        if len(indices) != len(set(indices)):
+            raise ValueError("slot provider_index values must be unique")
+        return self
+
+
+class MoonrakerSlotsSnapshotResponse(BaseModel):
+    device_id: int
+    slots_seen: int
 
 
 class HHReconciliationGate(BaseModel):

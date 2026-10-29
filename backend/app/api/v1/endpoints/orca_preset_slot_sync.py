@@ -27,6 +27,8 @@ from app.schemas.preset_slot_sync import (
     HHSnapshotResponse,
     ManualAssignmentRequest,
     ManualAssignmentResponse,
+    MoonrakerSlotsSnapshotRequest,
+    MoonrakerSlotsSnapshotResponse,
     PluginMaterialTopologyContextResponse,
     SlotStateResponse,
     UsageEstimateRequest,
@@ -41,6 +43,7 @@ from app.services.preset_slot_sync_service import (
     handle_heartbeat,
     handle_hh_snapshot,
     handle_manual_assignment,
+    handle_moonraker_slots_snapshot,
     handle_usage_estimate,
 )
 
@@ -98,6 +101,17 @@ async def hh_snapshot(
         updated_gates=updated,
         mismatches=mismatches,
     )
+
+
+@router.post("/moonraker/snapshot", response_model=MoonrakerSlotsSnapshotResponse)
+async def moonraker_slots_snapshot(
+    payload: MoonrakerSlotsSnapshotRequest,
+    current_user: Annotated[User, Depends(require_material_topology_report)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MoonrakerSlotsSnapshotResponse:
+    """Upload slots (e.g. QIDI Box) read through Moonraker by the OrcaSlicer plugin."""
+    device, seen = await handle_moonraker_slots_snapshot(db, current_user, payload)
+    return MoonrakerSlotsSnapshotResponse(device_id=device.id, slots_seen=seen)
 
 
 @router.post(
