@@ -5036,6 +5036,9 @@ export interface MaterialSystemUpdate {
 }
 
 export const physicalPrintersAPI = {
+  revokeConnector: async (printerId: number, connectorId: number): Promise<PhysicalPrinter> => (
+    await api.delete<PhysicalPrinter>(`/physical-printers/${printerId}/connectors/${connectorId}`)
+  ).data,
   contactEvents: async (signal: AbortSignal): Promise<WebSocket> => {
     const { data } = await api.post<{ ticket: string }>('/physical-printers/contact-ticket', {}, { signal });
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');

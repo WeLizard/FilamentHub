@@ -140,3 +140,31 @@ async def test_heartbeat_with_an_unreachable_printer_is_a_live_helper_not_a_dead
     body = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
     channel = next(c for c in body["contact_channels"] if c["kind"] == "connector")
     assert channel["state"] == "executor_only"
+
+
+@pytest.mark.asyncio
+async def test_revoking_one_connector_leaves_the_other_helper_connected(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id = (await auth_client.post("/api/v1/physical-printers", json={"name": "P2S"})).json()["id"]
+    system_id = (
+        await auth_client.post(
+            f"/api/v1/physical-printers/{printer_id}/material-systems",
+            json={"name": "AMS", "kind": "mmu", "provider": "bambu",
+                  "capabilities": ["read", "presence"]},
+        )
+    ).json()["material_systems"][0]["id"]
+    first = await _pair(auth_client, printer_id, system_id, "workstation-aaaaaaaaaaaa")
+    second = await _pair(auth_client, printer_id, system_id, "workstation-bbbbbbbbbbbb")
+    connectors = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()["connectors"]
+    first_id = next(c["id"] for c in connectors if c["source_instance_id"] == "workstation-aaaaaaaaaaaa")
+
+    revoked = await auth_client.delete(f"/api/v1/physical-printers/{printer_id}/connectors/{first_id}")
+    assert revoked.status_code == 200, revoked.text
+
+    assert (await _beat(auth_client, first, system_id, "workstation-aaaaaaaaaaaa")).status_code == 401
+    assert (await _beat(auth_client, second, system_id, "workstation-bbbbbbbbbbbb")).status_code == 200
+    channels = revoked.json()["contact_channels"]
+    assert sorted(c["state"] for c in channels if c["kind"] == "connector") == ["needs_action", "unknown"]
+    foreign = await auth_client.delete(f"/api/v1/physical-printers/{printer_id}/connectors/999999")
+    assert foreign.status_code == 404

@@ -8031,6 +8031,27 @@
       "octoprint": "OctoPrint"
     }
   },
+  "connections": {
+    "title": "连接（{{count}}）",
+    "native": "Moonraker（Spoolman 连接）",
+    "revoke": "断开",
+    "revokeConfirm": "该助手将失去对打印机的访问权限，其他连接不受影响，之后可重新配对。",
+    "channel": {
+      "edge": "Edge 代理",
+      "orca": "OrcaSlicer 插件",
+      "moonraker": "Moonraker",
+      "octoprint": "OctoPrint 桥接",
+      "adapter": "适配器"
+    },
+    "state": {
+      "live": "已连接",
+      "executor_only": "助手在线，打印机不可达",
+      "silent": "暂无新数据",
+      "unknown": "状态未知",
+      "needs_action": "需要重新连接",
+      "not_configured": "未设置"
+    }
+  },
   "deviceLink": {
     "label": "插件连接",
     "executor": "助手在线，打印机不可达",

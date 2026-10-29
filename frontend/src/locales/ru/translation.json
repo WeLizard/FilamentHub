@@ -8238,6 +8238,27 @@
       "octoprint": "OctoPrint"
     }
   },
+  "connections": {
+    "title": "Подключения ({{count}})",
+    "native": "Moonraker (связь Spoolman)",
+    "revoke": "Отключить",
+    "revokeConfirm": "Этот помощник потеряет доступ к принтеру. Остальные подключения останутся. Позже его можно подключить снова.",
+    "channel": {
+      "edge": "Агент Edge",
+      "orca": "Плагин OrcaSlicer",
+      "moonraker": "Moonraker",
+      "octoprint": "Мост OctoPrint",
+      "adapter": "Адаптер"
+    },
+    "state": {
+      "live": "На связи",
+      "executor_only": "Помощник на связи, принтер недоступен",
+      "silent": "Нет свежих данных",
+      "unknown": "Состояние неизвестно",
+      "needs_action": "Нужно переподключить",
+      "not_configured": "Не настроено"
+    }
+  },
   "deviceLink": {
     "label": "Связь с плагином",
     "executor": "Помощник на связи, принтер недоступен",

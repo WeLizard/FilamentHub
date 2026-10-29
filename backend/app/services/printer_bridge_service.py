@@ -702,3 +702,53 @@ async def record_printer_bridge_heartbeat(
         accepted=True,
         last_seen_at=received_at,
     )
+
+
+async def revoke_connector_for_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    connector_id: int,
+) -> None:
+    """Cut one owned connector off, whatever kind of helper it is.
+
+    Other helpers on the same printer keep their links. A native Spoolman
+    connector is a mirror of the device key, so it is not revoked here.
+    """
+    from app.models.octoprint_bridge import OctoPrintBridgeConnection
+
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.id == connector_id,
+            PhysicalPrinterConnector.user_id == user_id,
+            PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
+        )
+        .with_for_update()
+    )
+    if connector is None:
+        raise_error(404, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
+    credential = await db.scalar(
+        select(PrinterBridgeCredential)
+        .where(PrinterBridgeCredential.connector_id == connector.id)
+        .with_for_update()
+    )
+    if credential is not None:
+        _mark_bridge_revoked(credential, connector)
+    else:
+        connection = await db.scalar(
+            select(OctoPrintBridgeConnection)
+            .where(OctoPrintBridgeConnection.connector_id == connector.id)
+            .with_for_update()
+        )
+        if connection is not None:
+            connection.token_hash = None
+            connection.pairing_code_hash = None
+            connection.pairing_expires_at = None
+            connection.revoked_at = _now()
+        connector.active = False
+    connector.usage_authority = False
+    if connector.material_system_id is not None:
+        await refresh_material_system_capabilities(db, connector.material_system_id)
+    await db.commit()

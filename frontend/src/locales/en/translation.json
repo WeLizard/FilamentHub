@@ -8048,6 +8048,27 @@
       "octoprint": "OctoPrint"
     }
   },
+  "connections": {
+    "title": "Connections ({{count}})",
+    "native": "Moonraker (Spoolman link)",
+    "revoke": "Disconnect",
+    "revokeConfirm": "This helper loses access to the printer. Other connections stay. It can be paired again later.",
+    "channel": {
+      "edge": "Edge agent",
+      "orca": "OrcaSlicer plugin",
+      "moonraker": "Moonraker",
+      "octoprint": "OctoPrint bridge",
+      "adapter": "Adapter"
+    },
+    "state": {
+      "live": "Connected",
+      "executor_only": "Helper online, printer unreachable",
+      "silent": "No recent data",
+      "unknown": "Status unknown",
+      "needs_action": "Reconnect needed",
+      "not_configured": "Not set up"
+    }
+  },
   "deviceLink": {
     "label": "Plugin link",
     "executor": "Helper online, printer unreachable",

@@ -115,7 +115,6 @@ from app.models.qr_identity import (
 )
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
-from app.models.workstation_key import WorkstationKey
 from app.models.shared_quote import SharedQuote
 from app.models.spool_batch_receipt import SpoolBatchReceipt
 from app.models.spool_compat_resource import (
@@ -156,6 +155,7 @@ from app.models.wiki_revision import (
     WikiRevisionStatus,
 )
 from app.models.wiki_space import WikiSpace
+from app.models.workstation_key import WorkstationKey
 
 __all__ = [
     "AccountEmailChangeConfirmation",

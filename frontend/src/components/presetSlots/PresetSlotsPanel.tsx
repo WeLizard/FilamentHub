@@ -16,6 +16,7 @@ import { feedAdapterFor } from './adapters';
 import { AddPhysicalPrinterModal } from '../AddPhysicalPrinterModal';
 import { PrinterSetupWizard } from '../PrinterSetupWizard';
 import { GateMapGrid } from './GateMapGrid';
+import { ConnectionsList } from './ConnectionsList';
 import { LinkInstructions } from './LinkInstructions';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
@@ -507,6 +508,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         confirmText={t('presetSlots.deleteSystem')}
         message={t('presetSlots.deleteSystemConfirm', { name: systemLabel })}
       />
+      {!collapsed && <ConnectionsList printer={printer} systemId={system.id} />}
       {setupOpen && <PrinterSetupWizard physicalPrinter={printer} onClose={() => setSetupOpen(false)} />}
 
       {!collapsed && adapter.renderSetup?.({ printer, system, gates, spools, linkConfirmed })}

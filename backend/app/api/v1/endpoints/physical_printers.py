@@ -87,6 +87,7 @@ from app.services.orca_printer_bundle_service import (
     build_orca_printer_bundle,
     build_orca_printer_recovery_bundle,
 )
+from app.services.printer_bridge_service import revoke_connector_for_user
 from app.services.printer_confirmation_service import (
     list_printer_suggestions,
     set_printer_confirmation,
@@ -546,6 +547,26 @@ async def remove_material_system(
         db, current_user.id, physical_printer_id, material_system_id
     )
     return await _respond(printer)
+
+
+@router.delete(
+    "/{physical_printer_id}/connectors/{connector_id}",
+    response_model=PhysicalPrinterResponse,
+)
+async def revoke_connector(
+    physical_printer_id: int,
+    connector_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PhysicalPrinterResponse:
+    """Revoke one helper's link; the printer and its other links stay."""
+    await revoke_connector_for_user(
+        db,
+        user_id=current_user.id,
+        physical_printer_id=physical_printer_id,
+        connector_id=connector_id,
+    )
+    return await _respond(await require_physical_printer(db, current_user.id, physical_printer_id))
 
 
 @router.put(
