@@ -829,7 +829,12 @@ async def build_plugin_material_topology_context(
     for printer in printers:
         systems: list[PluginMaterialSystemContext] = []
         for system in sorted(printer.material_systems, key=lambda item: item.id):
-            if not system.active or system.provider not in {"happy_hare", "bambu"}:
+            plugin_readable = system.provider in {"happy_hare", "bambu"} or (
+                # A feeder the plugin reads through Moonraker (QIDI Box) has no
+                # provider of its own; it is offered only over a bound local connection.
+                system.provider in {"legacy", "manual"} and bool(refs_by_printer.get(printer.id))
+            )
+            if not system.active or not plugin_readable:
                 continue
             if system.provider == "bambu" and not any(
                 connector.active

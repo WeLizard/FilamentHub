@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.material_system import MaterialSystem
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
@@ -556,6 +557,47 @@ async def test_plugin_material_topology_is_minimal_scoped_and_owned(
     )
     assert foreign_snapshot.status_code == 403
     assert foreign_snapshot.json()["detail"]["code"] == "ERR_DEVICE_NOT_OWNER"
+
+
+@pytest.mark.asyncio
+async def test_plugin_context_offers_a_moonraker_feeder_only_over_a_bound_connection(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "plugin-context-feeder")
+    source = "orca-plugin-instance-feeder1"
+    device = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={"device_fingerprint": "feeder-device", "device_name": "QIDI", "gate_count": 4},
+        headers=headers,
+    )
+    device_id = device.json()["device_id"]
+    systems = (await db_session.execute(
+        select(MaterialSystem).where(MaterialSystem.physical_printer_id == device_id)
+    )).scalars().all()
+    for system in systems:
+        system.provider = "manual"
+    user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
+    db_session.add(PrinterConnectionBinding(
+        user_id=user.id, physical_printer_id=device_id, source="orcaslicer_plugin",
+        source_instance_id=source, connection_ref="fh-feeder-ref",
+        normalized_endpoint="ref:feeder", provider="moonraker",
+    ))
+    await db_session.commit()
+    plugin = {"Authorization": "Bearer " + (await client.post(
+        "/api/v1/auth/plugin-session", json={}, headers=headers)).json()["plugin_token"]}
+
+    bound = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source}, headers=plugin,
+    )
+    unbound = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": "another-orca-instance-654321"}, headers=plugin,
+    )
+
+    assert [p["id"] for p in bound.json()["printers"]] == [device_id]
+    assert unbound.json()["printers"] == []
 
 
 @pytest.mark.asyncio
