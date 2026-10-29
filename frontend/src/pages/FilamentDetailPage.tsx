@@ -34,9 +34,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, physicalPrintersAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, physicalPrintersAPI, wikiAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { DEFAULT_DIAMETER, spoolLengthMeters } from '../utils/materialDensity';
@@ -253,6 +254,15 @@ export const FilamentDetailPage: React.FC = () => {
     queryKey: ['brand', filament?.brand_id, readerCountry],
     queryFn: () => brandsAPI.get(filament!.brand_id, undefined, readerCountry),
     enabled: !!filament?.brand_id,
+  });
+
+  // Статья о материале показывается, только если она опубликована.
+  const { data: materialArticle } = useQuery({
+    queryKey: ['wiki', 'article', filament?.material_wiki_slug],
+    queryFn: () => wikiAPI.getArticle(filament!.material_wiki_slug as string),
+    enabled: !!filament?.material_wiki_slug,
+    retry: false,
+    staleTime: 30 * 60 * 1000,
   });
 
   useEffect(() => {
@@ -629,6 +639,16 @@ export const FilamentDetailPage: React.FC = () => {
                 <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
                   {filament.material_type}
                 </span>
+              )}
+              {materialArticle && (
+                <Link
+                  to={`/wiki/${materialArticle.slug}`}
+                  title={materialArticle.title}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/30 px-2 py-0.5 text-xs text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200 md:px-3 md:py-1 md:text-base"
+                >
+                  <BookOpen className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                  {t('materialTypes.wikiLink')}
+                </Link>
               )}
               {/* Стандартный пруток есть у всех и потому ничего не говорит;
                   сказать стоит ровно тогда, когда он другой. */}

@@ -8856,6 +8856,7 @@
       "PA": "尼龙"
     },
     "familyCount_other": "{{count}} 种材料",
-    "showFamily": "{{base}} 系列的全部材料"
+    "showFamily": "{{base}} 系列的全部材料",
+    "wikiLink": "材料介绍"
   }
 }

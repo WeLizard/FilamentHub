@@ -547,6 +547,8 @@ class FilamentResponse(FilamentBase):
     # when the manufacturer's type names no known polymer or no known subtype.
     base_material_type: str | None = None
     material_subtype: str | None = None
+    # Wiki article about the material or its base; may be unpublished.
+    material_wiki_slug: str | None = None
     additional_properties: list[FilamentAdditionalProperty] = Field(default_factory=list)
     contributed_by_organization_id: int | None = None
     brand_name: str | None = Field(None)

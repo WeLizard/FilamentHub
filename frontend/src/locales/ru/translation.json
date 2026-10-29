@@ -8944,6 +8944,7 @@
     "familyCount_few": "{{count}} материала",
     "familyCount_many": "{{count}} материалов",
     "familyCount_other": "{{count}} материала",
-    "showFamily": "Все материалы семейства {{base}}"
+    "showFamily": "Все материалы семейства {{base}}",
+    "wikiLink": "О материале"
   }
 }

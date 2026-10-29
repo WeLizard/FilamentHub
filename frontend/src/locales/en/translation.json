@@ -8877,6 +8877,7 @@
     },
     "familyCount_one": "{{count}} material",
     "familyCount_other": "{{count}} materials",
-    "showFamily": "All {{base}} family materials"
+    "showFamily": "All {{base}} family materials",
+    "wikiLink": "About the material"
   }
 }

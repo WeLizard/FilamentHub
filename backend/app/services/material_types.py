@@ -103,6 +103,21 @@ MATERIAL_TYPES: tuple[MaterialTypeEntry, ...] = (
 BY_CODE: dict[str, MaterialTypeEntry] = {entry.code: entry for entry in MATERIAL_TYPES}
 BASE_CODES: tuple[str, ...] = tuple(entry.code for entry in MATERIAL_TYPES if entry.is_base)
 
+# Wiki articles about a material. A subtype without its own article links to
+# its base; the site shows the link only when the article is published.
+WIKI_ARTICLES: dict[str, str] = {
+    "PLA": "pla-properties",
+    "PETG": "petg-properties",
+    "ABS": "abs-properties",
+    "ASA": "asa-properties",
+    "PA": "nylon-properties",
+    "PC": "pc-properties",
+    "PC/ABS": "pc-abs-properties",
+    "TPU": "tpu-properties",
+    "TPE": "tpu-properties",
+    "TPC": "tpc-properties",
+}
+
 # Words that describe an additive, an effect or a claim rather than the
 # material itself. Matched as whole tokens after upper-casing.
 _MODIFIER_TOKENS = frozenset(
@@ -296,6 +311,10 @@ def material_type_identity_key(value: str | None) -> str:
     return "|".join((resolution.subtype, *resolution.modifiers))
 
 
+def material_wiki_slug(subtype: str | None, base: str | None) -> str | None:
+    return WIKI_ARTICLES.get(subtype or "") or WIKI_ARTICLES.get(base or "")
+
+
 def material_type_seed_rows() -> list[dict[str, object]]:
     return [
         {
@@ -303,6 +322,7 @@ def material_type_seed_rows() -> list[dict[str, object]]:
             "display_name": entry.code,
             "base_type": entry.base,
             "aliases": list(entry.aliases),
+            "wiki_article_slug": WIKI_ARTICLES.get(entry.code),
         }
         for entry in MATERIAL_TYPES
     ]

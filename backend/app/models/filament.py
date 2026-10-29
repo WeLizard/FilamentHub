@@ -347,6 +347,12 @@ class Filament(Base):
         "PrintProfileFilament", back_populates="filament", cascade="all, delete-orphan"
     )
 
+    @property
+    def material_wiki_slug(self) -> str | None:
+        from app.services.material_types import material_wiki_slug
+
+        return material_wiki_slug(self.material_subtype, self.base_material_type)
+
     @validates("material_type")
     def _derive_material_classification(self, _key: str, value: str) -> str:
         from app.services.material_types import resolve_material_type

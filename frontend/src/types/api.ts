@@ -135,6 +135,8 @@ export interface Filament {
   base_material_type?: string | null;
   /** Reference subtype (PLA+, PA6, PCTG); null when not recognised. */
   material_subtype?: string | null;
+  /** Wiki article about the material or its family; may be unpublished. */
+  material_wiki_slug?: string | null;
   color_name: string | null;
   color_hex: string | null;
   color_group?: FilamentColorGroup | null;

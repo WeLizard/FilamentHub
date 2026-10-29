@@ -498,6 +498,8 @@ def _public_rows(plan: list[dict[str, Any]]) -> list[CatalogImportPlanRow]:
             message=item.get("message"),
             changes=item.get("changes", {}),
             derived_from_preset_id=item.get("derived_from_preset_id"),
+            material_base=item.get("material_base"),
+            material_subtype=item.get("material_subtype"),
         )
         for item in plan
     ]

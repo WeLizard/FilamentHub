@@ -62,6 +62,7 @@ def upgrade() -> None:
         sa.column("display_name", sa.String),
         sa.column("base_type", sa.String),
         sa.column("aliases", sa.JSON),
+        sa.column("wiki_article_slug", sa.String),
     )
     existing = {row[0] for row in bind.execute(sa.select(properties.c.material_type))}
     for material_type in existing:

@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.services.catalog_duplicates import same_filament_kind
@@ -155,3 +156,37 @@ async def test_same_product_typed_with_another_spelling_is_rejected(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "ERR_FILAMENT_ALREADY_EXISTS"
+
+
+@pytest.mark.asyncio
+async def test_catalog_import_preview_shows_family_and_subtype_of_each_filament_row(
+    client: AsyncClient, admin_user
+):
+    draft = {
+        "filename": "catalog.xlsx",
+        "brands": [
+            {"_row": 2, "enabled": True, "brand_key": "b", "mode": "auto", "name": "Test Brand"}
+        ],
+        "filaments": [
+            {
+                "_row": 2,
+                "enabled": True,
+                "filament_key": "b:pla-plus",
+                "brand_key": "b",
+                "mode": "auto",
+                "name": "Rapid",
+                "material_type": "PLA+",
+                "color_name": "Black",
+            }
+        ],
+    }
+
+    preview = await client.post(
+        "/api/v1/admin/catalog/master-import/preview-draft",
+        headers={"Authorization": f"Bearer {create_access_token({'sub': admin_user.email})}"},
+        json=draft,
+    )
+
+    assert preview.status_code == 200, preview.json()
+    row = next(row for row in preview.json()["rows"] if row["sheet"] == "Filaments")
+    assert (row["material_base"], row["material_subtype"]) == ("PLA", "PLA+")
