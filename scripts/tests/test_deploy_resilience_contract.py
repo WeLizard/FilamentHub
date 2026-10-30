@@ -270,7 +270,7 @@ def _git_bash() -> str | None:
 def _run_powershell(script: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     shell = shutil.which("pwsh")
     assert shell is not None
-    task_temp = Path(os.environ.get("TEMP", r"F:\Temp"))
+    task_temp = Path(os.environ.get("TEMP") or tempfile.gettempdir())
     task_temp.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="fh-deploy-contract-", dir=task_temp) as temp_dir:
         runner = Path(temp_dir, "runner.ps1")
