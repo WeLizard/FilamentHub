@@ -81,25 +81,37 @@ function Get-GitConfigValue {
     return "$value".Trim()
 }
 
+function Get-GitIdentityArguments {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath
+    )
+
+    # An annotated version tag records its author; without one git refuses to
+    # create the tag. A plugin repository without its own identity tags as the
+    # owner recorded in the main repository, without changing its settings.
+    $arguments = @()
+    foreach ($key in @('user.name', 'user.email')) {
+        if (Get-GitConfigValue -RepositoryPath $RepositoryPath -Key $key) { continue }
+        $inherited = Get-GitConfigValue -RepositoryPath $script:MainRepositoryRoot -Key $key
+        if (-not $inherited) {
+            $example = if ($key -eq 'user.name') { 'Твоё имя' } else { 'твоя@почта' }
+            Stop-WithFix `
+                -Problem "${Name}: в git не записано, от чьего имени ставить метку версии ($key)." `
+                -Fix "git -C `"$script:MainRepositoryRoot`" config $key `"$example`""
+        }
+        $arguments += @('-c', "$key=$inherited")
+    }
+    return ,$arguments
+}
+
 function Assert-GitIdentity {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$RepositoryPath
     )
 
-    # An annotated version tag records its author; without one git refuses
-    # to create the tag, which used to happen only after the owner's approval.
-    foreach ($key in @('user.name', 'user.email')) {
-        if (-not (Get-GitConfigValue -RepositoryPath $RepositoryPath -Key $key)) {
-            $suggested = Get-GitConfigValue -RepositoryPath $script:MainRepositoryRoot -Key $key
-            if (-not $suggested) {
-                $suggested = if ($key -eq 'user.name') { 'Твоё имя' } else { 'твоя@почта' }
-            }
-            Stop-WithFix `
-                -Problem "${Name}: в git не записано, от чьего имени ставить метку версии ($key)." `
-                -Fix "git -C `"$RepositoryPath`" config $key `"$suggested`""
-        }
-    }
+    Get-GitIdentityArguments -Name $Name -RepositoryPath $RepositoryPath | Out-Null
 }
 
 function Get-RequiredPluginApiLevel {
@@ -1065,7 +1077,10 @@ function Publish-Component {
             throw "Локальный тег '$Tag' указывает на $localCommit, а опубликованный релизный commit — $ReleaseCommit."
         }
     } else {
-        Invoke-Checked git @('-C', $RepositoryPath, 'tag', '-a', $Tag, $ReleaseCommit, '-m', "$Name $Tag")
+        $identity = Get-GitIdentityArguments -Name $Name -RepositoryPath $RepositoryPath
+        Invoke-Checked git (@('-C', $RepositoryPath) + $identity + @(
+            'tag', '-a', $Tag, $ReleaseCommit, '-m', "$Name $Tag"
+        ))
     }
     $tagWasPushed = -not $remoteTagCommit
     if ($tagWasPushed) {

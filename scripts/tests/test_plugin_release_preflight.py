@@ -124,22 +124,38 @@ try { $level = Get-SitePluginApiLevel -BaseUrl 'https://example.invalid' } catch
         assert result == {"error": None, "level": expected}
 
 
-def test_missing_git_identity_is_reported_with_an_exact_command(tmp_path):
+def test_plugin_repository_without_identity_tags_as_the_main_repository_owner(tmp_path):
     main = repository(tmp_path / "main")
     git(main, "config", "user.name", "Owner Name")
     git(main, "config", "user.email", "owner@example.invalid")
     other = repository(tmp_path / "other")
     body = r"""
 $script:MainRepositoryRoot = $env:MAIN
-$failures = @(foreach ($path in @($env:MAIN, $env:OTHER)) {
-    try { Assert-GitIdentity -Name 'Fixture' -RepositoryPath $path; $null } catch { $_.Exception.Message }
-})
-@{ main = $failures[0]; other = $failures[1] } | ConvertTo-Json -Compress
+Assert-GitIdentity -Name 'Fixture' -RepositoryPath $env:OTHER
+$identity = Get-GitIdentityArguments -Name 'Fixture' -RepositoryPath $env:OTHER
+& git (@('-C', $env:OTHER) + $identity + @('tag', '-a', 'v1.0.0', 'HEAD', '-m', 'Fixture v1.0.0'))
+$tagger = & git -C $env:OTHER for-each-ref --format='%(taggername) %(taggeremail)' refs/tags/v1.0.0
+$own = (Get-GitIdentityArguments -Name 'Fixture' -RepositoryPath $env:MAIN).Count
+@{ tagger = "$tagger"; own = $own; saved = "$(& git -C $env:OTHER config --local --get user.name)" } |
+    ConvertTo-Json -Compress
 """
     result = run_ps(tmp_path, body, MAIN=str(main), OTHER=str(other), **isolated_git())
 
-    assert result["main"] is None
-    assert f'git -C "{other}" config user.name "Owner Name"' in result["other"]
+    assert result == {"tagger": "Owner Name <owner@example.invalid>", "own": 0, "saved": ""}
+
+
+def test_missing_identity_everywhere_is_reported_with_an_exact_command(tmp_path):
+    main = repository(tmp_path / "main")
+    other = repository(tmp_path / "other")
+    body = r"""
+$script:MainRepositoryRoot = $env:MAIN
+$failure = $null
+try { Assert-GitIdentity -Name 'Fixture' -RepositoryPath $env:OTHER } catch { $failure = $_.Exception.Message }
+@{ error = $failure } | ConvertTo-Json -Compress
+"""
+    result = run_ps(tmp_path, body, MAIN=str(main), OTHER=str(other), **isolated_git())
+
+    assert f'git -C "{main}" config user.name' in result["error"]
 
 
 @pytest.mark.parametrize("scenario", ["remote_elsewhere", "stale_local", "same_commit", "free"])
