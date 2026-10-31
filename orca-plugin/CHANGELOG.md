@@ -3,6 +3,7 @@
 Newest first. The numbered entry matching the plugin version is used for release notes.
 
 ## 0.2.8
+- Slice reporting is now on until you turn it off in the slicing plugin settings. A choice you already saved is kept.
 - Signing in and exporting a problem report no longer ask for the computer's hostname. The background key is labelled **OrcaSlicer** without reading the machine name.
 - On current OrcaSlicer builds, the plugin declares access to the two FilamentHub server addresses and background threads through the standard permission dialog. Older builds keep their supported permission flow; local-printer operations can still need separate permission.
 - Permission refusals and host errors are respected instead of silently falling back to a smaller request.
