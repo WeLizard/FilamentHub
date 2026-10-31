@@ -39,10 +39,10 @@ describe('independent embed startup recovery', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('has readable static instructions if even the watchdog cannot load', () => {
+  it('keeps the static panel hidden until the embed watchdog shows it', () => {
+    expect(startup()).toHaveAttribute('hidden');
+    startWatchdog();
     expect(startup()).not.toHaveAttribute('hidden');
-    expect(startup()).toHaveTextContent('If the catalog does not appear');
-    expect(startup()?.querySelector('noscript')).toHaveTextContent('FilamentHub needs JavaScript');
     expect(document.getElementById('root')).toBeEmptyDOMElement();
   });
 
