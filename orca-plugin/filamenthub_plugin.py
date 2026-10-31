@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.7"
+# version = "0.2.8"
 #
 # # Informational metadata; runtime grants are declared with
 # # orca.request_permissions() during capability registration.
@@ -655,7 +655,7 @@ def push_native_notification(level_name, text, hyper_text=None, on_click=None):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.7"
+PLUGIN_VERSION = "0.2.8"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",

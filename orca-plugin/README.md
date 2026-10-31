@@ -209,7 +209,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.7"
+# version = "0.2.8"
 # network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 ```
