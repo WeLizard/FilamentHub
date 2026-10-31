@@ -209,13 +209,14 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.0"
-# network = ["filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club"]
+# version = "0.2.7"
+# network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 ```
 
-Zero dependencies (stdlib `urllib`/`json`/`ssl`/`threading`). `network` is the
-forward-looking outbound-HTTPS allow-list we're proposing upstream.
+Zero dependencies (stdlib `urllib`/`json`/`ssl`/`threading`). The metadata
+`network` list documents the two production hosts; it does not grant access.
+Runtime permissions use OrcaSlicer's official declaration API below.
 
 ### Current host surfaces
 
@@ -240,9 +241,34 @@ OrcaSlicer build exposes the same capabilities:
   `orca.host.plugin.storage()` provide UI, read-only preset observations,
   locale and private plugin state.
 
-### Background-thread permission
+### Host permissions
 
-FilamentHub asks OrcaSlicer once for permission to create a background thread: network and file work run in the background so OrcaSlicer does not freeze. Answer "Yes" once; the choice is remembered. A "No" is not remembered by OrcaSlicer; FilamentHub then reports that the action did not start and OrcaSlicer asks again on the next one.
+During capability registration, current hosts receive
+`orca.request_permissions(network=["https://filamenthub.ru", "https://filamenthub.club"], threading=True)`.
+OrcaSlicer presents the missing permissions together before it creates a
+capability instance. Previously granted permissions are reused; refusing the
+declaration stops the plugin from loading. The host's network grant covers
+paths and ports on those exact hosts and the corresponding socket operations.
+It does not grant access to other hosts or subdomains.
+
+Both production origins are declared because the selected server is applied
+later, when the capability loads. Development builds declare only their actual
+`SITE_URL`; production packages remove the environment override. No printer
+addresses, arbitrary filesystem trees or program-execution grants are included.
+
+An older host without the `network` keyword still receives the supported
+`threading=True` declaration. Hosts predating that declaration use their normal
+runtime audit prompts. Only an unsupported argument signature triggers this
+fallback: permission refusals, validation failures and internal host errors are
+not retried as smaller requests. Network and file work still run in background
+threads so the slicer remains responsive; an action whose runtime thread is
+refused reports that it did not start.
+
+Signing in labels the background key **OrcaSlicer** without reading the
+computer's hostname. Diagnostic reports use the interpreter's existing OS and
+Python-version fields and do not query a hostname either. Explicit printer
+discovery, printer connections, file access and external-browser actions can
+still require the host's own relevant permissions.
 
 ### Sliced-file reporting
 
@@ -340,6 +366,31 @@ embeds the same locale catalogs as the release package.
 
 ---
 
+## Embedded-page startup recovery
+
+The website serves a small static recovery panel and an independent classic
+script before the application bundle starts. If an application file cannot
+load, initialization fails, or React has not committed a screen within 20
+seconds, the embedded page shows a reload action and a fixed diagnostic code:
+
+| Code | Startup stage |
+|---|---|
+| `FH-STARTUP-RESOURCE` | An application script, stylesheet or preload failed. |
+| `FH-STARTUP-RUNTIME` | An application error or rejected promise occurred before the first screen. |
+| `FH-STARTUP-INITIALIZATION` | Initial setup or translation initialization rejected. |
+| `FH-STARTUP-TIMEOUT` | No screen was committed within 20 seconds; a later successful startup still recovers. |
+
+The panel never displays exception messages, resource URLs or the bridge's
+session fragment. Reload preserves the original page binding. A successful
+React commit, including its normal error boundary screen, removes the panel
+and all startup listeners. If even the recovery script cannot load, static
+instructions remain visible.
+
+This recovery UI is deployed with the frontend, independently of the plugin
+package. It requires OrcaSlicer's WebView to render the document. A completely
+blank native view or a WebKit process failure still needs the exact OrcaSlicer
+build, operating-system version and host diagnostics to investigate.
+
 ## Test steps (owner)
 
 The production embed route was verified live and framable on 2026-07-15. Recheck
@@ -384,14 +435,16 @@ for every uploaded update.
 ## Alpha limitations
 
 If the FilamentHub service is unreachable, OrcaSlicer and its local presets remain
-available. A denied socket affects only an explicit local-printer action; the
-HTTPS catalog and external sign-in do not require a Python socket.
+available. The embedded HTTPS catalog loads through OrcaSlicer's WebView;
+Python synchronization, reporting and printer operations remain subject to the
+host's network permissions. Refusing a required declaration prevents the plugin
+from loading.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
 | 1 | **Hot reload needs the plugin preset API (OrcaSlicer 2.5.0-alpha+).** Older hosts have no `orca.host.preset.bundles.reload_local`. | On older builds, filament, machine, and process imports need an **app restart**. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. On hosts with the API the plugin reloads the local bundle itself. |
 | 2 | **The Pages bridge is injected into the host-provided plugin page and has no public caller allow-list.** | An unbound message reaching Python would have command authority. | Bind every command to a random per-tab value generated by Python; reject missing/stale bindings and require a different binding for the host-owned credential dialog. |
-| 3 | **The Plugin API cannot declare socket permissions**, and the audit prompt for `socket.__new__` has no target that can be persisted. | A real local-printer connection can ask again after OrcaSlicer restarts; denying the prompt blocks that local operation. | Start LAN work only from an explicit user path, handle denial without losing data, and ask upstream to audit address-bearing operations or expose a network permission declaration. |
+| 3 | **Dynamic printer addresses are not known at plugin registration.** Current hosts support origin grants for the two known FilamentHub servers; older hosts and targetless LAN events can still need runtime prompts. | A real local-printer operation can require a separate permission; the service grant does not cover the local network. | Keep LAN access within the normal host audit flow, start discovery from an explicit user action, and handle refusal without losing data. |
 | 4 | **The Python `Preset` binding omits read-only `filament_id` and `setting_id`.** | A loaded managed material cannot be mapped to Bambu's exact material command from the public object alone. | Walk only the host-selected backing-file inheritance chain and block when it cannot be resolved. Ask upstream to expose both fields as read-only properties. |
 
 These limitations are disclosed in the alpha listing. Gap #1

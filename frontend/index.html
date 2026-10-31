@@ -5,6 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=5" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/embed-startup.css" />
 
     <!-- x-default crawler fallback; production also emits en/ru/zh static variants. -->
     <meta data-seo-base="true" data-seo-field="description" name="description" content="Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems." />
@@ -61,12 +62,28 @@
       }
     </script>
 
-    <script src="/rotor-settings.js"></script>
-
     <title data-seo-field="title">3D Printing Filaments and Presets | FilamentHub</title>
   </head>
   <body>
+    <section id="fh-startup" role="status" aria-live="polite" data-nosnippet>
+      <div class="fh-startup-content">
+        <h1 id="fh-startup-title">Opening FilamentHub…</h1>
+        <p id="fh-startup-message">The catalog is loading.</p>
+        <p id="fh-startup-help">If the catalog does not appear, reload this page or restart the app. Include your exact OrcaSlicer build when reporting a problem in the plugin.</p>
+        <p id="fh-startup-code" hidden></p>
+        <button id="fh-startup-retry" type="button" hidden>Reload</button>
+        <noscript>
+          <p class="fh-startup-nojs" lang="en">FilamentHub needs JavaScript. Enable JavaScript or open the catalog in an updated browser.</p>
+          <p class="fh-startup-nojs" lang="ru">Для FilamentHub нужен JavaScript. Включите JavaScript или откройте каталог в обновлённом браузере.</p>
+          <p class="fh-startup-nojs" lang="zh">FilamentHub 需要 JavaScript。请启用 JavaScript，或在更新的浏览器中打开目录。</p>
+        </noscript>
+      </div>
+    </section>
     <div id="root"></div>
+    <!-- Classic same-origin scripts run before the deferred application module,
+         including after Vite moves that module's tag into the document head. -->
+    <script src="/embed-startup.js"></script>
+    <script src="/rotor-settings.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

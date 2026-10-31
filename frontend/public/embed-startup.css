@@ -1,0 +1,80 @@
+/* Independent of Tailwind/the app stylesheet so failed bundles remain readable. */
+#fh-startup {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2000;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background: #171724;
+  color: #e8e8ef;
+  font: 15px/1.5 system-ui, sans-serif;
+}
+
+#fh-startup[hidden],
+#fh-startup [hidden] {
+  display: none;
+}
+
+#fh-startup .fh-startup-content {
+  width: 100%;
+  max-width: 32rem;
+  margin: auto;
+}
+
+#fh-startup h1 {
+  margin: 0 0 12px;
+  color: #e8e8ef;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+#fh-startup p {
+  margin: 0 0 16px;
+}
+
+#fh-startup-help,
+#fh-startup-code {
+  color: #b7b7c8;
+}
+
+#fh-startup-code {
+  font: 13px/1.5 ui-monospace, monospace;
+}
+
+#fh-startup button {
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 1px solid #9b73e8;
+  border-radius: 6px;
+  background: #7043bc;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+#fh-startup button:focus-visible {
+  outline: 2px solid #e8e8ef;
+  outline-offset: 3px;
+}
+
+#fh-startup .fh-startup-nojs[lang="ru"],
+#fh-startup .fh-startup-nojs[lang="zh"] {
+  display: none;
+}
+
+html[lang="ru"] #fh-startup .fh-startup-nojs[lang="en"],
+html[lang="zh"] #fh-startup .fh-startup-nojs[lang="en"] {
+  display: none;
+}
+
+html[lang="ru"] #fh-startup .fh-startup-nojs[lang="ru"],
+html[lang="zh"] #fh-startup .fh-startup-nojs[lang="zh"] {
+  display: block;
+}

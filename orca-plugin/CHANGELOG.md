@@ -1,6 +1,12 @@
 # FilamentHub plugin — changelog
 
-Newest first. The top entry is the text pasted into the Plugin Hub on release.
+Newest first. The numbered entry matching the plugin version is used for release notes.
+
+## Unreleased
+- Signing in and exporting a problem report no longer ask for the computer's hostname. The background key is labelled **OrcaSlicer** without reading the machine name.
+- On current OrcaSlicer builds, the plugin declares access to the two FilamentHub server addresses and background threads through the standard permission dialog. Older builds keep their supported permission flow; local-printer operations can still need separate permission.
+- Permission refusals and host errors are respected instead of silently falling back to a smaller request.
+- The embedded website has an independent loading and recovery screen for startup failures, with a reload action and a safe diagnostic code. This part is delivered with the website update.
 
 ## 0.2.7
 - QIDI printers with a QIDI Box: the plugin now reads which slots hold filament, and their material and colour, straight from the printer over your network and shows them in the printer's material system. Nothing is sent to the printer. It needs no extra setup beyond the printer connection you already use; usage is still counted by the printer's own Spoolman connection.
