@@ -685,7 +685,7 @@ PLUGIN_SETTINGS_DEFAULTS = {
     "server": "ru",
     "auto_sync": True,
     "sync_success_notice": True,
-    "developer_mode": False,
+    "developer_mode": True,
     "appearance": "filamenthub",
 }
 _PLUGIN_SETTINGS = dict(PLUGIN_SETTINGS_DEFAULTS)

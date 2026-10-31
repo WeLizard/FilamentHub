@@ -805,7 +805,7 @@ def test_plugin_settings_switch_the_server_at_load_but_keep_one_account_origin(m
     assert module.API_BASE == "https://filamenthub.club/api/v1"
     assert module.EMBED_URL == "https://filamenthub.club/embed"
     assert module.account_origin() == module.PROD_SITE_URL
-    assert module.plugin_setting("developer_mode") is False
+    assert module.plugin_setting("developer_mode") is True
     settings_page = page.get_config_ui()
     assert "__" not in settings_page
     assert '"club"' in settings_page
@@ -1325,7 +1325,7 @@ def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch)
         "type": "plugin-capabilities",
         "pluginVersion": module.PLUGIN_VERSION,
         "capabilities": list(module.PLUGIN_CAPABILITIES),
-        "developerMode": False,
+        "developerMode": True,
         "appearance": "filamenthub",
     }]
 
