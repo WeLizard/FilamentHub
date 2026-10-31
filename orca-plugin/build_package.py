@@ -223,13 +223,20 @@ def _source_with_embedded_locales(source: str) -> str:
     return result
 
 
+# OrcaSlicer lists plugins by this header name, so the dev build says so there.
+PROD_NAME_LINE = '# name = "FilamentHub"\n'
+DEV_NAME_LINE = '# name = "FilamentHub (dev)"\n'
+
+
 def dev_source(source: str) -> str:
     """Return a localhost-default single file with all UI catalogs embedded."""
     if DEV_SITE_DEFAULT not in source:
         raise ValueError("dev SITE_URL default not found")
     if ENV_OVERRIDE_DEV not in source:
         raise ValueError("dev SITE_URL environment override not found")
-    result = _source_with_embedded_locales(source)
+    if source.count(PROD_NAME_LINE) != 1:
+        raise ValueError("plugin name header not found")
+    result = _source_with_embedded_locales(source.replace(PROD_NAME_LINE, DEV_NAME_LINE))
     ast.parse(result, filename="filamenthub_plugin.py[dev]")
     return result
 
@@ -368,6 +375,7 @@ def build_all(output_root: Path, wheel: bool = True) -> tuple[Path, Path]:
     dev_source_text = dev_path.read_text(encoding="utf-8")
     normalized_dev = dev_source_text.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
     normalized_dev = normalized_dev.replace(ENV_OVERRIDE_DEV, ENV_OVERRIDE_PROD)
+    normalized_dev = normalized_dev.replace(DEV_NAME_LINE, PROD_NAME_LINE)
     if normalized_dev != prod_source_text:
         raise ValueError("dev and prod plugin artifacts diverged beyond the site URL")
     return package_dir, dev_path

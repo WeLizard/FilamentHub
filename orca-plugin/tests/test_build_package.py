@@ -141,9 +141,12 @@ def test_combined_build_keeps_dev_and_prod_in_parity(plugin_module, tmp_path):
 
     assert package_dir.name == f"filamenthub-{plugin_module.PLUGIN_VERSION}"
     assert dev_plugin.parent.name == f"filamenthub-{plugin_module.PLUGIN_VERSION}-dev"
+    assert dev_source.count(builder.DEV_NAME_LINE) == 1
+    assert prod_source.count(builder.PROD_NAME_LINE) == 1
     assert (
         dev_source.replace(builder.DEV_SITE_DEFAULT, builder.PROD_SITE_DEFAULT)
         .replace(builder.ENV_OVERRIDE_DEV, builder.ENV_OVERRIDE_PROD)
+        .replace(builder.DEV_NAME_LINE, builder.PROD_NAME_LINE)
         == prod_source
     )
     assert "os.environ" not in prod_source and "getenv" not in prod_source
