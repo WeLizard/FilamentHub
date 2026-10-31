@@ -11360,7 +11360,7 @@ def report_slice(gcode_path, output_name="", host=""):
 SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
 # Speed Dial identifies an action by its title, so this name never changes.
 SYNC_ACTION_NAME = "FilamentHub Sync"
-SLICE_SETTINGS_DEFAULTS = {"report_slices": True}
+SLICE_SETTINGS_DEFAULTS = {"report_slices": False}
 SLICE_SETTINGS_COPY_KEYS = (
     "sliceSettingsTitle", "sliceSettingsPurpose", "sliceSettingsStamp",
     "sliceSettingsLocal",
@@ -11417,10 +11417,7 @@ def slice_reporting_enabled(capability):
     except Exception as exc:
         fh_log("slice settings unreadable: %s" % type(exc).__name__)
         return False
-    # Reporting is on until the user turns it off; unreadable settings never send.
-    return isinstance(settings, dict) and settings.get(
-        "report_slices", SLICE_SETTINGS_DEFAULTS["report_slices"]
-    ) is True
+    return isinstance(settings, dict) and settings.get("report_slices") is True
 
 
 class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
