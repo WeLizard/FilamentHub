@@ -36,7 +36,7 @@ def test_build_packages_locale_catalogs_and_checksums(
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     assert metadata["version"] == plugin_module.PLUGIN_VERSION
     assert metadata["network"] == [
-        "filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club",
+        "filamenthub.ru", "filamenthub.club",
     ]
     assert metadata["sha256"] == digest
     expected_locales = sorted(plugin_module.ORCA_UI_LOCALES)

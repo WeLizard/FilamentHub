@@ -9,10 +9,9 @@
 # author = "FilamentHub"
 # version = "0.2.7"
 #
-# # Proposed forward-looking key (see README gap). The current
-# # host reads only name/description/author/version/dependencies and ignores unknown
-# # keys, so declaring this today is harmless and documents intent.
-# network = ["filamenthub.ru", "*.filamenthub.ru", "filamenthub.club", "*.filamenthub.club"]
+# # Informational metadata; runtime grants are declared with
+# # orca.request_permissions() during capability registration.
+# network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 """FilamentHub plugin for OrcaSlicer's Python plugin system.
 
@@ -84,7 +83,6 @@ import inspect
 import ipaddress
 import json
 import os
-import platform
 import queue
 import random
 import re
@@ -1383,8 +1381,8 @@ def diagnostic_report_text():
         PLUGIN_VERSION,
         _CACHED_HOST_VERSION or "unknown",
         _CACHED_HOST_BUILD or "unknown",
-        platform.python_version(),
-        platform.platform(terse=True),
+        ".".join(str(part) for part in sys.version_info[:3]),
+        sys.platform,
         _CACHED_UI_LANGUAGE or "en",
     )
     text = redact_home(read_sync_log()).replace("\r\n", "\n")
@@ -10576,9 +10574,8 @@ def clear_workstation_key(expected_key=None):
 
 
 def workstation_key_name():
-    """Label the user sees in the key list, so a lost machine can be told apart."""
-    name = "".join(ch for ch in platform.node() if ch.isprintable()).strip()
-    return ("OrcaSlicer on " + name)[:100] if name else "OrcaSlicer"
+    """Name the client without querying the computer's protected hostname."""
+    return "OrcaSlicer"
 
 
 def _native_notifications_available():
@@ -15183,25 +15180,62 @@ def host_capability_lifecycle_available():
     )
 
 
-def declare_host_permissions():
-    """Ask OrcaSlicer up front for what the plugin needs and can name in advance.
+def _unsupported_permission_keyword(request, error, keyword):
+    """Recognize an older host's argument binder, never a failed permission call."""
+    # A Python function body adds another frame. Its own TypeError must not
+    # silently downgrade a permission request, even if its text looks similar.
+    traceback = error.__traceback__
+    if traceback is not None and traceback.tb_next is not None:
+        return False
+    message = str(error)
+    if (
+        (inspect.isfunction(request) or inspect.ismethod(request))
+        and "got an unexpected keyword argument '%s'" % keyword in message
+    ):
+        return True
+    # pybind11 reports the supported signature instead of naming the unknown
+    # keyword. A TypeError from a C++ body also has one Python traceback frame,
+    # so it must include that signature before it can trigger a fallback.
+    # The arguments actually supplied follow "Invoked with:".
+    supported, separator, _invoked = message.partition("Invoked with:")
+    return bool(
+        separator
+        and "request_permissions(): incompatible function arguments" in supported
+        and "The following argument types are supported:" in supported
+        and not re.search(r"\b%s\s*:" % re.escape(keyword), supported)
+    )
 
-    Only background threads qualify: the host matches network, file and process
-    targets by exact string, and ours (full request URLs, printer addresses,
-    saved file names) are not known at load.
+
+def declare_host_permissions():
+    """Declare known service hosts and threads through Orca's native load prompt.
+
+    Modern hosts grant the service origins across paths and socket operations.
+    A legacy host without the network keyword still receives the thread request;
+    its ordinary audit prompts continue to govern network access. Printer
+    addresses, file paths and external programs remain action-specific.
     """
     request = getattr(orca, "request_permissions", None)
     if not callable(request):
         return False
+    # Page settings are applied later in on_load(), so production declares both
+    # selectable origins. Development asks only for its explicit local/test site.
+    network = [SITE_URL] if DEV_CONTOUR else list(PROD_SITE_URLS.values())
     try:
-        request(threading=True)
-    except TypeError:
-        # An older host whose request_permissions() takes no threading argument.
-        fh_log("host cannot take a threading permission request")
-        return False
-    except Exception as exc:
-        fh_log("permission request skipped: %s" % type(exc).__name__)
-        return False
+        result = request(network=network, threading=True)
+    except TypeError as exc:
+        if not _unsupported_permission_keyword(request, exc, "network"):
+            raise
+        try:
+            result = request(threading=True)
+        except TypeError as legacy_exc:
+            if not _unsupported_permission_keyword(request, legacy_exc, "threading"):
+                raise
+            fh_log("host cannot take a threading permission request")
+            return False
+    # The official API records declarations and returns None; the host asks the
+    # user after registration. Also respect an explicit refusal from a host shim.
+    if result is False:
+        raise PermissionError("FilamentHub permission request denied")
     return True
 
 
