@@ -3372,6 +3372,12 @@ export const orcaslicerDeletedPresetsAPI = {
 };
 
 // Feedback API
+export async function getProtectedImageBlob(url: string, signal?: AbortSignal): Promise<Blob> {
+  const endpoint = url.startsWith(API_BASE_URL) ? url.slice(API_BASE_URL.length) : url;
+  const response = await api.get<Blob>(endpoint, { responseType: 'blob', signal });
+  return response.data;
+}
+
 export const feedbackAPI = {
   // Создать обратную связь (требуется авторизация)
   create: async (data: {
@@ -3408,11 +3414,7 @@ export const feedbackAPI = {
     return response.data;
   },
 
-  getAttachmentBlob: async (url: string): Promise<Blob> => {
-    const endpoint = url.startsWith(API_BASE_URL) ? url.slice(API_BASE_URL.length) : url;
-    const response = await api.get(endpoint, { responseType: 'blob' });
-    return response.data;
-  },
+  getAttachmentBlob: getProtectedImageBlob,
 };
 
 export const adminCatalogCurationAPI = {
@@ -3812,11 +3814,7 @@ export const wikiAPI = {
     await api.delete(`/wiki/author/media/${publicId}`);
   },
 
-  getMediaBlob: async (url: string): Promise<Blob> => {
-    const endpoint = url.startsWith(API_BASE_URL) ? url.slice(API_BASE_URL.length) : url;
-    const response = await api.get(endpoint, { responseType: 'blob' });
-    return response.data;
-  },
+  getMediaBlob: getProtectedImageBlob,
 
   createAuthoredArticle: async (data: {
     category_id: number;

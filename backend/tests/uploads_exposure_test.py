@@ -51,7 +51,8 @@ def test_managed_wiki_media_is_never_served_by_the_public_uploads_mount(tmp_path
 
 
 @pytest.mark.parametrize("directory", ["avatars", "brand_logos"])
-def test_versioned_public_images_are_immutable(tmp_path, directory: str):
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_versioned_public_images_are_immutable(tmp_path, directory: str, method: str):
     image_dir = tmp_path / directory
     image_dir.mkdir()
     (image_dir / "1_deadbeef.webp").write_bytes(b"image")
@@ -59,7 +60,8 @@ def test_versioned_public_images_are_immutable(tmp_path, directory: str):
     static_app.mount("/uploads", PublicStaticFiles(directory=tmp_path))
 
     with TestClient(static_app) as client:
-        response = client.get(f"/uploads/{directory}/1_deadbeef.webp")
+        response = client.request(method, f"/uploads/{directory}/1_deadbeef.webp")
 
     assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"

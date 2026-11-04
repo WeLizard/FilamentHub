@@ -8,10 +8,10 @@ import { extractHeadings } from './wikiHeadings';
 const { getMediaBlobMock } = vi.hoisted(() => ({ getMediaBlobMock: vi.fn() }));
 
 vi.mock('../../api/client', () => ({
-  wikiAPI: {
-    getMediaBlob: getMediaBlobMock,
-  },
+  getProtectedImageBlob: getMediaBlobMock,
 }));
+
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
 
 vi.mock('mermaid', () => ({
   default: {
@@ -99,7 +99,7 @@ describe('WikiContentRenderer', () => {
     );
 
     await waitFor(() => expect(screen.getByRole('img', { name: 'Print result' })).toHaveAttribute('src', objectUrl));
-    expect(getMediaBlobMock).toHaveBeenCalledWith(mediaUrl);
+    expect(getMediaBlobMock).toHaveBeenCalledWith(mediaUrl, expect.any(AbortSignal));
 
     unmount();
     expect(revokeObjectUrl).toHaveBeenCalledWith(objectUrl);

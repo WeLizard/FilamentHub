@@ -52,7 +52,7 @@ async def test_get_brand(client: AsyncClient, db_session: AsyncSession):
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     # Get brand via API
     response = await client.get(f"/api/v1/brands/{brand.id}")
     assert response.status_code == 200
@@ -160,10 +160,10 @@ async def test_admin_brand_logo_accepts_bmp_and_rejects_disguised_bmp(
 
     from PIL import Image
 
-    from app.api.v1.endpoints import admin as admin_endpoints
     from app.models.brand import Brand
+    from app.services import file_service
 
-    monkeypatch.setattr(admin_endpoints, "get_upload_root_dir", lambda: tmp_path)
+    monkeypatch.setattr(file_service, "get_upload_root_dir", lambda: tmp_path)
 
     brand = Brand(name="Logo BMP Brand", slug="logo-bmp-brand", active=True, verified=False)
     db_session.add(brand)
@@ -187,12 +187,25 @@ async def test_admin_brand_logo_accepts_bmp_and_rejects_disguised_bmp(
     with Image.open(stored_path) as stored:
         assert stored.format == "WEBP"
 
+    shared_route = await admin_client.post(
+        f"/api/v1/brands/{brand.id}/logo",
+        files={"file": ("logo.bmp", bmp_bytes((30, 20, 10)), "image/bmp")},
+    )
+    assert shared_route.status_code == 200
+    shared_url = shared_route.json()["logo_url"]
+    assert shared_url.startswith("/uploads/brand_logos/") and shared_url.endswith(".webp")
+    shared_path = tmp_path / "brand_logos" / shared_url.rsplit("/", 1)[-1]
+    with Image.open(shared_path) as stored:
+        assert stored.format == "WEBP"
+
     bad = await admin_client.post(
         f"/api/v1/admin/brands/{brand.id}/logo",
         files={"file": ("bad.bmp", b"not really a bmp", "image/bmp")},
     )
     assert bad.status_code == 400
     assert bad.json()["detail"]["code"] == "ERR_FILE_CONTENT_MISMATCH"
+    unchanged = await admin_client.get(f"/api/v1/brands/{brand.id}")
+    assert unchanged.json()["logo_url"] == shared_url
 
     active_svg = await admin_client.post(
         f"/api/v1/admin/brands/{brand.id}/logo",
@@ -200,6 +213,93 @@ async def test_admin_brand_logo_accepts_bmp_and_rejects_disguised_bmp(
     )
     assert active_svg.status_code == 400
     assert active_svg.json()["detail"]["code"] == "ERR_FILE_EXT_NOT_ALLOWED"
+
+
+@pytest.mark.asyncio
+async def test_brand_logo_permission_precedes_validation_and_grants_only_fill_gap(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch,
+    auth_user,
+):
+    """A representative can fill a missing logo, but cannot replace it."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.models.brand_territorial_grant import (
+        BrandTerritorialGrant,
+        GrantSource,
+        GrantStatus,
+    )
+    from app.models.organization import (
+        Organization,
+        OrganizationMemberRole,
+        OrganizationMembership,
+    )
+    from app.services import file_service
+
+    monkeypatch.setattr(file_service, "get_upload_root_dir", lambda: tmp_path)
+    brand = Brand(name="Logo Grant Brand", slug="logo-grant-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    missing = await auth_client.post(
+        f"/api/v1/brands/{brand.id + 100000}/logo",
+        files={"file": ("bad.svg", b"not an image", "image/svg+xml")},
+    )
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "ERR_BRAND_NOT_FOUND"
+
+    denied = await auth_client.post(
+        f"/api/v1/brands/{brand.id}/logo",
+        files={"file": ("bad.svg", b"not an image", "image/svg+xml")},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "ERR_NO_PERMISSION"
+
+    organization = Organization(name="Logo Grant Org", slug="logo-grant-org")
+    db_session.add(organization)
+    await db_session.flush()
+    auth_user.active_organization_id = organization.id
+    db_session.add(
+        OrganizationMembership(
+            organization_id=organization.id,
+            user_id=auth_user.id,
+            role=OrganizationMemberRole.OWNER,
+            active=True,
+            all_brands=True,
+        )
+    )
+    db_session.add(
+        BrandTerritorialGrant(
+            brand_id=brand.id,
+            organization_id=organization.id,
+            country="DE",
+            status=GrantStatus.active,
+            source=GrantSource.invitation,
+        )
+    )
+    await db_session.commit()
+
+    source = BytesIO()
+    Image.new("RGB", (12, 8), (40, 80, 120)).save(source, "PNG")
+    upload = await auth_client.post(
+        f"/api/v1/brands/{brand.id}/logo",
+        files={"file": ("logo.png", source.getvalue(), "image/png")},
+    )
+    assert upload.status_code == 200
+    logo_url = upload.json()["logo_url"]
+    assert logo_url.startswith("/uploads/brand_logos/") and logo_url.endswith(".webp")
+
+    replacement = await auth_client.post(
+        f"/api/v1/brands/{brand.id}/logo",
+        files={"file": ("bad.svg", b"not an image", "image/svg+xml")},
+    )
+    assert replacement.status_code == 403
+    assert replacement.json()["detail"]["code"] == "ERR_NO_PERMISSION"
 
 
 def test_validate_file_signature_rejects_content_ext_mismatch():

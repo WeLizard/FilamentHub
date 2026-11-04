@@ -20,9 +20,6 @@ from app.core.errors import (
     ERR_BRAND_SLUG_EXISTS,
     ERR_BRAND_SLUG_INVALID,
     ERR_BRAND_SLUG_RENAME_REQUIRED,
-    ERR_FILE_EXT_NOT_ALLOWED,
-    ERR_FILE_SIZE_EXCEEDED,
-    ERR_INVALID_FILE_PATH,
     ERR_NO_PERMISSION,
     raise_error,
 )
@@ -51,9 +48,7 @@ from app.services.brand_slug_service import (
 from app.services.catalog_duplicates import comparable_name, find_similar_brands
 from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.file_service import (
-    BRAND_LOGO_ALLOWED_EXTENSIONS,
-    get_upload_root_dir,
-    normalize_brand_logo_upload,
+    save_brand_logo,
 )
 from app.services.territorial_access import (
     active_grants_for,
@@ -427,9 +422,6 @@ async def upload_brand_logo(
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> BrandResponse:
     """Upload brand logo. Allowed for brand employees and admins."""
-    import uuid
-    from pathlib import Path
-
     result = await db.execute(select(Brand).where(Brand.id == brand_id))
     brand = result.scalar_one_or_none()
     if not brand:
@@ -445,38 +437,7 @@ async def upload_brand_logo(
     if not is_admin and not is_employee and not may_fill_gap:
         raise_error(403, ERR_NO_PERMISSION)
 
-    allowed_ext = BRAND_LOGO_ALLOWED_EXTENSIONS
-    file_ext = Path(file.filename or "").suffix.lower()
-    if file_ext not in allowed_ext:
-        raise_error(
-            400,
-            ERR_FILE_EXT_NOT_ALLOWED,
-            {"ext": file_ext, "allowed": ", ".join(sorted(allowed_ext))},
-        )
-
-    content = await file.read()
-    max_size = 2 * 1024 * 1024
-    if len(content) > max_size:
-        raise_error(
-            400,
-            ERR_FILE_SIZE_EXCEEDED,
-            {"size_mb": f"{len(content) / (1024*1024):.2f}", "max_mb": "2"},
-        )
-    content, stored_ext = normalize_brand_logo_upload(content, file_ext)
-
-    base_upload_dir = get_upload_root_dir()
-    logo_dir = base_upload_dir / "brand_logos"
-    logo_dir.mkdir(parents=True, exist_ok=True)
-    file_name = f"{brand_id}_{uuid.uuid4().hex[:8]}{stored_ext}"
-    file_path = (logo_dir / file_name).resolve()
-
-    if not str(file_path).startswith(str(logo_dir.resolve())):
-        raise_error(400, ERR_INVALID_FILE_PATH)
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    brand.logo_url = f"/uploads/brand_logos/{file_name}"
+    brand.logo_url = await save_brand_logo(file, brand_id)
     await db.commit()
     await db.refresh(brand)
 

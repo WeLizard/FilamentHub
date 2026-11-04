@@ -1,10 +1,10 @@
-import React, { Children, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExtraProps } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
 
-import { wikiAPI } from '../../api/client';
+import { ProtectedImageError, useProtectedImage } from '../ProtectedImage';
 import {
   isPluginEmbed,
   openSitePathInBrowser,
@@ -93,34 +93,18 @@ function AuthenticatedWikiImage({
   alt,
   ...rest
 }: React.ComponentPropsWithoutRef<'img'>) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!src) return;
-    let active = true;
-    let createdUrl: string | null = null;
-    void wikiAPI.getMediaBlob(src)
-      .then((blob) => {
-        if (!active) return;
-        createdUrl = URL.createObjectURL(blob);
-        setObjectUrl(createdUrl);
-      })
-      .catch(() => {
-        if (active) setObjectUrl(null);
-      });
-    return () => {
-      active = false;
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
-    };
-  }, [src]);
-
+  const image = useProtectedImage(src || '');
+  if (image.status === 'error') return <ProtectedImageError onRetry={image.retry} />;
   return (
     <img
-      src={objectUrl || undefined}
+      {...rest}
+      key={image.objectUrl}
+      src={image.objectUrl || undefined}
       alt={alt || ''}
       loading="lazy"
-      aria-busy={!objectUrl}
-      {...rest}
+      aria-busy={image.status === 'loading'}
+      onLoad={image.onLoad}
+      onError={image.onError}
     />
   );
 }
@@ -201,6 +185,14 @@ export function WikiContentRenderer({
     }
   }, [taskStorageKey]);
 
+  const renderImage = useCallback((props: React.ComponentPropsWithoutRef<'img'> & ExtraProps) => {
+      const { src, alt, node: _node, ...rest } = props;
+      if (privateMedia && src?.startsWith('/api/v1/wiki/media/')) {
+        return <AuthenticatedWikiImage src={src} alt={alt || ''} {...rest} />;
+      }
+      return <img src={src} alt={alt || ''} loading="lazy" {...rest} />;
+  }, [privateMedia]);
+
   const components = useMemo(() => ({
     code(props: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
       const { inline, className: codeClassName, children, ...rest } = props;
@@ -261,13 +253,7 @@ export function WikiContentRenderer({
         </div>
       );
     },
-    img(props: React.ComponentPropsWithoutRef<'img'> & ExtraProps) {
-      const { src, alt, node: _node, ...rest } = props;
-      if (privateMedia && src?.startsWith('/api/v1/wiki/media/')) {
-        return <AuthenticatedWikiImage src={src} alt={alt || ''} {...rest} />;
-      }
-      return <img src={src} alt={alt || ''} loading="lazy" {...rest} />;
-    },
+    img: renderImage,
     a(props: React.ComponentPropsWithoutRef<'a'> & ExtraProps) {
       const { href, children, node: _node, ...rest } = props;
       const external = Boolean(href && /^(https?:)?\/\//i.test(href));
@@ -344,7 +330,7 @@ export function WikiContentRenderer({
         </li>
       );
     },
-  }), [activeLocale, browserLinksAvailable, checkboxStates, headingIds, privateMedia, taskStorageKey]);
+  }), [activeLocale, browserLinksAvailable, checkboxStates, headingIds, renderImage, taskStorageKey]);
 
   return (
     <div className={`${ARTICLE_PROSE} ${className}`}>

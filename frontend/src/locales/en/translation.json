@@ -1,4 +1,8 @@
 {
+  "protectedImage": {
+    "error": "Could not load the image.",
+    "retry": "Retry"
+  },
   "qrUsage": {
     "line": "What is the spool QR for?",
     "tooltip": "Stick the QR on a spool and point your phone camera or the site's QR scanner at it — the spool's card or its shelf entry opens. Any QR scanner app works.",

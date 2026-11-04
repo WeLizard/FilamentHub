@@ -1,6 +1,7 @@
 """FilamentHub FastAPI Application."""
 
 import asyncio
+import mimetypes
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -257,6 +258,9 @@ app.add_middleware(
 # Static files for uploaded files
 upload_dir = get_upload_root_dir()
 ensure_upload_dir_compatibility()
+
+# The Python 3.11 slim runtime may not include /etc/mime.types.
+mimetypes.add_type("image/webp", ".webp")
 
 
 class PublicStaticFiles(StaticFiles):

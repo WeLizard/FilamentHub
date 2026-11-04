@@ -305,6 +305,7 @@ async def update_printer_profile(
 
     await db.commit()
     await db.refresh(profile)
+    await db.refresh(profile, attribute_names=["printer"])
 
     return PrinterProfileResponse.model_validate(profile)
 
