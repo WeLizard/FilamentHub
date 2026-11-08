@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "開発者モード",
   "settingsDeveloperModeHint": "プラグインのログを添付する「問題を報告」ボタンを表示します。",
   "settingsAccountHint": "同期するプリセットは FilamentHub のプロフィールで設定します。",
+  "settingsPermissionsHint": "OrcaSlicer がアクセスを拒否した場合は、プラグイン画面で FilamentHub の権限タブを開いてください（利用可能な場合）。必要なアクセスを許可して、もう一度お試しください。",
   "printerBundleLive": "プリンタープロファイル: {machines}、印刷プロファイル: {processes} をインストールしました。すぐに使用できます。",
   "bambuSearch": "ローカルネットワークを検索",
   "bambuSearchAgain": "再検索",

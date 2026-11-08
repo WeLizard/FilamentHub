@@ -113,6 +113,7 @@
   "settingsDeveloperMode": "開發者模式",
   "settingsDeveloperModeHint": "顯示「回報問題」按鈕，會將外掛記錄附加到您的回報中。",
   "settingsAccountHint": "要同步哪些預設，請在 FilamentHub 的個人資料中設定。",
+  "settingsPermissionsHint": "如果 OrcaSlicer 拒絕存取，請在外掛視窗中開啟 FilamentHub 的權限分頁（若有提供）。授予所需權限後再試一次。",
   "sliceSettingsTitle": "FilamentHub — 已切片檔案",
   "sliceSettingsPurpose": "將匯出的 G-code 保存在 FilamentHub 中，以便計算列印成本。",
   "sliceSettingsStamp": "無論是否啟用此選項，外掛都會在選用該外掛所產生的 G-code 中加入用來識別所用 FilamentHub 預設的註解。這些註解不會變更列印移動指令，且在未啟用此選項時不會傳送到任何地方。",

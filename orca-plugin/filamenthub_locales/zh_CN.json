@@ -122,6 +122,7 @@
   "settingsDeveloperMode": "开发者模式",
   "settingsDeveloperModeHint": "显示“报告问题”按钮，会将插件日志附加到您的报告中。",
   "settingsAccountHint": "要同步哪些预设，请在 FilamentHub 的个人资料中设置。",
+  "settingsPermissionsHint": "如果 OrcaSlicer 拒绝访问，请在插件窗口中打开 FilamentHub 的权限选项卡（如可用）。授予所需权限后重试。",
   "sliceSettingsTitle": "FilamentHub — 已切片文件",
   "sliceSettingsPurpose": "将导出的 G-code 保存在 FilamentHub 中，以便计算打印成本。",
   "sliceSettingsStamp": "无论是否启用此选项，插件都会在选用该插件生成的 G-code 中添加用于标识所用 FilamentHub 预设的注释。这些注释不会更改打印移动指令，且在未启用此选项时不会发送到任何地方。",

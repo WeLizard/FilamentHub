@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Mode de desenvolupador",
   "settingsDeveloperModeHint": "Mostra el botó Informa d'un problema, que adjunta el registre del connector al vostre informe.",
   "settingsAccountHint": "Quins perfils se sincronitzen es configura al vostre perfil de FilamentHub.",
+  "settingsPermissionsHint": "Si l’OrcaSlicer denega l’accés, obriu la pestanya de permisos de FilamentHub a la finestra de connectors, si està disponible. Concediu l’accés necessari i torneu-ho a provar.",
   "printerBundleLive": "Perfils d’impressora instal·lats: {machines}; perfils d’impressió: {processes}. Ja es poden utilitzar.",
   "bambuSearch": "Cerca a la xarxa local",
   "bambuSearchAgain": "Torna a cercar",

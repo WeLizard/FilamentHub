@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Chế độ nhà phát triển",
   "settingsDeveloperModeHint": "Hiển thị nút Báo cáo sự cố, nút này đính kèm nhật ký plugin vào báo cáo của bạn.",
   "settingsAccountHint": "Việc chọn cấu hình nào được đồng bộ được đặt trong hồ sơ của bạn trên FilamentHub.",
+  "settingsPermissionsHint": "Nếu OrcaSlicer từ chối quyền truy cập, hãy mở thẻ quyền của FilamentHub trong cửa sổ plugin nếu có. Cấp quyền cần thiết rồi thử lại.",
   "printerBundleLive": "Đã cài cấu hình máy in: {machines}; cấu hình in: {processes}. Có thể sử dụng ngay.",
   "bambuSearch": "Tìm trong mạng cục bộ",
   "bambuSearchAgain": "Tìm lại",

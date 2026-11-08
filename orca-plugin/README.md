@@ -68,6 +68,10 @@ OAuth uses a short-lived server handoff completed in the system browser and
 polled over normal HTTPS by the embedded React page. Older host builds use the
 same direct page in their managed-window fallback.
 
+External HTTP(S) links open in the system browser while the embedded page stays
+in place. This requires the matching website update (plugin API level 3).
+The separate browser sign-in flow and internal FilamentHub navigation are unchanged.
+
 ```
 React /embed/catalog  ── window.orca.postMessage(... + per-tab binding) ──▶
 Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer token)──▶
@@ -209,7 +213,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.8"
+# version = "0.2.9"
 # network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 ```

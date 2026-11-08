@@ -1279,7 +1279,8 @@ def test_local_dialog_callback_binds_messages_to_its_window(monkeypatch):
     assert submitted[0][0] == catalog._do_prepare_bambu
 
 
-def test_external_oauth_opens_only_the_bound_filamenthub_flow(monkeypatch):
+@pytest.mark.parametrize("provider", ["google", "yandex"])
+def test_external_oauth_opens_only_the_bound_filamenthub_flow(monkeypatch, provider):
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
     page.get_ui()
@@ -1289,23 +1290,68 @@ def test_external_oauth_opens_only_the_bound_filamenthub_flow(monkeypatch):
     common = {
         "source": "filamenthub-plugin",
         "type": "open-oauth",
-        "provider": "yandex",
+        "provider": provider,
         "requestId": "oauth-request-1",
         "bridgeSession": page._catalog._direct_bridge_session,
     }
     page.on_message(json.dumps(dict(common, path="https://evil.example/steal")))
-    page.on_message(json.dumps(dict(common, path="/oauth/plugin-start/yandex?flow=short")))
+    page.on_message(json.dumps(dict(common, path=f"/oauth/plugin-start/{provider}?flow=short")))
     assert opened == []
 
     flow = "a" * 32
-    page.on_message(json.dumps(dict(common, path=f"/oauth/plugin-start/yandex?flow={flow}")))
-    assert opened == [f"{module.SITE_URL}/oauth/plugin-start/yandex?flow={flow}"]
+    path = f"/oauth/plugin-start/{provider}?flow={flow}"
+    page.on_message(json.dumps(dict(common, path=path)))
+    assert opened == [f"{module.SITE_URL}{path}"]
     assert page.posted_messages[-1] == {
         "source": "filamenthub-host",
         "type": "oauth-browser-opened",
         "opened": True,
         "requestId": "oauth-request-1",
     }
+
+
+def test_external_urls_open_only_through_the_bound_pages_bridge(monkeypatch):
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+    page.get_ui()
+    opened = []
+    monkeypatch.setattr(module, "open_in_system_browser", lambda url: opened.append(url) or True)
+    url = "https://example.org:8443/manual.pdf?lang=en#page"
+    message = {"source": "filamenthub-plugin", "type": "open-external-url", "url": url}
+    page._catalog._local_dialog_session = "local-session"
+
+    page.on_message(message)
+    page.on_message(dict(message, bridgeSession="wrong-session"))
+    page.on_message(dict(message, localDialogSession="local-session"))
+    assert opened == []
+    assert page.posted_messages == []
+
+    bound = dict(message, bridgeSession=page._catalog._direct_bridge_session)
+    failed = {"source": "filamenthub-host", "type": "external-url-open-failed"}
+    for unsafe_url in (
+        "/relative",
+        "//example.org/relative",
+        "javascript:alert(1)",
+        "file:///C:/Windows/explorer.exe",
+        "https:///no-host",
+        "https://account@example.org/manual",
+        "https://example.org\\manual",
+        "https://example.org/ma\nnual",
+        "https://example.org/ma\x7fnual",
+        "https://example.org:invalid/manual",
+        "https://example.org:65536/manual",
+        f"{module.SITE_URL}/catalog",
+    ):
+        page.on_message(dict(bound, url=unsafe_url))
+        assert page.posted_messages.pop() == failed
+    assert opened == []
+
+    page.on_message(json.dumps(bound))
+    assert opened == [url]
+
+    monkeypatch.setattr(module, "open_in_system_browser", lambda _url: False)
+    page.on_message(json.dumps(bound))
+    assert page.posted_messages == [failed]
 
 
 def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch):
@@ -1320,6 +1366,7 @@ def test_pages_host_answers_capabilities_on_the_bound_direct_bridge(monkeypatch)
         "bridgeSession": page._catalog._direct_bridge_session,
     }))
 
+    assert "open-external-url" in module.PLUGIN_CAPABILITIES
     assert page.posted_messages == [{
         "source": "filamenthub-host",
         "type": "plugin-capabilities",

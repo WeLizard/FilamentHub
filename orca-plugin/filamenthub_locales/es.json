@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Modo desarrollador",
   "settingsDeveloperModeHint": "Muestra el botón Informar de un problema, que adjunta el registro del plugin a su informe.",
   "settingsAccountHint": "Qué perfiles sincronizar se configura en su perfil de FilamentHub.",
+  "settingsPermissionsHint": "Si OrcaSlicer deniega el acceso, abre la pestaña de permisos de FilamentHub en la ventana de complementos, si está disponible. Concede el acceso necesario y vuelve a intentarlo.",
   "printerBundleLive": "Perfiles de impresora instalados: {machines}; perfiles de impresión: {processes}. Ya están listos para usar.",
   "bambuSearch": "Buscar en la red local",
   "bambuSearchAgain": "Buscar de nuevo",

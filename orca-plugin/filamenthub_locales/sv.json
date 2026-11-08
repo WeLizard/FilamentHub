@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Utvecklarläge",
   "settingsDeveloperModeHint": "Visar knappen Rapportera ett problem, som bifogar tilläggets logg till rapporten.",
   "settingsAccountHint": "Vilka förinställningar som synkas ställer du in i din profil på FilamentHub.",
+  "settingsPermissionsHint": "Om OrcaSlicer nekar åtkomst, öppna behörighetsfliken för FilamentHub i fönstret för tillägg om den finns. Ge nödvändig åtkomst och försök igen.",
   "printerBundleLive": "Installerade skrivarprofiler: {machines}; utskriftsprofiler: {processes}. De är redo att användas.",
   "bambuSearch": "Sök i lokalt nätverk",
   "bambuSearchAgain": "Sök igen",

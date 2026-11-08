@@ -671,6 +671,7 @@ PLUGIN_CAPABILITIES = (
     "printer-setup-v1",
     "printer-discovery-v1",
     "open-external",
+    "open-external-url",
 )
 PROD_SITE_URL = "https://filamenthub.ru"
 PROD_SITE_URLS = {"ru": PROD_SITE_URL, "club": "https://filamenthub.club"}
@@ -943,8 +944,40 @@ def open_site_path(path):
     return open_in_system_browser(SITE_URL + path)
 
 
+def _valid_external_browser_url(url):
+    """Accept only absolute HTTP(S) URLs safe to pass to the system launcher."""
+    if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
+        return False
+    if re.search(r"[\s\x00-\x1f\x7f-\x9f\\]", url):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        # The SPA serializes browser URLs with an ASCII host (including IDNs).
+        if not (
+            parsed.hostname
+            and parsed.username is None
+            and re.fullmatch(r"(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]+)?", parsed.netloc)
+        ):
+            return False
+        port = parsed.port  # Access also validates the numeric range.
+        site = urllib.parse.urlsplit(SITE_URL)
+        default_port = 443 if parsed.scheme == "https" else 80
+        return (
+            parsed.scheme,
+            parsed.hostname,
+            default_port if port is None else port,
+        ) != (
+            site.scheme,
+            site.hostname,
+            default_port if site.port is None else site.port,
+        )
+    except ValueError:
+        return False
+
+
 def _temporary_path(path):
-    return "%s.tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
+    basename = ".fh.tmp.%x.%x" % (os.getpid(), threading.get_ident())
+    return os.path.join(os.path.dirname(path), basename)
 
 
 def _write_bytes_atomic_unchecked(path, payload, mode=None):
@@ -1108,7 +1141,7 @@ def ensure_bundle_metadata():
                 },
             )
     except OSError:
-        pass
+        fh_log("managed local bundle metadata write failed")
 
 
 def reload_managed_local_bundle_if_available():
@@ -1117,7 +1150,9 @@ def reload_managed_local_bundle_if_available():
         getattr(getattr(orca, "host", None), "preset", None), "bundles", None
     )
     reload_bundle = getattr(bundles, "reload_local", None)
+    folder_source = "inferred" if _user_preset_folder else "default"
     if not callable(reload_bundle):
+        fh_log("managed local bundle reload API unavailable (folder_source=%s)" % folder_source)
         return False
     list_ids = getattr(bundles, "list_ids", None)
 
@@ -1128,22 +1163,27 @@ def reload_managed_local_bundle_if_available():
             except Exception as exc:
                 # The listing is a diagnostic; reload_local reports its own failure.
                 fh_log(
-                    "local bundle listing failed: %s: %s"
-                    % (type(exc).__name__, str(exc)[:200])
+                    "local bundle listing failed: %s (folder_source=%s)"
+                    % (type(exc).__name__, folder_source)
                 )
                 listed = None
             if listed is not None and BUNDLE_ID not in listed:
                 fh_log(
                     "managed local bundle is not offered by the host for reload "
-                    "(host lists %d bundle(s))" % len(listed)
+                    "(host lists %d bundle(s), folder_source=%s, metadata_exists=%s)"
+                    % (
+                        len(listed),
+                        folder_source,
+                        os.path.isfile(os.path.join(user_bundle_dir(), "bundle_metadata.json")),
+                    )
                 )
                 return False
         try:
             reload_bundle(BUNDLE_ID)
         except Exception as exc:
             fh_log(
-                "managed local-bundle reload failed: %s: %s"
-                % (type(exc).__name__, str(exc)[:200])
+                "managed local-bundle reload failed: %s (folder_source=%s)"
+                % (type(exc).__name__, folder_source)
             )
             return False
         fh_log("managed local bundle reloaded")
@@ -1498,7 +1538,7 @@ def preset_id_from_info_file(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             return preset_id_from_info_content(fh.read())
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pass
     return None
 
@@ -1507,7 +1547,7 @@ def preset_version_id_from_info_file(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             return preset_version_id_from_info_content(fh.read())
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -1554,7 +1594,7 @@ def _managed_info_claim(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             content = fh.read()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False, None
     for line in content.splitlines():
         key, separator, value = line.partition("=")
@@ -4678,6 +4718,10 @@ def observe_printer_presets():
       setup separately from the rest of each vendor bundle, so visibility is the
       evidence that a stock machine belongs in the user's workspace.
     """
+    return _resolve_printer_observations(_snapshot_printer_observations())
+
+
+def _snapshot_printer_observations():
     observed_connections = PrinterObservationSnapshot()
     identity_items = []
     identity_observations = []
@@ -4774,6 +4818,19 @@ def observe_printer_presets():
                 # survive the sync. A visible stock profile represents a model
                 # explicitly enabled in Orca's setup, not every vendor preset.
                 observed_connections.append(observation)
+    except Exception as exc:
+        error = str(exc)
+    else:
+        error = None
+    return observed_connections, identity_items, identity_observations, error
+
+
+def _resolve_printer_observations(snapshot):
+    observed_connections, identity_items, identity_observations, error = snapshot
+    if error is not None:
+        fh_log("printer observation scan failed: %s" % error)
+        return observed_connections
+    try:
         if identity_items:
             account_id, identity_items, registry_saved = (
                 reconcile_local_profile_identities(
@@ -5141,16 +5198,12 @@ def observe_local_moonraker_connections(observations):
     observation payload.  The endpoint and API key stay in this in-memory list
     and are never added to that payload or written by FilamentHub.
     """
-    by_preset = {}
-    for observation in observations or []:
-        connection_ref = observation.get("connection_ref")
-        host = _preset_scalar(observation.get("print_host"))
-        name = str(observation.get("preset_name") or "")
-        if connection_ref and host:
-            by_preset.setdefault((name, host), []).append(connection_ref)
+    connections, error = _snapshot_local_moonraker_connections()
+    return _resolve_local_moonraker_connections(observations, connections, error)
 
-    candidates = {}
-    ambiguous = set()
+
+def _snapshot_local_moonraker_connections():
+    connections = []
     try:
         printers = orca.host.preset_bundle().printers
         for index in range(printers.size()):
@@ -5169,23 +5222,41 @@ def observe_local_moonraker_connections(observations):
             ).lower()
             if not host or "moonraker" not in {host_type, printer_agent}:
                 continue
-            refs = by_preset.get((str(preset.name or ""), host)) or []
-            if len(refs) != 1:
-                continue
-            connection_ref = refs[0]
-            candidate = {
-                "connection_ref": connection_ref,
-                "print_host": host,
-                "api_key": _preset_scalar(
-                    _preset_config_value(preset, "printhost_apikey")
-                ),
-            }
-            if connection_ref in candidates and candidates[connection_ref] != candidate:
-                ambiguous.add(connection_ref)
-            else:
-                candidates[connection_ref] = candidate
+            connections.append((
+                str(preset.name or ""), host,
+                _preset_scalar(_preset_config_value(preset, "printhost_apikey")),
+            ))
     except Exception as exc:
-        fh_log("local Moonraker scan failed: %s" % exc)
+        return connections, str(exc)
+    return connections, None
+
+
+def _resolve_local_moonraker_connections(observations, connections, error):
+    if error is not None:
+        fh_log("local Moonraker scan failed: %s" % error)
+    by_preset = {}
+    for observation in observations or []:
+        connection_ref = observation.get("connection_ref")
+        host = _preset_scalar(observation.get("print_host"))
+        name = str(observation.get("preset_name") or "")
+        if connection_ref and host:
+            by_preset.setdefault((name, host), []).append(connection_ref)
+    candidates = {}
+    ambiguous = set()
+    for name, host, api_key in connections:
+        refs = by_preset.get((name, host)) or []
+        if len(refs) != 1:
+            continue
+        connection_ref = refs[0]
+        candidate = {
+            "connection_ref": connection_ref,
+            "print_host": host,
+            "api_key": api_key,
+        }
+        if connection_ref in candidates and candidates[connection_ref] != candidate:
+            ambiguous.add(connection_ref)
+        else:
+            candidates[connection_ref] = candidate
     return [
         candidate
         for connection_ref, candidate in candidates.items()
@@ -6518,28 +6589,44 @@ def scan_managed_host_filaments():
     return resolved
 
 
-def loaded_managed_preset_ids():
-    """Managed preset ids OrcaSlicer has actually loaded into its collection.
-
-    A written JSON file is desired state, not evidence. Orca reads user presets
-    at startup and silently discards any file its config loader rejects, so file
-    count and loaded count are different facts. Returns None when the host
-    collection cannot be read, which is "unknown" rather than "none loaded".
-    Host reads must happen on the UI thread.
-    """
-    loaded = set()
+def _snapshot_loaded_managed_presets(*, log_errors=True):
+    """Copy identities from the live collection on the UI thread."""
+    legacy_ids = set()
+    local_files = set()
     try:
         filaments = orca.host.preset_bundle().filaments
         for index in range(filaments.size()):
-            preset_id = preset_id_from_bundle(
-                str(getattr(filaments.preset(index), "bundle_id", "") or "")
-            )
-            if preset_id is not None:
-                loaded.add(preset_id)
+            preset = filaments.preset(index)
+            bundle_id = getattr(preset, "bundle_id", "")
+            if bundle_id == BUNDLE_ID:
+                path = getattr(preset, "file", "")
+                if path:
+                    local_files.add(os.path.normcase(os.path.normpath(path)))
+            else:
+                preset_id = preset_id_from_bundle(bundle_id)
+                if preset_id is not None:
+                    legacy_ids.add(preset_id)
     except Exception as exc:
-        fh_log("loaded managed preset scan unavailable: %s" % type(exc).__name__)
+        if log_errors:
+            fh_log("loaded managed preset scan unavailable: %s" % type(exc).__name__)
         return None
-    return loaded
+    return legacy_ids, local_files
+
+
+def _resolve_loaded_managed_preset_ids(snapshot, local_entries):
+    """Match native bundle members to managed files by exact path."""
+    if snapshot is None:
+        return None
+    legacy_ids, local_files = snapshot
+    if not local_files:
+        return legacy_ids
+    # The host reports the bundle's ID, not the preset's FilamentHub ID.
+    # Disk markers identify files already present in the host snapshot.
+    return legacy_ids | {
+        preset_id
+        for preset_id, entry in local_entries.items()
+        if os.path.normcase(os.path.normpath(entry["path"])) in local_files
+    }
 
 
 def scan_active_user_filaments():
@@ -6550,7 +6637,11 @@ def scan_active_user_filaments():
     in FilamentHub before the user saved it, so the persisted file is the source
     for this particular outbound path.
     """
-    candidates = []
+    return _read_saved_filament_sources(_snapshot_user_filament_sources())
+
+
+def _snapshot_user_filament_sources():
+    sources = []
     try:
         filaments = orca.host.preset_bundle().filaments
         for i in range(filaments.size()):
@@ -6560,24 +6651,36 @@ def scan_active_user_filaments():
             name = str(getattr(preset, "name", "") or "").strip()
             if not name or "[fh]" in name or "@fh" in name:
                 continue
-            profile = saved_user_filament_profile(preset, name)
-            if profile is None:
-                continue
             _, parent = _profile_parent(filaments, preset)
-            candidates.append({
-                "name": name,
-                "profile": profile,
-                "upload_profile": complete_filament_draft(profile, parent),
-                "locator": _local_profile_locator(preset, "filament", name),
-            })
+            sources.append((name, str(getattr(preset, "file", "") or ""),
+                            complete_filament_draft({}, parent)))
     except Exception:
         pass
+    return sources
+
+
+def _read_saved_filament_sources(sources):
+    candidates = []
+    for name, path, inherited in sources:
+        profile = _read_saved_user_filament(path, name)
+        if profile is None:
+            continue
+        candidates.append({
+            "name": name,
+            "profile": profile,
+            "upload_profile": {**inherited, **profile},
+            "locator": _local_profile_locator_from_path(path, "filament", name),
+        })
     return candidates
 
 
 def saved_user_filament_profile(preset, expected_name):
     """Read one saved unmanaged filament profile without trusting live edits."""
-    path = str(getattr(preset, "file", "") or "").strip()
+    return _read_saved_user_filament(getattr(preset, "file", ""), expected_name)
+
+
+def _read_saved_user_filament(path, expected_name):
+    path = str(path or "").strip()
     if not path or not path.lower().endswith(".json"):
         return None
     account_root = os.path.abspath(
@@ -7383,7 +7486,7 @@ def local_profile_external_id(account_id, local_profile_id):
     return "orca-local-v1:%s:%s" % (account_id, local_profile_id)
 
 
-def scan_user_profiles_checked(kind):
+def scan_user_profiles_checked(kind, *, log_errors=True):
     """Saved user profiles only; system presets travel as observations.
 
     Importing a selected stock profile would turn the global read-only
@@ -7443,7 +7546,8 @@ def scan_user_profiles_checked(kind):
             })
             seen_names.add(name)
     except Exception as exc:
-        fh_log("%s profile scan failed: %s" % (kind, exc))
+        if log_errors:
+            fh_log("%s profile scan failed: %s" % (kind, exc))
         return out, False
     return out, complete
 
@@ -7816,6 +7920,7 @@ legend{margin-bottom:6px;font-weight:600}
 <label class="row"><input type="checkbox" data-key="sync_success_notice"><span><span data-copy="settingsSuccessNotice"></span><span class="hint" data-copy="settingsSuccessNoticeHint"></span></span></label>
 <label class="row"><input type="checkbox" data-key="developer_mode"><span><span data-copy="settingsDeveloperMode"></span><span class="hint" data-copy="settingsDeveloperModeHint"></span></span></label>
 <p class="note" data-copy="settingsAccountHint"></p>
+<p class="note" data-copy="settingsPermissionsHint"></p>
 <script>
 (function () {
   var copy = __COPY__;
@@ -7882,6 +7987,7 @@ SETTINGS_COPY_KEYS = (
     "settingsDeveloperMode",
     "settingsDeveloperModeHint",
     "settingsAccountHint",
+    "settingsPermissionsHint",
 )
 
 
@@ -9938,6 +10044,7 @@ class BambuBridgeRuntime:
         self._retry_at = {}
         self._usage_states = {}
         self._usage_retry_at = {}
+        self._usage_log_at = {}
         self._streams = {}
 
     def _stream_observation(self, config):
@@ -10030,24 +10137,56 @@ class BambuBridgeRuntime:
                 if queue and queue[0] is observation:
                     queue.pop(0)
 
+    def _log_usage_issue(self, binding, stage, detail):
+        key = (binding, stage)
+        now = time.monotonic()
+        previous_detail, previous_at = self._usage_log_at.get(key, (None, 0))
+        if detail != previous_detail or now - previous_at >= 300:
+            self._usage_log_at[key] = (detail, now)
+            fh_log("Bambu usage %s: %s" % (stage, detail))
+
+    def _write_usage_journal(self, binding, path, state, *, stage="journal write"):
+        try:
+            write_json_atomic(path, state, mode=0o600)
+        except OSError as exc:
+            self._log_usage_issue(
+                binding, stage,
+                "%s errno=%s winerror=%s path_chars=%d" % (
+                    type(exc).__name__, exc.errno, getattr(exc, "winerror", None),
+                    len(_temporary_path(path)),
+                ),
+            )
+            return False
+        self._usage_log_at.pop((binding, stage), None)
+        return True
+
     def _record_usage(self, config, source_instance_id, report, observed_at):
         if not config.get("bridge_token"):
             return False
+        log_binding = (config["physical_printer_id"], config["material_system_id"])
         binding = hashlib.sha256(json.dumps([
-            config["physical_printer_id"], config["material_system_id"],
-            source_instance_id, config["bridge_token"],
+            *log_binding, source_instance_id, config["bridge_token"],
         ]).encode()).hexdigest()
-        path = os.path.join(os.path.dirname(BAMBU_CONFIG_FILE), "bambu_usage", binding + ".json")
+        usage_root = os.path.dirname(BAMBU_CONFIG_FILE)
+        path = os.path.join(usage_root, "bambu_usage", binding + ".json")
         state = self._usage_states.get(binding)
         if state is None:
-            try:
-                if os.path.getsize(path) > 8 * 1024 * 1024:
-                    raise ValueError("Bambu usage journal exceeds limit")
-                with open(path, encoding="utf-8") as handle:
-                    state = json.load(handle)
+            # A host upgrade may move the bridge credentials to native storage.
+            # Resume the same binding's journal there without resetting its sequence.
+            roots = dict.fromkeys((usage_root, fallback_plugin_storage_dir(), PLUGIN_DIR))
+            for root in filter(None, roots):
+                journal = os.path.join(root, "bambu_usage", binding + ".json")
+                try:
+                    if os.path.getsize(journal) > 8 * 1024 * 1024:
+                        raise ValueError("Bambu usage journal exceeds limit")
+                    with open(journal, encoding="utf-8") as handle:
+                        state = json.load(handle)
+                except FileNotFoundError:
+                    continue
                 if not isinstance(state, dict) or state.get("version") != 1:
                     raise ValueError("Invalid Bambu usage journal")
-            except FileNotFoundError:
+                break
+            else:
                 state = {"version": 1, "next_sequence": 1, "events": []}
         # A failed disk write must not advance the in-memory accounting baseline.
         state = json.loads(json.dumps(state))
@@ -10063,11 +10202,13 @@ class BambuBridgeRuntime:
         if state.get("estimate_key") != key:
             state["estimate"] = None
             state["estimate_key"] = key
-            state["file_retry_at"] = 0
+            # Permission can be restored while Orca is running. Keep the
+            # retry deadline across jobs so a new job cannot spam prompts.
+            if not state.get("file_permission_denied"):
+                state["file_retry_at"] = 0
             state["layer_curve_retry_at"] = 0
         if (report.get("gcode_state") in {"RUNNING", "PAUSE", "FINISH", "FAILED"}
                 and state.get("estimate") is None
-                and not state.get("file_permission_denied")
                 and time.time() >= state.get("file_retry_at", 0)):
             state["file_retry_at"] = time.time() + 600
             import ftplib
@@ -10076,9 +10217,17 @@ class BambuBridgeRuntime:
                 state["estimate"] = read_bambu_consumption_file(config, report)
             except PermissionError:
                 state["file_permission_denied"] = True
-                fh_log("Bambu artifact permission denied; file reads are disabled for this binding")
+                self._log_usage_issue(log_binding, "printer artifact", "permission denied")
             except (OSError, ValueError, EOFError, ftplib.Error) as exc:
-                fh_log("Bambu usage artifact unavailable: %s" % type(exc).__name__)
+                self._log_usage_issue(log_binding, "printer artifact", type(exc).__name__)
+            else:
+                state.pop("file_permission_denied", None)
+                if state["estimate"] is None:
+                    detail = ("no usable matching file" if _bambu_file_candidates(report)
+                              else "no usable file name in printer report")
+                    self._log_usage_issue(log_binding, "printer artifact", detail)
+                else:
+                    self._usage_log_at.pop((log_binding, "printer artifact"), None)
         if (state.get("estimate") is not None
                 and not state["estimate"].get("layer_weights")
                 and time.time() >= state.get("layer_curve_retry_at", 0)):
@@ -10116,7 +10265,8 @@ class BambuBridgeRuntime:
                 "source_instance_id": source_instance_id,
                 "sequence": state["next_sequence"], "events": events,
             }
-        write_json_atomic(path, state, mode=0o600)
+        if not self._write_usage_journal(log_binding, path, state):
+            return False
         self._usage_states[binding] = state
         pending = state.get("outbox")
         if pending is None or time.monotonic() < self._usage_retry_at.get(binding, 0):
@@ -10130,7 +10280,8 @@ class BambuBridgeRuntime:
                 committed = dict(state)
                 committed["outbox"] = None
                 committed["next_sequence"] = pending["sequence"] + 1
-                write_json_atomic(path, committed, mode=0o600)
+                if not self._write_usage_journal(log_binding, path, committed, stage="journal ack"):
+                    return observation_accepted
                 self._usage_states[binding] = committed
                 self._usage_retry_at.pop(binding, None)
                 return observation_accepted
@@ -10394,7 +10545,7 @@ class BambuBridgeRuntime:
                                 stream_config=stream_config,
                             )
                         except Exception as exc:
-                            fh_log("Bambu usage remains pending: %s" % type(exc).__name__)
+                            self._log_usage_issue(binding_key, "processing pending", type(exc).__name__)
                     if self._stop.is_set():
                         break
                     if status == 401:
@@ -11653,33 +11804,55 @@ class FilamentHubCatalog(
         self._report_local_dialog_state(True)
         return True
 
-    def _host_profiles(self, scope):
+    def _host_profiles(self, scope, *, log_errors=True):
         profiles = {}
         for kind in PROFILE_KINDS:
             if sync_scope_includes(scope, kind):
-                items, complete = scan_user_profiles_checked(kind)
+                if log_errors:
+                    items, complete = scan_user_profiles_checked(kind)
+                else:
+                    items, complete = scan_user_profiles_checked(kind, log_errors=False)
                 profiles[kind] = {"items": items, "complete": complete}
         return profiles
 
-    def _prepare_sync(self, token, scope, announce, operation_id, trigger):
-        """Read the host and disk state a sync needs. UI thread only.
+    def _snapshot_speed_dial_presets(self):
+        """Copy host state on the UI thread. No plugin I/O or thread creation."""
+        refresh_ui_language()
+        refresh_user_preset_folder()
+        return (
+            self._known_filament_preset_names(),
+            _snapshot_printer_observations(),
+            _snapshot_local_moonraker_connections(),
+            _snapshot_user_filament_sources(),
+            _snapshot_loaded_managed_presets(log_errors=False),
+            self._host_profiles("all", log_errors=False),
+        )
+
+    def _prepare_sync(self, token, scope, announce, operation_id, trigger, *, snapshot=None):
+        """Read sync inputs on the UI thread, or use a snapshot taken there.
 
         Returns the positional arguments of _do_sync.
         """
-        include_filaments = sync_scope_includes(scope, "filament")
-        include_printers = sync_scope_includes(scope, "machine")
-        known = self._known_filament_preset_names() if include_filaments else set()
-        if include_filaments:
-            refresh_user_preset_folder()
-        observations = observe_printer_presets() if include_printers else []
-        moonraker_connections = (
-            observe_local_moonraker_connections(observations)
-            if include_printers else []
-        )
+        if snapshot is None:
+            include_filaments = sync_scope_includes(scope, "filament")
+            include_printers = sync_scope_includes(scope, "machine")
+            known = self._known_filament_preset_names() if include_filaments else set()
+            if include_filaments:
+                refresh_user_preset_folder()
+            observations = observe_printer_presets() if include_printers else []
+            moonraker_connections = (
+                observe_local_moonraker_connections(observations)
+                if include_printers else []
+            )
+            active_filaments = scan_active_user_filaments() if include_filaments else []
+            loaded_presets = _snapshot_loaded_managed_presets() if include_filaments else None
+            host_profiles = self._host_profiles(scope)
+        else:
+            known, printer_data, moonraker_data, sources, loaded_presets, host_profiles = snapshot
+            observations = _resolve_printer_observations(printer_data)
+            moonraker_connections = _resolve_local_moonraker_connections(observations, *moonraker_data)
+            active_filaments = _read_saved_filament_sources(sources)
         source_instance_id = plugin_source_instance_id()
-        active_filaments = scan_active_user_filaments() if include_filaments else []
-        loaded_preset_ids = loaded_managed_preset_ids() if include_filaments else None
-        host_profiles = self._host_profiles(scope)
         return (
             token,
             known,
@@ -11689,7 +11862,7 @@ class FilamentHubCatalog(
             observations,
             source_instance_id,
             moonraker_connections,
-            loaded_preset_ids,
+            loaded_presets,
             scope,
             operation_id,
             trigger,
@@ -11722,18 +11895,21 @@ class FilamentHubCatalog(
             return False
         return True
 
-    def _start_background_sync(self, scope, trigger):
+    def _start_background_sync(self, scope, trigger, *, snapshot=None, submit=None):
         """Start a sync that answers through native notifications, not the page.
 
         Unlike _start_sync it carries no operation id, so _do_sync treats it as
-        an automatic run and never posts to the page. UI thread only.
+        an automatic run and never posts to the page. Worker callers must pass
+        a snapshot captured on the UI thread.
         """
         token = (load_saved_auth() or {}).get("accessToken") or ""
         if not token or scope not in SYNC_SCOPES:
             return False
-        return BACKGROUND_WORKER.submit(
-            self._do_sync, *self._prepare_sync(token, scope, False, "", trigger)
-        )
+        if snapshot is None:
+            args = self._prepare_sync(token, scope, False, "", trigger)
+        else:
+            args = self._prepare_sync(token, scope, False, "", trigger, snapshot=snapshot)
+        return (submit or BACKGROUND_WORKER.submit)(self._do_sync, *args)
 
     def _saved_preset_scope(self, name):
         """Sync scope of the collection holding a just-saved preset, else None.
@@ -13950,6 +14126,10 @@ class FilamentHubCatalog(
             )
         elif msg_type == "open-external":
             self._open_site_path(msg.get("path"))
+        elif msg_type == "open-external-url" and direct_message:
+            url = msg.get("url")
+            if not _valid_external_browser_url(url) or not open_in_system_browser(url):
+                self._deliver("external-url-open-failed")
         elif msg_type == "workstation-key":
             key_id = msg.get("keyId")
             if not save_workstation_key(msg.get("key"), key_id):
@@ -14495,7 +14675,7 @@ class FilamentHubCatalog(
 
     def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
                  host_profiles=None, observations=None, source_instance_id="",
-                 moonraker_connections=None, loaded_preset_ids=None, scope="all",
+                 moonraker_connections=None, loaded_presets=None, scope="all",
                  operation_id="", trigger="manual"):
         manual = trigger == "manual" or bool(operation_id)
         if not token or scope not in SYNC_SCOPES:
@@ -14607,6 +14787,7 @@ class FilamentHubCatalog(
                         if isinstance(item, dict) and isinstance(item.get("id"), int)
                     }
                     local = scan_local_fh_presets(folder)
+                    loaded_preset_ids = _resolve_loaded_managed_preset_ids(loaded_presets, local)
                     previous_managed_ids = set(local)
                     previous_managed_ids.update(
                         int(key) for key in state
@@ -15163,20 +15344,156 @@ if _PAGE_CAPABILITY_BASE is not None:
         def get_name(self):
             return SYNC_ACTION_NAME
 
+        def __init__(self):
+            super().__init__()
+            self._snapshot_lock = threading.Lock()
+            self._snapshot_waiters = set()
+            self._cancel_generation = 0
+
+        def on_cancelled(self):
+            with self._snapshot_lock:
+                self._cancel_generation += 1
+                for waiter in self._snapshot_waiters:
+                    waiter.set()
+
+        def on_unload(self):
+            self.on_cancelled()
+
         def execute(self):
-            refresh_ui_language()
+            with self._snapshot_lock:
+                generation = self._cancel_generation
+            with _PLUGIN_RUNTIME_LOCK:
+                epoch = _PLUGIN_RUNTIME_EPOCH
             catalog = _slice_delivery_target()
             if catalog is None:
                 return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
             if not (load_saved_auth() or {}).get("accessToken"):
                 return orca.ExecutionResult.skipped(ui_text("syncSignIn"))
+            if threading.current_thread() is not threading.main_thread():
+                return self._open_sync_status(catalog, generation, epoch)
+            failure = self._queue_sync(catalog)
+            if failure:
+                return orca.ExecutionResult.skipped(ui_text(failure))
+            return orca.ExecutionResult.success(ui_text("syncStarted"))
+
+        @staticmethod
+        def _queue_sync(catalog, *, snapshot=None, submit=None):
+            if snapshot is None:
+                refresh_ui_language()
             prime_background_runtime(explicit=True)
             denied_before = worker_denial_count()
-            if not catalog._start_background_sync("all", "speed-dial"):
+            if snapshot is None:
+                started = catalog._start_background_sync("all", "speed-dial")
+            else:
+                started = catalog._start_background_sync(
+                    "all", "speed-dial", snapshot=snapshot, submit=submit,
+                )
+            if not started:
                 if worker_denial_count() > denied_before:
-                    return orca.ExecutionResult.skipped(ui_text("backgroundDenied"))
-                return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
+                    return "backgroundDenied"
+                return "syncUnavailable"
             resume_deferred_background_threads()
+            return None
+
+        def _open_sync_status(self, catalog, generation, epoch):
+            """Copy presets on the UI thread; do all I/O in this audited Script call."""
+            from html import escape
+
+            ready = threading.Event()
+            with self._snapshot_lock:
+                if generation != self._cancel_generation:
+                    return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
+                self._snapshot_waiters.add(ready)
+            snapshot = None
+            capture_error = None
+
+            def current():
+                with self._snapshot_lock:
+                    if generation != self._cancel_generation:
+                        return False
+                with _PLUGIN_RUNTIME_LOCK:
+                    active = _PLUGIN_RUNTIME_ACTIVE and _PLUGIN_RUNTIME_EPOCH == epoch
+                return active and _slice_delivery_target() is catalog
+
+            def submit(function, *args):
+                # Linearize the enqueue after preparation against cancellation
+                # and unload. The host's audit scope still belongs to this worker.
+                with self._snapshot_lock, _PLUGIN_RUNTIME_LOCK:
+                    if (
+                        generation != self._cancel_generation
+                        or not _PLUGIN_RUNTIME_ACTIVE
+                        or _PLUGIN_RUNTIME_EPOCH != epoch
+                        or _slice_delivery_target() is not catalog
+                    ):
+                        return False
+                    return BACKGROUND_WORKER.submit(function, *args)
+
+            def on_message(message):
+                nonlocal snapshot, capture_error
+                if ready.is_set() or message != {"type": "sync-ready"}:
+                    return
+                try:
+                    if current():
+                        snapshot = catalog._snapshot_speed_dial_presets()
+                except Exception as exc:
+                    capture_error = type(exc).__name__
+                finally:
+                    ready.set()
+
+            html = """<!doctype html><meta charset="utf-8">
+<style>body{font:message-box;margin:24px;color:var(--orca-text,CanvasText);
+background:var(--orca-bg,Canvas)}</style>
+<p id="status" role="status" data-unavailable="%s">%s</p>
+<script>
+var statusLine = document.getElementById('status');
+var deadline = Date.now() + 30000;
+var listening = false;
+var timer = setInterval(function () {
+  if (Date.now() >= deadline) {
+    clearInterval(timer);
+    statusLine.textContent = statusLine.dataset.unavailable;
+    return;
+  }
+  if (listening || !window.orca) return;
+  window.orca.onMessage(function (message) {
+    clearInterval(timer);
+    statusLine.textContent = message.text;
+  });
+  listening = true;
+  window.orca.postMessage({type:'sync-ready'});
+}, 100);
+</script>""" % (escape(ui_text("syncUnavailable")), escape(ui_text("syncTitle")))
+            try:
+                window = orca.host.ui.create_window(
+                    title=self.get_name(), html=html, width=420, height=160,
+                    on_message=on_message, on_close=ready.set,
+                )
+                # Event.wait releases the GIL, so the UI callback and the host's
+                # cancellation hook can both run while the Script worker waits.
+                ready.wait(30)
+            except (AttributeError, RuntimeError):
+                return orca.ExecutionResult.skipped(ui_text("syncUnavailable"))
+            finally:
+                ready.set()
+                with self._snapshot_lock:
+                    self._snapshot_waiters.discard(ready)
+
+            if capture_error:
+                fh_log("Speed Dial preset snapshot failed: %s" % capture_error)
+            failure = "syncUnavailable"
+            if snapshot is not None and current():
+                if not (load_saved_auth() or {}).get("accessToken"):
+                    failure = "syncSignIn"
+                else:
+                    try:
+                        failure = self._queue_sync(catalog, snapshot=snapshot, submit=submit)
+                    except (OSError, RuntimeError) as exc:
+                        fh_log("Speed Dial sync preparation failed: %s" % type(exc).__name__)
+            if failure:
+                message = ui_text(failure)
+                window.post({"text": message})
+                return orca.ExecutionResult.skipped(message)
+            window.close()
             return orca.ExecutionResult.success(ui_text("syncStarted"))
 else:
     FilamentHubPage = None

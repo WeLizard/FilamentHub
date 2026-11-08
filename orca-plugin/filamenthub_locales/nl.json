@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Ontwikkelaarsmodus",
   "settingsDeveloperModeHint": "Toont de knop Probleem melden, die het pluginlogboek aan je melding toevoegt.",
   "settingsAccountHint": "Welke presets worden gesynchroniseerd, stel je in via je profiel op FilamentHub.",
+  "settingsPermissionsHint": "Als OrcaSlicer toegang weigert, open dan indien beschikbaar het tabblad Machtigingen voor FilamentHub in het venster Plug-ins. Geef de vereiste toegang en probeer het opnieuw.",
   "printerBundleLive": "Geïnstalleerde printerprofielen: {machines}; afdrukprofielen: {processes}. Ze zijn direct te gebruiken.",
   "bambuSearch": "Zoeken in lokaal netwerk",
   "bambuSearchAgain": "Opnieuw zoeken",

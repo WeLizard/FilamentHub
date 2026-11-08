@@ -295,7 +295,10 @@ G1 E1
     assert enriched["layer_weights"][0] == pytest.approx([4, 10])
 
 
-def test_runtime_retries_identical_outbox_after_lost_ack(plugin_module, tmp_path, monkeypatch):
+@pytest.mark.parametrize("move_to_native_storage", [False, True])
+def test_runtime_retries_identical_outbox_after_lost_ack(
+    plugin_module, tmp_path, monkeypatch, move_to_native_storage,
+):
     config_file = tmp_path / "bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(config_file))
     config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"}
@@ -317,11 +320,68 @@ def test_runtime_retries_identical_outbox_after_lost_ack(plugin_module, tmp_path
     runtime._record_usage(config, "instance", active, "2026-09-19T09:59:00+00:00")
     runtime._record_usage(config, "instance", report, "2026-09-19T10:00:00+00:00")
     binding = next(iter(runtime._usage_states))
-    runtime._usage_retry_at[binding] = 0
+    if move_to_native_storage:
+        monkeypatch.setattr(plugin_module, "fallback_plugin_storage_dir", lambda: str(tmp_path))
+        native = tmp_path / "native"
+        monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(native / "bambu.json"))
+        runtime = plugin_module.BambuBridgeRuntime()
+    else:
+        runtime._usage_retry_at[binding] = 0
     runtime._record_usage(config, "instance", report, "2026-09-19T10:00:00+00:00")
     assert len(posts) == 2
     assert posts[0] == posts[1]
     assert posts[0]["sequence"] == 1
+    if move_to_native_storage:
+        assert (native / "bambu_usage" / (binding + ".json")).is_file()
+
+
+def test_artifact_read_recovers_from_persisted_permission_denial(
+    plugin_module, tmp_path, monkeypatch,
+):
+    plugin = plugin_module
+    monkeypatch.setattr(plugin, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (200, b'{"slots": []}'))
+    config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"}
+    observed_at = "2026-09-19T10:00:00+00:00"
+    now = 1000
+    monkeypatch.setattr(plugin.time, "time", lambda: now)
+    calls = []
+    granted = False
+
+    def read_artifact(_config, report):
+        calls.append(report["task_id"])
+        if not granted:
+            raise PermissionError("Printer network access denied")
+        return {"weights": {"0": 10}, "layer_weights": {"0": [10]}}
+
+    monkeypatch.setattr(plugin, "read_bambu_consumption_file", read_artifact)
+    runtime = plugin.BambuBridgeRuntime()
+    assert runtime._record_usage(config, "source", _report(), observed_at)
+    journal = next((tmp_path / "bambu_usage").glob("*.json"))
+    assert json.loads(journal.read_text())["file_permission_denied"] is True
+
+    restarted = plugin.BambuBridgeRuntime()
+    report = _report(job="job-2")
+    now = 1599
+    assert restarted._record_usage(config, "source", report, observed_at)
+    assert calls == ["job-1"]
+
+    now = 1600
+    assert restarted._record_usage(config, "source", report, observed_at)
+    assert calls == ["job-1", "job-2"]
+
+    granted = True
+    now = 2199
+    assert restarted._record_usage(config, "source", report, observed_at)
+    assert calls == ["job-1", "job-2"]
+
+    now = 2200
+    assert restarted._record_usage(config, "source", report, observed_at)
+    assert calls == ["job-1", "job-2", "job-2"]
+    recovered = json.loads(journal.read_text())
+    assert "file_permission_denied" not in recovered
+    assert recovered["estimate"]["weights"] == {"0": 10}
+    assert recovered["next_sequence"] == 1
 
 
 @pytest.mark.parametrize("rejected", ["snapshot", "usage-batches"])
@@ -617,3 +677,87 @@ def test_desired_outage_defers_observation_and_rechecks_route_after_restart(
     else:
         assert items[0]["used_weight_g"] == 10
         assert items[0]["spool_id"] == 7
+
+
+def test_runtime_keeps_usage_pending_when_journal_is_unavailable(
+    plugin_module, tmp_path, monkeypatch,
+):
+    plugin = plugin_module
+    monkeypatch.setattr(plugin, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin, "http_get_bridge_json",
+                        lambda *_args: (200, b'{"slots": []}'))
+    monkeypatch.setattr(plugin, "read_bambu_consumption_file", lambda *_args: None)
+    config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"}
+    runtime = plugin.BambuBridgeRuntime()
+    stream = {"lock": threading.Lock()}
+    runtime._streams[plugin._bambu_stream_key(config)] = stream
+    report = _report()
+    plugin._buffer_bambu_usage_report(stream, report, "2026-09-19T10:00:00+00:00")
+    log = []
+    monkeypatch.setattr(plugin, "fh_log", log.append)
+    original_write = plugin.write_json_atomic
+    writable = False
+
+    def save(path, payload, mode=None):
+        if not writable:
+            raise FileNotFoundError(2, "private printer details", path)
+        original_write(path, payload, mode=mode)
+
+    monkeypatch.setattr(plugin, "write_json_atomic", save)
+    for _ in range(3):
+        runtime._record_stream_usage(config, "source", report, "unused")
+    assert len(stream["usage_reports"]) == 1
+    assert not runtime._usage_states
+    assert len([line for line in log if "journal write" in line]) == 1
+    assert "FileNotFoundError" in " ".join(log)
+    assert "private printer details" not in " ".join(log)
+    assert str(tmp_path) not in " ".join(log)
+
+    writable = True
+    runtime._record_stream_usage(config, "source", report, "unused")
+    assert not stream["usage_reports"]
+    assert list((tmp_path / "bambu_usage").glob("*.json"))
+
+
+def test_runtime_retries_same_batch_when_journal_ack_write_fails(
+    plugin_module, tmp_path, monkeypatch,
+):
+    plugin = plugin_module
+    monkeypatch.setattr(plugin, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin, "http_get_bridge_json",
+                        lambda *_args: (200, json.dumps(_desired()).encode()))
+    monkeypatch.setattr(plugin, "read_bambu_consumption_file", lambda *_args: None)
+    uploads = []
+
+    def post(_path, _token, payload):
+        uploads.append(payload)
+        return 200, b'{"accepted": true, "ack_sequence": 1}', None
+
+    monkeypatch.setattr(plugin, "http_post_bridge_json", post)
+    log = []
+    monkeypatch.setattr(plugin, "fh_log", log.append)
+    original_write = plugin.write_json_atomic
+    ack_writable = False
+
+    def save(path, payload, mode=None):
+        if payload["next_sequence"] == 2 and not ack_writable:
+            raise FileNotFoundError(2, "private path", path)
+        original_write(path, payload, mode=mode)
+
+    monkeypatch.setattr(plugin, "write_json_atomic", save)
+    config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"}
+    runtime = plugin.BambuBridgeRuntime()
+    runtime._record_usage(config, "source", _report(remaining=1000), "2026-09-19T10:00:00+00:00")
+    terminal = _report("FINISH", remaining=990)
+    for _ in range(3):
+        assert runtime._record_usage(config, "source", terminal, "2026-09-19T10:02:00+00:00")
+    journal = next((tmp_path / "bambu_usage").glob("*.json"))
+    assert json.loads(journal.read_text())["outbox"] == uploads[0]
+    assert len(uploads) == 3 and all(payload == uploads[0] for payload in uploads)
+    assert len([line for line in log if "journal ack" in line]) == 1
+
+    ack_writable = True
+    runtime._record_usage(config, "source", terminal, "2026-09-19T10:02:00+00:00")
+    committed = json.loads(journal.read_text())
+    assert committed["outbox"] is None
+    assert committed["next_sequence"] == 2

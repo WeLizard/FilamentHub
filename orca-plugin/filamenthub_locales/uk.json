@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Режим розробника",
   "settingsDeveloperModeHint": "Показує кнопку «Повідомити про проблему», яка додає до звернення журнал плагіна.",
   "settingsAccountHint": "Які пресети синхронізувати, налаштовується в профілі на FilamentHub.",
+  "settingsPermissionsHint": "Якщо OrcaSlicer відмовив у доступі, відкрийте вкладку дозволів FilamentHub у вікні плагінів, якщо вона доступна. Надайте потрібний дозвіл і повторіть дію.",
   "printerBundleLive": "Установлено профілі принтерів: {machines}; профілі друку: {processes}. Вони вже готові до використання.",
   "bambuSearch": "Знайти в локальній мережі",
   "bambuSearchAgain": "Оновити список",

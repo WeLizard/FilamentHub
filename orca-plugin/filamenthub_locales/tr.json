@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Geliştirici modu",
   "settingsDeveloperModeHint": "Eklenti günlüğünü raporunuza ekleyen Sorun bildir düğmesini gösterir.",
   "settingsAccountHint": "Hangi profillerin senkronize edileceği FilamentHub profilinizde ayarlanır.",
+  "settingsPermissionsHint": "OrcaSlicer erişimi reddederse, varsa eklentiler penceresinde FilamentHub’ın izinler sekmesini açın. Gerekli erişimi verip tekrar deneyin.",
   "printerBundleLive": "Yüklenen yazıcı profilleri: {machines}; baskı profilleri: {processes}. Hemen kullanıma hazırlar.",
   "bambuSearch": "Yerel ağda ara",
   "bambuSearchAgain": "Yeniden ara",

@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Garatzaile modua",
   "settingsDeveloperModeHint": "Arazo baten berri eman botoia erakusten du, pluginaren erregistroa zure txostenari eransten diona.",
   "settingsAccountHint": "Zein aurrezarpen sinkronizatu FilamentHub-eko zure profilean ezartzen da.",
+  "settingsPermissionsHint": "OrcaSlicerrek sarbidea ukatzen badu, ireki FilamentHub-en baimenen fitxa pluginen leihoan, erabilgarri badago. Eman beharrezko baimena eta saiatu berriro.",
   "printerBundleLive": "Instalatutako inprimagailu-profilak: {machines}; inprimatze-profilak: {processes}. Erabiltzeko prest daude.",
   "bambuSearch": "Bilatu sare lokalean",
   "bambuSearchAgain": "Bilatu berriro",

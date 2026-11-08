@@ -241,7 +241,12 @@ def test_catalog_sync_collects_every_profile_contour_in_dependency_order(
         lambda observations: ["moonraker"],
     )
     monkeypatch.setattr(plugin_module, "plugin_source_instance_id", lambda: "source")
-    monkeypatch.setattr(plugin_module, "loaded_managed_preset_ids", lambda: {10})
+    loaded_presets = ({10}, {"file.json"})
+    monkeypatch.setattr(plugin_module, "_snapshot_loaded_managed_presets", lambda: loaded_presets)
+    monkeypatch.setattr(
+        plugin_module, "scan_local_fh_presets",
+        lambda *_args: pytest.fail("preset identity resolution belongs in the worker"),
+    )
     scans = []
     monkeypatch.setattr(
         plugin_module,
@@ -276,7 +281,7 @@ def test_catalog_sync_collects_every_profile_contour_in_dependency_order(
         ["observation"],
         "source",
         ["moonraker"],
-        {10},
+        loaded_presets,
         "all",
         "sync-1",
         "manual",

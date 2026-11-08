@@ -4,6 +4,15 @@ Newest first. The numbered entry matching the plugin version is used for release
 
 ## 0.2.9
 - Recover can import a local filament preset again after you delete its copy on FilamentHub. Select it in Recover to bring it back as a draft. Existing presets keep their settings and automatic sync respects deletions. Requires the matching website update.
+- External links open in your default browser while FilamentHub stays on the current page in OrcaSlicer. This requires the matching website update.
+- Google and Yandex sign-in keep their existing browser flow.
+- Bambu print file reads retry automatically after a permission denial, so filament usage estimates can resume after you restore printer network access in OrcaSlicer.
+- FilamentHub Sync in Speed Dial prepares presets on OrcaSlicer's UI thread before starting the full sync. The preparation window closes once the sync is queued, and the result appears as a notification.
+- Pending Bambu usage reports follow the printer connection when a newer OrcaSlicer version moves the plugin to native storage.
+- The Bambu usage journal uses a shorter temporary filename so it can be saved in longer Windows profile paths.
+- Bambu usage diagnostics distinguish printer file lookup from local journal write failures and limit repeated messages.
+- Preset sync recognizes FilamentHub filament presets that OrcaSlicer has already loaded from disk.
+- FilamentHub settings explain where to restore a permission denied by OrcaSlicer.
 
 ## 0.2.8
 - The **Report a problem** button is shown by default; turn off developer mode in the plugin settings to hide it. A choice you already saved is kept.

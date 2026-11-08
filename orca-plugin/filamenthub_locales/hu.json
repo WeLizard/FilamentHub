@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Fejlesztői mód",
   "settingsDeveloperModeHint": "Megjeleníti a Probléma jelentése gombot, amely a bővítmény naplóját csatolja a jelentéshez.",
   "settingsAccountHint": "Hogy mely profilok szinkronizálódjanak, a FilamentHub-profiljában állíthatja be.",
+  "settingsPermissionsHint": "Ha az OrcaSlicer megtagadja a hozzáférést, nyissa meg a FilamentHub engedélylapját a bővítmények ablakában, ha elérhető. Adja meg a szükséges engedélyt, majd próbálja újra.",
   "printerBundleLive": "Telepített nyomtatóprofilok: {machines}; nyomtatási profilok: {processes}. Már használatra készek.",
   "bambuSearch": "Keresés a helyi hálózaton",
   "bambuSearchAgain": "Keresés újra",

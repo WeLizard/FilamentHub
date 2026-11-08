@@ -122,6 +122,7 @@
   "settingsDeveloperMode": "Developer mode",
   "settingsDeveloperModeHint": "Shows the Report a problem button, which attaches the plugin log to your report.",
   "settingsAccountHint": "Which presets to sync is set in your profile on FilamentHub.",
+  "settingsPermissionsHint": "If OrcaSlicer denies access, open the Permissions tab for FilamentHub in the Plugins window, if available. Grant the required access and try again.",
   "sliceSettingsTitle": "FilamentHub — sliced files",
   "sliceSettingsPurpose": "Keep exported G-code available in FilamentHub for print-cost calculations.",
   "sliceSettingsStamp": "Whether or not this option is enabled, the plugin adds comments identifying the FilamentHub profiles used to G-code produced with this plugin selected. The comments do not change print moves and are not sent anywhere unless this option is enabled.",

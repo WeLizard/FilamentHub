@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "โหมดนักพัฒนา",
   "settingsDeveloperModeHint": "แสดงปุ่มรายงานปัญหา ซึ่งแนบบันทึกของปลั๊กอินไปกับรายงานของคุณ",
   "settingsAccountHint": "พรีเซ็ตใดที่จะซิงค์ ตั้งค่าได้ในโปรไฟล์ของคุณบน FilamentHub",
+  "settingsPermissionsHint": "หาก OrcaSlicer ปฏิเสธการเข้าถึง ให้เปิดแท็บสิทธิ์ของ FilamentHub ในหน้าต่างปลั๊กอิน (หากมี) อนุญาตการเข้าถึงที่จำเป็นแล้วลองอีกครั้ง",
   "printerBundleLive": "ติดตั้งโปรไฟล์เครื่องพิมพ์: {machines}; โปรไฟล์การพิมพ์: {processes} แล้ว พร้อมใช้งานได้ทันที",
   "bambuSearch": "ค้นหาในเครือข่ายท้องถิ่น",
   "bambuSearchAgain": "ค้นหาอีกครั้ง",

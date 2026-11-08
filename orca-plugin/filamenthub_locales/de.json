@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Entwicklermodus",
   "settingsDeveloperModeHint": "Zeigt die Schaltfläche „Problem melden“, die das Plugin-Protokoll an Ihre Meldung anhängt.",
   "settingsAccountHint": "Welche Voreinstellungen synchronisiert werden, legen Sie in Ihrem Profil auf FilamentHub fest.",
+  "settingsPermissionsHint": "Wenn OrcaSlicer den Zugriff verweigert, öffnen Sie im Plugin-Fenster den Berechtigungsreiter von FilamentHub, sofern verfügbar. Erteilen Sie den nötigen Zugriff und wiederholen Sie die Aktion.",
   "printerBundleLive": "Installierte Druckerprofile: {machines}; Druckprofile: {processes}. Sie sind sofort einsatzbereit.",
   "bambuSearch": "Im lokalen Netzwerk suchen",
   "bambuSearchAgain": "Erneut suchen",

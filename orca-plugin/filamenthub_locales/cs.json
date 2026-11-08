@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Režim vývojáře",
   "settingsDeveloperModeHint": "Zobrazí tlačítko Nahlásit problém, které k hlášení připojí protokol pluginu.",
   "settingsAccountHint": "Které profily synchronizovat, nastavíte ve svém profilu na FilamentHub.",
+  "settingsPermissionsHint": "Pokud OrcaSlicer odepře přístup, otevřete v okně zásuvných modulů kartu oprávnění pro FilamentHub, je-li dostupná. Povolte potřebný přístup a akci zopakujte.",
   "printerBundleLive": "Nainstalované profily tiskáren: {machines}; tiskové profily: {processes}. Jsou připravené k použití.",
   "bambuSearch": "Hledat v místní síti",
   "bambuSearchAgain": "Hledat znovu",

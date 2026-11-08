@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Kūrėjo režimas",
   "settingsDeveloperModeHint": "Rodo mygtuką Pranešti apie problemą, kuris prie pranešimo prideda įskiepio žurnalą.",
   "settingsAccountHint": "Kuriuos profilius sinchronizuoti, nustatoma jūsų FilamentHub profilyje.",
+  "settingsPermissionsHint": "Jei „OrcaSlicer“ neleidžia pasiekti išteklių, papildinių lange atidarykite „FilamentHub“ leidimų skirtuką, jei jis pasiekiamas. Suteikite reikiamą leidimą ir bandykite dar kartą.",
   "printerBundleLive": "Įdiegti spausdintuvo profiliai: {machines}; spausdinimo profiliai: {processes}. Juos jau galima naudoti.",
   "bambuSearch": "Ieškoti vietiniame tinkle",
   "bambuSearchAgain": "Ieškoti dar kartą",

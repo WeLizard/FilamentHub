@@ -44,6 +44,7 @@ class Harness:
         self.token = {"accessToken": "token"}
         self.events = []
         self.ran = []
+        self.real_prepare_sync = module.FilamentHubCatalog._prepare_sync
         monkeypatch.setattr(module, "BACKGROUND_WORKER", self.worker)
         monkeypatch.setattr(module, "load_saved_auth", lambda: self.token)
         monkeypatch.setattr(module, "_PLUGIN_SETTINGS", dict(module.PLUGIN_SETTINGS_DEFAULTS))
@@ -422,6 +423,113 @@ def test_speed_dial_action_with_a_token_starts_a_full_sync(harness):
     assert (token, announce, scope, operation_id, trigger) == (
         "token", False, "all", "", "speed-dial",
     )
+
+
+@pytest.mark.parametrize("outcome", [
+    "ready", "stale", "cancelled", "cancel-in-auth", "cancel-in-prepare", "thread-denied",
+])
+def test_speed_dial_worker_keeps_io_in_audited_script_call(harness, monkeypatch, outcome):
+    module = harness.module
+    action = next(i for i in harness.instances if isinstance(i, module.FilamentHubSyncAction))
+    module._set_slice_delivery_target(harness.page._catalog)
+    monkeypatch.setattr(module, "_PLUGIN_RUNTIME_ACTIVE", True)
+    windows, messages, closed, results = [], [], [], []
+    window_created = threading.Event()
+    audit = threading.local()
+    snapshot_calls = []
+
+    def preset_bundle():
+        assert threading.current_thread() is threading.main_thread()
+        assert not hasattr(audit, "plugin")
+        snapshot_calls.append(True)
+        return fake_preset_bundle(filaments=["My PETG"])
+
+    def load_auth():
+        assert audit.plugin == "filamenthub"
+        if outcome == "cancel-in-auth":
+            action.on_cancelled()
+        return harness.token
+
+    def source_id():
+        assert audit.plugin == "filamenthub"
+        if outcome == "cancel-in-prepare":
+            action.on_cancelled()
+        return "source"
+
+    set_host_attr(monkeypatch, module.orca.host, "preset_bundle", preset_bundle)
+    monkeypatch.setattr(module.FilamentHubCatalog, "_prepare_sync", harness.real_prepare_sync)
+    for name in (
+        "_resolve_printer_observations", "_resolve_local_moonraker_connections", "_read_saved_filament_sources",
+        "prime_background_runtime", "resume_deferred_background_threads",
+    ):
+        def audited(*args, original=getattr(module, name), **kwargs):
+            assert audit.plugin == "filamenthub"
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(module, name, audited)
+    monkeypatch.setattr(module, "load_saved_auth", load_auth)
+    monkeypatch.setattr(module, "plugin_source_instance_id", source_id)
+    submit = harness.worker.submit
+
+    def audited_submit(*args):
+        assert audit.plugin == "filamenthub"
+        if outcome == "thread-denied":
+            harness.worker.denial_count = 1
+            return False
+        return submit(*args)
+
+    monkeypatch.setattr(harness.worker, "submit", audited_submit)
+
+    def create_window(**kwargs):
+        windows.append(kwargs)
+        window_created.set()
+        return SimpleNamespace(post=messages.append, close=lambda: closed.append(True))
+
+    def execute_with_audit():
+        audit.plugin = "filamenthub"
+        results.append(action.execute())
+
+    set_host_attr(monkeypatch, module.orca.host, "ui.create_window", create_window)
+    worker = threading.Thread(target=execute_with_audit)
+    worker.start()
+    if outcome == "cancel-in-auth":
+        worker.join(2)
+        assert not worker.is_alive()
+        assert windows == []
+        assert harness.worker.jobs == []
+        assert results == [("skipped", module.ui_text("syncUnavailable"))]
+        return
+    assert window_created.wait(2)
+    assert worker.is_alive()
+    assert harness.worker.jobs == []
+    assert snapshot_calls == []
+    (window,) = windows
+    assert "sync-ready" in window["html"]
+    if outcome == "stale":
+        monkeypatch.setattr(module, "_PLUGIN_RUNTIME_EPOCH", module._PLUGIN_RUNTIME_EPOCH + 1)
+    if outcome == "cancelled":
+        action.on_cancelled()
+    else:
+        window["on_message"]({"type": "sync-ready"})
+    window["on_message"]({"type": "sync-ready"})
+    worker.join(2)
+    assert not worker.is_alive()
+    harness.worker.run_all()
+
+    if outcome != "ready":
+        assert bool(snapshot_calls) == (outcome in {"cancel-in-prepare", "thread-denied"})
+        assert harness.ran == []
+        key = "backgroundDenied" if outcome == "thread-denied" else "syncUnavailable"
+        assert results == [("skipped", module.ui_text(key))]
+        assert messages == [{"text": module.ui_text(key)}]
+        assert closed == []
+    else:
+        assert snapshot_calls
+        assert results == [module.ui_text("syncStarted")]
+        (args,) = harness.ran
+        assert args[1] == {"My PETG"}
+        assert args[-3:] == ("all", "", "speed-dial")
+        assert closed == [True]
 
 
 def test_speed_dial_action_without_a_loaded_page_does_not_start_anything(harness):

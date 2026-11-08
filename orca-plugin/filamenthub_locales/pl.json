@@ -95,6 +95,7 @@
   "settingsDeveloperMode": "Tryb dewelopera",
   "settingsDeveloperModeHint": "Pokazuje przycisk Zgłoś problem, który dołącza dziennik wtyczki do zgłoszenia.",
   "settingsAccountHint": "To, które profile synchronizować, ustawiasz w swoim profilu w FilamentHub.",
+  "settingsPermissionsHint": "Jeśli OrcaSlicer odmówi dostępu, otwórz kartę uprawnień FilamentHub w oknie wtyczek, jeśli jest dostępna. Przyznaj wymagany dostęp i spróbuj ponownie.",
   "printerBundleLive": "Zainstalowane profile drukarek: {machines}; profile druku: {processes}. Są gotowe do użycia.",
   "bambuSearch": "Szukaj w sieci lokalnej",
   "bambuSearchAgain": "Szukaj ponownie",

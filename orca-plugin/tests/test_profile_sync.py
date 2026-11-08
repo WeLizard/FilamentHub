@@ -1,5 +1,7 @@
 """Printer, process and filament profile transport contracts."""
 
+from pathlib import Path
+
 from .filamenthub_plugin_test_support import (
     _isolate_profile_identity,
     json,
@@ -556,7 +558,7 @@ def test_filament_sync_reports_device_scoped_partial_result(
         set(),
         announce=False,
         source_instance_id="device-a",
-        loaded_preset_ids={10},
+        loaded_presets=({10}, set()),
         scope="filament",
         operation_id="sync-a",
     )
@@ -765,7 +767,7 @@ def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
         set(),
         announce=False,
         source_instance_id="device-b",
-        loaded_preset_ids=None,
+        loaded_presets=None,
         scope="filament",
         operation_id="sync-b",
     )
@@ -933,7 +935,7 @@ def test_sync_reload_without_host_observation_reports_only_files_on_disk(
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(catalog, "_pull_one", pull)
     monkeypatch.setattr(
-        plugin_module, "loaded_managed_preset_ids",
+        plugin_module, "_snapshot_loaded_managed_presets",
         lambda: pytest.fail("worker must not read the UI-thread host collection"),
     )
 
@@ -942,7 +944,7 @@ def test_sync_reload_without_host_observation_reports_only_files_on_disk(
         set(),
         announce=False,
         source_instance_id="device-native",
-        loaded_preset_ids=set(),
+        loaded_presets=(set(), set()),
         scope="filament",
         operation_id="native-reload",
     )
@@ -964,10 +966,71 @@ def test_loaded_managed_preset_ids_reports_unknown_without_a_host_bundle(
     monkeypatch.setattr(plugin_module.orca, "host", SimpleNamespace(preset_bundle=unavailable))
     monkeypatch.setattr(plugin_module, "fh_log", lambda msg: None)
 
-    assert plugin_module.loaded_managed_preset_ids() is None
+    snapshot = plugin_module._snapshot_loaded_managed_presets()
+
+    assert plugin_module._resolve_loaded_managed_preset_ids(snapshot, {}) is None
+
+
+def test_loaded_managed_preset_ids_matches_native_files_and_legacy_ids(
+    plugin_module, monkeypatch, tmp_path
+):
+    folder = tmp_path / "managed"
+    folder.mkdir()
+    loaded = folder / "Live.json"
+    loaded.write_text(json.dumps({"bundle_id": "filamenthub:10"}), encoding="utf-8")
+    sidecar = folder / "Saved.json"
+    sidecar.write_text(json.dumps({"name": "Saved"}), encoding="utf-8")
+    sidecar.with_suffix(".info").write_bytes(plugin_module.managed_info_bytes(11))
+    unloaded = folder / "Not loaded.json"
+    unloaded.write_text(json.dumps({"bundle_id": "filamenthub:12"}), encoding="utf-8")
+
+    corrupt = folder / "Corrupt.json"
+    corrupt.write_text(json.dumps({"name": "Corrupt"}), encoding="utf-8")
+    corrupt.with_suffix(".info").write_bytes(b"sync_info=filamenthub:preset:14\xff")
+    presets = (
+        SimpleNamespace(bundle_id="filamenthub", file=str(loaded)),
+        SimpleNamespace(bundle_id="filamenthub", file=str(sidecar)),
+        SimpleNamespace(bundle_id="filamenthub:13"),
+        SimpleNamespace(bundle_id="filamenthub", file=str(tmp_path / unloaded.name)),
+        SimpleNamespace(bundle_id="other", file=str(unloaded)),
+        SimpleNamespace(bundle_id="filamenthub", file=str(corrupt)),
+    )
+    filaments = SimpleNamespace(size=lambda: len(presets), preset=presets.__getitem__)
+    set_host_attr(
+        monkeypatch, plugin_module.orca.host, "preset_bundle",
+        lambda: SimpleNamespace(filaments=filaments),
+    )
+
+    snapshot = plugin_module._snapshot_loaded_managed_presets()
+    local = plugin_module.scan_local_fh_presets(str(folder))
+
+    assert plugin_module._resolve_loaded_managed_preset_ids(snapshot, local) == {10, 11, 13}
+
+
+def test_native_reload_omission_logs_safe_folder_context(
+    plugin_module, monkeypatch, tmp_path
+):
+    logs = []
+    monkeypatch.setattr(plugin_module, "fh_log", logs.append)
+    monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(plugin_module, "_user_preset_folder", "private-account")
+    set_host_attr(monkeypatch, plugin_module.orca.host, "preset.bundles.list_ids", list)
+    _install_native_bundle_reload(plugin_module, monkeypatch, pytest.fail)
+
+    assert plugin_module.reload_managed_local_bundle_if_available() is False
+    assert any(
+        "folder_source=inferred" in line and "metadata_exists=False" in line
+        for line in logs
+    )
+    assert all("private-account" not in line and str(tmp_path) not in line for line in logs)
+
 
 def test_atomic_json_write_replaces_complete_file(plugin_module, tmp_path):
-    target = tmp_path / "state.json"
+    target = tmp_path / ("a" * 64 + ".json")
+    temporary = Path(plugin_module._temporary_path(str(target)))
+    assert temporary.parent == target.parent
+    assert len(temporary.name) < len(target.name)
+
     plugin_module.write_json_atomic(str(target), {"version": 1})
     plugin_module.write_json_atomic(str(target), {"version": 2, "name": "FilamentHub"})
     assert json.loads(target.read_text(encoding="utf-8")) == {
@@ -1554,3 +1617,15 @@ def test_automatic_machine_and_process_sync_remains_outbound_only(plugin_module)
         assert "folder" not in spec
         assert "export_path" not in spec
         assert "pull_path" not in spec
+
+
+def test_scan_recovers_json_identity_when_info_is_not_utf8(plugin_module, tmp_path):
+    preset = tmp_path / "Filament.json"
+    preset.write_text(json.dumps({"bundle_id": "filamenthub:14"}), encoding="utf-8")
+    info = preset.with_suffix(".info")
+    info.write_bytes(bytes([255]))
+
+    scanned = plugin_module.scan_local_fh_presets(str(tmp_path))
+    assert scanned[14]["path"] == str(preset)
+    assert scanned[14]["version_id"] is None
+    assert plugin_module.preset_id_from_info_file(info) is None
