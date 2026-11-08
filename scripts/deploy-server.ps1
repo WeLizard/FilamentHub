@@ -72,10 +72,17 @@ function Stop-WithFix {
     throw "$Problem`nИсправить: $Fix"
 }
 
+function Test-ConfirmationAnswer {
+    param([string]$Answer)
+
+    # Н and L are what the Y and Д keys produce in the other layout.
+    return $Answer.Trim() -in @('y', 'yes', 'д', 'да', 'н', 'l', '1')
+}
+
 function Confirm-Action {
     param([Parameter(Mandatory)][string]$Question)
 
-    return (Read-Host "$Question [y/N]").Trim() -match '^(y|yes|д|да)$'
+    return Test-ConfirmationAnswer (Read-Host "$Question [Y/Д/1 — да, N/0/Enter — нет]")
 }
 
 function Invoke-Checked {
@@ -1004,6 +1011,22 @@ function Set-ReleaseFailure {
     $problem = if ($lines.Count) { $lines[0] } else { 'неизвестная ошибка' }
     $fix = @($lines | Where-Object { $_.StartsWith('Исправить:') } | Select-Object -First 1)
     $waiting = $problem.StartsWith($script:WaitingPrefix)
+    if (-not $waiting -and (
+        $problem -match '\bgh run watch (?<id>\d+) --repo (?<repo>[\w.-]+/[\w.-]+) --exit-status' -or
+        $problem -match '^Загрузка в OrcaCloud не прошла: https://github\.com/(?<repo>[\w.-]+/[\w.-]+)/actions/runs/(?<id>\d+)$'
+    )) {
+        try {
+            $run = Invoke-Checked gh @(
+                'run', 'view', $Matches.id, '--repo', $Matches.repo, '--json', 'status,url'
+            ) -Capture | ConvertFrom-Json
+            if ($run.status -in @('queued', 'in_progress', 'requested', 'waiting', 'pending')) {
+                $waiting = $true
+                $problem = "$script:WaitingPrefix GitHub Actions ещё выполняется: $($run.url)"
+            }
+        } catch {
+            # If GitHub is unreachable, keep the original release error.
+        }
+    }
     Set-ReleaseState -State $State -Status $(if ($waiting) { 'WAITING' } else { 'ERROR' }) -Detail $problem `
         -Fix $(if ($fix.Count) { $fix[0].Substring('Исправить:'.Length).Trim() } else { '' })
     $label = if ($waiting) { 'ожидание' } else { 'СТОП' }
@@ -1064,9 +1087,8 @@ function Confirm-OwnerTestedPackage {
     Write-Host "$Name $Version — пакет для выпуска:" -ForegroundColor Cyan
     Write-Host $WheelPath
     Write-Host "SHA-256 проверен автоматически: $Sha256" -ForegroundColor DarkGray
-    Write-Host 'Этот пакет проверен в приложении и принят? Y / Д — да (в любой раскладке); любая другая клавиша — пропустить.'
-    # Y and Д are meant as keys, not letters: in the other layout the same keys give Н and L.
-    return (Read-OwnerKey) -cin @('y', 'Y', 'н', 'Н', 'д', 'Д', 'l', 'L')
+    Write-Host 'Этот пакет проверен в приложении и принят? Y/Д/1 — да, N/0/Enter — пропустить.'
+    return Test-ConfirmationAnswer (Read-OwnerKey)
 }
 
 function Get-SitePluginApiLevelAt {
@@ -1195,7 +1217,8 @@ function Invoke-Release {
     Show-ReleaseSummary -States $states -Title 'Итог проверки:'
     $ready = @($states | Where-Object Status -eq 'READY')
     if ($ready.Count -eq 0) {
-        Write-Host 'Выпускать нечего.' -ForegroundColor Yellow
+        $colour = if ($states.Status -contains 'ERROR') { 'Red' } else { 'Yellow' }
+        Write-Host 'Выпускать нечего.' -ForegroundColor $colour
         return
     }
     if ($CheckOnly) {
