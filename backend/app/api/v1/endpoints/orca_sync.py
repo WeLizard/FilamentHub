@@ -2081,7 +2081,8 @@ async def _upsert_filament_preset(
     # Примечание: системные пресеты OrcaSlicer не отправляются (фильтруются в OrcaSlicer по preset.is_system)
 
     preset_name = payload.name or ""
-    is_our_preset = "[fh]" in preset_name or "@fh" in preset_name
+    recovery_only = payload.capture_mode in {"recovered_live_json", "recovered_backup_json"}
+    is_our_preset = not recovery_only and ("[fh]" in preset_name or "@fh" in preset_name)
     catalog_brand_id: int | None = None
 
     # [fh] означает активный пользовательский пресет FilamentHub, а не
@@ -2163,7 +2164,7 @@ async def _upsert_filament_preset(
                 preset = None
             elif (
                 preset.user_id != current_user.id
-                and current_user.role != UserRole.ADMIN
+                and (recovery_only or current_user.role != UserRole.ADMIN)
             ):
                 if _is_shareable_preset_source(preset):
                     shared_source_preset = preset
@@ -2189,7 +2190,7 @@ async def _upsert_filament_preset(
                 preset = None
             elif (
                 preset.user_id != current_user.id
-                and current_user.role != UserRole.ADMIN
+                and (recovery_only or current_user.role != UserRole.ADMIN)
             ):
                 if _is_shareable_preset_source(preset):
                     shared_source_preset = preset
@@ -2223,7 +2224,7 @@ async def _upsert_filament_preset(
                         preset = None
                     elif (
                         preset.user_id != current_user.id
-                        and current_user.role != UserRole.ADMIN
+                        and (recovery_only or current_user.role != UserRole.ADMIN)
                     ):
                         if _is_shareable_preset_source(preset):
                             shared_source_preset = preset
@@ -2345,6 +2346,14 @@ async def _upsert_filament_preset(
             fhub_id=preset.id if preset is not None else payload.fhub_id,
             status="error",
             message=ERR_INVALID_FILENAME,
+        )
+
+    if recovery_only and preset is not None:
+        return OrcaSyncResult(
+            external_id=payload.external_id,
+            fhub_id=preset.id,
+            status="skipped",
+            message="Preset already exists; recovery leaves it unchanged",
         )
 
     filament: Filament | None = None
@@ -2836,6 +2845,13 @@ async def _upsert_filament_preset(
         existing_preset = result.scalar_one_or_none()
 
         if existing_preset:
+            if recovery_only:
+                return OrcaSyncResult(
+                    external_id=payload.external_id,
+                    fhub_id=existing_preset.id,
+                    status="skipped",
+                    message="Preset already exists; recovery leaves it unchanged",
+                )
             # Обновляем существующий preset вместо создания нового
             logger.info(f"Found existing preset {existing_preset.id} for filament {filament.id} and name '{payload.name}', updating instead of creating")
             preset = existing_preset
@@ -3016,7 +3032,7 @@ async def _upsert_filament_preset(
             is_official=False,
             # ВАЖНО: Для пресетов с @FilamentHub всегда active=True (это наши пресеты из каталога)
             # Для остальных - active=False (черновики пользователя)
-            active=(
+            active=not recovery_only and (
                 True
                 if is_our_preset or shared_source_preset is not None
                 else (payload.active if payload.active is not None else False)
@@ -3251,6 +3267,7 @@ async def get_sync_prefs(
 
     return {
         "printer_discovery_key": await discovery_key(db, current_user.id),
+        "manual_filament_recovery": True,
         "auto_import_local_presets": bool(current_user.auto_import_local_presets),
         "sync_printer_endpoints": bool(current_user.sync_printer_endpoints),
         "allow_filament_presets_import": bool(

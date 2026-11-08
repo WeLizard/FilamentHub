@@ -5755,7 +5755,7 @@
     },
     "selectAll": "Выбрать все",
     "deselectAll": "Снять все",
-    "alreadyImported": "уже восстановлен",
+    "alreadyImported": "ранее импортирован",
     "import": "Восстановить ({{count}})",
     "close": "Закрыть",
     "cancel": "Отмена"

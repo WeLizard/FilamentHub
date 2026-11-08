@@ -5567,7 +5567,7 @@
     },
     "selectAll": "全选",
     "deselectAll": "取消全选",
-    "alreadyImported": "已恢复",
+    "alreadyImported": "曾导入",
     "import": "恢复（{{count}}）",
     "close": "关闭",
     "cancel": "取消"

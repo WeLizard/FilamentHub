@@ -5578,7 +5578,7 @@
     },
     "selectAll": "Select all",
     "deselectAll": "Deselect all",
-    "alreadyImported": "already recovered",
+    "alreadyImported": "previously imported",
     "import": "Recover ({{count}})",
     "close": "Close",
     "cancel": "Cancel"

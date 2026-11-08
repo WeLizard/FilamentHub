@@ -2,6 +2,9 @@
 
 Newest first. The numbered entry matching the plugin version is used for release notes.
 
+## 0.2.9
+- Recover can import a local filament preset again after you delete its copy on FilamentHub. Select it in Recover to bring it back as a draft. Existing presets keep their settings and automatic sync respects deletions. Requires the matching website update.
+
 ## 0.2.8
 - The **Report a problem** button is shown by default; turn off developer mode in the plugin settings to hide it. A choice you already saved is kept.
 - Slice reporting is now on until you turn it off in the slicing plugin settings. A choice you already saved is kept.

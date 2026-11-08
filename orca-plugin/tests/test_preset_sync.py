@@ -1639,7 +1639,7 @@ def test_recovery_reports_what_actually_reached_filamenthub(plugin_module, monke
     monkeypatch.setattr(
         plugin_module,
         "push_filament_drafts",
-        lambda _token, _items, authoritative=True: list(accepted),
+        lambda _token, _items, authoritative=True, recover_missing=False: list(accepted),
     )
     notices = []
     catalog = plugin_module.FilamentHubCatalog()
@@ -1654,6 +1654,73 @@ def test_recovery_reports_what_actually_reached_filamenthub(plugin_module, monke
         ("warning", plugin_module.ui_text("recoveryPartial", count=1, total=2)),
         ("success", plugin_module.ui_text("recoveryDone", count=2)),
     ]
+
+@pytest.mark.parametrize("server_supports_recovery", [True, False])
+def test_manual_filament_recovery_respects_server_capability(
+    plugin_module, monkeypatch, server_supports_recovery
+):
+    name = "Lost PLA"
+    key = "filament:local:Lost PLA"
+    candidate = {
+        "key": key,
+        "kind": "filament",
+        "name": name,
+        "source": "live",
+        "profile": {"name": name, "filament_type": ["PLA"]},
+    }
+    external_id = plugin_module.local_profile_external_id("orca-test", "local-test")
+    ledger = {
+        plugin_module._draft_id(name): 1,
+        plugin_module._draft_id(key): 1,
+        external_id: 1,
+    }
+    monkeypatch.setattr(plugin_module, "scan_recovery_presets", lambda: [candidate])
+    monkeypatch.setattr(plugin_module, "load_imported_draft_ids", lambda: dict(ledger))
+    monkeypatch.setattr(plugin_module, "save_imported_draft_ids", ledger.update)
+    monkeypatch.setattr(
+        plugin_module, "reconcile_local_profile_identities",
+        lambda _kind, items, authoritative=True: (
+            "orca-test", [dict(item, local_profile_id="local-test") for item in items], True
+        ),
+    )
+
+    def get(path, token=None):
+        assert path == "/orcaslicer/sync-prefs"
+        assert token == "token"
+        prefs = {"manual_filament_recovery": True} if server_supports_recovery else {}
+        return 200, json.dumps(prefs).encode()
+
+    sent = []
+
+    def post(path, token, payload):
+        assert path == "/orcaslicer/filaments/import"
+        assert token == "token"
+        sent.extend(payload["profiles"])
+        return 200, b'{"results":[{"status":"created"}]}'
+
+    monkeypatch.setattr(plugin_module, "http_get", get)
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+
+    assert plugin_module.push_filament_drafts("token", [candidate]) == []
+    assert not sent
+    catalog = plugin_module.FilamentHubCatalog()
+    notices = []
+    catalog._deliver_notice = lambda text, status="info": notices.append((status, text))
+    refreshes = []
+    catalog._deliver_sync_result = lambda _text, **kwargs: refreshes.append(kwargs)
+    catalog._do_recover_import("token", [key])
+    if server_supports_recovery:
+        assert [(item["external_id"], item["capture_mode"]) for item in sent] == [
+            (external_id, "recovered_live_json")
+        ]
+        assert notices == [("success", plugin_module.ui_text("recoveryDone", count=1))]
+    else:
+        assert not sent
+        assert notices == [("error", plugin_module.ui_text("recoveryFailed"))]
+    assert plugin_module.push_filament_drafts("token", [candidate]) == []
+    assert len(sent) == int(server_supports_recovery)
+    assert refreshes == ([{"scope": "filament", "notify": False}] if server_supports_recovery else [])
+
 
 def test_unconfirmed_printer_connections_are_a_calm_to_do(plugin_module, monkeypatch):
     monkeypatch.setattr(plugin_module, "load_sync_state", lambda: {})

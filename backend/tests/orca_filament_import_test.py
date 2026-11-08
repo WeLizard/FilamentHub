@@ -94,6 +94,42 @@ async def test_runtime_comma_serialized_temperature_vector_imports_as_a_draft(
 
 
 @pytest.mark.asyncio
+async def test_manual_recovery_creates_only_the_deleted_preset(
+    client: AsyncClient, db_session: AsyncSession
+):
+    headers, person = await _signed_in(client, db_session, "orca-recover-deleted")
+    kept = _preset("Kept PLA")
+    deleted = _preset("Deleted PLA")
+    first = await _import(client, headers, kept, deleted)
+    assert first.status_code == 200
+    kept_result, deleted_result = first.json()["results"]
+    assert kept_result["status"] == deleted_result["status"] == "created"
+    removed = await client.delete(f"/api/v1/presets/{deleted_result['fhub_id']}", headers=headers)
+    assert removed.status_code == 204
+
+    recovered_kept = _preset("Kept PLA", extruder_temp=230, capture_mode="recovered_live_json")
+    recovered_deleted = _preset("Deleted PLA", capture_mode="recovered_backup_json")
+    retry = await _import(client, headers, recovered_kept, recovered_deleted)
+    assert retry.status_code == 200
+    kept_again, deleted_again = retry.json()["results"]
+    assert kept_again["status"] == "skipped"
+    assert kept_again["fhub_id"] == kept_result["fhub_id"]
+    assert deleted_again["status"] == "created"
+    repeated = await _import(client, headers, recovered_deleted)
+    assert repeated.json()["results"][0]["status"] == "skipped"
+    assert repeated.json()["results"][0]["fhub_id"] == deleted_again["fhub_id"]
+
+    kept_record = await db_session.get(Preset, kept_result["fhub_id"])
+    await db_session.refresh(kept_record)
+    assert kept_record.extruder_temp == 210
+    assert await db_session.scalar(
+        select(func.count()).select_from(Preset).where(Preset.user_id == person.id)
+    ) == 2
+    prefs = await client.get("/api/v1/orcaslicer/sync-prefs", headers=headers)
+    assert prefs.json()["manual_filament_recovery"] is True
+
+
+@pytest.mark.asyncio
 async def test_a_users_own_preset_arrives_as_a_draft(
     client: AsyncClient, db_session: AsyncSession
 ):

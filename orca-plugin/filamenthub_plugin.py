@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.8"
+# version = "0.2.9"
 #
 # # Informational metadata; runtime grants are declared with
 # # orca.request_permissions() during capability registration.
@@ -655,7 +655,7 @@ def push_native_notification(level_name, text, hyper_text=None, on_click=None):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.8"
+PLUGIN_VERSION = "0.2.9"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -6624,6 +6624,7 @@ def _sync_preferences(token):
         "auto_import_local_presets": False,
         "sync_printer_endpoints": False,
         "printer_discovery_key": "",
+        "manual_filament_recovery": False,
         "allow_filament_presets_import": False,
         "allow_filament_presets_export": False,
         "allow_printer_profiles_import": False,
@@ -6643,6 +6644,7 @@ def _sync_preferences(token):
             "auto_import_local_presets": bool(raw.get("auto_import_local_presets")),
             "sync_printer_endpoints": bool(raw.get("sync_printer_endpoints")),
             "printer_discovery_key": str(raw.get("printer_discovery_key") or ""),
+            "manual_filament_recovery": raw.get("manual_filament_recovery") is True,
             "allow_filament_presets_import": bool(
                 raw.get("allow_filament_presets_import")
             ),
@@ -6780,7 +6782,7 @@ def save_imported_draft_ids(ids):
         pass
 
 
-def push_filament_drafts(token, candidates, authoritative=True):
+def push_filament_drafts(token, candidates, authoritative=True, recover_missing=False):
     """Push private drafts with durable per-profile identity.
 
     The display name is editable in Orca and therefore cannot be identity.  The
@@ -6811,6 +6813,7 @@ def push_filament_drafts(token, candidates, authoritative=True):
     batch_ids = []
     batch_candidates = []
     imported_changed = False
+    server_supports_recovery = None
 
     def flush_batch():
         accepted = []
@@ -6854,10 +6857,15 @@ def push_filament_drafts(token, candidates, authoritative=True):
         legacy_did = _draft_id(candidate["name"])
         candidate["_draft_sync_id"] = did
         if did in imported or legacy_did in imported:
-            if did not in imported:
-                imported[did] = imported[legacy_did]
-                imported_changed = True
-            continue
+            if recover_missing and not authoritative and server_supports_recovery is None:
+                server_supports_recovery = (
+                    _sync_preferences(token).get("manual_filament_recovery") is True
+                )
+            if not server_supports_recovery:
+                if did not in imported:
+                    imported[did] = imported[legacy_did]
+                    imported_changed = True
+                continue
         settings = dict(candidate.get("upload_profile") or candidate["profile"])
         if authoritative:
             capture_mode = "resolved_runtime"
@@ -14005,7 +14013,9 @@ class FilamentHubCatalog(
         filament_candidates = [c for c in candidates if c["kind"] == "filament"]
         attempted_keys.update(candidate["key"] for candidate in filament_candidates)
         sent_filaments = set(
-            push_filament_drafts(token, filament_candidates, authoritative=False)
+            push_filament_drafts(
+                token, filament_candidates, authoritative=False, recover_missing=True
+            )
         )
         for candidate in filament_candidates:
             if candidate.get("_draft_sync_id") in sent_filaments:
@@ -14066,6 +14076,12 @@ class FilamentHubCatalog(
                 imported[stable_id] = 1
         if recovered_keys:
             save_imported_draft_ids(imported)
+        if sent_filaments:
+            self._deliver_sync_result(
+                ui_text("recoveryDone", count=len(sent_filaments)),
+                scope="filament",
+                notify=False,
+            )
         recovered = len(recovered_keys)
         attempted = len(attempted_keys)
         if attempted and not recovered:
