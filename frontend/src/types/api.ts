@@ -900,11 +900,12 @@ export interface User {
   // Calculator Pro entitlement. New users activate a one-time trial explicitly.
   has_calculator_access?: boolean;
   subscription?: {
-    status: string; // trialing | active | past_due | canceled | expired
+    status: string; // interested | withdrawn | trialing | active | past_due | canceled | expired
     trial_ends_at: string | null;
     current_period_end: string | null;
     cancel_at_period_end: boolean;
     is_comp: boolean;
+    interested_at?: string | null;
   } | null;
   oauth_provider: string | null; // OAuth provider (google, yandex) или null
   has_password: boolean; // false для OAuth-пользователей без пароля

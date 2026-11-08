@@ -924,6 +924,20 @@ export interface AccountEmailChangeChallenge {
   masked_email: string;
 }
 
+export const subscriptionAPI = {
+  joinWorkshopInterest: async (): Promise<{
+    status: string;
+    interested_at: string | null;
+  }> => {
+    const response = await api.post('/subscription/interest');
+    return response.data;
+  },
+
+  leaveWorkshopInterest: async (): Promise<void> => {
+    await api.delete('/subscription/interest');
+  },
+};
+
 export const brandTeamAPI = {
   get: async (brandId: number): Promise<BrandTeamWorkspace> => {
     const response = await api.get<BrandTeamWorkspace>(`/brands/${brandId}/team`);
@@ -2939,6 +2953,13 @@ export const adminAPI = {
     hardware: {
       devices: number; live_printers: number; workshop_users: number;
       workshop_printer_threshold: number; workshop_launch_target: number;
+      workshop_interest?: {
+        total: number;
+        over_threshold: number;
+        threshold: number;
+        recent_30d: number;
+        countries: Array<{ country: string; count: number }>;
+      };
       spools: number;
       gate_slots: number; gate_slots_assigned: number;
       sync_devices: number; sync_devices_active_7d: number;

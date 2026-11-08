@@ -3758,6 +3758,8 @@
       "calculatorShort": "Estimates",
       "calculatorPro": "Estimates & Orders",
       "calculatorProShort": "Estimates",
+      "workshop": "Pro",
+      "workshopShort": "Pro",
       "settings": "Settings",
       "settingsShort": "Settings"
     },
@@ -5582,6 +5584,46 @@
     "cancel": "Cancel"
   },
   "settings": {
+    "workshopInterest": {
+      "title": "Pro",
+      "subtitle": "We are planning a paid plan for print shops.",
+      "p1": "FilamentHub already helps you estimate print cost, prepare quotes and keep track of orders. The calculator, quotes and CRM will stay free — as will the catalog, presets and spool tracking. Pro is meant as an extension for growing volume, not a charge for the tools you already use.",
+      "p2": "The first version is planned to cover a park of more than four active printers, quotes with your workshop's logo, cost reports for orders and priority support. The lineup is still being finalized. Plan revenue will help support FilamentHub and give its development more time.",
+      "p3": "The plan is not for sale yet and no launch date is set. Joining the waitlist only records your interest and helps us estimate how much these capabilities are needed. You will be among the first to hear about the launch. Joining costs nothing, does not change your access and does not commit you to the plan.",
+      "join": "Join the waitlist",
+      "joined": "You are on the waitlist",
+      "joinedAt": "On the waitlist since {{date}}",
+      "leave": "Leave the list",
+      "success": "Thank you! You are on the Pro waitlist. We will let you know about the launch. Your access has not changed; you can decide later whether to switch.",
+      "error": "Could not record your interest. Please try again.",
+      "alreadyActive": "You already have Pro access.",
+      "pendingBilling": "You have an unfinished subscription.",
+      "adminNote": "You are an administrator; waitlist entries are not included in the stats.",
+      "loading": "Saving…",
+      "leaving": "Removing…"
+    },
+    "workshopWish": {
+      "title": "What would you like to get?",
+      "intro": "Write which paid capabilities would be useful to you. This is not an order or a publication: only we will see the wish.",
+      "label": "Wish",
+      "placeholder": "For example: I want to send quotes with my logo and see the actual cost of an order.",
+      "examples": {
+        "printers": "more printers",
+        "quotes": "branded quotes",
+        "reports": "reports",
+        "team": "team access",
+        "api": "API",
+        "purchaseLinks": "“where to buy” links",
+        "directPurchases": "direct purchases"
+      },
+      "footnote": "“Where to buy” links and direct purchases are separate directions, not part of Pro. We research them separately and promise nothing.",
+      "submit": "Send wish",
+      "sending": "Sending…",
+      "success": "Thank you! Your wish has been sent. We do not publish it and do not promise implementation.",
+      "error": "Could not send the wish. Please try again.",
+      "subject": "Wish for Pro",
+      "counter": "{{count}} / {{max}}"
+    },
     "profile": "Profile",
     "fullName": "Display name",
     "fullNamePlaceholder": "For example, Alex Smith",
@@ -6485,6 +6527,14 @@
     }
   },
   "adminStats": {
+    "workshopInterest": {
+      "title": "Pro waitlist",
+      "total": "On the list",
+      "overThreshold": "More than {{threshold}} active printers",
+      "recent": "Last 30 days",
+      "countries": "By country",
+      "empty": "No entries yet"
+    },
     "title": "Platform Statistics",
     "subtitle": "General platform information",
     "loading": "Loading statistics...",
@@ -7535,6 +7585,7 @@
     "mergeIntoTitle": "Merge this brand into another one if it is a duplicate"
   },
   "apiErrors": {
+    "ERR_PLAN_INTEREST_UNAVAILABLE": "This action is unavailable: you already have active access or an unfinished subscription.",
     "ERR_CATALOG_CURATION_NOT_FOUND": "Catalog proposal not found.",
     "ERR_SPOOL_BATCH_KEY_CONFLICT": "This operation was already sent with different data. Reload the page and try again.",
     "ERR_SPOOL_BATCH_LIMIT": "You can add at most {{limit}} spools at once.",

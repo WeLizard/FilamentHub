@@ -417,6 +417,7 @@ export function AdminStats() {
     return <div className="text-center py-12 text-red-400">{t('adminStats.error')}</div>;
   }
 
+  const workshopInterest = stats.hardware.workshop_interest;
   const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '';
   const oldest = (value: string | null) => value
     ? t('adminStats.operations.oldest', { date: new Date(value).toLocaleDateString() })
@@ -589,6 +590,30 @@ export function AdminStats() {
             accent={stats.notifications.unread > 0 ? 'text-orange-400' : 'text-purple-400'} />
         </Section>
       </div>
+
+      {workshopInterest && (
+        <Section icon={Users} title={t('adminStats.workshopInterest.title')} cols="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Stat icon={Users} label={t('adminStats.workshopInterest.total')}
+            value={workshopInterest.total}
+            sub={workshopInterest.total === 0
+              ? t('adminStats.workshopInterest.empty')
+              : undefined}
+            accent="text-cyan-400" />
+          <Stat icon={Printer3DIcon}
+            label={t('adminStats.workshopInterest.overThreshold', {
+              threshold: workshopInterest.threshold,
+            })}
+            value={workshopInterest.over_threshold}
+            accent="text-cyan-400" />
+          <Stat icon={TrendingUp} label={t('adminStats.workshopInterest.recent')}
+            value={workshopInterest.recent_30d} />
+          <Breakdown title={t('adminStats.workshopInterest.countries')}
+            counts={Object.fromEntries(
+              workshopInterest.countries.map(({ country, count }) => [country, count]),
+            )}
+            labelFor={key => key === 'UNKNOWN' ? t('adminStats.countries.unknown') : key} />
+        </Section>
+      )}
 
       {/* Calculator */}
       <Section icon={Calculator} title={t('adminStats.calculator.title')}>

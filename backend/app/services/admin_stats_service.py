@@ -16,7 +16,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, cast, func, select, text
+from sqlalchemy import String, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -39,6 +39,7 @@ from app.models.preset_gate_state import PresetGateState
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
@@ -48,6 +49,7 @@ from app.schemas.calculator import PricingMethod
 from app.services.tier_metrics_service import (
     PAYMENT_LAUNCH_TARGET,
     WORKSHOP_PRINTER_THRESHOLD,
+    live_printer_condition,
     live_printer_counts,
     regular_quote_users,
 )
@@ -55,7 +57,7 @@ from app.services.usage_metrics_service import calculator_usage
 
 logger = logging.getLogger(__name__)
 
-STATS_CACHE_KEY = "admin:stats:v2"
+STATS_CACHE_KEY = "admin:stats:v3"
 STATS_CACHE_TTL = 120  # seconds — a dashboard does not need per-second accuracy
 # Below this row count an exact COUNT is instant, so use it and stay correct;
 # only above it is the (analyze-dependent) estimate worth trusting over a scan.
@@ -155,6 +157,75 @@ async def _profile_countries(
     return [{"country": value, "count": count} for value, count in rows.all()]
 
 
+async def _workshop_interest_stats(db: AsyncSession, recent_since: datetime) -> dict:
+    """Waitlist demand split by live printers and country, excluding admins."""
+    interested_users = (
+        select(
+            User.id.label("user_id"),
+            User.country.label("country"),
+            Subscription.interested_at.label("interested_at"),
+        )
+        .join(Subscription, Subscription.user_id == User.id)
+        .where(
+            Subscription.status == SubscriptionStatus.INTERESTED,
+            User.role != UserRole.ADMIN,
+        )
+        .subquery()
+    )
+    total = (
+        await db.scalar(
+            select(func.count(interested_users.c.user_id)).select_from(interested_users)
+        )
+    ) or 0
+    live_per_user = (
+        select(
+            UserPrinterDevice.user_id.label("user_id"),
+            func.sum(case((live_printer_condition(), 1), else_=0)).label("live"),
+        )
+        .select_from(UserPrinterDevice)
+        .group_by(UserPrinterDevice.user_id)
+        .subquery()
+    )
+    over_threshold = (
+        await db.scalar(
+            select(func.count(interested_users.c.user_id))
+            .select_from(
+                interested_users.join(
+                    live_per_user,
+                    live_per_user.c.user_id == interested_users.c.user_id,
+                )
+            )
+            .where(live_per_user.c.live > WORKSHOP_PRINTER_THRESHOLD)
+        )
+    ) or 0
+    recent_30d = (
+        await db.scalar(
+            select(func.count(interested_users.c.user_id))
+            .select_from(interested_users)
+            .where(interested_users.c.interested_at >= recent_since)
+        )
+    ) or 0
+    rows = await db.execute(
+        select(interested_users.c.country, func.count(interested_users.c.user_id))
+        .group_by(interested_users.c.country)
+        .order_by(
+            func.count(interested_users.c.user_id).desc(),
+            interested_users.c.country.asc(),
+        )
+        .limit(10)
+    )
+    return {
+        "total": total,
+        "over_threshold": over_threshold,
+        "threshold": WORKSHOP_PRINTER_THRESHOLD,
+        "recent_30d": recent_30d,
+        "countries": [
+            {"country": country or "UNKNOWN", "count": count}
+            for country, count in rows.all()
+        ],
+    }
+
+
 async def _compute(db: AsyncSession) -> dict:
     now = datetime.now(UTC)
     day_ago = now - timedelta(days=1)
@@ -163,6 +234,7 @@ async def _compute(db: AsyncSession) -> dict:
 
     total = await _totals(db)
     live_printers, workshop_users = await live_printer_counts(db)
+    workshop_interest = await _workshop_interest_stats(db, month_ago)
 
     activated_users = (
         await db.scalar(
@@ -254,6 +326,7 @@ async def _compute(db: AsyncSession) -> dict:
             "workshop_users": workshop_users,
             "workshop_printer_threshold": WORKSHOP_PRINTER_THRESHOLD,
             "workshop_launch_target": PAYMENT_LAUNCH_TARGET,
+            "workshop_interest": workshop_interest,
             "spools": total[UserSpool],
             "gate_slots": total[PresetGateState],
             "gate_slots_assigned": await _count(

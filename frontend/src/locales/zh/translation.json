@@ -3750,6 +3750,8 @@
       "calculatorShort": "核算",
       "calculatorPro": "核算与订单",
       "calculatorProShort": "核算",
+      "workshop": "Pro",
+      "workshopShort": "Pro",
       "settings": "设置",
       "settingsShort": "设置"
     },
@@ -5571,6 +5573,46 @@
     "cancel": "取消"
   },
   "settings": {
+    "workshopInterest": {
+      "title": "Pro",
+      "subtitle": "我们正在筹备面向接单打印用户的付费方案。",
+      "p1": "FilamentHub 已经可以帮助您估算打印成本、制作报价单并管理订单。计算器、报价单和 CRM 将继续免费，目录、预设和线轴管理也一样。Pro 是为业务量增长准备的扩展，而不是对现有工具收费。",
+      "p2": "第一版计划支持超过四台活跃打印机组成的设备群、带工作室标志的报价单、订单成本报表和优先支持。具体内容仍在确定。方案收入将帮助支持 FilamentHub，并为其开发投入更多时间。",
+      "p3": "该方案尚未销售，也没有确定上线日期。加入等待名单只会记录您的兴趣，并帮助我们评估这些功能的需求程度。您将第一批得知上线消息。加入不收费、不改变您的访问权限，也不要求您订阅。",
+      "join": "加入等待名单",
+      "joined": "您在等待名单中",
+      "joinedAt": "自 {{date}} 起在等待名单中",
+      "leave": "退出名单",
+      "success": "谢谢！您已加入 Pro 等待名单。我们会通知您上线消息。您的访问权限没有变化；之后您可以再决定是否切换。",
+      "error": "无法记录您的兴趣，请重试。",
+      "alreadyActive": "您已经拥有 Pro 访问权限。",
+      "pendingBilling": "您有一笔尚未完成的订阅。",
+      "adminNote": "您是管理员，等待名单记录不会计入统计。",
+      "loading": "正在保存…",
+      "leaving": "正在移除…"
+    },
+    "workshopWish": {
+      "title": "您希望获得什么？",
+      "intro": "请写下您认为有用的付费功能。这不是订单，也不会公开：只有我们会看到这条建议。",
+      "label": "建议",
+      "placeholder": "例如：我希望报价单能带自己的标志，并看到订单的实际成本。",
+      "examples": {
+        "printers": "更多打印机",
+        "quotes": "品牌报价单",
+        "reports": "报表",
+        "team": "团队访问",
+        "api": "API",
+        "purchaseLinks": "“在哪里购买”链接",
+        "directPurchases": "直接采购"
+      },
+      "footnote": "“在哪里购买”链接和直接采购是独立方向，不属于 Pro。我们会单独研究，不作任何承诺。",
+      "submit": "发送建议",
+      "sending": "正在发送…",
+      "success": "谢谢！建议已发送。我们不会公开，也不承诺实现。",
+      "error": "无法发送建议，请重试。",
+      "subject": "对 Pro 的建议",
+      "counter": "{{count}} / {{max}}"
+    },
     "profile": "配置文件",
     "fullName": "显示名称",
     "fullNamePlaceholder": "例如：张伟",
@@ -6467,6 +6509,14 @@
     }
   },
   "adminStats": {
+    "workshopInterest": {
+      "title": "Pro 等待名单",
+      "total": "已加入",
+      "overThreshold": "超过 {{threshold}} 台活跃打印机",
+      "recent": "最近 30 天",
+      "countries": "按国家",
+      "empty": "暂无记录"
+    },
     "title": "平台统计",
     "subtitle": "平台基本信息",
     "loading": "加载统计信息中...",
@@ -7516,6 +7566,7 @@
     "mergeIntoTitle": "如果此品牌是重复项，将其合并到其他品牌"
   },
   "apiErrors": {
+    "ERR_PLAN_INTEREST_UNAVAILABLE": "此操作不可用：您已有有效访问权限或尚未完成的订阅。",
     "ERR_CATALOG_CURATION_NOT_FOUND": "未找到目录提案。",
     "ERR_SPOOL_BATCH_KEY_CONFLICT": "此操作已使用不同的数据提交过。请刷新页面后重试。",
     "ERR_SPOOL_BATCH_LIMIT": "一次最多可添加 {{limit}} 个线轴。",

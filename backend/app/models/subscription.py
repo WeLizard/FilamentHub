@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 class SubscriptionStatus(str, Enum):
     """Subscription lifecycle status (mirrors common billing providers)."""
 
+    # Waitlist signals: neither grants access.
+    INTERESTED = "interested"
+    WITHDRAWN = "withdrawn"
     TRIALING = "trialing"
     ACTIVE = "active"
     PAST_DUE = "past_due"
@@ -28,8 +31,11 @@ class SubscriptionStatus(str, Enum):
 class Subscription(Base):
     """Per-user Pro subscription. One row per user; status drives entitlement.
 
-    Payment-ready: ``provider`` / ``provider_subscription_id`` / ``current_period_end``
-    are set by a future payment webhook. Until payments launch the paywall is not
+    ``interested`` stores a waitlist signal on the same lifecycle row; it grants
+    no access and can later become a trial or a paid period. ``withdrawn`` keeps
+    that row and its trial history after the person leaves the list. Payment-ready:
+    ``provider`` / ``provider_subscription_id`` / ``current_period_end`` are set
+    by a future payment webhook. Until payments launch the paywall is not
     enforced (see ``app_settings.paywall_enforced``) and everyone stays on trial.
     """
 
@@ -49,6 +55,11 @@ class Subscription(Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Complimentary (admin-granted) access — not tied to a payment.
     is_comp: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Waitlist signal on the same row; it grants no access.
+    interested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    interest_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Payment provider linkage (reserved; unused until payments launch).
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

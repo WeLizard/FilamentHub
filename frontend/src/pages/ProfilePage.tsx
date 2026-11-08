@@ -13,6 +13,7 @@ import {
   Calculator,
   Play,
   Star,
+  Sparkles,
   XCircle,
   Plus,
   Download,
@@ -93,6 +94,8 @@ import { toast } from '../components/Toast';
 import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
+import { WorkshopInterestCard } from '../components/WorkshopInterestCard';
+import { WorkshopWishBox } from '../components/WorkshopWishBox';
 import { SpoolImportButton } from '../components/SpoolManagerImportButton';
 import { RevenueStrip } from '../components/RevenueStrip';
 import { SpoolSpendingStrip } from '../components/SpoolSpendingStrip';
@@ -163,6 +166,7 @@ const PROFILE_TABS = [
   'presets',
   'spools',
   'calculator-pro',
+  'workshop',
   'settings',
   'printer-profiles',
 ] as const;
@@ -1075,6 +1079,12 @@ export const ProfilePage: React.FC = () => {
                 icon: Calculator,
                 premium: true,
               },
+              {
+                id: 'workshop' as const,
+                label: t('profilePage.tabs.workshop'),
+                shortLabel: t('profilePage.tabs.workshopShort'),
+                icon: Sparkles,
+              },
               { id: 'settings' as const, label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
             ]).map((tab) => {
               const isPremiumTab = tab.premium === true;
@@ -1804,6 +1814,14 @@ export const ProfilePage: React.FC = () => {
       )}
 
       {/* Print Profiles Tab */}
+      {/* Workshop Tab */}
+      {userTab === 'workshop' && user && (
+        <div className="max-w-6xl mx-auto space-y-4">
+          <WorkshopInterestCard user={user} onUserUpdate={refreshUser} />
+          {user.role !== 'admin' && <WorkshopWishBox />}
+        </div>
+      )}
+
       {/* Settings Tab */}
       {userTab === 'settings' && user && (
         <SettingsTab user={user} onUserUpdate={refreshUser} />

@@ -12,7 +12,7 @@ cache is refreshed on startup and whenever an admin changes a setting.
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
@@ -37,6 +37,13 @@ _settings_cache: dict[str, object] = {
 
 class TrialAlreadyUsedError(Exception):
     """Raised when a user tries to restart a consumed trial."""
+
+
+class PlanInterestUnavailableError(Exception):
+    """The account already has access or a billing state that must not be replaced."""
+
+
+INTEREST_SOURCE = "profile_workshop_tab"
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -130,23 +137,29 @@ async def get_or_create_subscription(db: AsyncSession, user: User) -> Subscripti
     return sub
 
 
+def _locked_subscription(user_id: int) -> Select[tuple[Subscription]]:
+    # Authentication may already have loaded this row before we acquired the lock.
+    return (
+        select(Subscription)
+        .where(Subscription.user_id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 async def start_trial(db: AsyncSession, user: User) -> Subscription:
     """Start a user's one-time trial, or return the already active entitlement.
 
     Repeated clicks are idempotent and never extend the trial. A consumed trial
     cannot be restarted without an explicit administrative grant.
     """
-    sub = (
-        await db.execute(
-            select(Subscription)
-            .where(Subscription.user_id == user.id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+    user_id = user.id
+    query = _locked_subscription(user_id)
+    sub = await db.scalar(query)
 
     if sub is None:
         sub = Subscription(
-            user_id=user.id,
+            user_id=user_id,
             status=SubscriptionStatus.TRIALING,
             trial_ends_at=_trial_end_for_new(),
         )
@@ -156,14 +169,9 @@ async def start_trial(db: AsyncSession, user: User) -> Subscription:
             await db.refresh(sub)
             return sub
         except IntegrityError:
-            # Two activation requests may race before either sees a row. The
-            # unique user_id constraint makes the winner authoritative.
+            # The unique user_id constraint resolves concurrent inserts.
             await db.rollback()
-            sub = (
-                await db.execute(
-                    select(Subscription).where(Subscription.user_id == user.id)
-                )
-            ).scalar_one()
+            sub = (await db.execute(query)).scalar_one()
 
     now = datetime.now(timezone.utc)
     if sub.is_comp or sub.status == SubscriptionStatus.ACTIVE:
@@ -174,7 +182,102 @@ async def start_trial(db: AsyncSession, user: User) -> Subscription:
         sub.status = SubscriptionStatus.EXPIRED
         await db.commit()
 
+    if sub.status in {SubscriptionStatus.INTERESTED, SubscriptionStatus.WITHDRAWN}:
+        if sub.trial_ends_at is not None:
+            raise TrialAlreadyUsedError
+        sub.status = SubscriptionStatus.TRIALING
+        sub.trial_ends_at = _trial_end_for_new()
+        await db.commit()
+        await db.refresh(sub)
+        return sub
+
     raise TrialAlreadyUsedError
+
+
+async def join_workshop_interest(db: AsyncSession, user: User) -> Subscription:
+    """Record waitlist interest on the account's single subscription row.
+
+    The row stays the source of truth for the future paid period: ``interested``
+    grants no access and can later become a trial or an active subscription.
+    Repeated joins are idempotent and keep the original timestamp.
+    """
+    user_id = user.id
+    query = _locked_subscription(user_id)
+    sub = await db.scalar(query)
+    now = datetime.now(timezone.utc)
+
+    if sub is None:
+        sub = Subscription(
+            user_id=user_id,
+            status=SubscriptionStatus.INTERESTED,
+            interested_at=now,
+            interest_source=INTEREST_SOURCE,
+        )
+        db.add(sub)
+        try:
+            await db.commit()
+            await db.refresh(sub)
+            return sub
+        except IntegrityError:
+            # Another request created the row while we were joining.
+            await db.rollback()
+            sub = (await db.execute(query)).scalar_one()
+            now = datetime.now(timezone.utc)
+
+    if sub.is_comp:
+        raise PlanInterestUnavailableError
+    if (
+        sub.status == SubscriptionStatus.TRIALING
+        and sub.trial_ends_at is not None
+        and _as_utc(sub.trial_ends_at) <= now
+    ):
+        sub.status = SubscriptionStatus.EXPIRED
+    if (
+        sub.status == SubscriptionStatus.ACTIVE
+        and sub.current_period_end is not None
+        and _as_utc(sub.current_period_end) <= now
+    ):
+        sub.status = SubscriptionStatus.EXPIRED
+    if sub.status in {
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.TRIALING,
+        SubscriptionStatus.PAST_DUE,
+    }:
+        raise PlanInterestUnavailableError
+    if sub.status == SubscriptionStatus.INTERESTED:
+        return sub
+
+    if sub.status != SubscriptionStatus.WITHDRAWN and sub.trial_ends_at is None:
+        # Preserve ineligibility when replacing a legacy status with no end
+        # date, for example when an unlimited trial was revoked.
+        sub.trial_ends_at = now
+    sub.status = SubscriptionStatus.INTERESTED
+    sub.interested_at = now
+    sub.interest_source = INTEREST_SOURCE
+    await db.commit()
+    await db.refresh(sub)
+    return sub
+
+
+async def leave_workshop_interest(db: AsyncSession, user: User) -> bool:
+    """Leave the waitlist without deleting the subscription/trial history."""
+    sub = await db.scalar(_locked_subscription(user.id))
+
+    if sub is None:
+        return False
+    if sub.status == SubscriptionStatus.INTERESTED:
+        sub.status = SubscriptionStatus.WITHDRAWN
+        await db.commit()
+        return True
+    if sub.status == SubscriptionStatus.WITHDRAWN:
+        return False
+    if sub.is_comp or sub.status in {
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.TRIALING,
+        SubscriptionStatus.PAST_DUE,
+    }:
+        raise PlanInterestUnavailableError
+    return False
 
 
 def _loaded_subscription(user: User) -> Subscription | None:
@@ -218,4 +321,5 @@ def subscription_summary(user: User) -> dict | None:
         "current_period_end": sub.current_period_end,
         "cancel_at_period_end": sub.cancel_at_period_end,
         "is_comp": sub.is_comp,
+        "interested_at": sub.interested_at,
     }

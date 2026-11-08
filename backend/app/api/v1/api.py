@@ -53,6 +53,7 @@ from app.api.v1.endpoints import (
     spool_tags,
     spools,
     stock_alerts,
+    subscription,
     wiki,
     wiki_authoring,
     workstation_keys,
@@ -114,6 +115,7 @@ api_router.include_router(spool_qr.router)
 api_router.include_router(spool_collections.router)
 api_router.include_router(spools.router)
 api_router.include_router(stock_alerts.router)
+api_router.include_router(subscription.router)
 api_router.include_router(spool_tags.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
