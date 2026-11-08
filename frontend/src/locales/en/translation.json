@@ -514,6 +514,7 @@
     }
   },
   "layout": {
+    "externalLinkOpenFailed": "Could not open the link in your browser. Please try again.",
     "tagline": "Intelligent materials catalog",
     "feedback_tooltip": "Feedback for beta testers",
     "feedback_button": "Beta Feedback",

@@ -16,6 +16,8 @@ import type { OrcaSliceReportInput } from '../types/api';
 
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 const PLUGIN_HOST_MESSAGE_SOURCE = 'filamenthub-host';
+const EXTERNAL_URL_CAPABILITY = 'open-external-url';
+const EXTERNAL_URL_OPEN_FAILED = 'external-url-open-failed';
 
 const EMBED_FLAG = 'fh_plugin_embed';
 
@@ -1739,6 +1741,78 @@ export function openSitePathInBrowser(path: string): boolean {
   }
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'open-external', path });
   return true;
+}
+
+/** Try the bound host for a cross-origin HTTP(S) link. */
+export function openExternalUrlInBrowser(url: URL): boolean {
+  if (
+    !isDirectPluginHost()
+    || !activePluginCapabilities.has(EXTERNAL_URL_CAPABILITY)
+    || (url.protocol !== 'https:' && url.protocol !== 'http:')
+    || url.origin === window.location.origin
+  ) return false;
+
+  if (url.hostname && !url.username && !url.password) {
+    try {
+      postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: EXTERNAL_URL_CAPABILITY, url: url.href });
+      return true;
+    } catch {
+      // The host may have closed its transport after advertising this action.
+    }
+  }
+  window.dispatchEvent(new MessageEvent('message', {
+    data: { source: PLUGIN_MESSAGE_SOURCE, type: EXTERNAL_URL_OPEN_FAILED },
+    origin: window.location.origin,
+    source: window,
+  }));
+  return true;
+}
+
+/** Install after the SPA mounts so link-specific handlers can cancel first. */
+export function subscribeToPluginExternalLinks(onOpenFailed: () => void): () => void {
+  if (!isDirectPluginHost()) return () => {};
+
+  const handleClick = (event: MouseEvent) => {
+    if (!event.cancelable || event.defaultPrevented || event.button !== (event.type === 'auxclick' ? 1 : 0)) return;
+    const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement);
+    const href = anchor?.getAttribute('href')?.trim();
+    if (!anchor || !href || href.startsWith('#') || anchor.hasAttribute('download')) return;
+    let url: URL;
+    try {
+      url = new URL(anchor.href);
+    } catch {
+      return;
+    }
+    if (openExternalUrlInBrowser(url)) event.preventDefault();
+  };
+  const handleFailure = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (data?.source === PLUGIN_MESSAGE_SOURCE && data.type === EXTERNAL_URL_OPEN_FAILED) {
+      onOpenFailed();
+    }
+  };
+
+  document.addEventListener('click', handleClick);
+  document.addEventListener('auxclick', handleClick);
+  window.addEventListener('message', handleFailure);
+  return () => {
+    document.removeEventListener('click', handleClick);
+    document.removeEventListener('auxclick', handleClick);
+    window.removeEventListener('message', handleFailure);
+  };
+}
+
+/** Remove the per-tab binding from URLs copied or sent to share providers. */
+export function stripPluginBridgeFromSharedUrl(href: string): string {
+  const hashIndex = href.indexOf('#');
+  if (hashIndex < 0) return href;
+  const hash = new URLSearchParams(href.slice(hashIndex + 1));
+  if (!hash.has('fh_bridge')) return href;
+  hash.delete('fh_bridge');
+  hash.delete('fh_appearance');
+  const remainingHash = hash.toString();
+  return href.slice(0, hashIndex) + (remainingHash ? `#${remainingHash}` : '');
 }
 
 export interface PluginAuthRestore {

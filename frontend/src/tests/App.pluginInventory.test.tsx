@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   pluginEmbed: false,
   user: null as null | { role: string; legal_onboarding_required: boolean },
+  subscribeToExternalLinks: vi.fn((_onOpenFailed: () => void) => vi.fn()),
+  showToastError: vi.fn(),
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -21,6 +23,7 @@ vi.mock('../contexts/AuthContext', () => ({
 vi.mock('../utils/pluginBridge', () => ({
   isPluginEmbed: () => state.pluginEmbed,
   preserveDirectPluginBridgeBinding: vi.fn(),
+  subscribeToPluginExternalLinks: state.subscribeToExternalLinks,
   subscribeToPluginNavigation: () => vi.fn(),
   subscribeToPluginNotice: () => vi.fn(),
   subscribeToPluginSyncResult: () => vi.fn(),
@@ -42,7 +45,10 @@ vi.mock('../components/ProtectedRoute', () => ({
 }));
 vi.mock('../pages/CatalogPage', () => ({ CatalogPage: () => <div data-testid="catalog-page" /> }));
 vi.mock('../pages/ProfilePage', () => ({ ProfilePage: () => <div data-testid="profile-page" /> }));
-vi.mock('../components/Toast', () => ({ ToastContainer: () => null, toast: { show: vi.fn() } }));
+vi.mock('../components/Toast', () => ({
+  ToastContainer: () => null,
+  toast: { show: vi.fn(), error: state.showToastError },
+}));
 vi.mock('../hooks/useCurrencyCatalogue', () => ({ useCurrencyCatalogue: () => undefined }));
 vi.mock('../hooks/useTokenRefresh', () => ({ useTokenRefresh: () => undefined }));
 vi.mock('../hooks/usePluginDeveloperMode', () => ({ usePluginDeveloperMode: () => false }));
@@ -93,4 +99,19 @@ describe('App inventory landing', () => {
     expect(screen.getByTestId('catalog-page')).toBeInTheDocument();
     expect(screen.queryByTestId('profile-page')).not.toBeInTheDocument();
   });
+});
+
+it('reports repeated failures to open an external link without session deduplication', () => {
+  state.pluginEmbed = true;
+  state.subscribeToExternalLinks.mockClear();
+  state.showToastError.mockClear();
+  renderApp('/embed/catalog');
+
+  const onOpenFailed = state.subscribeToExternalLinks.mock.lastCall?.[0];
+  expect(onOpenFailed).toBeTypeOf('function');
+  onOpenFailed?.();
+  onOpenFailed?.();
+
+  const toastArgs = ['layout.externalLinkOpenFailed', undefined, 'orca-external-link-open'];
+  expect(state.showToastError.mock.calls).toEqual([toastArgs, toastArgs]);
 });

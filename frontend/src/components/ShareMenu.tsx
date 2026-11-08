@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share2, Copy, Check, Send } from 'lucide-react';
+import { openExternalUrlInBrowser, stripPluginBridgeFromSharedUrl } from '../utils/pluginBridge';
 import {
   OdnoklassnikiIcon,
   TelegramIcon,
@@ -34,7 +35,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const url = propUrl || (typeof window !== 'undefined' ? window.location.href : '');
+  const url = stripPluginBridgeFromSharedUrl(propUrl || (typeof window !== 'undefined' ? window.location.href : ''));
 
   const shareOptions: ShareOption[] = [
     {
@@ -99,7 +100,9 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
 
   const handleShare = (option: ShareOption) => {
     const shareUrl = option.getUrl(url, title, description);
-    window.open(shareUrl, '_blank', 'width=600,height=400');
+    if (!openExternalUrlInBrowser(new URL(shareUrl))) {
+      window.open(shareUrl, '_blank', 'width=600,height=400');
+    }
     setIsOpen(false);
   };
 

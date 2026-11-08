@@ -513,6 +513,7 @@
     }
   },
   "layout": {
+    "externalLinkOpenFailed": "无法在浏览器中打开链接，请重试。",
     "tagline": "智能耗材目录",
     "feedback_tooltip": "为Beta测试者提供反馈",
     "feedback_button": "Beta反馈",

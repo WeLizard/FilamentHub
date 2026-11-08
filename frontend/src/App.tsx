@@ -11,6 +11,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   isPluginEmbed,
   preserveDirectPluginBridgeBinding,
+  subscribeToPluginExternalLinks,
   subscribeToPluginNavigation,
   subscribeToPluginNotice,
   subscribeToPluginSyncResult,
@@ -119,6 +120,10 @@ function AppContent() {
   const signedIn = Boolean(user);
   const pluginDeveloperMode = usePluginDeveloperMode();
   const canReportProblem = signedIn && pluginDeveloperMode;
+
+  useEffect(() => subscribeToPluginExternalLinks(() => {
+    toast.error(t('layout.externalLinkOpenFailed'), undefined, 'orca-external-link-open');
+  }), [t]);
 
   useEffect(() => {
     if (!isPluginEmbed() || !signedIn) return;
