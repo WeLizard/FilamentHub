@@ -38,6 +38,7 @@ async def test_plugin_sync_preferences_expose_every_direction(auth_user, db_sess
     key = result.pop("printer_discovery_key")
     assert isinstance(key, str) and len(key) == 64
     assert result == {
+        "manual_filament_recovery": True,
         "auto_import_local_presets": True,
         "sync_printer_endpoints": False,
         "allow_filament_presets_import": True,
