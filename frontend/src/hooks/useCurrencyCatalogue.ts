@@ -8,8 +8,8 @@ import { setCurrencyCatalogue } from '../utils/currency';
  * that format money outside React. Mounted at the application root so the re-render
  * on arrival reaches every list and price on the page.
  */
-export function useCurrencyCatalogue(): void {
-  useQuery({
+export function useCurrencyCatalogue() {
+  return useQuery({
     queryKey: ['currencies'],
     queryFn: async () => {
       const rows = await currenciesAPI.list();

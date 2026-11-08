@@ -153,16 +153,6 @@ export function roundingStepsForCurrency(code: string | null | undefined): numbe
 }
 
 
-/** ISO 4217 minor units as the browser knows them: yen and won have none. */
-export function currencyFractionDigits(code: string | null | undefined): number {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: normalizeCurrency(code) })
-      .resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
-}
-
 export interface PriceShare {
   amount: number;
   count: number;
@@ -172,9 +162,9 @@ export interface PriceShare {
  * Split a purchase total into equal shares down to the currency's minor unit,
  * the leftover units going one each to the first items: 100 / 3 → 33.34 + 33.33 × 2.
  */
-export function splitTotalPrice(total: number, count: number, code: string | null | undefined): PriceShare[] {
+export function splitTotalPrice(total: number, count: number, decimals: number): PriceShare[] {
   if (!Number.isFinite(total) || total < 0 || !Number.isInteger(count) || count < 1) return [];
-  const scale = 10 ** currencyFractionDigits(code);
+  const scale = 10 ** decimals;
   const units = Math.round(total * scale);
   const base = Math.floor(units / count);
   const remainder = units - base * count;

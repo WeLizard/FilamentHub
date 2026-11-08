@@ -47,6 +47,7 @@ import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useCurrencyCatalogue } from '../hooks/useCurrencyCatalogue';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { formatNetWeight, singleSpoolWeights } from '../utils/packaging';
@@ -64,7 +65,7 @@ import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
-import { currencyFractionDigits, currencySymbol, normalizeCurrency, splitTotalPrice } from '../utils/currency';
+import { currencySymbol, normalizeCurrency, splitTotalPrice } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import {
@@ -2109,7 +2110,7 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
   alertState,
   onOpenStockAlert,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { currency: userCurrency } = useUserCurrency();
   const [showUsage, setShowUsage] = useState(false);
   const pct = Math.max(0, Math.min(100, spool.remaining_pct));
@@ -2373,7 +2374,7 @@ export const SpoolCard: React.FC<SpoolCardProps> = ({
             <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
             <span className="font-medium">
               {spool.price != null
-                ? `${spool.price.toFixed(0)} ${purchaseCurrency}`
+                ? `${spool.price.toLocaleString(i18n.language, { maximumFractionDigits: 20 })} ${purchaseCurrency}`
                 : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${catalogCurrency}`}
             </span>
             {spool.price == null && spool.filament?.price_per_kg != null && (
@@ -2639,6 +2640,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
   const { currency: userCurrency } = useUserCurrency();
+  const { data: currencies } = useCurrencyCatalogue();
   const priceCurrencyCode = normalizeCurrency(
     spool?.currency
     || spool?.extra?.currency
@@ -3228,12 +3230,15 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const batchCount = Number(quantity);
   const isBatch = mode === 'create' && Number.isInteger(batchCount) && batchCount > 1 && batchCount <= batchLimit;
   const quantityOverLimit = mode === 'create' && batchCount > batchLimit;
+  const priceFractionDigits = currencies?.find(currency => currency.code === priceCurrencyCode)?.decimals;
+  const priceStep = isBatch && priceMode === 'total' && priceFractionDigits !== undefined
+    ? 10 ** -priceFractionDigits
+    : 'any';
   const batchPreview = (() => {
     if (!isBatch) return null;
-    const fractionDigits = currencyFractionDigits(priceCurrencyCode);
     const money = (amount: number) => `${amount.toLocaleString(i18n.language, {
-      minimumFractionDigits: fractionDigits,
-      maximumFractionDigits: fractionDigits,
+      minimumFractionDigits: priceFractionDigits,
+      maximumFractionDigits: priceMode === 'per_spool' ? 4 : priceFractionDigits,
     })} ${priceCurrency}`;
     const head = t('profilePage.spoolAddModal.previewCreate', {
       count: batchCount,
@@ -3244,11 +3249,16 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       return `${head} · ${t('profilePage.spoolAddModal.previewNoPrice')}`;
     }
     if (priceMode === 'per_spool') {
-      const scale = 10 ** fractionDigits;
-      const total = (Math.round(parsedPrice * scale) * batchCount) / scale;
+      const total = Number((parsedPrice * batchCount).toFixed(4));
       return `${head} · ${t('profilePage.spoolAddModal.previewPerSpool', { count: batchCount, price: money(parsedPrice), total: money(total) })}`;
     }
-    const shares = splitTotalPrice(parsedPrice, batchCount, priceCurrencyCode)
+    // The catalogue lists active currencies only. Let the API validate a total
+    // if the selected currency is missing or the catalogue has not loaded.
+    if (priceFractionDigits === undefined) return head;
+    if (Number(parsedPrice.toFixed(priceFractionDigits)) !== parsedPrice) {
+      return `${head} · ${t('apiErrors.ERR_SPOOL_BATCH_PRICE_PRECISION', { decimals: priceFractionDigits })}`;
+    }
+    const shares = splitTotalPrice(parsedPrice, batchCount, priceFractionDigits)
       .map(share => `${money(share.amount)} × ${share.count}`)
       .join(', ');
     return `${head} · ${t('profilePage.spoolAddModal.previewTotal', { total: money(parsedPrice), shares })}`;
@@ -3473,7 +3483,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
                 </div>
               )}
             </div>
-            <input type="number" min="0" step="1" value={price}
+            <input type="number" min="0" step={priceStep} value={price}
               onChange={e => setPrice(e.target.value)}
               placeholder={t('profilePage.spoolAddModal.pricePlaceholder')} className={inputCls} />
           </div>
