@@ -177,6 +177,19 @@ def product_id(detail: dict[str, Any]) -> int | None:
     return None
 
 
+def _field(source: dict[str, Any], name: str) -> Any:
+    """Read a field the way Orca's client does: some firmware capitalizes keys."""
+    return source.get(name, source.get(name[:1].upper() + name[1:]))
+
+
+def _flag(value: Any) -> bool | None:
+    """Firmware reports flags as booleans or as 0/1 numbers."""
+    if isinstance(value, bool):
+        return value
+    number = _integer(value)
+    return number != 0 if number in {0, 1} else None
+
+
 def _material(value: Any) -> str | None:
     material = _text(value, 80)
     return material if material and material.strip("?-") else None
@@ -185,7 +198,7 @@ def _material(value: Any) -> str | None:
 def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
     """Return the feed slots and whether they form the printer's complete feed."""
     pid = product_id(detail)
-    station = detail.get("matlStationInfo")
+    station = _field(detail, "matlStationInfo")
     if pid in SINGLE_SPOOL_PIDS:
         # One spool on the extruder; the printer knows only its set material.
         spool: dict[str, Any] = {
@@ -202,7 +215,7 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
     if not isinstance(station, dict) or (pid is not None and pid not in STATION_PIDS):
         # An unknown model or a missing station is not guessed into a topology.
         return [], False
-    entries = station.get("slotInfos")
+    entries = _field(station, "slotInfos")
     if not isinstance(entries, list) or len(entries) > MAX_SLOTS:
         return [], False
     slots: dict[int, dict[str, Any]] = {}
@@ -212,12 +225,12 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
         slot_id = _integer(entry.get("slotId"))
         if slot_id is None or slot_id < 1 or slot_id > MAX_SLOTS or slot_id - 1 in slots:
             return [], False
-        present = entry.get("hasFilament")
+        present = _flag(entry.get("hasFilament"))
         slot: dict[str, Any] = {
             "provider_index": slot_id - 1,
             "label": f"Slot {slot_id}",
             "kind": "slot",
-            "present": present if isinstance(present, bool) else None,
+            "present": present,
             "spool_identity_known": False,
         }
         if present is True:
@@ -229,7 +242,7 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
                 slot["color_hex"] = color
         slots[slot_id - 1] = slot
     ordered = [slots[index] for index in sorted(slots)]
-    count = _integer(station.get("slotCnt"))
+    count = _integer(_field(station, "slotCnt"))
     complete = (
         count is not None and count == len(ordered) > 0 and sorted(slots) == list(range(count))
     )

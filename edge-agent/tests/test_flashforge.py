@@ -98,6 +98,17 @@ class FlashforgeProviderTest(unittest.TestCase):
         self.assertTrue(snapshot.slot_topology_complete)
         self.assertEqual([slot["provider_index"] for slot in snapshot.slots], [0, 1, 2, 3])
 
+        # Some firmware capitalizes station keys and sends 0/1 flags; read them like Orca does.
+        variant = copy.deepcopy(ad5x)
+        station = variant["detail"].pop("matlStationInfo")
+        station["SlotInfos"] = station.pop("slotInfos")
+        for entry in station["SlotInfos"]:
+            entry["hasFilament"] = int(entry["hasFilament"])
+        variant["detail"]["MatlStationInfo"] = station
+        snapshot = provider(FlashforgeHttp(variant)).observe()
+        self.assertTrue(snapshot.slot_topology_complete)
+        self.assertEqual([slot["present"] for slot in snapshot.slots], [True, True, False, True])
+
         # A model outside the known families is not guessed into a topology.
         unknown = copy.deepcopy(base)
         unknown["detail"]["pid"] = "63"
