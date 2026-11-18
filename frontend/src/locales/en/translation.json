@@ -168,8 +168,8 @@
       "bambu": "Bambu Lab",
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
-      "flashforge": "Flashforge Creator 5",
-      "flashforgeHint": "Creator 5 / 5 Pro in LAN mode through FH Edge. Shows which station slots have filament and the material set on the printer; it does not track usage."
+      "flashforge": "Flashforge (5M, AD5X, Creator 5)",
+      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; it does not track usage."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -190,7 +190,8 @@
       "bypass": "Bypass feed",
       "manualHint": "Describe your equipment. You can assign spools immediately, without a connection. This is your declaration, not a sensor reading.",
       "edit": "Edit feed paths and slots",
-      "flashforgeStation": "Material station, 4 slots"
+      "flashforgeStation": "Material station, 4 slots (AD5X, Creator 5)",
+      "flashforgeSingle": "Single spool (Adventurer 5M / 5M Pro)"
     },
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_unavailable":"The printer was found, but its identity could not be confirmed yet. Try the check again. Your saved printer and assignments are kept.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Add printer",
@@ -8414,7 +8415,7 @@
       "direct": "Direct feed",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
-      "flashforge": "Flashforge material station"
+      "flashforge": "Flashforge LAN"
     },
     "edge": {
       "title": "FH Edge",

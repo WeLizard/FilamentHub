@@ -79,7 +79,7 @@ Spoolman в Moonraker: сначала выполните
 Happy Hare и однозначных данных о счётчике и активной назначенной катушке.
 Edge не выполняет команды принтера, не меняет гейты и не записывает NFC/RFID.
 
-#### Flashforge Creator 5 / 5 Pro
+#### Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro
 
 Включите на принтере режим LAN в настройках сети и запишите показанный там код
 проверки и серийный номер из сведений об устройстве. В облачном режиме локальный
@@ -95,8 +95,10 @@ API выключен, а при возврате в LAN код проверки 
   pairing_code: FH-ZZZZZ-ZZZZZ
 ```
 
-Edge передаёт состояние принтера, текущее задание и четыре слота станции
-материалов: есть ли пруток, материал и цвет, заданные на принтере. Принтер не
+Edge передаёт состояние принтера и текущее задание. У AD5X и Creator 5 — четыре
+слота станции материалов: есть ли пруток, материал и цвет, заданные на принтере;
+у Adventurer 5M / 5M Pro — материал единственной катушки (нужна прошивка 2.x
+или новее). Принтер не
 сообщает расход по головам и активную голову, поэтому это подключение не
 списывает пластик с катушек.
 
@@ -208,7 +210,7 @@ before relying on spool identity. When native Spoolman is configured or unknown,
 Edge does not submit a second usage stream. Empty/unknown observations never
 erase your desired spool assignments.
 
-#### Flashforge Creator 5 / 5 Pro
+#### Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro
 
 Enable LAN mode in the printer's network settings and note the check code shown
 there and the serial number from the device information. Cloud mode switches the
@@ -224,8 +226,10 @@ local API off, and returning to LAN mode can change the check code.
   pairing_code: FH-ZZZZZ-ZZZZZ
 ```
 
-Edge reports the printer state, current job and the four material-station slots:
-whether filament is loaded, plus the material and colour set on the printer. The
+Edge reports the printer state and current job. On the AD5X and Creator 5 it
+reports the four material-station slots: whether filament is loaded, plus the
+material and colour set on the printer; on the Adventurer 5M / 5M Pro, the single
+spool's material (firmware 2.x or later is required). The
 printer reports neither per-tool usage nor the active tool, so this connection
 does not debit spools.
 
@@ -306,7 +310,7 @@ Spoolman 集成；请先完成
 只有确认无原生 Spoolman、Happy Hare 的 Spoolman 支持关闭，且计数器与当前分配
 料盘均明确时，才可独立上传用量。Edge 不发送打印机命令、不切换槽位，也不写入 NFC/RFID。
 
-#### 闪铸 Creator 5 / 5 Pro
+#### 闪铸 Adventurer 5M / 5M Pro、AD5X、Creator 5 / 5 Pro
 
 请在打印机网络设置中启用局域网模式，并记下其中显示的校验码以及设备信息中的序列号。
 云模式会关闭本地 API，切回局域网模式后校验码可能改变。
@@ -321,7 +325,7 @@ Spoolman 集成；请先完成
   pairing_code: FH-ZZZZZ-ZZZZZ
 ```
 
-Edge 上报打印机状态、当前任务以及耗材站的四个槽位：是否装有耗材，以及打印机上设置的材料和颜色。
+Edge 上报打印机状态和当前任务。AD5X 和 Creator 5 上报耗材站的四个槽位：是否装有耗材，以及打印机上设置的材料和颜色；Adventurer 5M / 5M Pro 上报单卷耗材在打印机上设置的材料（需要 2.x 或更高版本固件）。
 打印机不报告各打印头的用量和当前打印头，因此此连接不会从料盘扣减耗材。
 
 ### 更新与恢复

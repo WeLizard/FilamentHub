@@ -17,7 +17,7 @@ configuration:
         description: 关闭后仅暂停此连接。默认启用；待发送事件会保留。
       adapter:
         name: 适配器
-        description: moonraker 用于 Klipper 打印机；flashforge 用于局域网模式下的闪铸 Creator 5 / 5 Pro。省略时默认为 moonraker。
+        description: moonraker 用于 Klipper 打印机；flashforge 用于局域网模式下的闪铸 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。省略时默认为 moonraker。
       pairing_code:
         name: 配对码
         description: FilamentHub 为此打印机生成的一次性代码。成功配对后请移除此代码。

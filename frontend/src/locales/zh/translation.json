@@ -168,8 +168,8 @@
       "bambu": "Bambu Lab",
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
-      "flashforge": "闪铸 Creator 5",
-      "flashforgeHint": "通过 FH Edge 连接局域网模式下的 Creator 5 / 5 Pro。显示耗材站各槽位是否有耗材以及打印机上设置的材料；不统计用量。"
+      "flashforge": "闪铸（5M、AD5X、Creator 5）",
+      "flashforgeHint": "通过 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；不统计用量。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -190,7 +190,8 @@
       "bypass": "旁路供料",
       "manualHint": "描述您的设备。无需连接即可分配料卷。这是手动声明，不是传感器读数。",
       "edit": "编辑供料路径和槽位",
-      "flashforgeStation": "耗材站，4 个槽位"
+      "flashforgeStation": "耗材站，4 个槽位（AD5X、Creator 5）",
+      "flashforgeSingle": "单卷耗材（Adventurer 5M / 5M Pro）"
     },
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
@@ -8392,7 +8393,7 @@
       "direct": "直接供料",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
-      "flashforge": "闪铸耗材站"
+      "flashforge": "闪铸局域网"
     },
     "edge": {
       "title": "FH Edge",

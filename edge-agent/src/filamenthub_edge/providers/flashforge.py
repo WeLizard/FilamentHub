@@ -1,14 +1,20 @@
-"""Flashforge Creator 5 / 5 Pro observations over the printer's LAN HTTP API.
+"""Flashforge observations over the printer's LAN HTTP API.
 
-The stock firmware exposes an undocumented HTTP API on port 8898 only while
+The stock firmware of the Adventurer 5M / 5M Pro (firmware 2.x+), AD5X and
+Creator 5 / 5 Pro exposes an undocumented HTTP API on port 8898 only while
 LAN mode is enabled. Every request carries the printer serial number and the
 check code shown on the printer's network screen. Field meanings follow the
-community reference (Parallel-7/flashforge-api-docs, Creator 5 firmware
-1.7.8-1.9.8) and still need confirmation on more firmware builds.
+community reference (Parallel-7/flashforge-api-docs: 5M 3.2.7, AD5X 1.2.1,
+Creator 5 1.9.2) and still need confirmation on more firmware builds.
+
+The AD5X and Creator 5 report a four-slot material station; the 5M series
+feeds a single spool and reports only the material set on the printer.
+Older models (Adventurer 3/4, Guider, Finder) speak a different TCP protocol
+without material data and are not handled here.
 
 The printer reports no per-tool filament usage and no confirmed active tool,
-so this provider reads printer state and material-station slots only. It does
-not claim consumption.
+so this provider reads printer state and slot materials only. It does not
+claim consumption.
 """
 
 from __future__ import annotations
@@ -40,6 +46,9 @@ _STATES = {
     "cancel": "failed",
     "error": "failed",
 }
+# Product IDs from /detail: the 5M series feeds one spool, the others a station.
+SINGLE_SPOOL_PIDS = frozenset({35, 36})  # Adventurer 5M, 5M Pro
+STATION_PIDS = frozenset({38, 40, 41})  # AD5X, Creator 5, Creator 5 Pro
 
 
 def normalize_serial(value: str) -> str:
@@ -158,10 +167,40 @@ def build_printer(detail: dict[str, Any]) -> dict[str, Any]:
     return printer
 
 
+def product_id(detail: dict[str, Any]) -> int | None:
+    """Return the model PID; the 5M sends an integer, newer models a hex string."""
+    value = detail.get("pid")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9A-Fa-f]{1,4}", value.strip()):
+        return int(value.strip(), 16)
+    return None
+
+
+def _material(value: Any) -> str | None:
+    material = _text(value, 80)
+    return material if material and material.strip("?-") else None
+
+
 def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
-    """Return material-station slots and whether they form the complete station."""
+    """Return the feed slots and whether they form the printer's complete feed."""
+    pid = product_id(detail)
     station = detail.get("matlStationInfo")
-    if not isinstance(station, dict):
+    if pid in SINGLE_SPOOL_PIDS:
+        # One spool on the extruder; the printer knows only its set material.
+        spool: dict[str, Any] = {
+            "provider_index": 0,
+            "label": "Spool",
+            "kind": "external",
+            "present": None,
+            "spool_identity_known": False,
+        }
+        material = _material(detail.get("rightFilamentType"))
+        if material:
+            spool["material"] = material
+        return [spool], True
+    if not isinstance(station, dict) or (pid is not None and pid not in STATION_PIDS):
+        # An unknown model or a missing station is not guessed into a topology.
         return [], False
     entries = station.get("slotInfos")
     if not isinstance(entries, list) or len(entries) > MAX_SLOTS:
@@ -182,8 +221,8 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
             "spool_identity_known": False,
         }
         if present is True:
-            material = _text(entry.get("materialName"), 80)
-            if material and material.strip("?-"):
+            material = _material(entry.get("materialName"))
+            if material:
                 slot["material"] = material
             color = _color(entry.get("materialColor"))
             if color:

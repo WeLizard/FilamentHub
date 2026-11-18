@@ -1,4 +1,4 @@
-"""Flashforge Creator 5 LAN reader.
+"""Flashforge LAN reader (Adventurer 5M series, AD5X, Creator 5).
 
 The fixture is synthetic: it follows the field list published by the community
 API reference for Creator 5 firmware 1.7.8-1.9.8 and is not a device capture.
@@ -73,6 +73,36 @@ class FlashforgeProviderTest(unittest.TestCase):
         self.assertTrue(all(slot["spool_identity_known"] is False for slot in slots.values()))
         # currentSlot is not a confirmed active-tool signal.
         self.assertTrue(all("active_feed" not in slot for slot in slots.values()))
+
+    def test_feed_shape_follows_the_reported_model(self) -> None:
+        base = json.loads(FIXTURE.read_text())
+
+        # Adventurer 5M Pro: integer PID, no station, one spool with the set material.
+        five_m = copy.deepcopy(base)
+        five_m["detail"].update(pid=36, rightFilamentType="PETG")
+        del five_m["detail"]["matlStationInfo"]
+        snapshot = provider(FlashforgeHttp(five_m)).observe()
+        self.assertTrue(snapshot.slot_topology_complete)
+        self.assertEqual(
+            [
+                (s["provider_index"], s["kind"], s["present"], s.get("material"))
+                for s in snapshot.slots
+            ],
+            [(0, "external", None, "PETG")],
+        )
+
+        # AD5X: hex PID "0026" and the same four-slot station as the Creator 5.
+        ad5x = copy.deepcopy(base)
+        ad5x["detail"].update(pid="0026", hasMatlStation=1)
+        snapshot = provider(FlashforgeHttp(ad5x)).observe()
+        self.assertTrue(snapshot.slot_topology_complete)
+        self.assertEqual([slot["provider_index"] for slot in snapshot.slots], [0, 1, 2, 3])
+
+        # A model outside the known families is not guessed into a topology.
+        unknown = copy.deepcopy(base)
+        unknown["detail"]["pid"] = "63"
+        snapshot = provider(FlashforgeHttp(unknown)).observe()
+        self.assertEqual((snapshot.slots, snapshot.slot_topology_complete), ([], False))
 
     def test_no_consumption_is_claimed_without_per_tool_usage(self) -> None:
         snapshot = provider(FlashforgeHttp()).observe()

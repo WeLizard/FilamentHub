@@ -219,9 +219,10 @@ this printer's FilamentHub inventory and the spools belong to this account.
 separately from the user's assignments; select the detected spool and save only
 after reviewing it. Empty or unknown observations never clear desired assignments.
 
-### Flashforge Creator 5 / 5 Pro
+### Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro
 
-Edge reads the stock firmware's LAN API (HTTP port 8898). On the printer, enable
+Edge reads the stock firmware's LAN API (HTTP port 8898; on the Adventurer 5M
+series it needs firmware 2.x or later). On the printer, enable
 LAN mode in the network settings and note the check code shown there and the
 serial number from the device information. Cloud mode switches this API off, and
 returning to LAN mode can change the check code.
@@ -239,8 +240,11 @@ returning to LAN mode can change the check code.
 ```
 
 The serial number and check code stay in this local file. Edge reports the
-printer state, current job and the four material-station slots: whether filament
-is loaded, plus the material and colour set on the printer. The printer does not
+printer state and current job. On the AD5X and Creator 5 it reports the four
+material-station slots: whether filament is loaded, plus the material and colour
+set on the printer. On the Adventurer 5M / 5M Pro it reports the single spool's
+material set on the printer. Older models (Adventurer 3/4, Guider, Finder) use
+a different protocol and are not supported. The printer does not
 report filament usage per tool or which tool is printing, so this connection
 does not debit spools; assign spools to slots on the website. Printers running
 Klipper-based community firmware use the Moonraker adapter instead.

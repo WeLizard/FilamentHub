@@ -17,7 +17,7 @@ configuration:
         description: Выключите для паузы только этого подключения. По умолчанию включено; очередь событий сохраняется.
       adapter:
         name: Адаптер
-        description: moonraker — принтеры на Klipper; flashforge — Flashforge Creator 5 / 5 Pro в режиме LAN. Если не указан, используется moonraker.
+        description: moonraker — принтеры на Klipper; flashforge — Flashforge Adventurer 5M / 5M Pro, AD5X и Creator 5 / 5 Pro в режиме LAN. Если не указан, используется moonraker.
       pairing_code:
         name: Код подключения
         description: Одноразовый код из FilamentHub для этого принтера. Удалите код после успешного подключения.
