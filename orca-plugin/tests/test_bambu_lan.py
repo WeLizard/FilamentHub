@@ -459,7 +459,7 @@ def test_bambu_publish_refuses_command_when_connack_crosses_host_deadline(
     sock = CrossingConnackSocket()
     monkeypatch.setattr(plugin_module.time, "monotonic", lambda: clock[0])
 
-    def open_socket(_host, _access_code, timeout):
+    def open_socket(_host, _access_code, timeout, _config=None):
         opened_with.append(timeout)
         return sock
 

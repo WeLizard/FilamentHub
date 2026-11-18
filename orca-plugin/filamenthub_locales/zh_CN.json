@@ -39,6 +39,7 @@
   "bambuRepairRequired": "本地连接已保存。请使用已保存的 LAN 访问码修复 FilamentHub 连接。",
   "bambuRepairUnavailable": "无法确认此账户和打印机的已保存连接。请登录所属账户后重新打开设置。",
   "bambuLanAuthRejected": "打印机拒绝了 LAN 访问。请检查打印机设置中的访问码。已保存的连接仍然保留。",
+  "bambuCertificateRejected": "此地址上的设备不是之前连接的打印机：它提供了不同的证书。请检查打印机地址。如果打印机已更换或维修，请删除本地连接后重新连接。",
   "bambuLocalConfigMissing": "未找到已保存的 Bambu 本地连接。请输入打印机地址和 LAN 访问码。",
   "bambuLocalConfigCorrupt": "无法安全读取已保存的 Bambu 连接文件。文件未被修改；请恢复文件访问权限或有效备份后再设置。",
   "summaryReloadUnconfirmed": "文件已保存；已请求 Orca 重新加载，尚未确认加载结果",

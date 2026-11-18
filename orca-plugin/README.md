@@ -175,6 +175,17 @@ the account and uses only the saved address and serial; changing the endpoint
 requires entering its access code. Unreadable or malformed local storage is
 preserved and blocks mutations until recovered.
 
+A linked printer is recognised by its TLS certificate. Once the printer has
+accepted the access code, the SHA-256 of its certificate is saved with the
+connection, and both MQTT and FTPS compare it before anything is sent. A
+different certificate is accepted only when it chains to Bambu Lab's issuing
+certificates (`filamenthub_bambu_trust.py`) and names the same serial number;
+otherwise the connection is refused and the access code stays in the plugin.
+A connection without a saved certificate is trusted on first use, because
+newer models are issued by intermediates a given build may not carry. The
+saved certificate is dropped with **Remove local connection** or when the
+connection is pointed at a printer with another serial number.
+
 Only explicit **Remove local connection** deletes the local credential. It
 attempts server revocation first, queues a retry when possible if unavailable,
 and reports unconfirmed server revocation separately from local removal.
@@ -213,9 +224,10 @@ The installable plugin is one file, because OrcaSlicer installs a local plugin
 from a single `.py` or a wheel with one entry module. Provider adapters are
 still developed as separate source files next to `filamenthub_plugin.py`:
 `filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_moonraker.py`
-(Happy Hare and QIDI Box through Moonraker's printer objects) and
-`filamenthub_bambu.py` (reading a Bambu status report). The plugin imports
-them inside a marked block:
+(Happy Hare and QIDI Box through Moonraker's printer objects),
+`filamenthub_bambu.py` (reading a Bambu status report) and
+`filamenthub_bambu_trust.py` (Bambu Lab's issuing certificates). The plugin
+imports them inside a marked block:
 
 ```python
 # fh-bundle: filamenthub_flashforge

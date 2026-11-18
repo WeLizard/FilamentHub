@@ -39,6 +39,7 @@
   "bambuRepairRequired": "The local connection is saved. Repair the FilamentHub connection using the saved LAN access code.",
   "bambuRepairUnavailable": "The saved connection could not be verified for this account and printer. Reopen setup while signed in to its owner account.",
   "bambuLanAuthRejected": "The printer rejected LAN access. Check the access code in the printer settings. Your saved connection has been kept.",
+  "bambuCertificateRejected": "The device at this address is not the printer that was connected: it presents a different certificate. Check the printer address. If the printer was replaced or repaired, remove the local connection and connect it again.",
   "bambuLocalConfigMissing": "No saved local Bambu connection was found. Enter the printer address and LAN access code.",
   "bambuLocalConfigCorrupt": "The saved Bambu connection file cannot be read safely. It has been kept unchanged; restore access to the file or recover a valid copy before setup.",
   "summaryReloadUnconfirmed": "files saved; Orca reload requested, loading not yet confirmed",

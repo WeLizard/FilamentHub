@@ -2305,6 +2305,9 @@ def configure_bambu_bridge(
             if item["physical_printer_id"] != physical_printer_id
         ]
         printer = dict(current or {})
+        if _normalized_bambu_serial(printer.get("serial")) != _normalized_bambu_serial(serial):
+            # The saved certificate belongs to a printer, not to its card.
+            printer.pop("certificate", None)
         printer.update({
             "physical_printer_id": physical_printer_id,
             "material_system_id": material_system_id,
@@ -7917,6 +7920,16 @@ from filamenthub_bambu import (
 )
 # fh-bundle-end
 
+# Which certificates Bambu Lab issues to its printers, and what the plugin
+# reads from one a printer presents.
+# fh-bundle: filamenthub_bambu_trust
+from filamenthub_bambu_trust import (
+    BAMBU_CA_CERTIFICATES,
+    bambu_certificate_fingerprint,
+    bambu_certificate_serial,
+)
+# fh-bundle-end
+
 
 _BAMBU_STATES = {
     "RUNNING": "printing",
@@ -7929,6 +7942,7 @@ _BAMBU_STATES = {
     "SLICING": "preparing",
 }
 BAMBU_MQTT_PORT = 8883
+BAMBU_FTPS_PORT = 990
 BAMBU_POLL_SECONDS = 30.0
 BAMBU_MQTT_TIMEOUT = 12.0
 BAMBU_SNAPSHOT_MIN_SECONDS = 60.0
@@ -8021,8 +8035,30 @@ def _resolved_lan_address(
     raise ValueError(error)
 
 
-def _open_bambu_mqtt(host, access_code, timeout):
-    family, socktype, proto, sockaddr = _resolved_bambu_address(host)
+class BambuCertificateRejected(ConnectionError):
+    """The device at a printer's address is not the printer that was linked."""
+
+
+def _bambu_tls_context(verify, maximum_version=None):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # A printer certificate names a serial number, not a host; the caller
+    # compares it.
+    context.check_hostname = False
+    if verify:
+        context.verify_mode = ssl.CERT_REQUIRED
+        # Bambu Lab's root certificates do not satisfy the strict X.509 checks
+        # that newer Python turns on by default.
+        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        context.load_verify_locations(cadata=BAMBU_CA_CERTIFICATES)
+    else:
+        context.verify_mode = ssl.CERT_NONE
+    if maximum_version is not None:
+        context.maximum_version = maximum_version
+    return context
+
+
+def _bambu_tls_handshake(address, timeout, verify, maximum_version=None):
+    family, socktype, proto, sockaddr = address
     ensure_worker_generation_active()
     raw = socket.socket(family, socktype, proto)
     raw.settimeout(timeout)
@@ -8030,13 +8066,136 @@ def _open_bambu_mqtt(host, access_code, timeout):
         with external_operation():
             raw.connect(sockaddr)
         with external_operation():
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            return context.wrap_socket(raw, server_hostname=None)
+            return _bambu_tls_context(verify, maximum_version).wrap_socket(
+                raw, server_hostname=None
+            )
     except Exception:
         raw.close()
         raise
+
+
+def _bambu_pinned_certificate(config):
+    """The certificate saved for the printer behind ``config``, if any.
+
+    Read from the saved connection rather than from ``config``: a reader that
+    has been running since before the certificate was saved holds a copy
+    without it.
+    """
+    physical_printer_id = config.get("physical_printer_id")
+    if type(physical_printer_id) is not int:
+        return ""
+    serial = _normalized_bambu_serial(config.get("serial"))
+    with _BAMBU_CONFIG_LOCK:
+        payload, status = load_bambu_config_diagnostic()
+    if status != "valid":
+        return ""
+    saved = next(
+        (
+            item for item in payload["printers"]
+            if item.get("physical_printer_id") == physical_printer_id
+        ),
+        None,
+    )
+    if saved is None or (
+        serial and _normalized_bambu_serial(saved.get("serial")) != serial
+    ):
+        return ""
+    pinned = saved.get("certificate")
+    if isinstance(pinned, str) and re.fullmatch(r"[0-9a-f]{64}", pinned):
+        return pinned
+    return ""
+
+
+def _remember_bambu_certificate(config, sock):
+    """Save the certificate of a printer that has just accepted the access code.
+
+    Only a linked connection is saved: one that is still being set up has no
+    bridge credential yet, and its binding is written by the setup itself.
+    Waiting for the access code to be accepted keeps another device that
+    happened to answer at the address from being remembered as the printer.
+    """
+    read = getattr(sock, "getpeercert", None)
+    physical_printer_id = config.get("physical_printer_id")
+    serial = _normalized_bambu_serial(config.get("serial"))
+    bridge_token = config.get("bridge_token")
+    if (
+        read is None
+        or type(physical_printer_id) is not int
+        or not serial
+        or not bridge_token
+    ):
+        return
+    seen = bambu_certificate_fingerprint(read(True))
+    if not seen:
+        return
+    try:
+        with _BAMBU_CONFIG_LOCK:
+            payload, status = load_bambu_config_diagnostic()
+            if status != "valid":
+                return
+            saved = next(
+                (
+                    item for item in payload["printers"]
+                    if item.get("physical_printer_id") == physical_printer_id
+                ),
+                None,
+            )
+            if (
+                saved is None
+                or saved.get("bridge_token") != bridge_token
+                or _normalized_bambu_serial(saved.get("serial")) != serial
+                or saved.get("certificate") == seen
+            ):
+                return
+            saved["certificate"] = seen
+            save_bambu_config(payload)
+    except (OSError, ValueError):
+        # Not saved this time; the next connection tries again.
+        fh_log("bambu_lan_certificate_not_saved")
+        return
+    fh_log("bambu_lan_certificate_saved")
+
+
+def _open_bambu_tls(address, timeout, config, maximum_version=None):
+    """Connect to the printer saved as ``config`` and to nobody else.
+
+    A linked printer is recognised by the certificate it presented when it last
+    accepted the access code. A different certificate is accepted only when
+    Bambu Lab issued it to the same serial number; otherwise nothing, the
+    access code included, is sent. A printer without a saved certificate is
+    trusted as it is: newer models are issued by certificates this build may
+    not carry yet, so the chain alone cannot be required of everyone.
+    """
+    deadline = time.monotonic() + timeout
+
+    def handshake(verify):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Bambu TLS connection timed out")
+        return _bambu_tls_handshake(address, remaining, verify, maximum_version)
+
+    pinned = _bambu_pinned_certificate(config)
+    sock = handshake(False)
+    if pinned and bambu_certificate_fingerprint(sock.getpeercert(True)) != pinned:
+        sock.close()
+        try:
+            sock = handshake(True)
+        except ssl.SSLCertVerificationError:
+            fh_log("bambu_lan_certificate_rejected")
+            raise BambuCertificateRejected(
+                "Bambu printer certificate changed"
+            ) from None
+        serial = _normalized_bambu_serial(config.get("serial"))
+        if serial and bambu_certificate_serial(sock.getpeercert()) != serial:
+            sock.close()
+            fh_log("bambu_lan_certificate_rejected")
+            raise BambuCertificateRejected("Bambu certificate names another printer")
+    sock.settimeout(timeout)
+    return sock
+
+
+def _open_bambu_mqtt(host, access_code, timeout, config=None):
+    return _open_bambu_tls(_resolved_bambu_address(host), timeout, config or {})
 
 
 def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
@@ -8052,7 +8211,9 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
     if not access_code:
         raise ValueError("missing Bambu access code")
     deadline = time.monotonic() + timeout
-    sock = _open_bambu_mqtt(host, access_code, min(timeout, BAMBU_MQTT_TIMEOUT))
+    sock = _open_bambu_mqtt(
+        host, access_code, min(timeout, BAMBU_MQTT_TIMEOUT), config
+    )
     try:
         variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
         client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
@@ -8068,6 +8229,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
             fh_log("bambu_lan_auth_rejected")
             raise PermissionError("Bambu MQTT authentication rejected")
+        _remember_bambu_certificate(config, sock)
 
         report_topic = (
             "device/%s/report" % serial if serial else "device/+/report"
@@ -8210,7 +8372,7 @@ def _publish_bambu_json(
     connection_timeout = deadline - started_at
     try:
         sock = _open_bambu_mqtt(
-            config.get("host") or "", access_code, connection_timeout
+            config.get("host") or "", access_code, connection_timeout, config
         )
     except TimeoutError as exc:
         if absolute_deadline is not None and time.monotonic() >= absolute_deadline:
@@ -8241,6 +8403,7 @@ def _publish_bambu_json(
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
             fh_log("bambu_lan_auth_rejected")
             raise PermissionError("Bambu MQTT authentication rejected")
+        _remember_bambu_certificate(config, sock)
         topic = ("device/%s/request" % serial).encode("utf-8")
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         publish = _mqtt_field(topic) + body
@@ -9225,6 +9388,15 @@ def _bambu_ftp_class():
                         connection = self.context.wrap_socket(
                             connection, server_hostname=self.host, session=self.sock.session
                         )
+                        # A resumed session continues the control connection
+                        # that was already checked; a new one has to show the
+                        # same certificate.
+                        if not connection.session_reused and (
+                            connection.getpeercert(True) != self.sock.getpeercert(True)
+                        ):
+                            raise BambuCertificateRejected(
+                                "Bambu data connection changed certificate"
+                            )
                     return connection, size
                 except Exception:
                     connection.close()
@@ -9241,27 +9413,27 @@ def read_bambu_consumption_file(config, report):
     candidates = _bambu_file_candidates(report)
     if not candidates:
         return None
-    _, _, _, address = _resolved_bambu_address(config.get("host") or "")
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.maximum_version = ssl.TLSVersion.TLSv1_2
-    ftp = _bambu_ftp_class()(context=context, timeout=5)
+    family, socktype, proto, address = _resolved_bambu_address(config.get("host") or "")
+    ftp = _bambu_ftp_class()(
+        context=_bambu_tls_context(False, ssl.TLSVersion.TLSv1_2), timeout=5
+    )
     ftp.host = address[0]
     deadline = time.monotonic() + 30
     try:
         with external_operation():
-            raw = socket.create_connection((ftp.host, 990), timeout=5)
-            try:
-                ensure_worker_generation_active()
-                ftp.sock = context.wrap_socket(raw, server_hostname=ftp.host)
-            except Exception:
-                raw.close()
-                raise
+            ftp.sock = _open_bambu_tls(
+                (family, socktype, proto, (ftp.host, BAMBU_FTPS_PORT) + tuple(address[2:])),
+                5,
+                config,
+                ssl.TLSVersion.TLSv1_2,
+            )
+            # Data connections continue the session of this control connection.
+            ftp.context = ftp.sock.context
             ftp.af = ftp.sock.family
             ftp.file = ftp.sock.makefile("r", encoding=ftp.encoding)
             ftp.welcome = ftp.getresp()
             ftp.login("bblp", config.get("access_code") or "")
+            _remember_bambu_certificate(config, ftp.sock)
             ftp.prot_p()
             matches = set()
             for directory in ("/", "/cache", "/model"):
@@ -12473,6 +12645,9 @@ class FilamentHubCatalog(
             except PermissionError:
                 fh_log("bambu_lan_auth_rejected")
                 finish("bambuLanAuthRejected", "error")
+                return
+            except BambuCertificateRejected:
+                finish("bambuCertificateRejected", "error")
                 return
             connected_serial = _normalized_bambu_serial(discovered_serial)
             if not connected_serial:

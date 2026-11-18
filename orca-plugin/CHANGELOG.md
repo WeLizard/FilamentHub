@@ -7,6 +7,7 @@ Newest first. The numbered entry matching the plugin version is used for release
 - Nothing has to be typed again: the plugin uses the address, serial number and check code already saved in the printer's connection settings in OrcaSlicer. They stay in OrcaSlicer and are not sent to FilamentHub. Enable LAN mode on the printer first.
 - Flashforge data refreshes when you connect the printer, open its card in OrcaSlicer or run a sync. Filament usage is not counted, because these printers do not report it. Requires the matching website update.
 - Your FilamentHub sign-in and local printer keys are no longer passed along when a server answers with a redirect to a different address.
+- A linked Bambu printer is now recognised by its certificate. If another device answers at the printer's address, the plugin does not send it the LAN access code. Nothing to set up: the certificate is remembered on the next connection, and a replacement issued by Bambu Lab for the same printer is accepted on its own.
 - When OrcaSlicer has not yet allowed the plugin to reach a Klipper printer's address, the printer check says so and asks you to approve the request, instead of reporting the printer as unreachable. The new wording arrives with the website update.
 
 ## 0.2.9
