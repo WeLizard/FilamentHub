@@ -17,11 +17,12 @@ import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.db.session import get_db
+from app.models.brand import Brand
 from app.models.filament import Filament
 from app.services.preset_enrichment_service import _load_material_defaults
 
@@ -75,6 +76,67 @@ def external_filament(filament: Filament) -> dict | None:
     }
     entry.update({key: value for key, value in optional.items() if value is not None})
     return entry
+
+
+# How far apart two colours may be and still be one product. A reader or an
+# app's colour picker rarely reports a manufacturer's exact hex.
+MATCH_COLOR_DISTANCE = 60.0
+
+
+def _brand_key(name: str | None) -> str:
+    """A brand name as people compare it: case and punctuation ignored."""
+    return "".join(char for char in (name or "").lower() if char.isalnum())
+
+
+def _color_distance(first: str | None, second: str | None) -> float | None:
+    left, right = _hex(first), _hex(second)
+    if left is None or right is None:
+        return None
+    return sum(
+        (int(left[index : index + 2], 16) - int(right[index : index + 2], 16)) ** 2
+        for index in (0, 2, 4)
+    ) ** 0.5
+
+
+async def match_catalog_filament(
+    db: AsyncSession, *, vendor_name: str | None, material: str | None, color_hex: str | None,
+) -> Filament | None:
+    """Return the catalog filament a brand, material and colour describe, if exactly one does.
+
+    The brand and material must agree and the colour must be close. When two
+    filaments are equally close the match is refused: guessing between them
+    would put a spool on the wrong product.
+    """
+    brand_key = _brand_key(vendor_name)
+    if not brand_key or not material or _hex(color_hex) is None:
+        return None
+    brand_ids = [
+        brand_id
+        for brand_id, name in (
+            await db.execute(select(Brand.id, Brand.name).where(Brand.active.is_(True)))
+        ).all()
+        if _brand_key(name) == brand_key
+    ]
+    if not brand_ids:
+        return None
+    candidates = (
+        await db.scalars(
+            select(Filament).where(
+                Filament.active.is_(True),
+                Filament.brand_id.in_(brand_ids),
+                func.lower(Filament.material_type) == material.strip().lower(),
+            )
+        )
+    ).all()
+    ranked = sorted(
+        (distance, filament.id, filament)
+        for filament in candidates
+        if (distance := _color_distance(color_hex, filament.color_hex)) is not None
+        and distance <= MATCH_COLOR_DISTANCE
+    )
+    if not ranked or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+        return None
+    return ranked[0][2]
 
 
 def external_materials() -> list[dict]:

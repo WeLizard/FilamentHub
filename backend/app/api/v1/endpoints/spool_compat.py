@@ -193,6 +193,8 @@ class TagScanBody(SpoolTagBody):
     reader_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
     name: str | None = Field(default=None, max_length=64)
     payload_b64: str | None = Field(default=None, max_length=8192)
+    # Off by default: a plain scan never creates anything.
+    create: bool = False
 
 
 # The Spoolman release this API is held to. Clients gate features on it.
@@ -1468,6 +1470,14 @@ async def _scan_tag_impl(
     except ValueError as exc:
         return _err(status.HTTP_400_BAD_REQUEST, str(exc))
     binding = await find_spool_tag(db, user_id=user.id, uid=uid)
+    decoded = spool_compat_tags.decode_scan(body.format, body.payload_b64, uid)
+    created = False
+    if binding is None and body.create and decoded is not None:
+        created = await spool_compat_tags.create_spool_from_tag(
+            db, user_id=user.id, decoded=decoded, uid=uid, tag_format=body.format
+        )
+        # Whether this scan created the spool or lost a race to another one, the tag is linked now.
+        binding = await find_spool_tag(db, user_id=user.id, uid=uid)
     spool_payload = None
     if binding is not None:
         spool = await _get_user_spool(db, user.id, binding.spool_id)
@@ -1489,8 +1499,11 @@ async def _scan_tag_impl(
         "matched_spool_id": matched_spool_id,
         "matched_filament_id": None,
         **({"spool": spool_payload} if spool_payload is not None else {}),
-        "created": False,
+        **({"decoded": decoded.as_response()} if decoded is not None else {}),
+        "created": created,
     }
+    if created and spool_payload is not None:
+        await _broadcast_spool_event(user.id, "added", spool_payload)
     await remember_reader(user.id, reader_id, body.name, uid)
     match = ("spool", matched_spool_id) if matched_spool_id is not None else None
     if await claim_broadcast(user.id, uid, reader_id, match):
