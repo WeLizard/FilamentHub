@@ -312,6 +312,11 @@ def _bundled_module_source(
     missing = requested - defined
     if missing:
         raise ValueError(f"{label}: does not define {sorted(missing)}")
+    # Once merged, every public name of the module is a plugin global. Importing
+    # all of them keeps the plugin's namespace the same before and after the merge.
+    unlisted = {name for name in defined if not name.startswith("_")} - requested
+    if unlisted:
+        raise ValueError(f"{label}: the bundle block must also import {sorted(unlisted)}")
     clashes = defined & (taken_names | taken_imports.keys())
     clashes |= imported.keys() & taken_names
     clashes |= {

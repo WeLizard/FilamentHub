@@ -230,6 +230,7 @@ def test_adapter_bundling_refuses_what_would_change_the_plugin(tmp_path):
         "TIMEOUT = 9\n\ndef read():\n    return TIMEOUT\n",  # rebinds a plugin name
         "import json as re\n\ndef read():\n    return re\n",  # rebinds a plugin import
         "def other():\n    return 1\n",  # does not define what the plugin imports
+        "def read():\n    return 1\n\ndef also():\n    return 2\n",  # a public name left unimported
         "def read():\n    return 1\n\nread()\n",  # runs code at import time
         "from __future__ import annotations\n\ndef read():\n    return 1\n",
     ):

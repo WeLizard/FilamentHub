@@ -212,9 +212,10 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 The installable plugin is one file, because OrcaSlicer installs a local plugin
 from a single `.py` or a wheel with one entry module. Provider adapters are
 still developed as separate source files next to `filamenthub_plugin.py`:
-`filamenthub_flashforge.py` (Flashforge LAN API) and `filamenthub_moonraker.py`
-(Happy Hare and QIDI Box through Moonraker's printer objects). The plugin
-imports them inside a marked block:
+`filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_moonraker.py`
+(Happy Hare and QIDI Box through Moonraker's printer objects) and
+`filamenthub_bambu.py` (reading a Bambu status report). The plugin imports
+them inside a marked block:
 
 ```python
 # fh-bundle: filamenthub_flashforge
@@ -226,8 +227,9 @@ from filamenthub_flashforge import (flashforge_slots, ...)
 same as a module and as part of the plugin namespace, an adapter module holds
 definitions only (no I/O, no module state, no import of the plugin or `orca`)
 and may not bind a name the plugin already uses; the build refuses anything
-else. Plugin glue that needs the host, storage or the worker stays in
-`filamenthub_plugin.py`.
+else. The block imports every public name of its module, so the plugin's
+namespace is the same before and after the merge. Plugin glue that needs the
+host, storage or the worker stays in `filamenthub_plugin.py`.
 
 ### Frontend embed route (in this repo)
 
