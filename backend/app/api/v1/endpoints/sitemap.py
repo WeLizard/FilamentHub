@@ -90,6 +90,9 @@ async def sitemap_xml(
         ("/", "1.0", "daily"),
         ("/wiki", "0.9", "weekly"),
         ("/download", "0.8", "monthly"),
+        ("/download/octoprint", "0.6", "monthly"),
+        ("/download/print-farm", "0.6", "monthly"),
+        ("/download/edge", "0.6", "monthly"),
     ]
 
     for path, priority, changefreq in static_pages:

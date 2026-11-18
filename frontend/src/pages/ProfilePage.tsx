@@ -103,6 +103,7 @@ import { SpoolImportResolveModal } from '../components/SpoolImportResolveModal';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 import { MyPrintersList } from '../components/MyPrintersList';
+import { EdgeNodesPanel } from '../components/edge/EdgeNodesPanel';
 import type { ConfigurationPrintProfile } from '../components/PrinterConfigurationRow';
 import { AddPhysicalPrinterModal } from '../components/AddPhysicalPrinterModal';
 const CreatePrinterProfileModal = lazy(() =>
@@ -1502,6 +1503,8 @@ export const ProfilePage: React.FC = () => {
             }}
             onDownloadPrintProfile={(profile) => void handleDownloadPrintProfile(profile)}
           />
+
+          <EdgeNodesPanel />
 
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-6 border-t border-white/10">
             <div>

@@ -1702,7 +1702,140 @@
     "gold": "金色",
     "silver": "银色"
   },
+  "edgeNodes": {
+    "title": "Edge 节点",
+    "description": "已绑定到您账户的 Edge 设备。",
+    "kinds": {
+      "esp_kit": "ESP32 套件",
+      "linux": "Linux",
+      "docker": "Docker",
+      "home_assistant": "Home Assistant"
+    },
+    "online": "在线",
+    "offline": "离线",
+    "lastContact": "最后联系 {{date}}",
+    "name": "节点名称",
+    "rename": "重命名",
+    "remove": "删除节点",
+    "removeWarning": "节点将立即失去对账户的访问权限。要恢复，请重新绑定设备。"
+  },
+  "edgeSection": {
+    "seoTitle": "FH Edge — 无需 OrcaSlicer 即可将打印机连接到 FilamentHub",
+    "seoDescription": "在您的网络中安装 FH Edge：OrcaSlicer 关闭时，它会向 FilamentHub 上报打印机和供料系统的状态。",
+    "title": "FH Edge",
+    "subtitle": "您网络中的一个小型节点。OrcaSlicer 关闭时，它会向 FilamentHub 上报打印机和供料系统的状态。",
+    "softwareTitle": "安装在您电脑上的 Edge",
+    "softwareDesc": "可安装在打印机的电脑上，或同一网络中任何一台常开的电脑上：作为 Linux 服务、在 Docker 中或作为 Home Assistant 应用运行。一个节点可服务多台打印机。",
+    "supported": "支持通过 Moonraker 连接的 Klipper 打印机（包括 Happy Hare 和 QIDI Box），以及 Flashforge Adventurer 5M / 5M Pro、AD5X、Creator 5 / 5 Pro。",
+    "steps": {
+      "printer": "在 FilamentHub 个人资料中添加打印机及其供料系统。",
+      "install": "按照说明安装 Edge，并在其中填写打印机地址。",
+      "pair": "在供料系统卡片中打开 Edge 连接，创建一次性代码并在节点上输入。"
+    },
+    "installGuide": "安装说明",
+    "privacy": "打印机的地址和密钥保留在节点上，不会发送到 FilamentHub。无需向互联网开放端口。",
+    "kitTitle": "基于 ESP32 的 Edge 套件",
+    "kitDesc": "带 NFC 读卡器的 ESP32 开发板。固件通过 USB 直接在浏览器中安装：无需下载或编译任何内容。",
+    "kitStatus": {
+      "prototype": "原型",
+      "hardware-verified": "已通过硬件验证"
+    },
+    "kitAdminOnly": "仅管理员可见：该套件尚未通过硬件验收。绑定后，节点会出现在账户中并显示连接状态；将读取到的标签发送到账户是下一阶段。在测试台上，读卡器的 +5 V 电源需在 USB 供电后手动接入。"
+  },
+  "edgeKit": {
+    "unsupportedBrowser": "安装固件需要在电脑上使用 Chrome 或 Edge：只有它们能从网页访问 USB 设备。",
+    "board": "开发板",
+    "reader": "读卡器",
+    "firmware": "固件",
+    "wiring": "读卡器接线",
+    "install": "安装或更新固件",
+    "checkInstalled": "检查已安装的套件",
+    "working": {
+      "download": "正在下载并校验固件…",
+      "connect": "正在连接开发板…",
+      "start": "正在等待开发板启动…"
+    },
+    "boardFound": "已找到 {{chip}} 开发板，存储 {{megabytes}} MB。",
+    "layout": {
+      "same": "开发板上已有此固件或其早期版本。更新会保留设置。",
+      "blank": "开发板是空的。将安装完整固件。",
+      "other": "开发板上有其他固件。安装会擦除它及其全部数据。"
+    },
+    "update": "更新固件",
+    "installNow": "安装固件",
+    "eraseAndInstall": "擦除并安装",
+    "cleanInstall": "全新安装",
+    "cleanInstallWarning": "开发板的存储将被完全擦除，包括设置和已保存的连接。此操作无法撤销。",
+    "writing": "正在写入固件…",
+    "keepConnected": "请勿拔出数据线或关闭此标签页。",
+    "running": "开发板正在运行，固件版本 {{version}}。",
+    "readHint": "将标签靠近读卡器，然后点击按钮。",
+    "readTag": "读取标签",
+    "tagUid": "UID",
+    "tagType": "类型",
+    "tagLink": "链接",
+    "readErrors": {
+      "no_tag_or_io_error": "未找到标签。请将其靠近天线后重试。",
+      "multiple_tags_or_collision": "读卡器处同时有多个标签。请只保留一个。",
+      "reader_disabled": "开发板设置中未启用读卡器。",
+      "reader_unavailable": "读卡器没有响应。请检查接线和供电。",
+      "no_answer": "开发板没有响应。请重试。",
+      "other": "开发板报告了错误：{{code}}。"
+    },
+    "disconnect": "断开连接",
+    "startOver": "重新开始",
+    "technicalLog": "技术日志",
+    "errors": {
+      "index": "无法读取固件列表。请刷新页面。",
+      "download": "无法下载固件。请检查网络连接后重试。",
+      "integrity": "下载的固件与已发布的固件不一致。安装已取消。",
+      "wrong_chip": "这是另一种开发板，套件固件不适用于它。",
+      "flash_too_small": "开发板的存储空间小于固件所需。",
+      "port_busy": "端口正被其他程序或标签页占用。请关闭后重试。",
+      "connection": "与开发板的连接已中断。请检查数据线后重试。如果无法识别开发板，请在插入时按住 BOOT 按钮。",
+      "no_answer": "开发板启动后没有响应。它可能装有其他固件——请安装套件固件。",
+      "lost": "开发板已断开连接。"
+    },
+    "link": {
+      "title": "绑定到账户",
+      "signIn": "请登录账户以绑定套件。",
+      "signInAction": "登录",
+      "name": "节点名称",
+      "nameDefault": "Edge 套件",
+      "ssid": "Wi-Fi 网络",
+      "password": "Wi-Fi 密码",
+      "hint": "需要 2.4 GHz 网络。密码通过 USB 发送给开发板，不会保存在网站上。",
+      "submit": "绑定到账户",
+      "replaceWarning": "开发板将收到新的设置。其上保存的网络和打印机连接将被替换。",
+      "alreadyLinked": "此套件已绑定到账户。重新绑定将替换原有绑定。",
+      "steps": {
+        "settings": "开发板已接受设置",
+        "wifi": "开发板已连接 Wi-Fi",
+        "account": "节点已出现在账户中"
+      },
+      "done": "套件已绑定到您的账户，名称为“{{name}}”。",
+      "usbFree": "可以拔下数据线：之后开发板通过 Wi-Fi 工作。",
+      "openProfile": "打开我的设备",
+      "errors": {
+        "settings": "开发板未接受设置。原有设置已保留。",
+        "wifi_password": "开发板无法加入网络：密码错误。",
+        "wifi_not_found": "开发板找不到该网络。请检查名称，并确认网络工作在 2.4 GHz。",
+        "wifi_other": "开发板无法连接 Wi-Fi。",
+        "code": "绑定代码未被接受：已过期或已被使用。请重新绑定。",
+        "timeout": "三分钟内开发板未出现在账户中。请确认该网络可以打开本网站，然后重试。",
+        "server": "无法获取绑定代码。请重试。"
+      }
+    },
+    "readerTitle": "读卡器检查"
+  },
   "downloadPage": {
+    "sectionsLabel": "连接方式",
+    "sections": {
+      "orca": "OrcaSlicer",
+      "octoprint": "OctoPrint",
+      "print-farm": "Print Farm",
+      "edge": "Edge"
+    },
     "seoTitle": "FilamentHub 插件 — OrcaSlicer 与 OctoPrint",
     "seoDescription": "在官方 OrcaSlicer 中安装 FilamentHub，或通过 Bridge 连接 OctoPrint，同步线轴、槽位、预设和材料用量。",
     "pluginTitle": "OrcaSlicer 中的 FilamentHub",
@@ -7709,6 +7842,8 @@
     "ERR_SPOOL_GROUP_KEY_INVALID": "未知的耗材组",
     "ERR_WORKSTATION_KEY_LIMIT": "工作站密钥过多，请撤销不再使用的密钥。",
     "ERR_WORKSTATION_KEY_NOT_FOUND": "未找到工作站密钥",
+    "ERR_EDGE_NODE_NOT_FOUND": "未找到 Edge 节点",
+    "ERR_EDGE_NODE_LIMIT": "Edge 节点过多。请删除不需要的节点。",
     "ERR_NO_PERMISSION": "权限不足",
     "ERR_ONLY_ADMIN_OFFICIAL": "只有管理员可以设置官方状态",
     "ERR_ONLY_ADMIN_REASSIGN": "只有管理员可以重新分配所有权",

@@ -1703,7 +1703,140 @@
     "gold": "Gold",
     "silver": "Silver"
   },
+  "edgeNodes": {
+    "title": "Edge nodes",
+    "description": "Edge devices linked to your account.",
+    "kinds": {
+      "esp_kit": "ESP32 kit",
+      "linux": "Linux",
+      "docker": "Docker",
+      "home_assistant": "Home Assistant"
+    },
+    "online": "Online",
+    "offline": "Offline",
+    "lastContact": "last contact {{date}}",
+    "name": "Node name",
+    "rename": "Rename",
+    "remove": "Remove node",
+    "removeWarning": "The node loses access to your account at once. To bring it back, link the device again."
+  },
+  "edgeSection": {
+    "seoTitle": "FH Edge — printers connected to FilamentHub without OrcaSlicer",
+    "seoDescription": "Install FH Edge on your network: it reports printer and material-system state to FilamentHub while OrcaSlicer is closed.",
+    "title": "FH Edge",
+    "subtitle": "A small node on your network. It reports printer and material-system state to FilamentHub while OrcaSlicer is closed.",
+    "softwareTitle": "Edge on your computer",
+    "softwareDesc": "Install it on the printer's computer or any always-on computer on the same network: as a Linux service, in Docker or as a Home Assistant app. One node serves several printers.",
+    "supported": "Works with Klipper printers through Moonraker, including Happy Hare and QIDI Box, and with Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro.",
+    "steps": {
+      "printer": "Add the printer and its material system in your FilamentHub profile.",
+      "install": "Install Edge following the guide and give it the printer's address.",
+      "pair": "In the material system's card open the Edge connection, create a one-time code and enter it on the node."
+    },
+    "installGuide": "Installation guide",
+    "privacy": "Printer addresses and keys stay on the node and are not sent to FilamentHub. No port has to be opened to the internet.",
+    "kitTitle": "Edge kit on ESP32",
+    "kitDesc": "An ESP32 board with an NFC reader. The firmware is installed straight from the browser over USB: nothing to download or build.",
+    "kitStatus": {
+      "prototype": "Prototype",
+      "hardware-verified": "Hardware verified"
+    },
+    "kitAdminOnly": "Shown to administrators only: the kit has not passed hardware acceptance yet. Once linked, the node appears in the account and shows its connection; sending read tags to the account is the next stage. On the bench the reader's +5 V supply is connected by hand after USB power is up."
+  },
+  "edgeKit": {
+    "unsupportedBrowser": "Installing firmware needs Chrome or Edge on a computer: only they can talk to USB devices from a page.",
+    "board": "Board",
+    "reader": "Reader",
+    "firmware": "Firmware",
+    "wiring": "Reader wiring",
+    "install": "Install or update firmware",
+    "checkInstalled": "Check an installed kit",
+    "working": {
+      "download": "Downloading and checking the firmware…",
+      "connect": "Connecting to the board…",
+      "start": "Waiting for the board to start…"
+    },
+    "boardFound": "Found an {{chip}} board with {{megabytes}} MB of memory.",
+    "layout": {
+      "same": "The board already has this firmware or an earlier version of it. Updating keeps the settings.",
+      "blank": "The board is blank. The whole firmware will be installed.",
+      "other": "The board has other firmware. Installing erases it and all of its data."
+    },
+    "update": "Update firmware",
+    "installNow": "Install firmware",
+    "eraseAndInstall": "Erase and install",
+    "cleanInstall": "Clean install",
+    "cleanInstallWarning": "The board's memory will be erased completely, with its settings and saved connections. This cannot be undone.",
+    "writing": "Writing the firmware…",
+    "keepConnected": "Keep the cable connected and this tab open.",
+    "running": "The board is running firmware {{version}}.",
+    "readHint": "Hold a tag to the reader and press the button.",
+    "readTag": "Read a tag",
+    "tagUid": "UID",
+    "tagType": "Type",
+    "tagLink": "Link",
+    "readErrors": {
+      "no_tag_or_io_error": "No tag found. Hold it closer to the antenna and try again.",
+      "multiple_tags_or_collision": "Several tags are at the reader at once. Leave one.",
+      "reader_disabled": "The reader is not enabled in the board's settings.",
+      "reader_unavailable": "The reader does not answer. Check its wiring and power.",
+      "no_answer": "The board did not answer. Try again.",
+      "other": "The board reported an error: {{code}}."
+    },
+    "disconnect": "Disconnect",
+    "startOver": "Start over",
+    "technicalLog": "Technical log",
+    "errors": {
+      "index": "The firmware list could not be read. Reload the page.",
+      "download": "The firmware could not be downloaded. Check your connection and try again.",
+      "integrity": "The downloaded firmware does not match the published one. Installation was cancelled.",
+      "wrong_chip": "This is a different kind of board; the kit firmware does not fit it.",
+      "flash_too_small": "The board has less memory than the firmware needs.",
+      "port_busy": "The port is in use by another program or tab. Close it and try again.",
+      "connection": "The connection to the board was lost. Check the cable and try again. If the board is not detected, hold the BOOT button while plugging it in.",
+      "no_answer": "The board did not answer after starting. It may have other firmware — install the kit firmware.",
+      "lost": "The board was disconnected."
+    },
+    "link": {
+      "title": "Link to your account",
+      "signIn": "Sign in to link the kit to your account.",
+      "signInAction": "Sign in",
+      "name": "Node name",
+      "nameDefault": "Edge kit",
+      "ssid": "Wi-Fi network",
+      "password": "Wi-Fi password",
+      "hint": "A 2.4 GHz network is required. The password goes to the board over USB and is not stored on the site.",
+      "submit": "Link to account",
+      "replaceWarning": "The board will receive new settings. The network and printer connections saved on it will be replaced.",
+      "alreadyLinked": "This kit is already linked to an account. Linking again replaces that.",
+      "steps": {
+        "settings": "The board accepted the settings",
+        "wifi": "The board joined the Wi-Fi network",
+        "account": "The node appeared in your account"
+      },
+      "done": "The kit is linked to your account as “{{name}}”.",
+      "usbFree": "You can unplug the cable: from here the board works over Wi-Fi.",
+      "openProfile": "Open my devices",
+      "errors": {
+        "settings": "The board did not accept the settings. Its previous settings are kept.",
+        "wifi_password": "The board could not join the network: wrong password.",
+        "wifi_not_found": "The board cannot see this network. Check the name and that the network runs on 2.4 GHz.",
+        "wifi_other": "The board could not connect to Wi-Fi.",
+        "code": "The linking code was not accepted: it expired or was already used. Link again.",
+        "timeout": "The board did not appear in your account within three minutes. Check that the site opens from this network and try again.",
+        "server": "A linking code could not be issued. Try again."
+      }
+    },
+    "readerTitle": "Reader check"
+  },
   "downloadPage": {
+    "sectionsLabel": "Ways to connect",
+    "sections": {
+      "orca": "OrcaSlicer",
+      "octoprint": "OctoPrint",
+      "print-farm": "Print Farm",
+      "edge": "Edge"
+    },
     "seoTitle": "FilamentHub plugins — OrcaSlicer and OctoPrint",
     "seoDescription": "Install FilamentHub in official OrcaSlicer or connect OctoPrint through Bridge to sync spools, slots, presets, and material usage.",
     "pluginTitle": "FilamentHub in OrcaSlicer",
@@ -7728,6 +7861,8 @@
     "ERR_SPOOL_GROUP_KEY_INVALID": "Unknown spool group",
     "ERR_WORKSTATION_KEY_LIMIT": "Too many workstation keys. Revoke one you no longer use.",
     "ERR_WORKSTATION_KEY_NOT_FOUND": "Workstation key not found",
+    "ERR_EDGE_NODE_NOT_FOUND": "Edge node not found",
+    "ERR_EDGE_NODE_LIMIT": "Too many Edge nodes. Remove one you no longer need.",
     "ERR_NO_PERMISSION": "Insufficient permissions",
     "ERR_ONLY_ADMIN_OFFICIAL": "Only an administrator can set the official status",
     "ERR_ONLY_ADMIN_REASSIGN": "Only an administrator can reassign ownership",

@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "kits": [
+    {
+      "id": "c3-supermini-pn5180",
+      "status": "prototype",
+      "chip": "ESP32-C3",
+      "board": "ESP32-C3 SuperMini V1.601",
+      "reader": "PN5180-NFC R1.1-170710",
+      "nfc_pins": {
+        "sck": 4,
+        "miso": 5,
+        "mosi": 6,
+        "nss": 7,
+        "busy": 0,
+        "rst": 1
+      },
+      "firmware": {
+        "version": "0.2.0",
+        "source_commit": "72ed5124824cd70a7eba739d025c427ebd6a8d7e",
+        "flash": {
+          "mode": "dio",
+          "freq": "80m",
+          "size": "4MB"
+        },
+        "partition_table_offset": 32768,
+        "app_offset": 131072,
+        "images": [
+          {
+            "offset": 0,
+            "path": "esp32-c3-devkitm-1/0.2.0/bootloader.bin",
+            "bytes": 21008,
+            "sha256": "27072060cfdfcc2d406ec0bf9e22a3dcf2ccd26a124b359454169d95b2e8912d"
+          },
+          {
+            "offset": 32768,
+            "path": "esp32-c3-devkitm-1/0.2.0/partitions.bin",
+            "bytes": 3072,
+            "sha256": "0eed4c13a8497fea1b6d2be76c080734cb03c35290557c29f112460a9ef0d370"
+          },
+          {
+            "offset": 131072,
+            "path": "esp32-c3-devkitm-1/0.2.0/firmware.bin",
+            "bytes": 1184784,
+            "sha256": "a8db4b776cddc10a50c893c2d0980232a7c0812bd614d8d53d191ad4e0700228"
+          }
+        ]
+      }
+    }
+  ]
+}

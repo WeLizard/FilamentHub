@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useParams } from 'react-router-dom';
 import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Image as ImageIcon, ExternalLink, X, Server, ShieldCheck, RefreshCw } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
 import type { PluginDownload } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { SEOHead } from '../components/SEOHead';
+import { EdgeSection } from '../components/edge/EdgeSection';
 import { normalizeSiteLocale } from '../utils/siteLocale';
 
 // Official OrcaSlicer entry points and the FilamentHub Plugin Hub page. The release
@@ -18,6 +20,10 @@ const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plu
 const PRINT_FARM_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/3d30ee0c-24ba-435e-ae23-6bbc76d8e949';
 const FILAMENTHUB_PLUGIN_REPO = 'WeLizard/FilamentHub';
 const FILAMENTHUB_RELEASES_URL = `https://github.com/${FILAMENTHUB_PLUGIN_REPO}/releases`;
+
+// One page, one way of connecting per section; the first is the default.
+const DOWNLOAD_SECTIONS = ['orca', 'octoprint', 'print-farm', 'edge'] as const;
+type DownloadSection = typeof DOWNLOAD_SECTIONS[number];
 
 type PluginReleaseAsset = {
   url: string;
@@ -98,6 +104,8 @@ function DownloadScreenshotCardImage({
 
 export function DownloadPage() {
   const { t, i18n } = useTranslation();
+  const requested = useParams().section as DownloadSection | undefined;
+  const section: DownloadSection = requested && DOWNLOAD_SECTIONS.includes(requested) ? requested : 'orca';
   const language = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) ?? 'en';
   const overviewVideoSrc = language === 'ru'
     ? '/download-media/filamenthub-overview-ru.mp4'
@@ -222,12 +230,32 @@ export function DownloadPage() {
   return (
     <>
       <SEOHead
-        title={t('downloadPage.seoTitle')}
-        description={t('downloadPage.seoDescription')}
-        url="/download"
+        title={t(section === 'edge' ? 'edgeSection.seoTitle' : 'downloadPage.seoTitle')}
+        description={t(section === 'edge' ? 'edgeSection.seoDescription' : 'downloadPage.seoDescription')}
+        url={section === 'orca' ? '/download' : `/download/${section}`}
         type="website"
       />
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-12">
+      <nav aria-label={t('downloadPage.sectionsLabel')} className="mb-8 flex flex-wrap justify-center gap-2">
+        {DOWNLOAD_SECTIONS.map((id) => (
+          <Link
+            key={id}
+            to={id === 'orca' ? '/download' : `/download/${id}`}
+            aria-current={section === id ? 'page' : undefined}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              section === id
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            {t(`downloadPage.sections.${id}`)}
+          </Link>
+        ))}
+      </nav>
+
+      {section === 'edge' && <EdgeSection />}
+
+      {section === 'orca' && (<>
       {/* Header — plugin-first */}
       <div className="text-center mb-8 md:mb-12">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
@@ -367,8 +395,10 @@ export function DownloadPage() {
           </p>
         </div>
       </div>
+      </>)}
 
       {/* OctoPrint companion plugin */}
+      {section === 'octoprint' && (
       <section className="relative mb-12 overflow-hidden rounded-2xl border border-cyan-400/20 bg-slate-950/45 shadow-[0_24px_80px_rgba(6,182,212,0.08)]">
         <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="relative grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
@@ -379,9 +409,9 @@ export function DownloadPage() {
               </span>
               <div>
                 <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-bold text-white md:text-2xl">
+                  <h1 className="text-xl font-bold text-white md:text-2xl">
                     {t('downloadPage.octoTitle')}
-                  </h2>
+                  </h1>
                   <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200">
                     OctoPrint
                   </span>
@@ -464,8 +494,10 @@ export function DownloadPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Independent plugin from the same team — not part of the FilamentHub setup path. */}
+      {section === 'print-farm' && (
       <section className="mb-12 overflow-hidden rounded-2xl border border-emerald-300/20 bg-emerald-950/20">
         <div className="flex flex-col gap-6 p-6 md:p-8 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex max-w-2xl gap-4">
@@ -476,7 +508,7 @@ export function DownloadPage() {
               <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
                 {t('downloadPage.printFarmEyebrow')}
               </p>
-              <h2 className="text-xl font-bold text-white md:text-2xl">Print Farm</h2>
+              <h1 className="text-xl font-bold text-white md:text-2xl">Print Farm</h1>
               <p className="mt-2 text-sm leading-6 text-slate-300 md:text-base">
                 {t('downloadPage.printFarmDesc')}
               </p>
@@ -521,7 +553,9 @@ export function DownloadPage() {
           </div>
         </div>
       </section>
+      )}
 
+      {section === 'orca' && (<>
       {/* Screenshots Section */}
       <div className="mb-12 glass-panel-subtle rounded-2xl p-8 border border-white/10">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
@@ -721,6 +755,7 @@ export function DownloadPage() {
           </div>
         </div>
       </div>
+      </>)}
     </div>
     </>
   );

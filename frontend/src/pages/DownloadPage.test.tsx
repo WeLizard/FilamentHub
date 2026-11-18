@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getPluginDownloadsMock = vi.hoisted(() => vi.fn());
@@ -21,6 +23,15 @@ vi.mock('../api/client', () => ({
     getPluginDownloads: getPluginDownloadsMock,
   },
 }));
+
+// The page shows one way of connecting per section, chosen by the address.
+const at = (path: string, page: ReactElement) => (
+  <MemoryRouter initialEntries={[path]}>
+    <Routes>
+      <Route path="/download/:section?" element={page} />
+    </Routes>
+  </MemoryRouter>
+);
 
 describe('DownloadPage', () => {
   beforeEach(() => {
@@ -75,14 +86,16 @@ describe('DownloadPage', () => {
   it('keeps OctoPrint and OrcaSlicer release paths independent', async () => {
     const { DownloadPage } = await import('./DownloadPage');
 
-    render(<DownloadPage />);
+    const octoprint = render(at('/download/octoprint', <DownloadPage />));
 
     expect(await screen.findByRole('link', { name: /downloadPage\.octoOpenReleases/ }))
       .toHaveAttribute(
         'href',
         'https://github.com/WeLizard/FilamentHub/releases/tag/octoprint-v0.1.1',
       );
-    expect(screen.getByRole('link', { name: /downloadPage\.step1Nightly/ }))
+    octoprint.unmount();
+    render(at('/download', <DownloadPage />));
+    expect(await screen.findByRole('link', { name: /downloadPage\.step1Nightly/ }))
       .toHaveAttribute(
         'href',
         'https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/nightly-builds',
@@ -92,9 +105,8 @@ describe('DownloadPage', () => {
   it('selects the Russian overview video only for Russian and changes source with locale', async () => {
     const { DownloadPage } = await import('./DownloadPage');
 
-    const { rerender } = render(<DownloadPage />);
-    await screen.findByRole('link', { name: /downloadPage\.octoOpenReleases/ });
-    let video = screen.getByLabelText('downloadPage.videoTitle');
+    const { rerender } = render(at('/download', <DownloadPage />));
+    let video = await screen.findByLabelText('downloadPage.videoTitle');
     expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-en.mp4');
     expect(video.querySelector('track')).toHaveAttribute(
       'src',
@@ -104,7 +116,7 @@ describe('DownloadPage', () => {
 
     translationState.language = 'ru';
     translationState.resolvedLanguage = 'ru';
-    rerender(<DownloadPage />);
+    rerender(at('/download', <DownloadPage />));
     video = screen.getByLabelText('downloadPage.videoTitle');
     expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-ru.mp4');
     expect(video.querySelector('track')).toHaveAttribute(
@@ -115,7 +127,7 @@ describe('DownloadPage', () => {
 
     translationState.language = 'zh';
     translationState.resolvedLanguage = 'zh';
-    rerender(<DownloadPage />);
+    rerender(at('/download', <DownloadPage />));
     video = screen.getByLabelText('downloadPage.videoTitle');
     expect(video).toHaveAttribute('src', '/download-media/filamenthub-overview-en.mp4');
     expect(video.querySelector('track')).toHaveAttribute(

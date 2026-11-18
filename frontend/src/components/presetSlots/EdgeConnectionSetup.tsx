@@ -5,6 +5,7 @@ import { Activity, Check, Clock, Copy, Loader2, ShieldCheck } from 'lucide-react
 import { printerBridgeAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { toast } from '../Toast';
+import { EDGE_INSTALL_GUIDE_URL } from '../../utils/edgeFirmware';
 import { ConfirmModal } from '../ConfirmModal';
 import type { AdapterViewContext } from './adapters/types';
 import { isPairingAccessDenied, retryPairingStatusQuery } from './pairingPolling';
@@ -201,7 +202,7 @@ export function EdgeConnectionSetup({
       <p className="mt-1 text-[11px] leading-4 text-gray-400">
         {t('presetSlots.edge.description')}
       </p>
-      <a href="https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation"
+      <a href={EDGE_INSTALL_GUIDE_URL}
         target="_blank" rel="noopener noreferrer" className="text-xs text-sky-200 underline">
         {t('presetSlots.happyHare.installation')}
       </a>

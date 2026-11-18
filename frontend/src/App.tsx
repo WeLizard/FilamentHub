@@ -390,7 +390,7 @@ function AppContent() {
           }
         />
         <Route
-          path="/download"
+          path="/download/:section?"
           element={
             <Layout>
               <Suspense fallback={<PageLoader />}>

@@ -534,6 +534,54 @@ export const workstationKeyAPI = {
   },
 };
 
+export type EdgeNodeKind = 'esp_kit' | 'linux' | 'docker' | 'home_assistant';
+
+export interface EdgeNode {
+  id: number;
+  name: string;
+  kind: EdgeNodeKind;
+  kit_id: string | null;
+  runtime_version: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  online: boolean;
+}
+
+export interface EdgeNodePairing {
+  pairing_id: number;
+  pairing_code: string;
+  expires_at: string;
+}
+
+export interface EdgeNodePairingStatus {
+  state: 'pending' | 'activated' | 'expired';
+  node: EdgeNode | null;
+}
+
+export const edgeNodesAPI = {
+  list: async (): Promise<EdgeNode[]> => {
+    const response = await api.get('/edge/nodes');
+    return response.data;
+  },
+  createPairing: async (
+    payload: { name: string; kind: EdgeNodeKind; kit_id?: string; node_id?: number },
+  ): Promise<EdgeNodePairing> => {
+    const response = await api.post('/edge/nodes/pairing', payload);
+    return response.data;
+  },
+  pairingStatus: async (pairingId: number): Promise<EdgeNodePairingStatus> => {
+    const response = await api.get(`/edge/nodes/pairing/${pairingId}`);
+    return response.data;
+  },
+  rename: async (nodeId: number, name: string): Promise<EdgeNode> => {
+    const response = await api.patch(`/edge/nodes/${nodeId}`, { name });
+    return response.data;
+  },
+  remove: async (nodeId: number): Promise<void> => {
+    await api.delete(`/edge/nodes/${nodeId}`);
+  },
+};
+
 export const authAPI = {
   register: async (data: RegistrationPayload) => {
     return withAuthSessionLock(async () => {

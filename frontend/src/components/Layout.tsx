@@ -157,6 +157,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [pluginEmbed, user, pluginAccountLabel]);
 
   const isActive = (path: string) => location.pathname === path;
+  const isDownloadActive = isActive('/download') || location.pathname.startsWith('/download/');
 
   const handleLogout = () => {
     logout();
@@ -258,9 +259,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/download"
-                aria-current={isActive('/download') ? 'page' : undefined}
+                aria-current={isDownloadActive ? 'page' : undefined}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
-                  isActive('/download')
+                  isDownloadActive
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
                     : 'text-gray-300 hover:text-white hover:bg-white/10'
                 }`}
@@ -380,9 +381,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/download"
-                aria-current={isActive('/download') ? 'page' : undefined}
+                aria-current={isDownloadActive ? 'page' : undefined}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                  isActive('/download')
+                  isDownloadActive
                     ? 'bg-purple-600 text-white'
                     : 'text-gray-300 hover:text-white hover:bg-white/10'
                 }`}
