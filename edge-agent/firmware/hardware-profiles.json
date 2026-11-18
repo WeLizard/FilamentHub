@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "kits": [
+    {
+      "id": "c3-supermini-pn5180",
+      "status": "prototype",
+      "build": "esp32-c3-devkitm-1",
+      "chip": "ESP32-C3",
+      "board": "ESP32-C3 SuperMini V1.601",
+      "reader": "PN5180-NFC R1.1-170710",
+      "nfc_pins": { "sck": 4, "miso": 5, "mosi": 6, "nss": 7, "busy": 0, "rst": 1 }
+    }
+  ]
+}

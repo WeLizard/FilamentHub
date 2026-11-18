@@ -43,6 +43,22 @@ framework-generated `flasher_args.json` uses different intermediate filenames;
 use this build's manifest with the three existing images. No real printer or
 board is exercised by a cross-build or host test.
 
+### Publishing a build for the installer on the site
+
+```powershell
+pwsh -NoProfile -File publish_web_release.ps1
+```
+
+The script copies the three images to
+`frontend/public/firmware/edge/<build>/<version>/` and rewrites
+`frontend/public/firmware/edge/index.json`, which the browser installer on
+the site reads. It needs committed firmware sources (the index records the
+commit) and the manifest from the previous step. A published version is never
+replaced: a rebuild with different bytes needs a new `FH_EDGE_VERSION`.
+Which board and reader a build is offered for, and the reader's GPIO numbers,
+come from `hardware-profiles.json`. A kit with `status: prototype` is shown
+only to site administrators.
+
 ## Cloud link recovery
 
 An unexpected cloud answer never switches the upload off until the next reboot.
@@ -66,6 +82,20 @@ prints credentials. Disable local echo in the serial terminal too. On an empty
 device the console waits for configuration. With saved configuration it accepts
 a replacement line during the first 15 seconds after reboot, then starts the
 runtime. Invalid or interrupted input leaves the previous NVS copy intact.
+
+Next to the human-readable messages the firmware prints one JSON line per
+state change, for a tool on the other end of the cable:
+
+```json
+{"event":"boot","firmware":"0.1.1","configured":true,"provision_window_ms":15000}
+{"event":"provision","ok":true}
+{"event":"ready","nfc":true}
+```
+
+`boot` on an empty device has `configured:false` and no window: it waits for a
+configuration line. `provision` answers a configuration line; after `ok:true`
+the device restarts. `ready` means the provisioning window is closed and
+commands are accepted. These lines carry no configuration values.
 
 ```json
 {"wifi":{"ssid":"MY_WIFI","password":"MY_PASSWORD"},"cloud":{"origin":"http://192.168.1.2:3000","allow_local_http":true},"connections":[{"id":"p2s-workbench","host":"192.168.1.44","serial":"P2S_SERIAL","access_code":"LAN_ACCESS_CODE","bambu_cert_pem":"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n","pairing_code":"ONE_TIME_CODE"}]}

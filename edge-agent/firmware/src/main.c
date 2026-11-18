@@ -54,6 +54,14 @@ static uint64_t monotonic_ms(void)
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
+/* One JSON line per state change for a tool on the other end of the USB cable.
+   The values are fixed words and numbers; nothing from the configuration. */
+static void status_line(const char *event, const char *detail)
+{
+    printf("{\"event\":\"%s\",%s}\n", event, detail);
+    fflush(stdout);
+}
+
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP)
@@ -240,11 +248,12 @@ static void provision_task(void *argument)
             memset(provision_line, 0, sizeof(provision_line));
             memset(&proposal, 0, sizeof(proposal));
             puts("Configuration rejected; saved configuration unchanged.");
+            status_line("provision", "\"ok\":false");
             continue;
         }
         memset(provision_line, 0, sizeof(provision_line));
         puts("Configuration saved. Rebooting.");
-        fflush(stdout);
+        status_line("provision", "\"ok\":true");
         esp_restart();
     }
     xTaskNotifyGive(runtime_task);
@@ -333,6 +342,9 @@ void app_main(void)
         ESP_LOGE(TAG, "Serial provisioning task unavailable");
         return;
     }
+    status_line("boot", configured
+        ? "\"firmware\":\"" FH_EDGE_VERSION "\",\"configured\":true,\"provision_window_ms\":15000"
+        : "\"firmware\":\"" FH_EDGE_VERSION "\",\"configured\":false");
     if (configured) {
         puts("Serial provisioning open for 15 seconds; credentials are never echoed.");
         vTaskDelay(pdMS_TO_TICKS(15000));
@@ -346,6 +358,8 @@ void app_main(void)
         ESP_LOGE(TAG, "AMS journal unavailable; saved configuration kept intact");
     if (!fh_nfc_console_start(&config.nfc, config.cloud_origin))
         ESP_LOGE(TAG, "NFC serial task unavailable");
+    else
+        status_line("ready", config.nfc.enabled ? "\"nfc\":true" : "\"nfc\":false");
     if (!config.wifi_ssid[0]) {
         puts("NFC bench active without Wi-Fi; printer telemetry is unavailable.");
         return;
