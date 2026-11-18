@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from . import openprinttag
+from . import openprinttag, tigertag
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,7 @@ class DecodedTag:
 
 _DECODERS = {
     openprinttag.FORMAT: openprinttag.decode,
+    tigertag.FORMAT: tigertag.decode,
 }
 
 

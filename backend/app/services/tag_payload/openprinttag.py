@@ -135,9 +135,10 @@ def _text(value: object, limit: int = 120) -> str | None:
 def _midpoint(low: float | None, high: float | None) -> int | None:
     """One recommended temperature out of the range a tag states."""
     if low is not None and high is not None:
-        return round((low + high) / 2) if low <= high else None
+        # Half a degree rounds up, the same way for every tag format.
+        return math.floor((low + high) / 2 + 0.5) if low <= high else None
     chosen = low if low is not None else high
-    return round(chosen) if chosen is not None else None
+    return math.floor(chosen + 0.5) if chosen is not None else None
 
 
 def _color(value: object) -> str | None:

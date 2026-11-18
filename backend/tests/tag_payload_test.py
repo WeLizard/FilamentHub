@@ -171,3 +171,56 @@ async def test_a_tag_for_a_catalog_filament_creates_a_spool_of_that_filament(
             SpoolCompatResource.source_kind == "import"
         )
     ) == 0
+
+
+def _tigertag(**changes: bytes) -> bytes:
+    """The Rosa3D red PLA chip of the TigerTag specification's worked example."""
+    fields = {
+        "magic": bytes.fromhex("5BF59264"), "product": bytes.fromhex("FFFFFFFF"),
+        "material": bytes.fromhex("954B"), "aspects": bytes.fromhex("6800"),
+        # The example prints the brand as 0x4E19, but its decimal 19961 - the id the
+        # registry lists for Rosa3D - is 0x4DF9.
+        "type": bytes.fromhex("8E"), "diameter": bytes.fromhex("38"), "brand": bytes.fromhex("4DF9"),
+        "color": bytes.fromhex("FF0000FF"), "measure": bytes.fromhex("0003E8"), "unit": bytes.fromhex("15"),
+        "nozzle": bytes.fromhex("00C300E6"), "drying": bytes.fromhex("3205"), "bed": bytes.fromhex("323C"),
+        "timestamp": bytes.fromhex("2F7A0A5C"), "more_colors": bytes(8), "td": bytes.fromhex("00E60000"),
+        "message": b"Starter Red".ljust(28, b"\x00"), "available": bytes.fromhex("0003E8"),
+        "reserved": bytes(1),
+    }
+    fields.update(changes)
+    payload = b"".join(fields.values())
+    assert len(payload) == 80
+    return payload
+
+
+def test_tigertag_chip_is_read_from_its_ids() -> None:
+    payload = _tigertag()
+    decoded = decode_tag("TigerTag", payload)
+
+    assert decoded is not None
+    assert decoded.as_response() == {
+        "material_class": "FFF", "material": "PLA", "name": "PLA", "vendor_name": "Rosa3D",
+        "color_hex": "FF0000", "diameter": 1.75, "density": 1.24, "weight": 1000.0,
+        "initial_weight": 1000.0, "used_weight": 0.0,
+        # One recommended value out of 195-230 and 50-60.
+        "extruder_temp": 213, "bed_temp": 55,
+    }
+    # A full chip dump carries four system pages before the payload.
+    assert decode_tag("tigertag", bytes(16) + payload + bytes(64)) == decoded
+
+
+def test_tigertag_states_only_what_its_ids_and_fields_support() -> None:
+    # A scale wrote 640 g left on a 1 kg roll of silk filament.
+    used = decode_tag("tigertag", _tigertag(aspects=bytes.fromhex("5C00"), available=bytes.fromhex("000280")))
+    assert used is not None and (used.name, used.used_weight) == ("PLA Silk", 360.0)
+    # Ids the registry does not know are left out, not guessed.
+    unknown = decode_tag("tigertag", _tigertag(material=bytes.fromhex("0001"), brand=bytes.fromhex("0002")))
+    assert unknown is not None
+    assert (unknown.material, unknown.name, unknown.vendor_name, unknown.density) == (None, None, None, None)
+    # A quantity in millilitres is not a filament weight.
+    volume = decode_tag("tigertag", _tigertag(unit=bytes.fromhex("30")))
+    assert volume is not None and volume.weight is None and volume.used_weight is None
+    # A blank initialization chip and a foreign payload carry nothing to decode.
+    assert decode_tag("tigertag", _tigertag(magic=bytes.fromhex("6C41A2E1"))) is None
+    assert decode_tag("tigertag", bytes(80)) is None
+    assert decode_tag("tigertag", _tigertag()[:60]) is None
