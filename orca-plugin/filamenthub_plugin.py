@@ -3414,6 +3414,29 @@ def ensure_filament_colour(profile):
 # --------------------------------------------------------------------------- #
 # HTTP (stdlib only). Returns (status, bytes).
 # --------------------------------------------------------------------------- #
+# Headers that authenticate this workstation or a local printer. They travel as
+# urllib "unredirected" headers: sent to the requested origin and left out of
+# any request a redirect creates, so no response can forward them elsewhere.
+# urllib itself drops a request body on 301/302/303 and refuses to follow
+# 307/308 for anything but GET and HEAD.
+_CREDENTIAL_HEADERS = frozenset({
+    "authorization",
+    "x-filamenthub-bridge-token",
+    "x-api-key",
+})
+
+
+def _plugin_request(url, data=None, headers=None, method="GET"):
+    """Build a request whose credentials stay with the requested origin."""
+    request = urllib.request.Request(url, data=data, method=method)
+    for name, value in (headers or {}).items():
+        if name.lower() in _CREDENTIAL_HEADERS:
+            request.add_unredirected_header(name, value)
+        else:
+            request.add_header(name, value)
+    return request
+
+
 def _urlopen_authorized(request, timeout):
     with external_operation():
         return urllib.request.urlopen(request, timeout=timeout, context=_SSL_CTX)
@@ -3423,7 +3446,7 @@ def http_get(path, token=None):
     headers = {"Accept": "application/json", "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION}
     if token:
         headers["Authorization"] = "Bearer " + token
-    req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    req = _plugin_request(API_BASE + path, headers=headers, method="GET")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3439,7 +3462,7 @@ def http_post_json(path, token, payload):
                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION}
     if token:
         headers["Authorization"] = "Bearer " + token
-    req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
+    req = _plugin_request(API_BASE + path, data=data, headers=headers, method="POST")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3579,7 +3602,7 @@ def http_post_bridge_json(path, bridge_token, payload):
         "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
-    req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
+    req = _plugin_request(API_BASE + path, data=data, headers=headers, method="POST")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp), None
@@ -3595,7 +3618,7 @@ def http_get_bridge_json(path, bridge_token):
         "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
-    req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    req = _plugin_request(API_BASE + path, headers=headers, method="GET")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3611,7 +3634,7 @@ def _http_delete_bridge(path, bridge_token, allow_retired_generation=False):
         "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
-    req = urllib.request.Request(API_BASE + path, headers=headers, method="DELETE")
+    req = _plugin_request(API_BASE + path, headers=headers, method="DELETE")
     try:
         opener = (
             urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX)
@@ -3971,7 +3994,7 @@ def _send_multipart(path, token, boundary, body, max_response_bytes=MAX_RESPONSE
     }
     if token:
         headers["Authorization"] = "Bearer " + token
-    req = urllib.request.Request(API_BASE + path, data=body, headers=headers, method="POST")
+    req = _plugin_request(API_BASE + path, data=body, headers=headers, method="POST")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT * 4) as resp:
             payload = resp.read(max_response_bytes + 1)
@@ -5469,7 +5492,7 @@ def _moonraker_json(connection, path, payload=None, timeout=None, raw_text=False
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
         method = "POST"
-    request = urllib.request.Request(
+    request = _plugin_request(
         base_url + path,
         data=data,
         headers=headers,
@@ -10672,7 +10695,7 @@ def http_get_bearer(path, token):
         "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
         "Authorization": "Bearer " + token,
     }
-    req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    req = _plugin_request(API_BASE + path, headers=headers, method="GET")
     try:
         with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp), None
