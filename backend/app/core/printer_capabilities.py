@@ -57,6 +57,10 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("happy_hare", "legacy_adapter"): frozenset(
         {"read", "write", "presence", "spool_identity", "consumption"}
     ),
+    # Flashforge's LAN API reports no per-tool usage, active tool or spool
+    # identity; its station slots provide presence and printer-set material only.
+    ("flashforge", "edge_agent"): frozenset({"read", "presence"}),
+    ("flashforge", "orca_plugin_lan"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }

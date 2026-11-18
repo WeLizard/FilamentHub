@@ -79,6 +79,27 @@ Spoolman в Moonraker: сначала выполните
 Happy Hare и однозначных данных о счётчике и активной назначенной катушке.
 Edge не выполняет команды принтера, не меняет гейты и не записывает NFC/RFID.
 
+#### Flashforge Creator 5 / 5 Pro
+
+Включите на принтере режим LAN в настройках сети и запишите показанный там код
+проверки и серийный номер из сведений об устройстве. В облачном режиме локальный
+API выключен, а при возврате в LAN код проверки может смениться.
+
+```yaml
+- id: creator5
+  name: Creator 5 Pro
+  adapter: flashforge
+  printer_url: http://192.168.1.40
+  serial_number: СЕРИЙНЫЙ-НОМЕР
+  check_code: КОД-ПРОВЕРКИ
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge передаёт состояние принтера, текущее задание и четыре слота станции
+материалов: есть ли пруток, материал и цвет, заданные на принтере. Принтер не
+сообщает расход по головам и активную голову, поэтому это подключение не
+списывает пластик с катушек.
+
 ### Обновление и восстановление
 
 Используйте кнопку **Обновить**, когда HA предложит новую версию. Сначала
@@ -187,6 +208,33 @@ before relying on spool identity. When native Spoolman is configured or unknown,
 Edge does not submit a second usage stream. Empty/unknown observations never
 erase your desired spool assignments.
 
+#### Flashforge Creator 5 / 5 Pro
+
+Enable LAN mode in the printer's network settings and note the check code shown
+there and the serial number from the device information. Cloud mode switches the
+local API off, and returning to LAN mode can change the check code.
+
+```yaml
+- id: creator5
+  name: Creator 5 Pro
+  adapter: flashforge
+  printer_url: http://192.168.1.40
+  serial_number: SERIAL-FROM-PRINTER
+  check_code: CHECK-CODE-FROM-PRINTER
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge reports the printer state, current job and the four material-station slots:
+whether filament is loaded, plus the material and colour set on the printer. The
+printer reports neither per-tool usage nor the active tool, so this connection
+does not debit spools.
+
+Happy Hare inventory and assignments use Moonraker's native Spoolman integration.
+Follow the [printer setup guide](https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation)
+before relying on spool identity. When native Spoolman is configured or unknown,
+Edge does not submit a second usage stream. Empty/unknown observations never
+erase your desired spool assignments.
+
 ### Update and recovery
 
 Use the app's **Update** action when HA offers a new version; read the changelog
@@ -257,6 +305,24 @@ Spoolman 集成；请先完成
 已配置原生 Spoolman，或无法确认其状态时，Edge 不会发送第二份用量。
 只有确认无原生 Spoolman、Happy Hare 的 Spoolman 支持关闭，且计数器与当前分配
 料盘均明确时，才可独立上传用量。Edge 不发送打印机命令、不切换槽位，也不写入 NFC/RFID。
+
+#### 闪铸 Creator 5 / 5 Pro
+
+请在打印机网络设置中启用局域网模式，并记下其中显示的校验码以及设备信息中的序列号。
+云模式会关闭本地 API，切回局域网模式后校验码可能改变。
+
+```yaml
+- id: creator5
+  name: Creator 5 Pro
+  adapter: flashforge
+  printer_url: http://192.168.1.40
+  serial_number: 打印机序列号
+  check_code: 打印机校验码
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge 上报打印机状态、当前任务以及耗材站的四个槽位：是否装有耗材，以及打印机上设置的材料和颜色。
+打印机不报告各打印头的用量和当前打印头，因此此连接不会从料盘扣减耗材。
 
 ### 更新与恢复
 

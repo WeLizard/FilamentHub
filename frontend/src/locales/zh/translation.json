@@ -167,7 +167,9 @@
       "octoprintHint": "OctoPrint 中的 FilamentHub 插件直接连接，无需 OrcaSlicer 或 FH Edge。",
       "bambu": "Bambu Lab",
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
-      "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。"
+      "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
+      "flashforge": "闪铸 Creator 5",
+      "flashforgeHint": "通过 FH Edge 连接局域网模式下的 Creator 5 / 5 Pro。显示耗材站各槽位是否有耗材以及打印机上设置的材料；不统计用量。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -187,7 +189,8 @@
       "secondExternal": "第二个外部料卷架",
       "bypass": "旁路供料",
       "manualHint": "描述您的设备。无需连接即可分配料卷。这是手动声明，不是传感器读数。",
-      "edit": "编辑供料路径和槽位"
+      "edit": "编辑供料路径和槽位",
+      "flashforgeStation": "耗材站，4 个槽位"
     },
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
@@ -8388,7 +8391,8 @@
       "bambu": "Bambu LAN",
       "direct": "直接供料",
       "happy_hare": "Happy Hare",
-      "octoprint": "OctoPrint"
+      "octoprint": "OctoPrint",
+      "flashforge": "闪铸耗材站"
     },
     "edge": {
       "title": "FH Edge",
@@ -8412,7 +8416,9 @@
       "connectionTitle": "通过 FH Edge 连接（可选）",
       "addToNode": "将此条目添加到 Edge 的 connections，并将 PRINTER-LAN-IP 替换为打印机地址。Home Assistant：应用设置 → connections；Docker/Linux：options.json。然后重启 Edge。下一台打印机使用同一节点，无需再次安装。",
       "disconnect": "断开此打印机的 Edge 连接",
-      "disconnectHint": "仅撤销此连接的访问权限，同一节点上的其他打印机将继续工作。Edge 保存的事件不会删除；重新连接同一台打印机后才能上传这些事件。"
+      "disconnectHint": "仅撤销此连接的访问权限，同一节点上的其他打印机将继续工作。Edge 保存的事件不会删除；重新连接同一台打印机后才能上传这些事件。",
+      "addToNodeFlashforge": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并填写序列号和打印机网络界面上的校验码（请先启用局域网模式）。Home Assistant：应用设置 → connections；Docker/Linux：options.json。然后重启 Edge。",
+      "securityFlashforge": "打印机地址、序列号和校验码只保存在 Edge 设备上，不会发送到 FilamentHub。"
     },
     "happyHare": {
       "inventoryError": "Moonraker 必须使用此 FH 打印机专属的 [spoolman] 密钥链接。请检查配置，并在空闲时重启 Moonraker。已读取槽位，但无法安全匹配料卷 ID。",

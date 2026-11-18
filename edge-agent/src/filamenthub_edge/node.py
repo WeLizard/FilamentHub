@@ -15,6 +15,8 @@ from typing import Any
 from .cloud import FilamentHubCloud
 from .config import CONNECTION_ID, MAX_CONNECTIONS, EdgeConfig, NodeConfig
 from .errors import AuthenticationError, ConfigurationError, EdgeError, PairingRequired, StateError
+from .providers.base import EdgeProvider
+from .providers.flashforge import FlashforgeProvider
 from .providers.moonraker import MoonrakerProvider
 from .runtime import EdgeRuntime
 from .state import EdgeState, StateStore
@@ -25,9 +27,29 @@ RuntimeFactory = Callable[[EdgeConfig, StateStore, EdgeState], EdgeRuntime]
 MAX_KNOWN_CONNECTIONS = 256
 
 
-def build_connection(config: EdgeConfig, store: StateStore, state: EdgeState) -> EdgeRuntime:
+def _provider(config: EdgeConfig) -> EdgeProvider:
+    if config.adapter == "flashforge" and config.material_provider == "flashforge":
+        if not config.serial_number or not config.check_code:
+            raise ConfigurationError("A Flashforge connection requires its LAN credentials")
+        return FlashforgeProvider(
+            config.moonraker_url,
+            serial_number=config.serial_number,
+            check_code=config.check_code,
+            timeout=config.request_timeout,
+        )
     if config.adapter != "moonraker" or config.material_provider not in {"happy_hare", "legacy"}:
         raise ConfigurationError("This adapter or material provider is not supported")
+    return MoonrakerProvider(
+        config.moonraker_url,
+        api_key=config.moonraker_api_key,
+        material_provider=config.material_provider,
+        timeout=config.request_timeout,
+        filamenthub_url=config.filamenthub_url,
+    )
+
+
+def build_connection(config: EdgeConfig, store: StateStore, state: EdgeState) -> EdgeRuntime:
+    provider = _provider(config)
     return EdgeRuntime(
         config=config,
         store=store,
@@ -37,13 +59,7 @@ def build_connection(config: EdgeConfig, store: StateStore, state: EdgeState) ->
             timeout=config.request_timeout,
             allow_insecure_http=config.allow_insecure_cloud,
         ),
-        provider=MoonrakerProvider(
-            config.moonraker_url,
-            api_key=config.moonraker_api_key,
-            material_provider=config.material_provider,
-            timeout=config.request_timeout,
-            filamenthub_url=config.filamenthub_url,
-        ),
+        provider=provider,
     )
 
 

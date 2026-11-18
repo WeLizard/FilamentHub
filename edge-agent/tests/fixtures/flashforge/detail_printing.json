@@ -1,0 +1,39 @@
+{
+  "code": 0,
+  "message": "Success",
+  "detail": {
+    "pid": "29",
+    "model": "Creator 5 Pro",
+    "name": "Creator 5 Pro",
+    "firmwareVersion": "1.9.8",
+    "status": "printing",
+    "printFileName": "bracket.3mf",
+    "printProgress": 0.4237,
+    "estimatedTime": 1820.0,
+    "printDuration": 1310,
+    "printLayer": 42,
+    "targetPrintLayer": 120,
+    "nozzleTemps": [219.6, 25.1, 24.9, 25.0],
+    "nozzleTargetTemps": [220, 0, 0, 0],
+    "platTemp": 59.8,
+    "platTargetTemp": 60,
+    "chamberTemp": 38.2,
+    "chamberTargetTemp": 0,
+    "estimatedRightWeight": 18.4,
+    "estimatedRightLen": 6170.0,
+    "errorCode": "",
+    "matlStationInfo": {
+      "slotCnt": 4,
+      "currentSlot": 1,
+      "currentLoadSlot": 0,
+      "stateAction": 0,
+      "stateStep": 0,
+      "slotInfos": [
+        {"slotId": 1, "hasFilament": true, "materialName": "PLA", "materialColor": "#4CAAF8"},
+        {"slotId": 2, "hasFilament": true, "materialName": "PETG", "materialColor": "#ffffff"},
+        {"slotId": 3, "hasFilament": false, "materialName": "PLA", "materialColor": "#000000"},
+        {"slotId": 4, "hasFilament": true, "materialName": "", "materialColor": "bogus"}
+      ]
+    }
+  }
+}

@@ -24,10 +24,13 @@ schema:
     - id: match(^[a-z0-9][a-z0-9_-]{0,63}$)
       name: str?
       enabled: bool?
-      adapter: list(moonraker)?
+      adapter: list(moonraker|flashforge)?
       pairing_code: password?
-      material_provider: list(happy_hare|legacy)
-      moonraker_url: url
+      material_provider: list(happy_hare|legacy|flashforge)?
+      moonraker_url: url?
+      printer_url: url?
+      serial_number: str?
+      check_code: password?
       moonraker_api_key: password?
       sync_interval: int(15,3600)?
   sync_interval: int(15,3600)

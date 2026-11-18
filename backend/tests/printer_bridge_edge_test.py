@@ -1208,3 +1208,87 @@ async def test_legacy_edge_snapshot_uses_observation_watermark_not_heartbeat(
     )
     assert first.json()["accepted"] is True
     assert older.json()["stale"] is True
+
+
+@pytest.mark.asyncio
+async def test_flashforge_edge_reports_station_slots_without_claiming_consumption(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Creator 5 Pro"},
+    )
+    printer_id = created.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "Material station",
+            "provider": "flashforge",
+            "kind": "mmu",
+            "slots": [{"provider_index": index, "kind": "slot"} for index in range(4)],
+        },
+    )
+    assert system_response.status_code in {200, 201}, system_response.text
+    system_id = system_response.json()["material_systems"][0]["id"]
+    source_instance_id = "flashforge-edge-instance-01"
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "flashforge",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-flashforge-01",
+            # A runtime claiming more than the printer can prove is trimmed.
+            "capabilities": ["read", "presence", "consumption", "spool_identity"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system_id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    assert connector is not None
+    assert connector.provider == "flashforge"
+    assert sorted(connector.capabilities) == ["presence", "read"]
+
+    headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+    snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            "material_system_id": system_id,
+            "provider": "flashforge",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "capabilities": ["read", "presence"],
+            "sequence": 1,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "printer": {"state": "printing", "job_name": "bracket.3mf", "progress_percent": 42},
+            "slots": [
+                {"provider_index": 0, "label": "Slot 1", "kind": "slot", "present": True,
+                 "material": "PLA", "color_hex": "4CAAF8"},
+                {"provider_index": 1, "label": "Slot 2", "kind": "slot", "present": True,
+                 "material": "PETG", "color_hex": "FFFFFF"},
+                {"provider_index": 2, "label": "Slot 3", "kind": "slot", "present": False},
+                {"provider_index": 3, "label": "Slot 4", "kind": "slot", "present": None},
+            ],
+            "slot_topology_complete": True,
+        },
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["accepted"] is True
+
+    printers = await auth_client.get("/api/v1/physical-printers")
+    printer = next(item for item in printers.json() if item["id"] == printer_id)
+    system = printer["material_systems"][0]
+    assert system["provider"] == "flashforge"
+    assert sorted(slot["provider_index"] for slot in system["slots"]) == [0, 1, 2, 3]

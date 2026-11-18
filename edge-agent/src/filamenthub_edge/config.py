@@ -88,6 +88,8 @@ class EdgeConfig:
     enabled: bool = True
     adapter: str = "moonraker"
     node_instance_id: str | None = None
+    serial_number: str | None = None
+    check_code: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,9 @@ class NodeConfig:
                 "moonraker_api_key",
                 "pairing_code",
                 "sync_interval",
+                "printer_url",
+                "serial_number",
+                "check_code",
             }:
                 raise ConfigurationError("Unknown Edge connection options")
             identifier = _text(entry.get("id"), "connection id", maximum=64)
@@ -159,12 +164,31 @@ class NodeConfig:
                 raise ConfigurationError("connection ids must be unique lowercase slugs")
             seen_ids.add(identifier)
             adapter = _text(entry.get("adapter", "moonraker"), "adapter", maximum=50)
+            flashforge = adapter == "flashforge"
             provider = _text(
-                entry.get("material_provider", "happy_hare"), "material provider", maximum=50
+                entry.get("material_provider", "flashforge" if flashforge else "happy_hare"),
+                "material provider",
+                maximum=50,
             )
+            if entry.get("printer_url") and entry.get("moonraker_url"):
+                raise ConfigurationError("set either printer_url or moonraker_url, not both")
             endpoint = normalize_origin(
-                _text(entry.get("moonraker_url"), "printer URL"), allow_http=True
+                _text(entry.get("printer_url") or entry.get("moonraker_url"), "printer URL"),
+                allow_http=True,
             )
+            serial_number = _text(entry.get("serial_number", ""), "serial number", maximum=64)
+            check_code = _text(entry.get("check_code", ""), "check code", maximum=64)
+            if flashforge:
+                if provider != "flashforge" or not serial_number or not check_code:
+                    raise ConfigurationError(
+                        "a Flashforge connection requires serial_number and check_code"
+                    )
+                if entry.get("moonraker_api_key"):
+                    raise ConfigurationError("Moonraker options do not apply to Flashforge")
+                if urlsplit(endpoint).port is None:
+                    endpoint = f"{endpoint}:8898"
+            elif serial_number or check_code:
+                raise ConfigurationError("serial_number and check_code apply only to Flashforge")
             parsed = urlsplit(endpoint)
             key = (
                 parsed.scheme,
@@ -190,6 +214,8 @@ class NodeConfig:
                         entry.get("moonraker_api_key", ""), "printer API key", maximum=4096
                     )
                     or None,
+                    serial_number=serial_number or None,
+                    check_code=check_code or None,
                     state_path=directory / "connections" / f"{identifier}.json",
                     sync_interval=_as_int(
                         entry.get("sync_interval"), default=interval, minimum=15, maximum=3600

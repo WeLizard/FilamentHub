@@ -124,11 +124,20 @@ export function EdgeConnectionSetup({
     }
   };
 
-  const connectionOptions = JSON.stringify({
+  const edgeProvider = status?.provider ?? system.provider;
+  const connectionOptions = JSON.stringify(edgeProvider === 'flashforge' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'flashforge',
+    printer_url: 'http://PRINTER-LAN-IP',
+    serial_number: 'SERIAL-FROM-PRINTER',
+    check_code: 'CHECK-CODE-FROM-PRINTER',
+    pairing_code: pairingCode,
+  } : {
     id: `printer-${printer.id}`,
     name: printer.name,
     adapter: 'moonraker',
-    material_provider: status?.provider ?? system.provider,
+    material_provider: edgeProvider,
     moonraker_url: 'http://PRINTER-LAN-IP:7125',
     pairing_code: pairingCode,
   }, null, 2);
@@ -243,7 +252,7 @@ export function EdgeConnectionSetup({
           <p className="mt-1.5 text-[11px] leading-4 text-gray-400">
             {t('presetSlots.edge.codeHint')}
           </p>
-          <p className="mt-2 text-xs text-gray-300">{t('presetSlots.edge.addToNode')}</p>
+          <p className="mt-2 text-xs text-gray-300">{t(edgeProvider === 'flashforge' ? 'presetSlots.edge.addToNodeFlashforge' : 'presetSlots.edge.addToNode')}</p>
           <pre className="mt-2 overflow-x-auto rounded bg-black/30 p-2 text-[11px] text-gray-200">
             {connectionOptions}
           </pre>
@@ -252,7 +261,7 @@ export function EdgeConnectionSetup({
 
       <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-4 text-sky-100/65">
         <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" />
-        {t('presetSlots.edge.security')}
+        {t(edgeProvider === 'flashforge' ? 'presetSlots.edge.securityFlashforge' : 'presetSlots.edge.security')}
       </p>
       <ConfirmModal isOpen={confirmRevoke} onClose={() => { if (!revoking) setConfirmRevoke(false); }}
         onConfirm={revoke} isLoading={revoking} variant="warning"

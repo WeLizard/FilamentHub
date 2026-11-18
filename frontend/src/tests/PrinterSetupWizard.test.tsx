@@ -470,6 +470,23 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByTestId('adapter-setup')).not.toBeInTheDocument();
   });
 
+  it('creates a Flashforge station for Edge so pairing uses the Flashforge provider', async () => {
+    mocks.models.mockResolvedValue({ items: [{ id: 11, name: 'Flashforge Creator 5 Pro', manufacturer: 'Flashforge' }] });
+    mocks.create.mockResolvedValueOnce({ ...saved, material_systems: [{ provider: 'flashforge', kind: 'mmu', slots: [] }] });
+    show(); fireEvent.click(screen.getByText('printerSetup.newDevice'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.model'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Flashforge Creator 5 Pro' }));
+    fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+    expect(screen.getByText('printerSetup.routes.edge')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('printerSetup.routes.orca')).not.toBeInTheDocument();
+    savePrinter(); await screen.findByText('edge-setup');
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
+      provider: 'flashforge', kind: 'mmu',
+      slots: [0, 1, 2, 3].map((provider_index) => ({ provider_index, kind: 'slot' })),
+    }) }));
+    expect(mocks.plugin).not.toHaveBeenCalled();
+  });
+
   it('connects OctoPrint natively and keeps the feed layout independent of the connection', async () => {
     show(); await namePrinter();
     fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));

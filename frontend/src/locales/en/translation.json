@@ -167,7 +167,9 @@
       "octoprintHint": "The FilamentHub plugin in OctoPrint connects directly. No OrcaSlicer or FH Edge required.",
       "bambu": "Bambu Lab",
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
-      "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings."
+      "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
+      "flashforge": "Flashforge Creator 5",
+      "flashforgeHint": "Creator 5 / 5 Pro in LAN mode through FH Edge. Shows which station slots have filament and the material set on the printer; it does not track usage."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -187,7 +189,8 @@
       "secondExternal": "Second external spool holder",
       "bypass": "Bypass feed",
       "manualHint": "Describe your equipment. You can assign spools immediately, without a connection. This is your declaration, not a sensor reading.",
-      "edit": "Edit feed paths and slots"
+      "edit": "Edit feed paths and slots",
+      "flashforgeStation": "Material station, 4 slots"
     },
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_unavailable":"The printer was found, but its identity could not be confirmed yet. Try the check again. Your saved printer and assignments are kept.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Add printer",
@@ -8410,7 +8413,8 @@
       "bambu": "Bambu LAN",
       "direct": "Direct feed",
       "happy_hare": "Happy Hare",
-      "octoprint": "OctoPrint"
+      "octoprint": "OctoPrint",
+      "flashforge": "Flashforge material station"
     },
     "edge": {
       "title": "FH Edge",
@@ -8434,7 +8438,9 @@
       "connectionTitle": "Connect through FH Edge (optional)",
       "addToNode": "Add this entry to your Edge connections and replace PRINTER-LAN-IP with the printer's address. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge. Add the next printer to the same node; no second installation is needed.",
       "disconnect": "Disconnect this printer from Edge",
-      "disconnectHint": "Only this connection's access will be revoked. Other printers on the node will keep working. Saved Edge events are not deleted; reconnect this same printer to deliver them."
+      "disconnectHint": "Only this connection's access will be revoked. Other printers on the node will keep working. Saved Edge events are not deleted; reconnect this same printer to deliver them.",
+      "addToNodeFlashforge": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address, and enter the serial number and the check code from the printer's network screen (enable LAN mode first). Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
+      "securityFlashforge": "The printer address, serial number and check code stay on the Edge device and are never sent to FilamentHub."
     },
     "happyHare": {
       "inventoryError": "Moonraker must use this FH printer's keyed [spoolman] URL. Check the setting and restart Moonraker while idle. Gates were read, but spool IDs cannot be safely matched.",

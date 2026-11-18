@@ -17,16 +17,25 @@ configuration:
         description: Disable to pause only this connection. Enabled by default; queued events are preserved.
       adapter:
         name: Adapter
-        description: Moonraker is currently supported. Defaults to moonraker when omitted.
+        description: moonraker for Klipper printers; flashforge for Flashforge Creator 5 / 5 Pro in LAN mode. Defaults to moonraker.
       pairing_code:
         name: Pairing code
         description: One-time code from FilamentHub for this printer. Remove it after successful pairing.
       material_provider:
         name: Material system
-        description: happy_hare for a Happy Hare MMU; legacy for direct Klipper feed.
+        description: happy_hare for a Happy Hare MMU; legacy for direct Klipper feed; flashforge for the Flashforge material station (set automatically for the flashforge adapter).
       moonraker_url:
         name: Moonraker address
         description: The printer's local HTTP(S) address reachable from HA, for example http://192.168.1.20:7125. Not the HA address.
+      printer_url:
+        name: Printer address
+        description: Flashforge printer's local address reachable from HA, for example http://192.168.1.40. Port 8898 is used when omitted.
+      serial_number:
+        name: Serial number
+        description: Flashforge only. The serial number shown in the printer's settings.
+      check_code:
+        name: Check code
+        description: Flashforge only. Shown on the printer's network screen after enabling LAN mode; it is never sent to FilamentHub.
       moonraker_api_key:
         name: Moonraker API key
         description: Optional local API key; it is never sent to FilamentHub.
