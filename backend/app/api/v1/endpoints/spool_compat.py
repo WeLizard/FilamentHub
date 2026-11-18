@@ -93,7 +93,12 @@ from app.services.spool_usage_service import (
 from app.services.stock_alert_service import refresh_stock_alerts
 from app.services.tag_scan_relay import claim_broadcast, remember_reader
 
-from . import spool_compat_catalog, spool_compat_fields, spool_compat_tags
+from . import (
+    spool_compat_catalog,
+    spool_compat_external,
+    spool_compat_fields,
+    spool_compat_tags,
+)
 from .spool_compat_ws import SPOOL_POOL, TAG_SCAN_POOL, Pool, spool_ws_manager
 
 logger = logging.getLogger(__name__)
@@ -2204,4 +2209,5 @@ def _vendor_payload(brand: Brand) -> dict:
 
 router.include_router(spool_compat_catalog.router)
 router.include_router(spool_compat_fields.router)
+router.include_router(spool_compat_external.router)
 router.include_router(spool_compat_tags.router)

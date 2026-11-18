@@ -33,6 +33,38 @@ from app.services.spool_compat_resource_service import (
 router = APIRouter(tags=["spool_compat"])
 Kind = Literal["vendor", "filament"]
 
+# A catalog filament's id in the external filament database this API serves.
+# A client that finds a filament there asks for it by this id, and is given the
+# catalog filament itself instead of creating a private copy of it.
+CATALOG_EXTERNAL_PREFIX = "filamenthub-"
+
+
+def catalog_external_id(filament_id: int) -> str:
+    return f"{CATALOG_EXTERNAL_PREFIX}{filament_id}"
+
+
+def catalog_filament_id(external_id: object) -> int | None:
+    """Return the catalog filament an external id names, if it names one."""
+    if not isinstance(external_id, str) or not external_id.startswith(CATALOG_EXTERNAL_PREFIX):
+        return None
+    digits = external_id[len(CATALOG_EXTERNAL_PREFIX):]
+    if not digits.isascii() or not digits.isdigit() or len(digits) > 18:
+        return None
+    return int(digits)
+
+
+async def _catalog_filament_ref(db: AsyncSession, external_id: object) -> SpoolCompatResource | None:
+    """Return the wire reference of the active catalog filament an external id names."""
+    filament_id = catalog_filament_id(external_id)
+    if filament_id is None:
+        return None
+    active = await db.scalar(
+        select(Filament.id).where(Filament.id == filament_id, Filament.active.is_(True))
+    )
+    if active is None:
+        return None
+    return await ensure_catalog_ref(db, kind="filament", catalog_id=filament_id)
+
 
 def _legacy():
     # This router is included by spool_compat after its helpers are defined.
@@ -172,7 +204,10 @@ async def project_filament(db: AsyncSession, *, user_id: int, ref: SpoolCompatRe
         vendor_ref = context["vendors_by_brand"][filament.brand_id]
         payload["vendor"] = await project_vendor(db, user_id=user_id, ref=vendor_ref)
     payload["id"] = ref.wire_id
-    payload["external_id"] = ref.external_id if ref.source_kind == "import" else None
+    if ref.source_kind == "import":
+        payload["external_id"] = ref.external_id
+    else:
+        payload["external_id"] = catalog_external_id(filament.id) if filament is not None else None
     payload["extra"] = deepcopy(context["extras"].get(ref.id, {}))
     payload = _omit_none(payload)
     context["payloads"][ref.id] = deepcopy(payload)
@@ -292,7 +327,12 @@ async def _list(db: AsyncSession, *, user_id: int, kind: Kind, request: Request)
         if condition is not None:
             stmt = stmt.where(condition)
     if external_id is not None:
-        stmt = stmt.where(SpoolCompatResource.external_id == external_id)
+        named = catalog_filament_id(external_id) if kind == "filament" else None
+        stmt = stmt.where(or_(
+            SpoolCompatResource.external_id == external_id,
+            and_(SpoolCompatResource.source_kind == "catalog",
+                 SpoolCompatResource.filament_id == named),
+        ) if named is not None else SpoolCompatResource.external_id == external_id)
     if kind == "filament":
         stmt = stmt.where(or_(SpoolCompatResource.source_kind == "import", model.active.is_(True)))
         material = params.get("material")
@@ -388,6 +428,14 @@ async def _create(db: AsyncSession, *, user_id: int, kind: Kind, request: Reques
     external_id = data.get("external_id")
     if external_id is not None and not isinstance(external_id, str):
         return _response_error(400, "Invalid external ID.")
+    if kind == "filament":
+        catalog_ref = await _catalog_filament_ref(db, external_id)
+        if catalog_ref is not None:
+            # The filament already exists in the catalog: hand it out, do not copy it.
+            db.info.pop("spool_compat_projection", None)
+            payload = await project_filament(db, user_id=user_id, ref=catalog_ref)
+            await db.commit()
+            return JSONResponse(content=payload)
     try:
         ref = await create_import_ref(db, user_id=user_id, kind=kind, payload=data,
             source_namespace="spoolman", external_id=external_id)
