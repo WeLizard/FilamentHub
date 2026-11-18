@@ -96,6 +96,8 @@ export interface FeedAdapter {
   capabilities: FeedAdapterCapability[];
   /** This provider has an implemented Edge setup path, not merely read capability. */
   supportsEdge?: boolean;
+  /** Through OrcaSlicer this provider links by a pairing code right after the card is saved. */
+  orcaBridge?: boolean;
   edgeKinds?: string[];
   /** Whether silence between provider requests is expected. */
   contactMode?: DeviceContactMode;

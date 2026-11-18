@@ -477,14 +477,30 @@ describe('PrinterSetupWizard', () => {
     fireEvent.focus(screen.getByLabelText('printerSetup.model'));
     fireEvent.click(await screen.findByRole('button', { name: 'Flashforge Creator 5 Pro' }));
     fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+    // In a browser the plugin cannot link the printer, so Edge is the route offered first.
     expect(screen.getByText('printerSetup.routes.edge')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByText('printerSetup.routes.orca')).not.toBeInTheDocument();
+    expect(screen.getByText('printerSetup.routes.orca')).toHaveAttribute('aria-pressed', 'false');
     savePrinter(); await screen.findByText('edge-setup');
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
       provider: 'flashforge', kind: 'mmu',
       slots: [0, 1, 2, 3].map((provider_index) => ({ provider_index, kind: 'slot' })),
     }) }));
     expect(mocks.plugin).not.toHaveBeenCalled();
+  });
+
+  it('links a Flashforge printer found in OrcaSlicer through the plugin right after saving', async () => {
+    mocks.embed = true;
+    mocks.plugin.mockResolvedValueOnce({ ok: true, candidates: [
+      { connectionRef: 'ff_ref', label: 'Creator 5 Pro 0.4', physicalPrinterId: null, provider: 'flashforge', source: 'profile' },
+    ] });
+    mocks.create.mockResolvedValueOnce({ ...saved, material_systems: [{ id: 9, provider: 'flashforge', kind: 'mmu', slots: [] }] });
+    show(); fireEvent.click(await screen.findByText('Creator 5 Pro 0.4'));
+    expect(await screen.findByText('printerSetup.routes.orca')).toHaveAttribute('aria-pressed', 'true');
+    savePrinter(); await screen.findByTestId('adapter-setup');
+    // The card that pairs the printer receives the local reference chosen above.
+    expect(mocks.adapterSetup).toHaveBeenCalledWith(expect.objectContaining({
+      autoConnect: true, connectionRef: 'ff_ref',
+    }));
   });
 
   it('connects OctoPrint natively and keeps the feed layout independent of the connection', async () => {

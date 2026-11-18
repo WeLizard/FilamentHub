@@ -50,6 +50,9 @@ BAMBU_PROVIDER = "bambu"
 BAMBU_TRANSPORT: PrinterBridgeTransport = "orca_plugin_lan"
 EDGE_TRANSPORT: PrinterBridgeTransport = "edge_agent"
 SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
+# Providers whose OrcaSlicer plugin path reports through a paired bridge. Happy
+# Hare reaches the plugin through its own Moonraker contract instead.
+ORCA_BRIDGE_PROVIDERS = frozenset({BAMBU_PROVIDER, "flashforge"})
 BATCH_RECEIPT_KIND = "usage_batch"
 PRINT_JOB_SOURCE = "printer_bridge"
 
@@ -132,7 +135,7 @@ async def _require_bridge_system(
     )
     if system is None:
         raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
-    if transport == BAMBU_TRANSPORT and system.provider != BAMBU_PROVIDER:
+    if transport == BAMBU_TRANSPORT and system.provider not in ORCA_BRIDGE_PROVIDERS:
         raise_error(409, ERR_PRINTER_BRIDGE_WRONG_PROVIDER)
     return system
 

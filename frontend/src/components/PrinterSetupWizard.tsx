@@ -16,6 +16,7 @@ import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { TopologyEditor } from './presetSlots/TopologyEditor';
 import { initialTopology, topologyFromSystem, topologyPayload } from './presetSlots/adapters/topology';
 import type { TopologySelection } from './presetSlots/adapters/topology';
+import type { FeedAdapter } from './presetSlots/adapters/types';
 import type { Printer as CatalogPrinter } from '../types/api';
 import { EdgeConnectionSetup } from './presetSlots/EdgeConnectionSetup';
 import { LinkInstructions } from './presetSlots/LinkInstructions';
@@ -39,6 +40,16 @@ export interface PrinterSetupWizardProps {
 
 const control = 'w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white';
 const button = 'rounded-lg border border-white/20 px-3 py-2 text-sm text-white hover:bg-white/10 disabled:opacity-40';
+
+/** The route offered first. A provider paired by the plugin connects through
+ *  OrcaSlicer only from inside it; elsewhere its other route is the usable one. */
+function defaultRouteFor(adapter?: FeedAdapter): PrinterSetupRoute {
+  const methods = adapter?.onboarding?.methods ?? [];
+  if (adapter?.orcaBridge && methods.length > 1 && !isPluginEmbed()) {
+    return methods.find((method) => method !== 'orca') ?? 'manual';
+  }
+  return methods[0] ?? 'manual';
+}
 
 export function PrinterSetupWizard({
   onClose, initialName = '', initialPrinterId = null, initialProfileIds = [], physicalPrinter,
@@ -138,7 +149,7 @@ export function PrinterSetupWizard({
       const suggested = setupAdaptersFor(modelDetail).find((item) => item.onboarding?.matchesModel?.(modelDetail));
       if (suggested) {
         setProvider(suggested.id); setConnectionChosen(true);
-        if (!manualSettings) setMode(suggested.onboarding?.methods[0] ?? 'manual');
+        if (!manualSettings) setMode(defaultRouteFor(suggested));
         setTopology(initialTopology(setupTopologiesFor(suggested.id, false)[0]));
       }
     }
@@ -218,7 +229,7 @@ export function PrinterSetupWizard({
     setProvider(found.id); setConnectionChosen(true);
     setTopology(topologyFromSystem(setupTopologiesFor(found.id, false), existingSystem));
     setMode(found.onboarding?.orcaProbe ? (isPluginEmbed() ? 'orca' : found.onboarding.methods.includes('native') ? 'native' : 'manual')
-      : found.onboarding?.methods[0] ?? 'manual');
+      : defaultRouteFor(found));
   }, [targetId, selected, bindings, existingSystem, pending, saved, manualSettings]);
 
   useEffect(() => {
@@ -419,7 +430,7 @@ export function PrinterSetupWizard({
     const nextProvider = suggested?.id ?? 'manual';
     changeProvider(nextProvider, Boolean(connectionRef)
       && connectionAdapterFor(nextProvider).id === connectionAdapter.id);
-    if (suggested && !manualSettings) setMode(suggested.onboarding?.methods[0] ?? 'manual');
+    if (suggested && !manualSettings) setMode(defaultRouteFor(suggested));
     setConnectionChosen(Boolean(suggested));
     if (model && (!name.trim() || name === selectedModel?.name)) setName(model.name);
   };
@@ -449,7 +460,7 @@ export function PrinterSetupWizard({
     }
     setProbe(null);
     setConnectionRef(candidate.connectionRef);
-    setMode(discoveredAdapter.onboarding.methods[0] ?? 'manual');
+    setMode(defaultRouteFor(discoveredAdapter));
   };
   useEffect(() => {
     if (step !== 'setup' || customized.current || pending || saved || probe || !pluginReady || busyRef.current || exactCandidates.length !== 1
@@ -501,7 +512,7 @@ export function PrinterSetupWizard({
   </div>;
   const submitLabel = pending
     ? 'printerSetup.resumeButton'
-    : provider === 'bambu' && mode === 'orca'
+    : adapter.orcaBridge && mode === 'orca'
       ? 'printerSetup.saveAndConnect'
       : targetId ? 'printerSetup.connect' : 'printerSetup.save';
 
@@ -528,8 +539,8 @@ export function PrinterSetupWizard({
                 gates: [],
                 spools: [],
                 linkConfirmed: current.reports_feed,
-                autoConnect: Boolean(saved && mode === 'orca' && system.provider === 'bambu'),
-                connectionRef: saved && mode === 'orca' && system.provider === 'bambu' ? connectionRef : undefined,
+                autoConnect: Boolean(saved && mode === 'orca' && savedAdapter.orcaBridge),
+                connectionRef: saved && mode === 'orca' && savedAdapter.orcaBridge ? connectionRef : undefined,
                 onConnectionObserved: () => setObserved(true),
               })}
             {savedAdapter.link && mode !== 'manual' && <div className="space-y-3 rounded-lg border border-white/10 p-3">
@@ -653,7 +664,7 @@ export function PrinterSetupWizard({
                         if (!keepFeed) changeProvider(String(value));
                         setConnectionChosen(true);
                         if (!keepFeed && existingSystem && value !== existingSystem.provider) { setEditTopology(true); setTopologyBase(existingSystem); }
-                        if (!keepFeed || !connectionChosen) setMode(feedAdapterFor(keepFeed ? provider : String(value)).onboarding?.methods[0] ?? 'manual'); }} />
+                        if (!keepFeed || !connectionChosen) setMode(defaultRouteFor(feedAdapterFor(keepFeed ? provider : String(value)))); }} />
                     {selectedModel && !otherConnection && <button type="button" className="text-xs text-gray-400 underline"
                       onClick={() => setOtherConnection(true)}>{t('printerSetup.otherConnection')}</button>}
                   </>}

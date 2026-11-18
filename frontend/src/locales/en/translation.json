@@ -169,7 +169,7 @@
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
-      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; it does not track usage."
+      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; it does not track usage."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -8526,6 +8526,30 @@
         "colorAllgates": "allgates — displays every gate color, including empty gates",
         "colorOff": "off — colors are disabled in the printer interface",
         "next": "After creating the system, copy the generated [spoolman] block into moonraker.conf and restart Moonraker."
+      }
+    },
+    "flashforge": {
+      "title": "Flashforge through OrcaSlicer",
+      "description": "The plugin takes the address, serial number and check code from this printer's connection settings in OrcaSlicer. Enable LAN mode on the printer and fill those fields in OrcaSlicer.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several Flashforge printers. Choose this one:",
+      "onDemand": "Data refreshes on connect, when this card opens in OrcaSlicer and on sync. Connect FH Edge for continuous monitoring.",
+      "localOnly": "The address, serial number and check code stay in OrcaSlicer and are never sent to FilamentHub.",
+      "result": {
+        "notFound": "OrcaSlicer has no Flashforge printer. Open the printer's connection settings in OrcaSlicer, choose the Flashforge host type and enter the address.",
+        "credentials": "The serial number or check code is missing in the printer's connection settings in OrcaSlicer.",
+        "auth": "The printer rejected the serial number or check code. Compare them with the printer's network screen.",
+        "lan_mode": "LAN mode is off on the printer. Enable it in the printer's network settings.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on and in the same network.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check its firmware and LAN mode.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
       }
     },
     "bambu": {

@@ -406,5 +406,6 @@ export const bambuAdapter: FeedAdapter = {
   },
   renderCreateHelp: () => <BambuCreateHelp />,
   renderActions: (context) => <BambuMaterialActions {...context} />,
+  orcaBridge: true,
   renderSetup: (context) => <BambuSetup {...context} />,
 };

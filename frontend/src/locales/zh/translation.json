@@ -169,7 +169,7 @@
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
       "flashforge": "闪铸（5M、AD5X、Creator 5）",
-      "flashforgeHint": "通过 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；不统计用量。"
+      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；不统计用量。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -8504,6 +8504,30 @@
         "colorAllgates": "allgates — 显示所有槽位颜色，包括空槽位",
         "colorOff": "off — 在打印机界面中禁用颜色",
         "next": "创建系统后，将生成的 [spoolman] 配置块复制到 moonraker.conf 并重启 Moonraker。"
+      }
+    },
+    "flashforge": {
+      "title": "通过 OrcaSlicer 连接闪铸",
+      "description": "插件会从 OrcaSlicer 中该打印机的连接设置读取地址、序列号和校验码。请在打印机上启用局域网模式，并在 OrcaSlicer 中填写这些字段。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台闪铸打印机，请选择：",
+      "onDemand": "数据会在连接时、在 OrcaSlicer 中打开此卡片时以及同步时刷新。如需持续监控，请连接 FH Edge。",
+      "localOnly": "地址、序列号和校验码保留在 OrcaSlicer 中，不会发送到 FilamentHub。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有闪铸打印机。请在 OrcaSlicer 中打开打印机连接设置，选择 Flashforge 主机类型并填写地址。",
+        "credentials": "OrcaSlicer 的打印机连接设置中缺少序列号或校验码。",
+        "auth": "打印机拒绝了序列号或校验码。请与打印机网络界面核对。",
+        "lan_mode": "打印机未启用局域网模式。请在打印机网络设置中启用。",
+        "unreachable": "打印机未在 OrcaSlicer 中的地址上响应。请确认其已开机并处于同一网络。",
+        "permission": "OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重试。",
+        "linked": "此打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub。请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机返回了意外的响应。请检查固件和局域网模式。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
       }
     },
     "bambu": {
