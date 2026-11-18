@@ -1,0 +1,50 @@
+{
+  "printer": {
+    "state": "printing",
+    "job_name": "bracket.3mf",
+    "progress_percent": 42,
+    "remaining_seconds": 1820,
+    "current_layer": 42,
+    "total_layers": 120,
+    "nozzle_temperature": 219.6,
+    "nozzle_target_temperature": 220.0,
+    "bed_temperature": 59.8,
+    "bed_target_temperature": 60.0,
+    "chamber_temperature": 38.2
+  },
+  "slots": [
+    {
+      "provider_index": 0,
+      "label": "Slot 1",
+      "kind": "slot",
+      "present": true,
+      "spool_identity_known": false,
+      "material": "PLA",
+      "color_hex": "4CAAF8"
+    },
+    {
+      "provider_index": 1,
+      "label": "Slot 2",
+      "kind": "slot",
+      "present": true,
+      "spool_identity_known": false,
+      "material": "PETG",
+      "color_hex": "FFFFFF"
+    },
+    {
+      "provider_index": 2,
+      "label": "Slot 3",
+      "kind": "slot",
+      "present": false,
+      "spool_identity_known": false
+    },
+    {
+      "provider_index": 3,
+      "label": "Slot 4",
+      "kind": "slot",
+      "present": true,
+      "spool_identity_known": false
+    }
+  ],
+  "slot_topology_complete": true
+}

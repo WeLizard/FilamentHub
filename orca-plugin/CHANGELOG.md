@@ -2,6 +2,12 @@
 
 Newest first. The numbered entry matching the plugin version is used for release notes.
 
+## 0.2.10
+- Flashforge Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro: the plugin reads the printer over your network and shows its state and filament in the printer's material system on FilamentHub. For the AD5X and Creator 5 that is the four material-station slots: which hold filament, and the material and colour set on the printer. For the Adventurer 5M series it is the material set on the printer.
+- Nothing has to be typed again: the plugin uses the address, serial number and check code already saved in the printer's connection settings in OrcaSlicer. They stay in OrcaSlicer and are not sent to FilamentHub. Enable LAN mode on the printer first.
+- Flashforge data refreshes when you connect the printer, open its card in OrcaSlicer or run a sync. Filament usage is not counted, because these printers do not report it. Requires the matching website update.
+- Your FilamentHub sign-in and local printer keys are no longer passed along when a server answers with a redirect to a different address.
+
 ## 0.2.9
 - Recover can import a local filament preset again after you delete its copy on FilamentHub. Select it in Recover to bring it back as a draft. Existing presets keep their settings and automatic sync respects deletions. Requires the matching website update.
 - External links open in your default browser while FilamentHub stays on the current page in OrcaSlicer. This requires the matching website update.

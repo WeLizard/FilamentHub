@@ -46,6 +46,21 @@ def provider(http: FlashforgeHttp) -> FlashforgeProvider:
 
 
 class FlashforgeProviderTest(unittest.TestCase):
+    def test_reading_matches_the_fixture_shared_with_the_orca_plugin(self) -> None:
+        # The OrcaSlicer plugin reads the same API with its own code; both are
+        # held to this one expected result so the two readers cannot drift apart.
+        expected = json.loads(FIXTURE.with_name("detail_printing.expected.json").read_text())
+        snapshot = provider(FlashforgeHttp()).observe()
+
+        self.assertEqual(
+            {
+                "printer": snapshot.printer,
+                "slots": snapshot.slots,
+                "slot_topology_complete": snapshot.slot_topology_complete,
+            },
+            expected,
+        )
+
     def test_material_station_is_a_complete_four_slot_topology(self) -> None:
         http = FlashforgeHttp()
         snapshot = provider(http).observe()

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.9"
+# version = "0.2.10"
 #
 # # Informational metadata; runtime grants are declared with
 # # orca.request_permissions() during capability registration.
@@ -655,13 +655,14 @@ def push_native_notification(level_name, text, hyper_text=None, on_click=None):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.9"
+PLUGIN_VERSION = "0.2.10"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
     "printer-bundle-toggle-v1",
     "printer-recovery-v1",
     "bambu-lan-bridge",
+    "flashforge-lan-bridge",
     "profile-sync",
     "profile-sync-scopes-v1",
     "bambu-material-write",
@@ -1263,6 +1264,7 @@ def configure_plugin_storage():
     """
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
+    global FLASHFORGE_CONFIG_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
@@ -1335,6 +1337,7 @@ def configure_plugin_storage():
     AUTH_FILE = os.path.join(target_root, ".auth.json")
     BAMBU_CONFIG_FILE = os.path.join(target_root, ".fh_bambu.json")
     BAMBU_REVOKE_FILE = os.path.join(target_root, ".fh_bambu_revoke.json")
+    FLASHFORGE_CONFIG_FILE = os.path.join(target_root, ".fh_flashforge.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
@@ -1443,6 +1446,7 @@ def diagnostic_report_text():
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
+FLASHFORGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_flashforge.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 WORKSTATION_KEY_FILE = os.path.join(PLUGIN_DIR, ".fh_workstation_key.json")
 STOCK_ALERT_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_stock_alerts.json")
@@ -8437,6 +8441,14 @@ def _mqtt_read_packet(sock, deadline):
 
 
 def _resolved_bambu_address(host):
+    return _resolved_lan_address(
+        host, BAMBU_MQTT_PORT, "Bambu address must resolve inside the local network"
+    )
+
+
+def _resolved_lan_address(
+    host, port, error="Printer address must resolve inside the local network"
+):
     """Resolve once and return only a private/link-local LAN destination."""
     if not isinstance(host, str):
         raise ValueError("invalid LAN address")
@@ -8446,7 +8458,7 @@ def _resolved_bambu_address(host):
     with external_operation():
         addresses = socket.getaddrinfo(
             host,
-            BAMBU_MQTT_PORT,
+            port,
             type=socket.SOCK_STREAM,
             proto=socket.IPPROTO_TCP,
         )
@@ -8460,7 +8472,7 @@ def _resolved_bambu_address(host):
         )
         if allowed and not (address.is_multicast or address.is_unspecified):
             return family, socktype, proto, sockaddr
-    raise ValueError("Bambu address must resolve inside the local network")
+    raise ValueError(error)
 
 
 def _open_bambu_mqtt(host, access_code, timeout):
@@ -11119,6 +11131,481 @@ def stop_plugin_runtime():
     return True
 
 
+# --------------------------------------------------------------------------- #
+# Flashforge through OrcaSlicer's own printer connection
+# --------------------------------------------------------------------------- #
+# OrcaSlicer already stores a Flashforge printer's address, serial number and
+# check code in its connection settings. The plugin reads them from the host
+# for each observation, so it has no credential dialog and keeps none of them:
+# its private file holds only the FilamentHub bridge token, the serial number
+# that selects the Orca connection, and the account-scoped identity evidence.
+#
+# The printer is read when the person connects it, opens its card or syncs.
+# Continuous monitoring without OrcaSlicer is what FH Edge is for.
+# fh-bundle: filamenthub_flashforge
+from filamenthub_flashforge import (
+    FLASHFORGE_API_PORT,
+    FLASHFORGE_CAPABILITIES,
+    FLASHFORGE_HOST_TYPE,
+    FLASHFORGE_IDENTITY_KIND,
+    FLASHFORGE_PROVIDER,
+    flashforge_check_code,
+    flashforge_detail_body,
+    flashforge_detail_result,
+    flashforge_detail_url,
+    flashforge_host,
+    flashforge_printer,
+    flashforge_serial,
+    flashforge_slots,
+)
+# fh-bundle-end
+
+MAX_FLASHFORGE_BRIDGES = 32
+FLASHFORGE_READ_TIMEOUT = 8
+FLASHFORGE_MESSAGES = frozenset({"configure-flashforge", "flashforge-refresh"})
+_FLASHFORGE_CONFIG_LOCK = threading.RLock()
+
+
+def _snapshot_local_flashforge_connections():
+    """Copy Flashforge connections from Orca's user printer presets (UI thread).
+
+    The result stays in memory: it is never written by the plugin and never
+    sent to FilamentHub.
+    """
+    connections = []
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            host_type = _preset_scalar(_preset_config_value(preset, "host_type"))
+            if host_type.lower() != FLASHFORGE_HOST_TYPE:
+                continue
+            host = flashforge_host(_preset_scalar(_preset_config_value(preset, "print_host")))
+            if not host:
+                continue
+            connections.append({
+                "label": str(preset.name or "")[:200],
+                "host": host,
+                "serial": flashforge_serial(_preset_scalar(
+                    _preset_config_value(preset, "flashforge_serial_number")
+                )),
+                "check_code": flashforge_check_code(_preset_scalar(
+                    _preset_config_value(preset, "printhost_apikey")
+                )),
+            })
+    except Exception as exc:
+        fh_log("local Flashforge scan failed: %s" % type(exc).__name__)
+    return connections
+
+
+def flashforge_printers(connections, source_instance_id):
+    """Reduce Orca presets to distinct printers with an opaque local reference.
+
+    Several presets (nozzle variants) usually describe one printer; the serial
+    number tells them apart. The reference is a local hash, so the page can
+    name a choice without learning an address, a serial or a check code.
+    """
+    printers = {}
+    for connection in connections or []:
+        seed = connection["serial"] or "preset\0" + connection["label"]
+        ref = "ff_" + hashlib.sha256(
+            (source_instance_id + "\0" + seed).encode("utf-8")
+        ).hexdigest()[:32]
+        known = printers.get(ref)
+        if known is None or (not known["check_code"] and connection["check_code"]):
+            printers[ref] = dict(connection, connection_ref=ref)
+    return list(printers.values())
+
+
+def _load_flashforge_bindings():
+    try:
+        with open(FLASHFORGE_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_FLASHFORGE_BRIDGES:
+        return []
+    bindings = []
+    for item in items:
+        identity = item.get("device_identity") if isinstance(item, dict) else None
+        if not (
+            isinstance(item, dict)
+            and type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and item.get("serial")
+            and flashforge_serial(item.get("serial")) == item["serial"]
+            and isinstance(identity, dict)
+            and identity.get("kind") == FLASHFORGE_IDENTITY_KIND
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
+        ):
+            continue
+        bindings.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "bridge_token": item["bridge_token"],
+            "serial": item["serial"],
+            "device_identity": {"kind": identity["kind"], "token": identity["token"]},
+        })
+    return bindings
+
+
+def _save_flashforge_bindings(bindings):
+    write_json_atomic(
+        FLASHFORGE_CONFIG_FILE, {"version": 1, "printers": bindings}, mode=0o600
+    )
+
+
+def _forget_flashforge_binding(physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _FLASHFORGE_CONFIG_LOCK:
+        bindings = _load_flashforge_bindings()
+        kept = [
+            item for item in bindings
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(bindings):
+            _save_flashforge_bindings(kept)
+
+
+def _host_denied(exc):
+    """Whether OrcaSlicer's permission audit refused this operation."""
+    return isinstance(exc, PermissionError) or isinstance(
+        getattr(exc, "reason", None), PermissionError
+    )
+
+
+def read_flashforge_detail(connection):
+    """Read one printer's /detail; return ``(detail, failure)``.
+
+    The request goes only to a private or link-local address resolved once,
+    over plain HTTP because the firmware offers nothing else. ``failure`` is
+    ``"permission"`` when OrcaSlicer has not allowed the address yet.
+    """
+    try:
+        sockaddr = _resolved_lan_address(connection["host"], FLASHFORGE_API_PORT)[3]
+        request = _plugin_request(
+            flashforge_detail_url(sockaddr[0]),
+            data=json.dumps(flashforge_detail_body(
+                connection["serial"], connection["check_code"]
+            )).encode("utf-8"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+            },
+            method="POST",
+        )
+        with _urlopen_authorized(request, FLASHFORGE_READ_TIMEOUT) as response:
+            status = response.getcode()
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError:
+        return None, "invalid"
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None, "invalid"
+    return flashforge_detail_result(status, payload)
+
+
+def build_flashforge_bridge_snapshot(binding, source_instance_id, detail):
+    slots, complete = flashforge_slots(detail)
+    return {
+        "material_system_id": binding["material_system_id"],
+        "provider": FLASHFORGE_PROVIDER,
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": list(FLASHFORGE_CAPABILITIES),
+        "printer": flashforge_printer(detail),
+        "slots": slots,
+        "slot_topology_complete": complete,
+        "device_identity": binding["device_identity"],
+    }
+
+
+def _flashforge_report_code(status, body):
+    """Name FilamentHub's answer to a report in the terms the page explains."""
+    if status == 200:
+        return "ok"
+    if status == 401:
+        return "unpaired"
+    try:
+        detail = json.loads(body.decode("utf-8")).get("detail")
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        detail = None
+    if (
+        status == 409
+        and isinstance(detail, dict)
+        and detail.get("code") == "ERR_PRINTER_IDENTITY_CONFLICT"
+    ):
+        # The account already knows this serial number as another printer card.
+        return "linked"
+    return "server"
+
+
+def observe_flashforge_binding(binding, connections, source_instance_id):
+    """Read one linked printer and report it to FilamentHub; return a result code."""
+    connection = next(
+        (
+            item for item in connections or []
+            if item["serial"] == binding["serial"] and item["check_code"]
+        ),
+        None,
+    )
+    if connection is None:
+        detail, failure = None, "credentials"
+    else:
+        detail, failure = read_flashforge_detail(connection)
+    if detail is None:
+        if failure != "permission":
+            # The helper is alive; say that the printer did not answer it.
+            status, _body, _retry_after = http_post_bridge_json(
+                "/printer-bridge/heartbeat",
+                binding["bridge_token"],
+                {
+                    "material_system_id": binding["material_system_id"],
+                    "provider": FLASHFORGE_PROVIDER,
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": source_instance_id,
+                    "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "provider_reachable": False,
+                },
+            )
+            if status == 401:
+                _forget_flashforge_binding(
+                    binding["physical_printer_id"], binding["bridge_token"]
+                )
+                return "unpaired"
+        return failure
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
+    )
+    code = _flashforge_report_code(status, body)
+    if code == "unpaired":
+        _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+    return code
+
+
+def observe_flashforge_bindings(connections, physical_printer_id=None, material_system_id=None):
+    """Report every linked printer, or one; return ``{physical_printer_id: code}``."""
+    bindings = [
+        item for item in _load_flashforge_bindings()
+        if physical_printer_id is None or (
+            item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        )
+    ]
+    if not bindings:
+        return {}
+    source_instance_id = plugin_source_instance_id()
+    return {
+        binding["physical_printer_id"]: observe_flashforge_binding(
+            binding, connections, source_instance_id
+        )
+        for binding in bindings
+    }
+
+
+def configure_flashforge_bridge(
+    physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+):
+    """Link one Flashforge printer known to OrcaSlicer; return the page result."""
+    source_instance_id = plugin_source_instance_id()
+    printers = flashforge_printers(connections, source_instance_id)
+    if not printers:
+        return {"ok": False, "code": "notFound"}
+    chosen = [item for item in printers if item["connection_ref"] == connection_ref]
+    if not chosen and len(printers) == 1 and not connection_ref:
+        chosen = printers
+    if len(chosen) != 1:
+        return {
+            "ok": False,
+            "code": "choose",
+            "candidates": [
+                {"connectionRef": item["connection_ref"], "label": item["label"]}
+                for item in printers[:MAX_FLASHFORGE_BRIDGES]
+            ],
+        }
+    connection = chosen[0]
+    if not connection["serial"] or not connection["check_code"]:
+        return {"ok": False, "code": "credentials"}
+    with _FLASHFORGE_CONFIG_LOCK:
+        if any(
+            item["serial"] == connection["serial"]
+            and item["physical_printer_id"] != physical_printer_id
+            for item in _load_flashforge_bindings()
+        ):
+            return {"ok": False, "code": "linked"}
+    detail, failure = read_flashforge_detail(connection)
+    if detail is None:
+        return {"ok": False, "code": failure}
+    pair_status, pair_body = http_post_json(
+        "/printer-bridge/pair",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": FLASHFORGE_PROVIDER,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            "capabilities": list(FLASHFORGE_CAPABILITIES),
+        },
+    )
+    try:
+        paired = json.loads(pair_body.decode("utf-8")) if pair_status == 200 else None
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        paired = None
+    bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else None
+    if not _valid_fresh_bridge_token(bridge_token):
+        return {"ok": False, "code": "pairing"}
+    evidence = _printer_evidence_token(
+        paired.get("printer_discovery_key"),
+        "device",
+        FLASHFORGE_IDENTITY_KIND + "\0" + connection["serial"],
+    )
+    if (
+        paired.get("physical_printer_id") != physical_printer_id
+        or paired.get("material_system_id") != material_system_id
+        or evidence is None
+    ):
+        # The code belonged to another printer card: give the credential back.
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    binding = {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "bridge_token": bridge_token,
+        "serial": connection["serial"],
+        "device_identity": {"kind": FLASHFORGE_IDENTITY_KIND, "token": evidence},
+    }
+    try:
+        with _FLASHFORGE_CONFIG_LOCK:
+            bindings = [
+                item for item in _load_flashforge_bindings()
+                if item["physical_printer_id"] != physical_printer_id
+            ]
+            if len(bindings) >= MAX_FLASHFORGE_BRIDGES:
+                raise ValueError("too many Flashforge links")
+            _save_flashforge_bindings(bindings + [binding])
+    except (OSError, ValueError):
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        bridge_token,
+        build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
+    )
+    code = _flashforge_report_code(status, body)
+    if code == "linked":
+        # FilamentHub will never accept this printer for this card: undo the link.
+        _forget_flashforge_binding(physical_printer_id, bridge_token)
+        http_delete_bridge("/printer-bridge/connection", bridge_token)
+        return {"ok": False, "code": "linked"}
+    # The link itself is saved; a failed first report is retried on refresh.
+    return {"ok": True, "code": code}
+
+
+def _positive_ids(msg):
+    physical_printer_id = msg.get("physicalPrinterId")
+    material_system_id = msg.get("materialSystemId")
+    if (
+        type(physical_printer_id) is int and physical_printer_id > 0
+        and type(material_system_id) is int and material_system_id > 0
+    ):
+        return physical_printer_id, material_system_id
+    return None
+
+
+def handle_flashforge_message(catalog, msg):
+    """Run one page request about a Flashforge printer (called on the UI thread)."""
+    msg_type = msg.get("type")
+    request_id = msg.get("requestId")
+    ids = _positive_ids(msg)
+    if not (isinstance(request_id, str) and 0 < len(request_id) <= 100 and ids):
+        return
+    # Host state is copied here, on the UI thread; the worker only does I/O.
+    connections = _snapshot_local_flashforge_connections()
+    if msg_type == "configure-flashforge":
+        pairing_code = msg.get("pairingCode")
+        connection_ref = msg.get("connectionRef") or ""
+        if not (
+            isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
+            and isinstance(connection_ref, str) and len(connection_ref) <= 120
+        ):
+            return
+
+        def job():
+            try:
+                result = configure_flashforge_bridge(
+                    ids[0], ids[1], pairing_code, connection_ref, connections
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Flashforge setup failed: %s" % type(exc).__name__)
+                result = {"ok": False, "code": "invalid"}
+            catalog._deliver("flashforge-setup-result", requestId=request_id, result=result)
+    else:
+        def job():
+            try:
+                code = observe_flashforge_bindings(connections, ids[0], ids[1]).get(
+                    ids[0], "unpaired"
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Flashforge refresh failed: %s" % type(exc).__name__)
+                code = "invalid"
+            catalog._deliver(
+                "flashforge-refresh-result",
+                requestId=request_id,
+                result={"ok": code == "ok", "code": code},
+            )
+
+    if BACKGROUND_WORKER.submit(job) is False:
+        catalog._deliver(
+            "flashforge-setup-result" if msg_type == "configure-flashforge"
+            else "flashforge-refresh-result",
+            requestId=request_id,
+            result={"ok": False, "code": "unavailable"},
+        )
+
+
+def refresh_flashforge_bindings_after_sync():
+    """Re-read linked Flashforge printers alongside a page-driven sync (UI thread)."""
+    if not _load_flashforge_bindings():
+        return
+    connections = _snapshot_local_flashforge_connections()
+
+    def job():
+        try:
+            observe_flashforge_bindings(connections)
+        except PluginLifecycleStopped:
+            raise
+        except Exception as exc:
+            fh_log("Flashforge refresh failed: %s" % type(exc).__name__)
+
+    BACKGROUND_WORKER.submit(job)
+
+
 class _PluginRuntimeLifecycleMixin:
     """Use the common lifecycle supplied by every current capability base."""
 
@@ -13468,6 +13955,14 @@ class FilamentHubCatalog(
                     "physicalPrinterId": item.get("physical_printer_id"), "provider": item["provider"],
                     "source": item["source"], "printerModel": item.get("printer_model", ""),
                 } for item in discovery["items"] if item["provider"] != "moonraker" and item["connection_ref"] not in detached)
+                if msg.get("flashforge"):
+                    linked = {item["serial"]: item["physical_printer_id"]
+                              for item in _load_flashforge_bindings()}
+                    candidates.extend({
+                        "connectionRef": item["connection_ref"], "label": item["label"] or "Flashforge",
+                        "physicalPrinterId": linked.get(item["serial"]),
+                        "provider": "flashforge", "source": "profile",
+                    } for item in flashforge_printers(msg["flashforge"], plugin_source_instance_id()))
                 finish(ok=True, candidates=candidates[:256], discoveryComplete=discovery["complete"])
                 return
             pending = {
@@ -13686,8 +14181,13 @@ class FilamentHubCatalog(
             local = observe_local_moonraker_connections(observations)
             msg = dict(msg)
             msg["labels"] = {item.get("connection_ref"): item.get("preset_name") for item in observations}
+            msg["flashforge"] = (
+                _snapshot_local_flashforge_connections() if msg.get("operation") == "list" else []
+            )
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
+        elif msg_type in FLASHFORGE_MESSAGES and direct_message:
+            handle_flashforge_message(self, msg)
         elif msg_type == "read-diagnostics" and plugin_setting("developer_mode"):
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=diagnostic_report_text())
@@ -14067,6 +14567,7 @@ class FilamentHubCatalog(
                 operation_id=operation_id,
                 trigger="manual",
             )
+            refresh_flashforge_bindings_after_sync()
         elif msg_type in {
             "happy-hare-preview",
             "happy-hare-apply",

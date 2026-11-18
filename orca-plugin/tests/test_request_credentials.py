@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 import re
-from email.message import Message
 import urllib.error
 import urllib.request
+from email.message import Message
 
 from .filamenthub_plugin_test_support import PLUGIN_PATH
 

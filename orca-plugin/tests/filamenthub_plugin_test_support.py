@@ -45,6 +45,11 @@ BUILD_PATH = PLUGIN_ROOT / "build_package.py"
 
 LOCALE_VALIDATOR_PATH = PLUGIN_ROOT / "validate_locales.py"
 
+# The plugin source imports its adapter modules from its own directory, the way
+# OrcaSlicer's loader puts a plugin's folder on sys.path before importing it.
+if str(PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT))
+
 # --------------------------------------------------------------------------- #
 # Strict fake of the official `orca.host` surface
 # --------------------------------------------------------------------------- #

@@ -197,7 +197,7 @@ def default_release_output_root() -> Path:
 
 def _source_with_embedded_locales(source: str) -> str:
     """Embed the authoritative JSON catalogs into one installable Python file."""
-    result = source.replace("\r\n", "\n").replace("\r", "\n")
+    result = _source_with_bundled_modules(source)
     if result.count(EMBEDDED_UI_COPY_TOKEN) != 1:
         raise ValueError("embedded locale marker is missing or duplicated")
     catalogs = {}
@@ -221,6 +221,129 @@ def _source_with_embedded_locales(source: str) -> str:
         1,
     )
     return result
+
+
+# A provider adapter is developed as its own source file and imported by the
+# plugin inside a marked block:
+#
+#     # fh-bundle: filamenthub_flashforge
+#     from filamenthub_flashforge import (flashforge_slots, ...)
+#     # fh-bundle-end
+#
+# OrcaSlicer installs a local plugin as one file, so the build replaces each
+# block with the adapter's source. The adapter must then behave the same as a
+# module and as part of the plugin namespace: definitions only, and no name
+# that the plugin or another adapter already binds to something else.
+BUNDLE_BLOCK = re.compile(
+    r"^# fh-bundle: (?P<name>[a-z_][a-z0-9_]*)\n(?P<imports>.*?)^# fh-bundle-end\n",
+    re.MULTILINE | re.DOTALL,
+)
+BUNDLE_MARKER = "# fh-bundle"
+
+
+def _module_bindings(module: ast.Module, label: str) -> tuple[set[str], dict[str, str]]:
+    """Return the names a module defines and the names its imports bind."""
+    defined: set[str] = set()
+    imported: dict[str, str] = {}
+    for node in module.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for item in ast.walk(target):
+                    if isinstance(item, ast.Name):
+                        defined.add(item.id)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split(".", 1)[0]
+                imported[bound] = alias.name if alias.asname else bound
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                raise ValueError(f"{label}: relative imports cannot be bundled")
+            for alias in node.names:
+                imported[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+    return defined, imported
+
+
+def _bundled_module_source(
+    name: str,
+    import_block: str,
+    root: Path,
+    taken_names: set[str],
+    taken_imports: dict[str, str],
+) -> str:
+    """Validate one adapter module and return the text that replaces its block."""
+    label = f"{name}.py"
+    try:
+        request = ast.parse(import_block).body
+    except SyntaxError as exc:
+        raise ValueError(f"{label}: the bundle block is not valid Python") from exc
+    if (
+        len(request) != 1
+        or not isinstance(request[0], ast.ImportFrom)
+        or request[0].module != name
+        or request[0].level
+        or any(alias.asname or alias.name == "*" for alias in request[0].names)
+    ):
+        raise ValueError(f"{label}: the bundle block must be one 'from {name} import ...'")
+    requested = {alias.name for alias in request[0].names}
+
+    source = (root / label).read_text(encoding="utf-8")
+    source = source.replace("\r\n", "\n").replace("\r", "\n")
+    module = ast.parse(source, filename=label)
+    for index, node in enumerate(module.body):
+        docstring = (
+            index == 0
+            and isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        )
+        if not docstring and not isinstance(node, (
+            ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef, ast.Assign, ast.AnnAssign,
+        )):
+            raise ValueError(f"{label}: line {node.lineno} is not a plain definition")
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            # A future import would change how the surrounding plugin compiles.
+            raise ValueError(f"{label}: __future__ imports cannot be bundled")
+    defined, imported = _module_bindings(module, label)
+    if imported.keys() & {"orca", "filamenthub_plugin"}:
+        raise ValueError(f"{label}: an adapter module cannot import the host or the plugin")
+    missing = requested - defined
+    if missing:
+        raise ValueError(f"{label}: does not define {sorted(missing)}")
+    clashes = defined & (taken_names | taken_imports.keys())
+    clashes |= imported.keys() & taken_names
+    clashes |= {
+        bound for bound, target in imported.items()
+        if taken_imports.get(bound, target) != target
+    }
+    if clashes:
+        raise ValueError(f"{label}: names already used by the plugin: {sorted(clashes)}")
+    taken_names |= defined
+    taken_imports.update(imported)
+    return (
+        f"# ---- bundled from {label} ----\n"
+        f"{source.rstrip()}\n"
+        f"# ---- end of {label} ----\n"
+    )
+
+
+def _source_with_bundled_modules(source: str, root: Path = ROOT) -> str:
+    """Merge every adapter module into the one installable plugin file."""
+    result = source.replace("\r\n", "\n").replace("\r", "\n")
+    remainder = BUNDLE_BLOCK.sub("", result)
+    if BUNDLE_MARKER in remainder:
+        raise ValueError("unterminated or malformed fh-bundle block")
+    taken_names, taken_imports = _module_bindings(
+        ast.parse(remainder, filename="filamenthub_plugin.py"), "filamenthub_plugin.py"
+    )
+    return BUNDLE_BLOCK.sub(
+        lambda match: _bundled_module_source(
+            match["name"], match["imports"], root, taken_names, taken_imports
+        ),
+        result,
+    )
 
 
 # OrcaSlicer lists plugins by this header name, so the dev build says so there.

@@ -184,6 +184,50 @@ not expose pause, temperature, motion, AMS movement or arbitrary printer
 commands. Exact FilamentHub spool identity remains in FilamentHub and is never
 written into Bambu firmware.
 
+### Flashforge through OrcaSlicer's own connection
+
+OrcaSlicer already keeps a Flashforge printer's address, serial number and
+check code in the printer's connection settings (`print_host`,
+`flashforge_serial_number`, `printhost_apikey`). The plugin reads them through
+the host preset API when it needs the printer, so this adapter has no
+credential dialog and stores none of them. Its private `.fh_flashforge.json`
+holds only the FilamentHub bridge token, the serial number that selects the
+OrcaSlicer connection, and the account-scoped identity evidence.
+
+- Supported: Adventurer 5M / 5M Pro (firmware 2.x+), AD5X and Creator 5 / 5 Pro
+  on stock firmware in LAN mode (`POST http://<printer>:8898/detail`). Older
+  models speak a different TCP protocol without material data.
+- The connector claims `read` and `presence` only. The printer reports no
+  per-tool usage and no confirmed active tool, so spools are never debited.
+- The request goes only to a private or link-local address, resolved once.
+  The firmware offers plain HTTP only; the check code never leaves the LAN.
+- The printer is read when the person connects it, opens its card or syncs.
+  There is no polling thread; FH Edge is the route for continuous observation.
+- The page sends `configure-flashforge` / `flashforge-refresh` with FilamentHub
+  ids, the one-time pairing code and an optional opaque local reference, and
+  receives a result code. It never receives an address, serial or check code.
+
+### Adapter modules
+
+The installable plugin is one file, because OrcaSlicer installs a local plugin
+from a single `.py` or a wheel with one entry module. Provider adapters are
+still developed as separate source files next to `filamenthub_plugin.py`
+(currently `filamenthub_flashforge.py`). The plugin imports them inside a
+marked block:
+
+```python
+# fh-bundle: filamenthub_flashforge
+from filamenthub_flashforge import (flashforge_slots, ...)
+# fh-bundle-end
+```
+
+`build_package.py` replaces each block with the module's source. To behave the
+same as a module and as part of the plugin namespace, an adapter module holds
+definitions only (no I/O, no module state, no import of the plugin or `orca`)
+and may not bind a name the plugin already uses; the build refuses anything
+else. Plugin glue that needs the host, storage or the worker stays in
+`filamenthub_plugin.py`.
+
 ### Frontend embed route (in this repo)
 
 - `App.tsx` — routes `/embed` and `/embed/catalog` render the catalog directly
@@ -213,7 +257,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.9"
+# version = "0.2.10"
 # network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 ```

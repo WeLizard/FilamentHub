@@ -1,5 +1,7 @@
 """Plugin package and release artifact contracts."""
 
+import pytest
+
 from .filamenthub_plugin_test_support import (
     base64,
     BUILD_PATH,
@@ -124,6 +126,9 @@ def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_mod
     assert "_EMBEDDED_UI_COPY = {}" not in source
     standalone_module = _load_module(dev_plugin, "filamenthub_dev_standalone_smoke")
     assert standalone_module.DEV_CONTOUR is True
+    # Adapter modules are merged into the one installable file, not imported.
+    assert "fh-bundle" not in source and "import filamenthub_" not in source
+    assert standalone_module.flashforge_slots.__module__ == standalone_module.__name__
     assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
     standalone_module._CACHED_UI_LANGUAGE = "ru"
     assert standalone_module.ui_text(
@@ -204,3 +209,29 @@ def test_release_bundle_metadata_covers_exact_wheel(plugin_module, tmp_path):
     assert checksum_path.read_text(encoding="utf-8") == (
         f"{expected_digest}  wheels/{wheel_path.name}\n"
     )
+
+def test_adapter_bundling_refuses_what_would_change_the_plugin(tmp_path):
+    builder = _load_module(BUILD_PATH, "filamenthub_bundle_rules_test")
+    plugin = (
+        "import re\n"
+        "TIMEOUT = 5\n"
+        "# fh-bundle: adapter\n"
+        "from adapter import read\n"
+        "# fh-bundle-end\n"
+    )
+
+    def bundle(adapter_source):
+        (tmp_path / "adapter.py").write_text(adapter_source, encoding="utf-8")
+        return builder._source_with_bundled_modules(plugin, root=tmp_path)
+
+    merged = bundle("import re\n\ndef read():\n    return re.escape('x')\n")
+    assert "def read():" in merged and "from adapter import" not in merged
+    for refused in (
+        "TIMEOUT = 9\n\ndef read():\n    return TIMEOUT\n",  # rebinds a plugin name
+        "import json as re\n\ndef read():\n    return re\n",  # rebinds a plugin import
+        "def other():\n    return 1\n",  # does not define what the plugin imports
+        "def read():\n    return 1\n\nread()\n",  # runs code at import time
+        "from __future__ import annotations\n\ndef read():\n    return 1\n",
+    ):
+        with pytest.raises(ValueError):
+            bundle(refused)
