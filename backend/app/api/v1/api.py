@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     crm,
     currencies,
     devices,
+    edge_nodes,
     downloads,
     email_communications,
     feedback,
@@ -74,6 +75,7 @@ api_router.include_router(devices.router)
 api_router.include_router(workstation_keys.router)
 api_router.include_router(physical_printers.router)
 api_router.include_router(printer_bridge.router)
+api_router.include_router(edge_nodes.router)
 api_router.include_router(printer_connections.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(brand_team.router)

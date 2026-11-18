@@ -35,6 +35,15 @@ def adapter_token_key(request: Request) -> str:
     return client_key(request)
 
 
+def edge_node_token_key(request: Request) -> str:
+    """Rate-limit one Edge node without storing or logging its secret."""
+    token = request.headers.get("X-FilamentHub-Edge-Token")
+    if token:
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return f"edge-node:{digest}"
+    return client_key(request)
+
+
 limiter = Limiter(
     key_func=client_key,
     storage_uri=settings.REDIS_URL,

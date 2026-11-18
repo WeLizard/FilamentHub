@@ -92,6 +92,7 @@ from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
+from app.models.edge_node import EdgeNode, EdgeNodeCredential, EdgeNodePairing
 from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.models.printer_bridge_observation import (
     MaterialSlotObservation,
@@ -228,6 +229,9 @@ __all__ = [
     "PhysicalPrinterConnector",
     "MaterialSlotObservation",
     "PhysicalPrinterStatusObservation",
+    "EdgeNode",
+    "EdgeNodeCredential",
+    "EdgeNodePairing",
     "PrinterBridgeCredential",
     "PrinterBridgeReceipt",
     "Notification",
