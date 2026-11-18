@@ -24,17 +24,17 @@ def _socket() -> Mock:
 async def test_event_is_published_for_all_workers_not_delivered_twice_locally():
     manager = SpoolWebSocketManager()
     socket = _socket()
-    manager._connections[5] = {socket}
+    manager._connections[5] = {socket: ("spool",)}
     manager._redis = Mock(publish=AsyncMock(return_value=2))
 
     await manager.broadcast(5, {"type": "spool"})
 
     payload = json.loads(manager._redis.publish.await_args.args[1])
-    assert payload == {"user_id": 5, "event": {"type": "spool"}}
+    assert payload == {"user_id": 5, "event": {"type": "spool"}, "pool": ["spool"]}
     socket.send_json.assert_not_awaited()
 
     # What another worker published arrives through the listener path.
-    await manager._deliver(payload["user_id"], payload["event"])
+    await manager._deliver(payload["user_id"], payload["event"], tuple(payload["pool"]))
     socket.send_json.assert_awaited_once_with({"type": "spool"})
 
 
@@ -43,7 +43,7 @@ async def test_event_is_published_for_all_workers_not_delivered_twice_locally():
 async def test_event_still_reaches_this_workers_sockets_without_redis(outage):
     manager = SpoolWebSocketManager()
     socket = _socket()
-    manager._connections[5] = {socket}
+    manager._connections[5] = {socket: ("spool",)}
     publish = (
         AsyncMock(side_effect=RedisConnectionError("down"))
         if outage == "down"

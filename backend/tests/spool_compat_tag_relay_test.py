@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints import spool_compat
 from app.api.v1.endpoints.spool_compat_ws import SpoolWebSocketManager, pool_receives
+from app.models.brand import Brand
+from app.models.filament import Filament
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_spool import UserSpool
 from app.services import tag_scan_relay
 from tests.spool_compat_test import _seed_spool_context
 
@@ -152,3 +155,43 @@ async def test_manager_delivers_each_event_only_to_the_sockets_that_follow_it() 
     assert [event["resource"] for event in everything.received] == ["spool", "filament"]
     assert [event["resource"] for event in scans.received] == ["tag_scan"]
     assert stranger.received == []
+
+
+@pytest.mark.asyncio
+async def test_a_spool_edited_on_the_site_reaches_a_connected_printer(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+    _fresh_relay: list,
+) -> None:
+    brand = Brand(name="Relay Brand", slug="relay-brand", verified=True, active=True)
+    filament = Filament(
+        brand=brand, name="Relay PLA", slug="relay-pla", material_type="PLA", color_name="Black",
+        color_hex="#111111", diameter=1.75, density=1.24, spool_weight=1000.0, active=True,
+    )
+    spool = UserSpool(user_id=auth_user.id, filament=filament, initial_weight_g=1000.0, source="manual")
+    device = UserPrinterDevice(
+        user_id=auth_user.id, name="Voron", device_fingerprint="relay-fp", api_key="relay_device_api_key",
+    )
+    db_session.add_all([brand, filament, spool, device])
+    await db_session.commit()
+    spool_id = spool.id
+
+    # Nobody is listening: the edit costs no projection and announces nothing.
+    quiet = await auth_client.patch(f"/api/v1/spools/{spool_id}", json={"comment": "shelf A"})
+    assert quiet.status_code == 200 and _fresh_relay == []
+
+    device.ws_connected_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    edited = await auth_client.patch(f"/api/v1/spools/{spool_id}", json={"comment": "shelf B"})
+    removed = await auth_client.delete(f"/api/v1/spools/{spool_id}")
+
+    assert edited.status_code == 200 and removed.status_code == 204
+    assert [(event["resource"], event["type"], event["payload"]["id"], pool)
+            for _user, event, pool in _fresh_relay] == [
+        ("spool", "updated", spool_id, ("spool", str(spool_id))),
+        ("spool", "deleted", spool_id, ("spool", str(spool_id))),
+    ]
+    # The printer receives the same spool shape the Spoolman-compatible API serves.
+    assert _fresh_relay[0][1]["payload"]["comment"] == "shelf B"
+    assert _fresh_relay[0][0] == auth_user.id

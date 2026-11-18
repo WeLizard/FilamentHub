@@ -56,6 +56,14 @@ from app.services.spoolmanager_import_service import (
 from .spool_import_resolution import router as import_resolution_router
 
 router = APIRouter(prefix="/spools", tags=["spools"])
+
+
+async def _announce(db: AsyncSession, user_id: int, spool_id: int, event_type: str = "updated") -> None:
+    # Printers linked through the Spoolman-compatible API follow spool changes
+    # on a socket; an edit made on the site must reach them the same way.
+    from .spool_compat import announce_spool_change
+
+    await announce_spool_change(db, user_id=user_id, spool_id=spool_id, event_type=event_type)
 router.include_router(import_resolution_router)
 MAX_SPOOLMANAGER_CSV_BYTES = 2 * 1024 * 1024
 
@@ -149,7 +157,9 @@ async def add_spool(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SpoolResponse:
     """Add a new spool to the user's inventory."""
-    return await create_spool(db, current_user, payload)
+    created = await create_spool(db, current_user, payload)
+    await _announce(db, current_user.id, created.id, "added")
+    return created
 
 
 @router.post("/batch", response_model=SpoolBatchResponse, status_code=status.HTTP_201_CREATED)
@@ -265,7 +275,9 @@ async def edit_spool(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SpoolResponse:
     """Update spool details."""
-    return await update_spool(db, current_user, spool_id, payload)
+    updated = await update_spool(db, current_user, spool_id, payload)
+    await _announce(db, current_user.id, spool_id)
+    return updated
 
 
 @router.post("/{spool_id}/use", response_model=SpoolResponse)
@@ -276,7 +288,9 @@ async def record_usage(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SpoolResponse:
     """Record filament consumption from a spool."""
-    return await use_spool(db, current_user, spool_id, payload.delta_weight_g)
+    used = await use_spool(db, current_user, spool_id, payload.delta_weight_g)
+    await _announce(db, current_user.id, spool_id)
+    return used
 
 
 @router.delete("/{spool_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
@@ -287,6 +301,7 @@ async def remove_spool(
 ) -> None:
     """Delete a spool from inventory."""
     await delete_spool(db, current_user, spool_id)
+    await _announce(db, current_user.id, spool_id, "deleted")
 
 
 @router.get("/{spool_id}/usage", response_model=list[SpoolUsageEventResponse])
@@ -307,6 +322,8 @@ async def revert_spool_usage_event(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SpoolUsageEventResponse:
     """Give back what one consumption record took."""
-    return await revert_spool_usage(
+    reverted = await revert_spool_usage(
         db, user_id=current_user.id, spool_id=spool_id, event_id=event_id
     )
+    await _announce(db, current_user.id, spool_id)
+    return reverted

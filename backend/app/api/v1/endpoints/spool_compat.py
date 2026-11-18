@@ -915,6 +915,48 @@ async def _broadcast_spool_event(user_id: int, event_type: str, payload: dict) -
     await broadcast_change(user_id, "spool", event_type, payload)
 
 
+async def announce_spool_change(
+    db: AsyncSession, *, user_id: int, spool_id: int, event_type: str = "updated"
+) -> None:
+    """Tell the account's connected printers about a spool changed on the site.
+
+    A change made through this API is announced where it happens. A change
+    made on FilamentHub itself reaches the same sockets through here, so a
+    printer hears it without polling. It is best effort: nothing is projected
+    unless one of the account's printers holds a live socket, and a failure
+    never reaches the request that changed the spool.
+    """
+    try:
+        listening = await db.scalar(
+            select(UserPrinterDevice.id)
+            .where(
+                UserPrinterDevice.user_id == user_id,
+                UserPrinterDevice.ws_connected_at.is_not(None),
+                or_(
+                    UserPrinterDevice.ws_disconnected_at.is_(None),
+                    UserPrinterDevice.ws_disconnected_at < UserPrinterDevice.ws_connected_at,
+                ),
+            )
+            .limit(1)
+        )
+        if listening is None:
+            return
+        if event_type == "deleted":
+            await _broadcast_spool_event(user_id, "deleted", {"id": spool_id})
+            return
+        spool = await _get_user_spool(db, user_id, spool_id)
+        if spool is None:
+            return
+        location_map, gate_meta_map = await _build_location_map(db, user_id)
+        tag_map = await list_spool_tags(db, user_id=user_id, spool_ids=[spool_id])
+        payload = await _project_spool(db, spool, location_map, gate_meta_map, tag_map)
+        await db.commit()
+        await _broadcast_spool_event(user_id, event_type, payload)
+    except Exception:
+        await db.rollback()
+        logger.warning("Could not announce a spool change", exc_info=True)
+
+
 @router.get("/sync", response_model=SpoolCompatSyncResponse)
 async def sync_spool_compat() -> SpoolCompatSyncResponse:
     """Deprecated endpoint kept for backward compatibility."""
