@@ -401,6 +401,7 @@ async def _create(db: AsyncSession, *, user_id: int, kind: Kind, request: Reques
     payload = await (project_vendor(db, user_id=user_id, ref=ref) if kind == "vendor" else
                      project_filament(db, user_id=user_id, ref=ref))
     await db.commit()
+    await _legacy().broadcast_change(user_id, kind, "added", payload)
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=payload)
 
 
@@ -471,6 +472,7 @@ async def _patch(db: AsyncSession, *, user_id: int, kind: Kind, wire_id: int, re
     payload = await (project_vendor(db, user_id=user_id, ref=ref) if kind == "vendor" else
                      project_filament(db, user_id=user_id, ref=ref))
     await db.commit()
+    await _legacy().broadcast_change(user_id, kind, "updated", payload)
     return JSONResponse(content=payload)
 
 

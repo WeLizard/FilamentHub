@@ -91,9 +91,10 @@ from app.services.spool_usage_service import (
     spoolman_usage_checkpoint_meta,
 )
 from app.services.stock_alert_service import refresh_stock_alerts
+from app.services.tag_scan_relay import claim_broadcast, remember_reader
 
-from . import spool_compat_catalog, spool_compat_fields
-from .spool_compat_ws import spool_ws_manager
+from . import spool_compat_catalog, spool_compat_fields, spool_compat_tags
+from .spool_compat_ws import SPOOL_POOL, TAG_SCAN_POOL, Pool, spool_ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,10 @@ class TagScanBody(SpoolTagBody):
     reader_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
     name: str | None = Field(default=None, max_length=64)
     payload_b64: str | None = Field(default=None, max_length=8192)
+
+
+# The Spoolman release this API is held to. Clients gate features on it.
+SPOOLMAN_PARITY_VERSION = "0.27.1"
 
 
 def _err(code: int, message: str) -> JSONResponse:
@@ -888,16 +893,26 @@ async def _lock_material_target(db: AsyncSession, filament_id: int | None) -> Fi
         raise
 
 
+async def broadcast_change(user_id: int, resource: str, event_type: str, payload: dict) -> None:
+    """Announce one changed resource to the account's sockets that follow it."""
+    try:
+        await spool_ws_manager.broadcast(
+            user_id,
+            {
+                "type": event_type,
+                "resource": resource,
+                "date": _iso(datetime.now(timezone.utc)),
+                "payload": payload,
+            },
+            pool=(resource, str(payload.get("id", ""))),
+        )
+    except Exception:
+        # A listener that cannot be reached must never fail the request that changed the data.
+        logger.warning("Could not announce a %s change", resource, exc_info=True)
+
+
 async def _broadcast_spool_event(user_id: int, event_type: str, payload: dict) -> None:
-    await spool_ws_manager.broadcast(
-        user_id,
-        {
-            "type": event_type,
-            "resource": "spool",
-            "date": _iso(datetime.now(timezone.utc)),
-            "payload": payload,
-        },
-    )
+    await broadcast_change(user_id, "spool", event_type, payload)
 
 
 @router.get("/sync", response_model=SpoolCompatSyncResponse)
@@ -931,7 +946,7 @@ async def spool_compat_health_scoped(api_key: str) -> dict:
 async def spool_compat_info() -> dict:
     """Compatibility info endpoint."""
     return {
-        "version": "0.21.0",
+        "version": SPOOLMAN_PARITY_VERSION,
         "debug_mode": settings.DEBUG,
         "automatic_backups": False,
         "data_dir": "filamenthub",
@@ -973,10 +988,21 @@ async def spool_ws(websocket: WebSocket) -> None:
 @router.websocket("/{api_key}/v1/spool")
 @router.websocket("/{api_key}/api/v1/spool")
 async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
+    await serve_event_socket(websocket, api_key, SPOOL_POOL)
+
+
+async def serve_event_socket(
+    websocket: WebSocket, api_key: str, pool: Pool, *, holds_lease: bool = True
+) -> None:
+    """Serve one keyed event socket until its client leaves.
+
+    ``holds_lease`` marks the socket as the printer's own live link. A socket
+    that only watches, such as a tag scan viewer, does not hold one.
+    """
     async with AsyncSessionLocal() as db:
         user, device = await _resolve_user_and_device(db, api_key)
         device_id = device.id if device is not None else None
-        if user is not None and device is not None:
+        if user is not None and device is not None and holds_lease:
             # Fresh session: the only dirty objects are the device's contact
             # touch and the socket transition - persist them, unlike HTTP paths
             # this session has no get_db commit behind it.
@@ -991,18 +1017,25 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
 
     user_id = user.id
     await websocket.accept()
-    spool_ws_manager.connect(user_id, websocket)
-    lease = NativeLease(device_id, touch=lambda: _touch_native_contact(device_id))
-    await lease.start()
+    spool_ws_manager.connect(user_id, websocket, pool)
+    lease = (
+        NativeLease(device_id, touch=lambda: _touch_native_contact(device_id))
+        if holds_lease else None
+    )
+    if lease is not None:
+        await lease.start()
     try:
         while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
+            # Any text is a liveness probe, answered the way Spoolman answers it.
+            if await websocket.receive_text():
+                await websocket.send_json({"status": "healthy"})
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         spool_ws_manager.disconnect(user_id, websocket)
-        await lease.stop()
-        await _record_ws_closed(device_id)
+        if lease is not None:
+            await lease.stop()
+            await _record_ws_closed(device_id)
 
 
 async def _touch_native_contact(device_id: int) -> None:
@@ -1382,7 +1415,12 @@ async def _scan_tag_impl(
     device: UserPrinterDevice,
     body: TagScanBody,
 ) -> JSONResponse:
-    binding = await find_spool_tag(db, user_id=user.id, uid=body.uid)
+    try:
+        # Echoed back in its stored shape, so an agent can see what its tag resolves under.
+        uid = normalize_tag_uid(body.uid)
+    except ValueError as exc:
+        return _err(status.HTTP_400_BAD_REQUEST, str(exc))
+    binding = await find_spool_tag(db, user_id=user.id, uid=uid)
     spool_payload = None
     if binding is not None:
         spool = await _get_user_spool(db, user.id, binding.spool_id)
@@ -1392,17 +1430,37 @@ async def _scan_tag_impl(
             spool_payload = await _project_spool(db, spool, location_map, gate_meta_map, tag_map)
             await db.commit()
     reader_id = body.reader_id or f"device-{device.id}"
-    return JSONResponse(
-        content={
-            "uid": body.uid,
-            "reader_id": reader_id,
-            **({"name": body.name} if body.name else {}),
-            **({"format": body.format} if body.format else {}),
-            **({"payload_b64": body.payload_b64} if body.payload_b64 else {}),
-            "matched_spool_id": binding.spool_id if binding is not None else None,
-            **({"spool": spool_payload} if spool_payload is not None else {}),
-        }
-    )
+    matched_spool_id = binding.spool_id if binding is not None else None
+    result = {
+        "uid": uid,
+        "reader_id": reader_id,
+        **({"name": body.name} if body.name else {}),
+        **({"format": body.format} if body.format else {}),
+        **({"payload_b64": body.payload_b64} if body.payload_b64 else {}),
+        # "No match" is the answer to the device's question, so both keys are
+        # always present. FilamentHub links tags to spools only.
+        "matched_spool_id": matched_spool_id,
+        "matched_filament_id": None,
+        **({"spool": spool_payload} if spool_payload is not None else {}),
+        "created": False,
+    }
+    await remember_reader(user.id, reader_id, body.name, uid)
+    match = ("spool", matched_spool_id) if matched_spool_id is not None else None
+    if await claim_broadcast(user.id, uid, reader_id, match):
+        try:
+            await spool_ws_manager.broadcast(
+                user.id,
+                {
+                    "type": "scanned",
+                    "resource": "tag_scan",
+                    "date": _iso(datetime.now(timezone.utc)),
+                    "payload": result,
+                },
+                pool=(TAG_SCAN_POOL, reader_id),
+            )
+        except Exception:
+            logger.warning("Could not announce a tag scan", exc_info=True)
+    return JSONResponse(content=result)
 
 
 @router.post("/v1/tag/scan")
@@ -2104,3 +2162,4 @@ def _vendor_payload(brand: Brand) -> dict:
 
 router.include_router(spool_compat_catalog.router)
 router.include_router(spool_compat_fields.router)
+router.include_router(spool_compat_tags.router)
