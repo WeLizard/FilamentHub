@@ -193,7 +193,7 @@
       "flashforgeStation": "耗材站，4 个槽位（AD5X、Creator 5）",
       "flashforgeSingle": "单卷耗材（Adventurer 5M / 5M Pro）"
     },
-    "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
+    "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","host_permission":"OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重新检查。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
     "name": "打印机名称",
     "namePlaceholder": "例如：工作室的 Voron",

@@ -211,9 +211,10 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 
 The installable plugin is one file, because OrcaSlicer installs a local plugin
 from a single `.py` or a wheel with one entry module. Provider adapters are
-still developed as separate source files next to `filamenthub_plugin.py`
-(currently `filamenthub_flashforge.py`). The plugin imports them inside a
-marked block:
+still developed as separate source files next to `filamenthub_plugin.py`:
+`filamenthub_flashforge.py` (Flashforge LAN API) and `filamenthub_moonraker.py`
+(Happy Hare and QIDI Box through Moonraker's printer objects). The plugin
+imports them inside a marked block:
 
 ```python
 # fh-bundle: filamenthub_flashforge

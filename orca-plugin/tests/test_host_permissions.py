@@ -3,6 +3,7 @@
 import os
 import platform
 import socket
+from contextlib import nullcontext
 
 import pytest
 
@@ -236,3 +237,28 @@ def test_heavy_modules_are_not_loaded_by_the_plugin_import():
     for line in source.splitlines():
         assert line not in {"import ftplib", "import webbrowser", "import ctypes"}
     assert "ctypes" not in source
+
+
+def test_printer_address_awaiting_orcas_permission_is_not_reported_as_unreachable(
+    plugin_module, monkeypatch
+):
+    plugin = plugin_module
+
+    def refused(_request, **_kwargs):
+        raise plugin.urllib.error.URLError(PermissionError("denied by the host audit"))
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", refused)
+    monkeypatch.setattr(plugin, "external_operation", nullcontext)
+    connection = {"print_host": "http://192.168.1.50:7125", "connection_ref": "ref-1"}
+
+    # The person can act on this: approve the address in OrcaSlicer and retry.
+    with pytest.raises(ValueError, match="^host_permission$"):
+        plugin.probe_printer_setup({"discovery_key": "a" * 64}, connection, "orca_profile")
+
+    # A printer that simply does not answer keeps its own outcome.
+    def silent(_request, **_kwargs):
+        raise plugin.urllib.error.URLError(ConnectionRefusedError("refused"))
+
+    monkeypatch.setattr(plugin.urllib.request, "urlopen", silent)
+    with pytest.raises(ValueError, match="^unreachable$"):
+        plugin.probe_printer_setup({"discovery_key": "a" * 64}, connection, "orca_profile")
