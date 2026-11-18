@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FH_CONFIG_VERSION 2U
+#define FH_CONFIG_VERSION 3U
 #define FH_CONFIG_MAGIC 0x46484333U
 
 typedef struct {
@@ -39,8 +39,23 @@ typedef struct {
     fh_config_v1 config;
 } fh_saved_config_v1;
 
+typedef struct {
+    fh_config_v1 base;
+    fh_nfc_pins nfc;
+} fh_config_v2;
+
+typedef struct {
+    uint32_t magic;
+    uint32_t generation;
+    uint32_t crc;
+    fh_config_v2 config;
+} fh_saved_config_v2;
+
 _Static_assert(sizeof(fh_config_v1) == offsetof(fh_config, nfc),
                "Version-1 configuration layout changed");
+_Static_assert(offsetof(fh_config_v2, nfc) == offsetof(fh_config, nfc) &&
+                   sizeof(fh_config_v2) == offsetof(fh_config, node),
+               "Version-2 configuration layout changed");
 _Static_assert(offsetof(fh_saved_config_v1, config) ==
                    offsetof(fh_saved_config, config),
                "Version-1 NVS header layout changed");
@@ -74,6 +89,13 @@ static bool legacy_valid(const fh_saved_config_v1 *value)
            value->crc == crc32_bytes(&value->config, sizeof(value->config));
 }
 
+static bool version2_valid(const fh_saved_config_v2 *value)
+{
+    return value->magic == FH_CONFIG_MAGIC && value->config.base.version == 2U &&
+           value->generation != 0 &&
+           value->crc == crc32_bytes(&value->config, sizeof(value->config));
+}
+
 bool fh_config_load(fh_config *out)
 {
     nvs_handle_t handle;
@@ -88,13 +110,16 @@ bool fh_config_load(fh_config *out)
         bool current = length == sizeof(*candidate) && saved_valid(candidate);
         bool legacy = length == sizeof(fh_saved_config_v1) &&
                       legacy_valid((const fh_saved_config_v1 *)candidate);
-        if (!current && !legacy) continue;
+        bool version2 = length == sizeof(fh_saved_config_v2) &&
+                        version2_valid((const fh_saved_config_v2 *)candidate);
+        if (!current && !legacy && !version2) continue;
         if (!found || candidate->generation > active_generation) {
             if (current) *out = candidate->config;
             else {
+                /* Older layouts are a prefix of the current one. */
                 memset(out, 0, sizeof(*out));
-                memcpy(out, &((fh_saved_config_v1 *)candidate)->config,
-                       sizeof(fh_config_v1));
+                memcpy(out, &candidate->config,
+                       version2 ? sizeof(fh_config_v2) : sizeof(fh_config_v1));
                 out->version = FH_CONFIG_VERSION;
             }
             active_generation = candidate->generation;
@@ -145,6 +170,26 @@ void fh_random_identity(char output[49])
     esp_fill_random(bytes, sizeof(bytes));
     memcpy(output, "edge-", 5);
     for (int i = 0; i < 16; i++) snprintf(output + 5 + 2 * i, 3, "%02x", bytes[i]);
+}
+
+void fh_node_token(char output[97])
+{
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    /* One zero byte completes the last group of three. */
+    unsigned char bytes[33] = {0};
+    esp_fill_random(bytes, 32);
+    memcpy(output, "fhen_", 5);
+    char *cursor = output + 5;
+    for (int i = 0; i < 33; i += 3) {
+        uint32_t group = ((uint32_t)bytes[i] << 16) | ((uint32_t)bytes[i + 1] << 8) |
+                         bytes[i + 2];
+        for (int shift = 18; shift >= 0; shift -= 6)
+            *cursor++ = alphabet[(group >> shift) & 63U];
+    }
+    /* 32 bytes are 43 characters; the 44th belongs to the padding byte. */
+    output[5 + 43] = '\0';
+    memset(bytes, 0, sizeof(bytes));
 }
 
 bool fh_nfc_pins_valid(const fh_nfc_pins *pins)
@@ -209,7 +254,9 @@ bool fh_config_parse_line(const char *line, size_t length,
     if (!fh_json_shape_ok(line, length, 12) || line[length] != '\0') return false;
     cJSON *root = cJSON_ParseWithLengthOpts(line, length + 1, NULL, true);
     if (!cJSON_IsObject(root)) { cJSON_Delete(root); return false; }
-    static const char *const root_keys[] = {"wifi", "cloud", "connections", "nfc"};
+    static const char *const root_keys[] = {"wifi", "cloud", "connections", "nfc",
+                                            "node"};
+    static const char *const node_keys[] = {"pairing_code"};
     static const char *const wifi_keys[] = {"ssid", "password"};
     static const char *const cloud_keys[] = {"origin", "allow_local_http"};
     static const char *const connection_keys[] = {
@@ -222,7 +269,7 @@ bool fh_config_parse_line(const char *line, size_t length,
     bool valid = (!wifi || cJSON_IsObject(wifi)) && cJSON_IsObject(cloud) &&
                  cJSON_IsArray(connections) &&
                  cJSON_GetArraySize(connections) <= FH_MAX_CONNECTIONS &&
-                 object_keys(root, root_keys, 4) &&
+                 object_keys(root, root_keys, 5) &&
                  (!wifi || object_keys(wifi, wifi_keys, 2)) &&
                  object_keys(cloud, cloud_keys, 2);
     if (!valid) { cJSON_Delete(root); return false; }
@@ -258,7 +305,20 @@ bool fh_config_parse_line(const char *line, size_t length,
                 fh_nfc_pins_valid(&out->nfc);
         if (!valid) { cJSON_Delete(root); return false; }
     }
-    if (out->connection_count && !out->wifi_ssid[0]) {
+    /* The account link survives a replacement line for the same site. A new
+     * one-time code starts a new link, with a secret made at activation. */
+    bool same_site = previous && strcmp(previous->cloud_origin, out->cloud_origin) == 0 &&
+                     previous->allow_local_http == out->allow_local_http;
+    const cJSON *node = cJSON_GetObjectItemCaseSensitive(root, "node");
+    if (node) {
+        valid = cJSON_IsObject(node) && object_keys(node, node_keys, 1) &&
+                string_field(node, "pairing_code", out->node.pairing_code,
+                             sizeof(out->node.pairing_code), 8) &&
+                one_line_secret(out->node.pairing_code);
+        if (!valid) { cJSON_Delete(root); return false; }
+    } else if (same_site) out->node = previous->node;
+    if ((out->connection_count || out->node.pairing_code[0] || out->node.node_id) &&
+        !out->wifi_ssid[0]) {
         cJSON_Delete(root);
         return false;
     }

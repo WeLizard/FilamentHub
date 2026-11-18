@@ -87,15 +87,41 @@ Next to the human-readable messages the firmware prints one JSON line per
 state change, for a tool on the other end of the cable:
 
 ```json
-{"event":"boot","firmware":"0.1.1","configured":true,"provision_window_ms":15000}
+{"event":"boot","firmware":"0.2.0","configured":true,"provision_window_ms":15000}
 {"event":"provision","ok":true}
 {"event":"ready","nfc":true}
+{"event":"wifi","state":"connected"}
+{"event":"node","state":"linked"}
 ```
 
 `boot` on an empty device has `configured:false` and no window: it waits for a
 configuration line. `provision` answers a configuration line; after `ok:true`
 the device restarts. `ready` means the provisioning window is closed and
-commands are accepted. These lines carry no configuration values.
+commands are accepted. `wifi` is `connected` or `failed` with a `reason` of
+`password`, `not_found` or `other`. `node` is `linked` once the account has
+accepted the node, `code_rejected` when the one-time code was spent or wrong,
+and `removed` when the account no longer knows the node. These lines carry no
+configuration values.
+
+### Joining an account
+
+A `node` object with a one-time `pairing_code` from the site links the device
+to an account as an Edge node; no printer is needed. Wi-Fi credentials are
+required with it:
+
+```json
+{"wifi":{"ssid":"MY_WIFI","password":"MY_PASSWORD"},"cloud":{"origin":"https://filamenthub.ru"},"connections":[],"nfc":{"sck":4,"miso":5,"mosi":6,"nss":7,"busy":0,"rst":1},"node":{"pairing_code":"ONE_TIME_CODE"}}
+```
+
+Once the network and the clock are up, the device makes its own 256-bit
+secret, saves it, and only then presents the code and the secret to
+`/api/v1/edge/nodes/activate`. If the answer is lost it asks again with the
+same secret and gets the same node. The code is then erased. Afterwards the
+device reports to `/api/v1/edge/nodes/heartbeat` once a minute. A later
+settings line for the same site without `node` keeps the link; a new code
+starts a new one. Three refusals of the secret spread over ten minutes mean
+the account removed the node: the link is erased and printer connections are
+kept. The installer on the site sends this line itself; nobody types it.
 
 ```json
 {"wifi":{"ssid":"MY_WIFI","password":"MY_PASSWORD"},"cloud":{"origin":"http://192.168.1.2:3000","allow_local_http":true},"connections":[{"id":"p2s-workbench","host":"192.168.1.44","serial":"P2S_SERIAL","access_code":"LAN_ACCESS_CODE","bambu_cert_pem":"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n","pairing_code":"ONE_TIME_CODE"}]}

@@ -47,6 +47,14 @@ static uint64_t last_heartbeat_at[FH_MAX_CONNECTIONS];
 static bool heartbeat_sent[FH_MAX_CONNECTIONS];
 static bool printer_unreachable[FH_MAX_CONNECTIONS];
 static fh_ams_state diagnostic_feed;
+static uint64_t node_retry_at;
+static uint32_t node_retry_delay;
+static uint64_t node_beat_at;
+static uint32_t node_refusals;
+static uint64_t node_first_refusal_at;
+static bool node_announced;
+static int wifi_reported; /* 0 nothing yet, 1 connected, 2 failed */
+static const char *wifi_failure;
 static bool journal_warning_issued;
 
 static uint64_t monotonic_ms(void)
@@ -66,8 +74,18 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP)
         xEventGroupSetBits(wifi_events, FH_WIFI_CONNECTED);
-    else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED)
+    else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(wifi_events, FH_WIFI_CONNECTED);
+        /* Only the two reasons a person can act on are told apart. */
+        const wifi_event_sta_disconnected_t *event = data;
+        if (!event) return;
+        if (event->reason == WIFI_REASON_NO_AP_FOUND) wifi_failure = "not_found";
+        else if (event->reason == WIFI_REASON_AUTH_FAIL ||
+                 event->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+                 event->reason == WIFI_REASON_HANDSHAKE_TIMEOUT)
+            wifi_failure = "password";
+        else wifi_failure = "other";
+    }
 }
 
 static bool wifi_start(void)
@@ -327,6 +345,54 @@ static void observe_connection(int index)
     handle_cloud_result(index, result);
 }
 
+static void node_backoff(void)
+{
+    node_retry_delay = node_retry_delay ? node_retry_delay * 2U : 5000U;
+    if (node_retry_delay > 300000U) node_retry_delay = 300000U;
+    node_retry_at = monotonic_ms() + node_retry_delay;
+}
+
+/* The node's own link to the account: join once, then report once a minute. */
+static void node_work(void)
+{
+    uint64_t now = monotonic_ms();
+    if (now < node_retry_at || !time_ready()) return;
+    if (config.node.pairing_code[0]) {
+        fh_cloud_result result = fh_cloud_node_activate(&config);
+        if (result == FH_CLOUD_OK) {
+            node_retry_delay = 0;
+            node_beat_at = now + 60000ULL;
+            node_announced = true;
+            status_line("node", "\"state\":\"linked\"");
+        } else if (result == FH_CLOUD_REJECTED) {
+            /* A spent or wrong code cannot heal by waiting. */
+            fh_cloud_node_forget(&config);
+            status_line("node", "\"state\":\"code_rejected\"");
+        } else node_backoff();
+        return;
+    }
+    if (config.node.node_id <= 0 || now < node_beat_at) return;
+    fh_cloud_result result = fh_cloud_node_heartbeat(&config);
+    if (result == FH_CLOUD_OK) {
+        node_retry_delay = 0;
+        node_refusals = 0;
+        node_beat_at = now + 60000ULL;
+        if (!node_announced) {
+            node_announced = true;
+            status_line("node", "\"state\":\"linked\"");
+        }
+    } else if (result == FH_CLOUD_REVOKED) {
+        /* One refusal can be a server hiccup. Three, spread over ten
+         * minutes, mean the account has removed this node. */
+        if (!node_refusals++) node_first_refusal_at = now;
+        if (node_refusals >= 3 && now - node_first_refusal_at >= 600000ULL) {
+            fh_cloud_node_forget(&config);
+            node_refusals = 0;
+            status_line("node", "\"state\":\"removed\"");
+        } else node_backoff();
+    } else node_backoff();
+}
+
 void app_main(void)
 {
     esp_err_t nvs = nvs_flash_init();
@@ -370,9 +436,22 @@ void app_main(void)
     }
     while (true) {
         if (!wifi_ready()) {
+            if (wifi_failure && wifi_reported != 2) {
+                char detail[48];
+                snprintf(detail, sizeof(detail), "\"state\":\"failed\",\"reason\":\"%s\"",
+                         wifi_failure);
+                status_line("wifi", detail);
+                wifi_reported = 2;
+            }
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
+        if (wifi_reported != 1) {
+            status_line("wifi", "\"state\":\"connected\"");
+            wifi_reported = 1;
+        }
+        wifi_failure = NULL;
+        node_work();
         for (int index = 0; index < config.connection_count; index++) {
             heartbeat_if_due(index);
             if (monotonic_ms() < retry_at[index]) continue;
@@ -390,6 +469,7 @@ void app_main(void)
             }
             observe_connection(index);
         }
-        vTaskDelay(pdMS_TO_TICKS(config.connection_count ? 1000 : 30000));
+        vTaskDelay(pdMS_TO_TICKS(
+            config.connection_count || config.node.pairing_code[0] ? 1000 : 5000));
     }
 }

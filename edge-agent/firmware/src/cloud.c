@@ -48,9 +48,10 @@ static esp_err_t response_event(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
-static fh_cloud_result post_json(const fh_config *config, const char *path,
-                                 const char *token, const char *body,
-                                 response_buffer *response, int *status)
+static fh_cloud_result post_json_as(const fh_config *config, const char *path,
+                                    const char *token_header, const char *token,
+                                    const char *body, response_buffer *response,
+                                    int *status)
 {
     char url[320];
     int size = snprintf(url, sizeof(url), "%s%s", config->cloud_origin, path);
@@ -70,7 +71,7 @@ static fh_cloud_result post_json(const fh_config *config, const char *path,
     esp_http_client_handle_t client = esp_http_client_init(&request);
     if (!client) return FH_CLOUD_RETRY;
     esp_http_client_set_header(client, "Content-Type", "application/json");
-    if (token) esp_http_client_set_header(client, "X-FilamentHub-Bridge-Token", token);
+    if (token) esp_http_client_set_header(client, token_header, token);
     esp_http_client_set_post_field(client, body, (int)strlen(body));
     esp_err_t err = esp_http_client_perform(client);
     *status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
@@ -84,6 +85,87 @@ static fh_cloud_result post_json(const fh_config *config, const char *path,
     if (*status == 400 || *status == 401 || *status == 409 || *status == 422)
         return FH_CLOUD_REJECTED;
     return FH_CLOUD_RETRY;
+}
+
+static fh_cloud_result post_json(const fh_config *config, const char *path,
+                                 const char *token, const char *body,
+                                 response_buffer *response, int *status)
+{
+    return post_json_as(config, path, "X-FilamentHub-Bridge-Token", token, body,
+                        response, status);
+}
+
+fh_cloud_result fh_cloud_node_activate(fh_config *config)
+{
+    if (!config->node.pairing_code[0]) return FH_CLOUD_REJECTED;
+    if (!config->node.token[0]) {
+        /* The secret is saved before it is sent: a lost answer is then only
+         * a reason to ask again with the same secret. */
+        fh_config *prepared = malloc(sizeof(*prepared));
+        if (!prepared) return FH_CLOUD_RETRY;
+        *prepared = *config;
+        fh_node_token(prepared->node.token);
+        bool stored = fh_config_store(prepared);
+        if (stored) *config = *prepared;
+        free(prepared);
+        if (!stored) return FH_CLOUD_RETRY;
+    }
+    cJSON *request = cJSON_CreateObject();
+    if (!request) return FH_CLOUD_RETRY;
+    cJSON_AddStringToObject(request, "pairing_code", config->node.pairing_code);
+    cJSON_AddStringToObject(request, "node_token", config->node.token);
+    cJSON_AddStringToObject(request, "node_instance_id", config->node_instance_id);
+    cJSON_AddStringToObject(request, "runtime_version", FH_EDGE_VERSION);
+    char *body = cJSON_PrintUnformatted(request);
+    cJSON_Delete(request);
+    if (!body) return FH_CLOUD_RETRY;
+    response_buffer response = {0};
+    int status = 0;
+    fh_cloud_result result = post_json(config, "/api/v1/edge/nodes/activate", NULL,
+                                       body, &response, &status);
+    free(body);
+    if (result != FH_CLOUD_OK) return result;
+    if (!fh_json_shape_ok(response.body, response.length, 8)) return FH_CLOUD_RETRY;
+    cJSON *reply = cJSON_ParseWithLength(response.body, response.length);
+    const cJSON *node_id = cJSON_GetObjectItemCaseSensitive(reply, "node_id");
+    bool accepted = cJSON_IsNumber(node_id) && node_id->valuedouble >= 1 &&
+                    node_id->valuedouble <= INT32_MAX &&
+                    floor(node_id->valuedouble) == node_id->valuedouble;
+    if (accepted) {
+        fh_config *changed = malloc(sizeof(*changed));
+        if (!changed) { cJSON_Delete(reply); return FH_CLOUD_RETRY; }
+        *changed = *config;
+        changed->node.node_id = node_id->valueint;
+        memset(changed->node.pairing_code, 0, sizeof(changed->node.pairing_code));
+        if (fh_config_store(changed)) *config = *changed;
+        else accepted = false;
+        free(changed);
+    }
+    cJSON_Delete(reply);
+    return accepted ? FH_CLOUD_OK : FH_CLOUD_RETRY;
+}
+
+fh_cloud_result fh_cloud_node_heartbeat(const fh_config *config)
+{
+    if (!config->node.token[0] || config->node.node_id <= 0) return FH_CLOUD_REJECTED;
+    response_buffer response = {0};
+    int status = 0;
+    return post_json_as(config, "/api/v1/edge/nodes/heartbeat",
+                        "X-FilamentHub-Edge-Token", config->node.token,
+                        "{\"runtime_version\":\"" FH_EDGE_VERSION "\"}",
+                        &response, &status);
+}
+
+bool fh_cloud_node_forget(fh_config *config)
+{
+    fh_config *changed = malloc(sizeof(*changed));
+    if (!changed) return false;
+    *changed = *config;
+    memset(&changed->node, 0, sizeof(changed->node));
+    bool stored = fh_config_store(changed);
+    if (stored) *config = *changed;
+    free(changed);
+    return stored;
 }
 
 fh_cloud_result fh_cloud_pair(fh_config *config, int index)

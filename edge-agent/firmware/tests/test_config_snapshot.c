@@ -266,10 +266,58 @@ int main(void)
     memcpy(slots[0], &legacy, sizeof(legacy));
     slot_lengths[0] = sizeof(legacy);
     assert(fh_config_load(&reloaded));
-    assert(reloaded.version == 2 && !reloaded.nfc.enabled);
+    assert(reloaded.version == 3 && !reloaded.nfc.enabled && !reloaded.node.token[0]);
     assert(strcmp(reloaded.connections[0].serial, "P2S-1234") == 0);
     assert(fh_config_store(&reloaded));
-    assert(fh_config_load(&changed) && changed.version == 2);
+    assert(fh_config_load(&changed) && changed.version == 3);
+
+    /* A board flashed before the node link existed keeps everything it had. */
+    struct {
+        uint32_t magic, generation, crc;
+        struct { old_config base; fh_nfc_pins nfc; } config;
+    } version2 = {0};
+    assert(sizeof(version2.config) == 5472);
+    version2.magic = 0x46484333U;
+    version2.generation = 2000;
+    memcpy(&version2.config.base, &old, sizeof(version2.config.base));
+    version2.config.base.version = 2;
+    version2.config.nfc = (fh_nfc_pins){true, 4, 5, 6, 7, 0, 1};
+    version2.crc = crc32_bytes(&version2.config, sizeof(version2.config));
+    memcpy(slots[1], &version2, sizeof(version2));
+    slot_lengths[1] = sizeof(version2);
+    assert(fh_config_load(&reloaded));
+    assert(reloaded.version == 3 && reloaded.nfc.enabled && reloaded.nfc.busy == 0);
+    assert(strcmp(reloaded.connections[0].bridge_token, "fhpb_scoped") == 0);
+    assert(!reloaded.node.token[0] && !reloaded.node.node_id);
+
+    /* Joining an account needs a network, and the link then survives a new
+     * settings line for the same site until a new code replaces it. */
+    const char *kit = "{\"wifi\":{\"ssid\":\"LAB\",\"password\":\"PASSWORD\"},"
+        "\"cloud\":{\"origin\":\"https://filamenthub.ru\"},\"connections\":[],"
+        "\"nfc\":{\"sck\":4,\"miso\":5,\"mosi\":6,\"nss\":7,\"busy\":0,\"rst\":1},"
+        "\"node\":{\"pairing_code\":\"FE-ABCDEF-123456\"}}";
+    const char *kit_again = "{\"wifi\":{\"ssid\":\"HOME\",\"password\":\"PASSWORD\"},"
+        "\"cloud\":{\"origin\":\"https://filamenthub.ru\"},\"connections\":[]}";
+    const char *kit_elsewhere = "{\"wifi\":{\"ssid\":\"HOME\",\"password\":\"PASSWORD\"},"
+        "\"cloud\":{\"origin\":\"https://example.org\"},\"connections\":[]}";
+    const char *no_network = "{\"cloud\":{\"origin\":\"https://filamenthub.ru\"},"
+        "\"connections\":[],\"node\":{\"pairing_code\":\"FE-ABCDEF-123456\"}}";
+    static fh_config linked, relinked;
+    assert(!parse(no_network, NULL, &linked));
+    assert(parse(kit, NULL, &linked));
+    assert(strcmp(linked.node.pairing_code, "FE-ABCDEF-123456") == 0);
+    assert(!linked.node.token[0] && !linked.node.node_id);
+    fh_node_token(linked.node.token);
+    assert(strlen(linked.node.token) == 48 && strncmp(linked.node.token, "fhen_", 5) == 0);
+    linked.node.node_id = 17;
+    linked.node.pairing_code[0] = '\0';
+    assert(parse(kit_again, &linked, &relinked));
+    assert(relinked.node.node_id == 17 &&
+           strcmp(relinked.node.token, linked.node.token) == 0);
+    assert(parse(kit, &linked, &relinked));
+    assert(!relinked.node.node_id && !relinked.node.token[0]);
+    assert(parse(kit_elsewhere, &linked, &relinked));
+    assert(!relinked.node.node_id && !relinked.node.token[0]);
     puts("Config and snapshot host tests passed");
     return 0;
 }
