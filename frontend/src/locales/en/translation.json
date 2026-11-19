@@ -2311,7 +2311,8 @@
         "start": "Save, start it and enable start on boot. After the first connection the code can be removed."
       },
       "host": "Home Assistant",
-      "hostDetail": "app on HA OS"
+      "hostDetail": "app on HA OS",
+      "photoAlt": "A smart-home hub on a shelf next to a 3D printer"
     },
     "linux": {
       "title": "Linux",
@@ -2325,7 +2326,8 @@
         "clearCode": "After the first connection remove pairing_code from the file, keeping the id. To start the service after a reboot without logging in, enable loginctl enable-linger."
       },
       "host": "Linux",
-      "hostDetail": "systemd service"
+      "hostDetail": "systemd service",
+      "photoAlt": "A single-board computer in a clear case on a 3D printer's frame"
     },
     "docker": {
       "title": "Docker",
@@ -2338,7 +2340,8 @@
         "run": "Start the container:"
       },
       "host": "Docker",
-      "hostDetail": "container, /data volume"
+      "hostDetail": "container, /data volume",
+      "photoAlt": "A home server on a shelf with a 3D printer and filament spools behind it"
     },
     "diagram": {
       "printer": "Printer",

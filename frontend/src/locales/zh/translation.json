@@ -2310,7 +2310,8 @@
         "start": "保存并启动，开启开机自启。首次连接后可删除代码。"
       },
       "host": "Home Assistant",
-      "hostDetail": "HA OS 中的应用"
+      "hostDetail": "HA OS 中的应用",
+      "photoAlt": "3D 打印机旁架子上的智能家居中枢"
     },
     "linux": {
       "title": "Linux",
@@ -2324,7 +2325,8 @@
         "clearCode": "首次连接后从文件中删除 pairing_code，保留 id。若要重启后无需登录即可启动服务，请启用 loginctl enable-linger。"
       },
       "host": "Linux",
-      "hostDetail": "systemd 服务"
+      "hostDetail": "systemd 服务",
+      "photoAlt": "装在 3D 打印机框架上的透明外壳单板电脑"
     },
     "docker": {
       "title": "Docker",
@@ -2337,7 +2339,8 @@
         "run": "启动容器："
       },
       "host": "Docker",
-      "hostDetail": "容器，/data 卷"
+      "hostDetail": "容器，/data 卷",
+      "photoAlt": "架子上的家庭服务器，后面是 3D 打印机和料盘"
     },
     "diagram": {
       "printer": "打印机",

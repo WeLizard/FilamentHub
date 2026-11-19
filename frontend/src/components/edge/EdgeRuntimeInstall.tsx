@@ -79,15 +79,25 @@ function RuntimeHeader({ id }: { id: RuntimeId }) {
   const { t } = useTranslation();
   return (
     <div className="mb-6 space-y-5">
-      <div>
-        <div className="mb-2 flex flex-wrap items-center gap-3">
-          <h3 className="text-xl font-semibold text-white md:text-2xl">{t(`edgeRuntime.${id}.title`)}</h3>
-          <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-400/10 px-3 py-0.5 text-xs font-semibold text-fuchsia-200">
-            {t('edgeRuntime.alpha', { version: EDGE_RUNTIME_VERSION })}
-          </span>
+      <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <h3 className="text-xl font-semibold text-white md:text-2xl">{t(`edgeRuntime.${id}.title`)}</h3>
+            <span className="rounded-full border border-fuchsia-300/40 bg-fuchsia-400/10 px-3 py-0.5 text-xs font-semibold text-fuchsia-200">
+              {t('edgeRuntime.alpha', { version: EDGE_RUNTIME_VERSION })}
+            </span>
+          </div>
+          <p className="text-sm leading-6 text-gray-300">{t(`edgeRuntime.${id}.lead`)}</p>
+          <p className="mt-2 text-sm leading-6 text-gray-400">{t(`edgeRuntime.${id}.fits`)}</p>
         </div>
-        <p className="text-sm leading-6 text-gray-300">{t(`edgeRuntime.${id}.lead`)}</p>
-        <p className="mt-2 text-sm leading-6 text-gray-400">{t(`edgeRuntime.${id}.fits`)}</p>
+        <img
+          src={`/edge-kit/runtime-${id === 'homeAssistant' ? 'home-assistant' : id}.webp`}
+          alt={t(`edgeRuntime.${id}.photoAlt`)}
+          width={1200}
+          height={800}
+          loading="lazy"
+          className="aspect-[3/2] h-auto w-full rounded-xl object-cover"
+        />
       </div>
       <RuntimeDiagram id={id} />
     </div>
