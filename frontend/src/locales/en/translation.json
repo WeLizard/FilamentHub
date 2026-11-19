@@ -1722,21 +1722,113 @@
   },
   "edgeSection": {
     "seoTitle": "FH Edge — printers connected to FilamentHub without OrcaSlicer",
-    "seoDescription": "Install FH Edge on your network: it reports printer and material-system state to FilamentHub while OrcaSlicer is closed.",
+    "seoDescription": "FH Edge runs on your network and tells FilamentHub what is loaded in the slots and what the printer is doing, even while OrcaSlicer is closed. Install it on a computer or build your own device.",
     "title": "FH Edge",
-    "subtitle": "A small node on your network. It reports printer and material-system state to FilamentHub while OrcaSlicer is closed.",
-    "softwareTitle": "Edge on your computer",
-    "softwareDesc": "Install it on the printer's computer or any always-on computer on the same network: as a Linux service, in Docker or as a Home Assistant app. One node serves several printers.",
-    "supported": "Works with Klipper printers through Moonraker, including Happy Hare and QIDI Box, and with Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro.",
+    "lead": "A small program on your network. It tells FilamentHub what is loaded in the slots and what the printer is doing, even while OrcaSlicer is closed.",
+    "forms": "Edge is installed on a computer next to your printers. You can also build it as a separate device with an NFC reader.",
+    "toInstall": "Install on a computer",
+    "toKit": "Build the device",
+    "map": {
+      "network": "Your network",
+      "printers": {
+        "klipper": "Klipper and Happy Hare",
+        "qidi": "QIDI Box",
+        "flashforge": "Flashforge"
+      },
+      "keys": "Printer addresses and keys are kept here",
+      "outbound": "Edge makes the connection itself",
+      "cloud": "Printers, slots and spools in your profile",
+      "you": "You see it",
+      "outside": {
+        "site": "on the site",
+        "phone": "on your phone",
+        "slicer": "in OrcaSlicer"
+      },
+      "caption": "Edge sits inside your network. FilamentHub does not connect to your printers or scan the network."
+    },
+    "whyTitle": "What changes with Edge",
+    "benefits": {
+      "slots": {
+        "title": "Slots without the slicer",
+        "text": "The site knows what is loaded and what the printer is doing even while OrcaSlicer is closed."
+      },
+      "oneNode": {
+        "title": "One Edge for all printers",
+        "text": "Printers are connected one by one and work independently: if one is off, data from the others keeps coming."
+      },
+      "keys": {
+        "title": "Keys stay with you",
+        "text": "Edge connects to FilamentHub by itself. No ports to open and no printer keys to enter on the site."
+      }
+    },
+    "supportTitle": "Which printers it works with",
+    "supportLead": "What Edge can report depends on what the printer itself shares over the network.",
+    "supportPrinter": "Printer",
+    "supportSees": "What FilamentHub sees",
+    "printers": {
+      "happyHare": {
+        "name": "Klipper with Happy Hare",
+        "sees": "Every MMU slot: material, colour and whether a spool is present; printer state."
+      },
+      "klipper": {
+        "name": "Klipper without an MMU",
+        "sees": "Printer state and the active spool."
+      },
+      "qidi": {
+        "name": "QIDI Box",
+        "sees": "Slots, material and colour. Read-only."
+      },
+      "flashforgeStation": {
+        "name": "Flashforge AD5X, Creator 5 / 5 Pro",
+        "sees": "The four material-station slots. These printers do not report usage."
+      },
+      "flashforgeSingle": {
+        "name": "Flashforge Adventurer 5M / 5M Pro",
+        "sees": "The spool and its material. These printers do not report usage."
+      }
+    },
+    "otherTitle": "When you do not need Edge",
+    "other": {
+      "bambu": {
+        "text": "Bambu Lab printers connect through the plugin in OrcaSlicer.",
+        "link": "OrcaSlicer section"
+      },
+      "octoprint": {
+        "text": "OctoPrint has its own FilamentHub Bridge.",
+        "link": "OctoPrint section"
+      },
+      "slicerOpen": {
+        "text": "If OrcaSlicer stays open for the whole print, the plugin is enough.",
+        "link": "Plugin for OrcaSlicer"
+      }
+    },
+    "installTitle": "How to install Edge",
+    "installLead": "Any always-on computer on the same network as your printers will do. Pick what suits you.",
+    "where": {
+      "linux": {
+        "name": "Linux",
+        "text": "A service on the printer's computer or a mini PC. The usual choice for a Raspberry Pi running Klipper."
+      },
+      "docker": {
+        "name": "Docker",
+        "text": "A container on a home server or NAS."
+      },
+      "homeAssistant": {
+        "name": "Home Assistant",
+        "text": "The FilamentHub Edge app: added as a repository and set up in the Home Assistant interface."
+      },
+      "kit": {
+        "name": "Edge kit",
+        "text": "A separate ESP32 device with an NFC reader. You build it yourself; the guide is below. Prototype."
+      }
+    },
     "steps": {
       "printer": "Add the printer and its material system in your FilamentHub profile.",
       "install": "Install Edge following the guide and give it the printer's address.",
       "pair": "In the material system's card open the Edge connection, create a one-time code and enter it on the node."
     },
     "installGuide": "Installation guide",
-    "privacy": "Printer addresses and keys stay on the node and are not sent to FilamentHub. No port has to be opened to the internet.",
-    "kitTitle": "Edge kit on ESP32",
-    "kitDesc": "An ESP32 board with an NFC reader. The firmware is installed straight from the browser over USB: nothing to download or build.",
+    "privacy": "Edge sends no commands to the printer and never changes the spools you assigned because of what the printer reports.",
     "kitStatus": {
       "prototype": "Prototype",
       "hardware-verified": "Hardware verified"
@@ -1827,7 +1919,71 @@
         "server": "A linking code could not be issued. Try again."
       }
     },
-    "readerTitle": "Reader check"
+    "readerTitle": "Reader check",
+    "guide": {
+      "title": "Edge kit",
+      "lead": "An ESP32-C3 board and a PN5180 NFC reader in a printed enclosure. It is powered over USB, goes online over Wi-Fi and links to your account.",
+      "status": "Today the kit links to an account and shows its connection. Sending read tags to your profile is in development.",
+      "renderAlt": "Edge kit: a flat enclosure with a ring above the reader's antenna",
+      "partsTitle": "What you need",
+      "parts": {
+        "board": "{{board}} board",
+        "reader": "{{reader}} NFC reader with antenna",
+        "screws": "4 self-tapping screws, M2.5 × 8 mm",
+        "wire": "Hook-up wire and a soldering iron",
+        "cable": "USB-C cable that carries data",
+        "tags": "NTAG213, NTAG215 or NTAG216 tags",
+        "filament": "About 30 g of PLA or PETG for the enclosure"
+      },
+      "wiring": {
+        "title": "Wiring",
+        "board": "ESP32-C3",
+        "reader": "PN5180",
+        "jumper": "jumper",
+        "unused": "The reader's GPIO, IRQ, AUX and REQ pins stay unconnected.",
+        "power": "In this revision the antenna supply (+5V) is switched by hand: put a jumper on this wire and close it after USB power is on. Open it before unplugging USB."
+      },
+      "filesTitle": "Enclosure to print",
+      "filesNote": "Print the shell face down, without supports; the ring can be filled with a second colour. Board sizes vary between sellers: PN5180 modules come as 69–70 × 37–39 mm. Check your board and adjust the sizes in the source if needed.",
+      "files": {
+        "shell": "Shell, STL",
+        "base": "Base, STL",
+        "mark": "Ring for a second colour, STL",
+        "shellStep": "Shell, STEP",
+        "baseStep": "Base, STEP"
+      },
+      "filesSource": "Model source",
+      "assemblyTitle": "Assembly",
+      "steps": {
+        "print": {
+          "title": "Print the shell and the base",
+          "text": "0.2 mm layers, no supports. Check that the boards fit their frames."
+        },
+        "boards": {
+          "title": "Solder the wires and seat the boards",
+          "text": "Connect the boards as in the wiring. The reader lies with its antenna under the ring, the ESP32 with its socket at the opening in the wall."
+        },
+        "close": {
+          "title": "Close the base",
+          "text": "The posts on the base press the boards against the shell. Drive the four screws without overtightening."
+        },
+        "connect": {
+          "title": "Plug in USB",
+          "text": "The rest happens on this page: firmware, Wi-Fi and linking to your account."
+        }
+      },
+      "firmwareTitle": "Firmware and linking",
+      "firmwareLater": "Installing firmware from the site opens once the kit has passed hardware checks.",
+      "ready": {
+        "title": "Want one ready-made?",
+        "text": "We do not sell assembled devices yet. If you would rather not build one, tell us — that is how we learn how many are needed.",
+        "action": "Say I want a ready-made one",
+        "sent": "Noted. Thank you.",
+        "signIn": "Sign in to tell us",
+        "subject": "Edge kit: ready-made wanted",
+        "message": "From the Edge page: a ready-made assembled kit is wanted."
+      }
+    }
   },
   "downloadPage": {
     "sectionsLabel": "Ways to connect",

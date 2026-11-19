@@ -1721,21 +1721,113 @@
   },
   "edgeSection": {
     "seoTitle": "FH Edge — 无需 OrcaSlicer 即可将打印机连接到 FilamentHub",
-    "seoDescription": "在您的网络中安装 FH Edge：OrcaSlicer 关闭时，它会向 FilamentHub 上报打印机和供料系统的状态。",
+    "seoDescription": "FH Edge 运行在您的网络中，即使 OrcaSlicer 已关闭，也会告诉 FilamentHub 各槽位装了什么、打印机在做什么。可安装在电脑上，也可自己组装设备。",
     "title": "FH Edge",
-    "subtitle": "您网络中的一个小型节点。OrcaSlicer 关闭时，它会向 FilamentHub 上报打印机和供料系统的状态。",
-    "softwareTitle": "安装在您电脑上的 Edge",
-    "softwareDesc": "可安装在打印机的电脑上，或同一网络中任何一台常开的电脑上：作为 Linux 服务、在 Docker 中或作为 Home Assistant 应用运行。一个节点可服务多台打印机。",
-    "supported": "支持通过 Moonraker 连接的 Klipper 打印机（包括 Happy Hare 和 QIDI Box），以及 Flashforge Adventurer 5M / 5M Pro、AD5X、Creator 5 / 5 Pro。",
+    "lead": "运行在您网络中的一个小程序。即使 OrcaSlicer 已关闭，它也会告诉 FilamentHub 各槽位装了什么、打印机在做什么。",
+    "forms": "Edge 安装在打印机旁的电脑上，也可以组装成带 NFC 读卡器的独立设备。",
+    "toInstall": "安装到电脑",
+    "toKit": "组装设备",
+    "map": {
+      "network": "您的网络",
+      "printers": {
+        "klipper": "Klipper 与 Happy Hare",
+        "qidi": "QIDI Box",
+        "flashforge": "Flashforge"
+      },
+      "keys": "打印机的地址和密钥保存在这里",
+      "outbound": "由 Edge 主动发起连接",
+      "cloud": "个人资料中的打印机、槽位和料盘",
+      "you": "您可以查看",
+      "outside": {
+        "site": "在网站上",
+        "phone": "在手机上",
+        "slicer": "在 OrcaSlicer 中"
+      },
+      "caption": "Edge 位于您的网络内部。FilamentHub 不会连接您的打印机，也不会扫描网络。"
+    },
+    "whyTitle": "有了 Edge 会有什么变化",
+    "benefits": {
+      "slots": {
+        "title": "不开切片软件也能看到槽位",
+        "text": "即使 OrcaSlicer 已关闭，网站也知道装了什么、打印机在做什么。"
+      },
+      "oneNode": {
+        "title": "一个 Edge 服务所有打印机",
+        "text": "打印机逐台连接、互相独立：一台关机，其余的数据照常上报。"
+      },
+      "keys": {
+        "title": "密钥留在您手里",
+        "text": "Edge 主动连接 FilamentHub。无需对外开放端口，也无需在网站上输入打印机密钥。"
+      }
+    },
+    "supportTitle": "支持哪些打印机",
+    "supportLead": "Edge 能上报什么，取决于打印机自己通过网络提供什么。",
+    "supportPrinter": "打印机",
+    "supportSees": "FilamentHub 能看到什么",
+    "printers": {
+      "happyHare": {
+        "name": "带 Happy Hare 的 Klipper",
+        "sees": "MMU 的所有槽位：材料、颜色和是否有料盘；打印机状态。"
+      },
+      "klipper": {
+        "name": "无 MMU 的 Klipper",
+        "sees": "打印机状态和当前料盘。"
+      },
+      "qidi": {
+        "name": "QIDI Box",
+        "sees": "槽位、材料和颜色。只读。"
+      },
+      "flashforgeStation": {
+        "name": "Flashforge AD5X、Creator 5 / 5 Pro",
+        "sees": "材料站的四个槽位。这些打印机不上报用量。"
+      },
+      "flashforgeSingle": {
+        "name": "Flashforge Adventurer 5M / 5M Pro",
+        "sees": "料盘及其材料。这些打印机不上报用量。"
+      }
+    },
+    "otherTitle": "什么时候不需要 Edge",
+    "other": {
+      "bambu": {
+        "text": "Bambu Lab 打印机通过 OrcaSlicer 中的插件连接。",
+        "link": "OrcaSlicer 部分"
+      },
+      "octoprint": {
+        "text": "OctoPrint 有单独的 FilamentHub Bridge。",
+        "link": "OctoPrint 部分"
+      },
+      "slicerOpen": {
+        "text": "如果打印期间 OrcaSlicer 一直开着，用插件就够了。",
+        "link": "OrcaSlicer 插件"
+      }
+    },
+    "installTitle": "如何安装 Edge",
+    "installLead": "任何与打印机在同一网络、常开的电脑都可以。选择适合您的方式。",
+    "where": {
+      "linux": {
+        "name": "Linux",
+        "text": "在打印机的电脑或迷你主机上作为服务运行。运行 Klipper 的 Raspberry Pi 通常这样安装。"
+      },
+      "docker": {
+        "name": "Docker",
+        "text": "家用服务器或 NAS 上的容器。"
+      },
+      "homeAssistant": {
+        "name": "Home Assistant",
+        "text": "FilamentHub Edge 应用：通过仓库添加，在 Home Assistant 界面中配置。"
+      },
+      "kit": {
+        "name": "Edge 套件",
+        "text": "带 NFC 读卡器的独立 ESP32 设备。需自己组装，说明见下文。原型。"
+      }
+    },
     "steps": {
       "printer": "在 FilamentHub 个人资料中添加打印机及其供料系统。",
       "install": "按照说明安装 Edge，并在其中填写打印机地址。",
       "pair": "在供料系统卡片中打开 Edge 连接，创建一次性代码并在节点上输入。"
     },
     "installGuide": "安装说明",
-    "privacy": "打印机的地址和密钥保留在节点上，不会发送到 FilamentHub。无需向互联网开放端口。",
-    "kitTitle": "基于 ESP32 的 Edge 套件",
-    "kitDesc": "带 NFC 读卡器的 ESP32 开发板。固件通过 USB 直接在浏览器中安装：无需下载或编译任何内容。",
+    "privacy": "Edge 不向打印机发送命令，也不会根据打印机的数据更改您指定的料盘。",
     "kitStatus": {
       "prototype": "原型",
       "hardware-verified": "已通过硬件验证"
@@ -1826,7 +1918,71 @@
         "server": "无法获取绑定代码。请重试。"
       }
     },
-    "readerTitle": "读卡器检查"
+    "readerTitle": "读卡器检查",
+    "guide": {
+      "title": "Edge 套件",
+      "lead": "ESP32-C3 开发板和 PN5180 NFC 读卡器，装在打印的外壳里。通过 USB 供电，经 Wi-Fi 联网，并绑定到您的账户。",
+      "status": "目前套件可以绑定到账户并显示连接状态。将读取到的标签发送到个人资料的功能正在开发中。",
+      "renderAlt": "Edge 套件：扁平外壳，读卡器天线上方有一个圆环",
+      "partsTitle": "所需物品",
+      "parts": {
+        "board": "{{board}} 开发板",
+        "reader": "带天线的 {{reader}} NFC 读卡器",
+        "screws": "4 颗 M2.5 × 8 mm 自攻螺丝",
+        "wire": "导线和电烙铁",
+        "cable": "可传输数据的 USB-C 线",
+        "tags": "NTAG213、NTAG215 或 NTAG216 标签",
+        "filament": "外壳约需 30 g PLA 或 PETG"
+      },
+      "wiring": {
+        "title": "接线图",
+        "board": "ESP32-C3",
+        "reader": "PN5180",
+        "jumper": "跳线",
+        "unused": "读卡器的 GPIO、IRQ、AUX 和 REQ 引脚不接。",
+        "power": "此版本中天线供电（+5V）需手动接通：在这根线上加一个跳线，USB 上电后再闭合。拔掉 USB 前先断开。"
+      },
+      "filesTitle": "可打印的外壳",
+      "filesNote": "上盖正面朝下打印，无需支撑；圆环可用第二种颜色填充。不同卖家的板子尺寸不同：PN5180 模块有 69–70 × 37–39 mm 的差异。请核对您的板子，必要时在源文件中修改尺寸。",
+      "files": {
+        "shell": "上盖，STL",
+        "base": "底板，STL",
+        "mark": "第二种颜色的圆环，STL",
+        "shellStep": "上盖，STEP",
+        "baseStep": "底板，STEP"
+      },
+      "filesSource": "模型源文件",
+      "assemblyTitle": "组装",
+      "steps": {
+        "print": {
+          "title": "打印上盖和底板",
+          "text": "层高 0.2 mm，无需支撑。检查板子能否放入各自的定位框。"
+        },
+        "boards": {
+          "title": "焊接导线并放入板子",
+          "text": "按接线图连接两块板。读卡器的天线位于圆环下方，ESP32 的接口对准侧壁开口。"
+        },
+        "close": {
+          "title": "盖上底板",
+          "text": "底板上的支柱把板子压向上盖。拧上四颗螺丝，不要拧得过紧。"
+        },
+        "connect": {
+          "title": "接上 USB",
+          "text": "其余步骤都在本页完成：刷写固件、配置 Wi-Fi 并绑定账户。"
+        }
+      },
+      "firmwareTitle": "固件与绑定",
+      "firmwareLater": "套件通过硬件检查后，将开放从网站安装固件。",
+      "ready": {
+        "title": "想要成品套件？",
+        "text": "我们暂不销售组装好的设备。如果您不想自己动手，请告诉我们——这样我们才知道需要多少台。",
+        "action": "告知我想要成品",
+        "sent": "已记录，谢谢。",
+        "signIn": "登录后告知我们",
+        "subject": "Edge 套件：需要成品",
+        "message": "来自 Edge 页面：需要组装好的成品套件。"
+      }
+    }
   },
   "downloadPage": {
     "sectionsLabel": "连接方式",

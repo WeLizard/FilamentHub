@@ -235,8 +235,8 @@ export function DownloadPage() {
         url={section === 'orca' ? '/download' : `/download/${section}`}
         type="website"
       />
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-12">
-      <nav aria-label={t('downloadPage.sectionsLabel')} className="mb-8 flex flex-wrap justify-center gap-2">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 pt-4 md:pt-6 pb-6 md:pb-12">
+      <nav aria-label={t('downloadPage.sectionsLabel')} className="mb-8 flex flex-wrap justify-center gap-2 md:mb-10">
         {DOWNLOAD_SECTIONS.map((id) => (
           <Link
             key={id}
