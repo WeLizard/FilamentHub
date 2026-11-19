@@ -74,7 +74,8 @@ def test_snapshot_matches_the_reading_shared_with_edge(plugin_module):
 
     assert {key: snapshot[key] for key in expected} == expected
     assert (snapshot["provider"], snapshot["transport"]) == ("flashforge", "orca_plugin_lan")
-    assert snapshot["capabilities"] == ["read", "presence", "consumption"]
+    # The fixture is a Creator 5 Pro: it has a station whose slots can be set.
+    assert snapshot["capabilities"] == ["read", "presence", "consumption", "write"]
 
 
 def test_connections_come_from_orcas_flashforge_printer_presets(plugin_module, monkeypatch):
@@ -110,7 +111,7 @@ def test_linking_pairs_the_printer_and_keeps_its_credentials_out_of_storage(brid
     assert result == {"ok": True, "code": "ok"}
     _path, _token, pairing = calls.paired[0]
     assert (pairing["provider"], pairing["transport"]) == ("flashforge", "orca_plugin_lan")
-    assert pairing["capabilities"] == ["read", "presence", "consumption"]
+    assert pairing["capabilities"] == ["read", "presence", "consumption", "write"]
     # The same account-scoped evidence FH Edge computes for this serial number.
     evidence = hmac.new(
         bytes.fromhex(DISCOVERY_KEY),
@@ -430,3 +431,130 @@ def test_a_link_the_site_revoked_is_dropped_by_the_watcher(watched):
     assert plugin._load_flashforge_bindings() == []
     # Nothing is linked any more, so the thread has nothing to stay for.
     assert watched.runtime.watch_once() is None
+
+
+def test_a_spool_is_described_in_the_printers_own_materials_and_swatches(plugin_module):
+    plugin = plugin_module
+    creator, ad5x, single = _detail(), _detail_with({"pid": "0026"}), _detail_with({"pid": 35})
+
+    # Published CIEDE2000 reference pairs: the measure of "looks most like".
+    assert plugin.flashforge_color_difference(
+        (50.0, 2.6772, -79.7751), (50.0, 0.0, -82.7485)
+    ) == pytest.approx(2.0425, abs=1e-4)
+    assert plugin.flashforge_color_difference(
+        (50.0, 2.5, 0.0), (73.0, 25.0, -18.0)
+    ) == pytest.approx(27.1492, abs=1e-4)
+
+    # The same red is a different swatch on each printer. The Creator 5 stores
+    # white for anything that is not exactly its own, so the exact text matters.
+    assert plugin.flashforge_palette_color(creator, "ff0000") == "#F82D29"
+    assert plugin.flashforge_palette_color(ad5x, "#FF0000") == "#F72224"
+    assert plugin.flashforge_palette_color(creator, "not a colour") is None
+    assert plugin.flashforge_material_name(creator, "pla silk") == "SILK"
+    assert plugin.flashforge_material_name(creator, "TPU 95A") == "TPU-95A"
+    # A name the printer does not list is not invented.
+    assert plugin.flashforge_material_name(creator, "TPU") is None
+    assert plugin.flashforge_material_name(ad5x, "TPU") == "TPU"
+    assert plugin.flashforge_material_name(creator, "PLA+") is None
+
+    # Slots are numbered from 1 on the wire.
+    assert plugin.flashforge_slot_command(SERIAL, CHECK_CODE, 1, "PETG", "#F82D29") == {
+        "serialNumber": SERIAL,
+        "checkCode": CHECK_CODE,
+        "payload": {"cmd": "msConfig_cmd", "args": {"slot": 2, "mt": "PETG", "rgb": "#F82D29"}},
+    }
+    assert "write" in plugin.flashforge_capabilities(creator)
+    assert "write" not in plugin.flashforge_capabilities(single)
+
+
+@pytest.fixture
+def station(plugin_module, monkeypatch):
+    """A printer whose station does with a command what the test tells it to."""
+    plugin = plugin_module
+    printer = SimpleNamespace(detail=_detail_with({"status": "ready"}), commands=[], obeys=True,
+                              also_changes=None)
+
+    def read(_connection):
+        return copy.deepcopy(printer.detail), None
+
+    def send(_connection, provider_index, material, color):
+        printer.commands.append((provider_index, material, color))
+        if printer.obeys:
+            slots = printer.detail["matlStationInfo"]["slotInfos"]
+            for index in filter(lambda item: item is not None, (provider_index, printer.also_changes)):
+                slots[index].update(materialName=material, materialColor=color)
+        return None
+
+    monkeypatch.setattr(plugin, "read_flashforge_detail", read)
+    monkeypatch.setattr(plugin, "send_flashforge_slot_command", send)
+    return plugin, printer
+
+
+def test_a_slot_is_called_set_only_when_the_printer_read_again_says_so(station):
+    plugin, printer = station
+
+    def apply(material="PETG", color="FF0000", index=1):
+        return plugin.apply_flashforge_slot_material(
+            _connection(), index, material, color, wait=lambda _seconds: None
+        )[0]
+
+    assert apply() is None
+    assert printer.commands == [(1, "PETG", "#F82D29")]
+    # It already says so: nothing is sent again.
+    assert apply() is None
+    assert len(printer.commands) == 1
+
+    # The firmware answers "Success" to commands it ignores.
+    printer.obeys = False
+    assert apply(color="0000FF") == "not_applied"
+
+    # A command that also rewrote a slot it was not addressed to is not a success.
+    printer.obeys, printer.also_changes = True, 0
+    assert apply(color="00FF00") == "verification_failed"
+
+    # Nothing is sent for a material the printer cannot name or during a job.
+    printer.also_changes = None
+    sent = len(printer.commands)
+    assert apply(material="PLA+") == "material_unsupported"
+    printer.detail["status"] = "printing"
+    assert apply(color="FFFFFF") == "printer_busy"
+    assert len(printer.commands) == sent
+
+
+def test_a_saved_assignment_reaches_the_slot_and_a_stale_one_does_not(station, bridge, monkeypatch):
+    plugin, printer = station
+    _same_plugin, calls, _stored = bridge
+    monkeypatch.setattr(plugin, "read_flashforge_detail", lambda _c: (copy.deepcopy(printer.detail), None))
+    plugin.configure_flashforge_bridge(7, 9, "FH-AAAAA-BBBBB", "", [_connection()])
+    calls.posted.clear()
+    commit = {
+        "materialSlotId": 501, "providerIndex": 1, "assignmentRevision": 4,
+        "desired": {"presetId": None, "spoolId": 12, "sourceTs": None},
+    }
+    monkeypatch.setattr(
+        plugin, "_material_commit_context", lambda *_args: (None, None, None, None)
+    )
+    revision = {"value": 4}
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda _path, _token: (200, json.dumps({
+        "slots": [{
+            "material_slot_id": 501, "index": 1, "assignment_revision": revision["value"],
+            "spool": {"id": 12, "material_type": "PETG", "color_hex": "FF0000"},
+        }],
+    }).encode("utf-8")))
+    monkeypatch.setattr(plugin.time, "sleep", lambda _seconds: None)
+
+    def assign():
+        return plugin.assign_flashforge_slot(
+            7, 9, "page-token", commit, [_connection()], plugin.time.monotonic() + 20
+        )
+
+    assert assign() == {"ok": True, "code": "ok"}
+    assert printer.commands == [(1, "PETG", "#F82D29")]
+    (_path, _token, report), = calls.posted
+    assert report["slots"][1]["material"] == "PETG"
+    assert report["slots"][1]["color_hex"] == "F82D29"
+
+    # The assignment changed on the site while the request was on its way.
+    revision["value"] = 5
+    assert assign() == {"ok": False, "code": "stale_assignment"}
+    assert len(printer.commands) == 1

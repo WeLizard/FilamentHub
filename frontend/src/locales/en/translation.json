@@ -8527,6 +8527,7 @@
       "savedOnlySpoolIdsUnavailable": "Assignment saved in FilamentHub. Happy Hare did not provide spool IDs, so the printer map was left unchanged.",
       "savedOnlySlotEmpty": "Assignment saved in FilamentHub. The printer reports the slot empty, so its material data was left unchanged.",
       "savedOnlyMaterialMismatch": "Assignment saved in FilamentHub. The selected filament profile does not match the spool.",
+      "savedOnlyMaterialUnsupported": "The assignment is saved in FilamentHub. The printer's material list has no entry for this spool's material, so the slot was left as it is.",
       "savedOnlySpoolFactsUnavailable": "Assignment saved in FilamentHub. The spool material or color is incomplete, so the printer was not updated.",
       "savedOnlySnapshotFailed": "Assignment saved in FilamentHub. FilamentHub could not fetch the printer's current state.",
       "savedOnlyUnreachable": "Assignment saved in FilamentHub. The printer could not be reached; try again from OrcaSlicer.",

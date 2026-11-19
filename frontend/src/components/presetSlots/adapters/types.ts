@@ -108,8 +108,11 @@ export interface FeedAdapter {
   slotCountSummaryKey?: string;
   /** How the printer is pointed at us; null when nothing is linked at all. */
   link: FeedAdapterLink | null;
-  /** Best-effort immediate delivery of one already committed server assignment. */
-  deliverAssignment?: (context: AssignmentCommitContext) => Promise<MaterialDeliveryResult>;
+  /**
+   * Best-effort immediate delivery of one already committed server assignment.
+   * Null when this connection has nothing to deliver to from here.
+   */
+  deliverAssignment?: (context: AssignmentCommitContext) => Promise<MaterialDeliveryResult | null>;
   /** Provider-specific guidance shown while its system is being created. */
   renderCreateHelp?: () => ReactNode;
   /** Extra controls this system needs and no other one does. */

@@ -34,6 +34,7 @@ const SAVED_ONLY_REASON_KEYS: Record<string, string> = {
   spool_ids_unavailable: 'presetSlots.delivery.savedOnlySpoolIdsUnavailable',
   slot_empty: 'presetSlots.delivery.savedOnlySlotEmpty',
   material_mismatch: 'presetSlots.delivery.savedOnlyMaterialMismatch',
+  material_unsupported: 'presetSlots.delivery.savedOnlyMaterialUnsupported',
   spool_facts_unavailable: 'presetSlots.delivery.savedOnlySpoolFactsUnavailable',
   snapshot_failed: 'presetSlots.delivery.savedOnlySnapshotFailed',
   unreachable: 'presetSlots.delivery.savedOnlyUnreachable',

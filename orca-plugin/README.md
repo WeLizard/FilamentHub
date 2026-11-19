@@ -208,6 +208,16 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 - Supported: Adventurer 5M / 5M Pro (firmware 2.x+), AD5X and Creator 5 / 5 Pro
   on stock firmware in LAN mode (`POST http://<printer>:8898/detail`). Older
   models speak a different TCP protocol without material data.
+- A station slot can be told the material and colour of the spool assigned to
+  it (`write`, AD5X and Creator 5 only): when an assignment is saved inside
+  OrcaSlicer the page sends `flashforge-assign`, the plugin checks the
+  assignment against the site again and sends `msConfig_cmd`. The printer can
+  show only its own material names and 24 swatches, which differ between the
+  two models, so the colour becomes the nearest swatch (CIEDE2000) and a
+  material it does not list is not sent. The firmware answers "Success" even
+  to a command it ignores, so a slot counts as set only when the printer, read
+  again, says so; a printer in the middle of a job is left alone. The command
+  follows the community reference and has not been confirmed on a printer.
 - The connector claims `read`, `presence` and `consumption`. The printer
   measures no filament; it reports the slicer's estimate for the job, which is
   followed by the print progress and charged, as an estimate, to the spool in

@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaterialSystem, PhysicalPrinter } from '../../../api/client';
 import { flashforgeAdapter } from './flashforge';
 
-const { issuePairingCode, status, configure, refresh, bridge } = vi.hoisted(() => ({
+const { issuePairingCode, status, configure, refresh, assign, bridge } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
   status: vi.fn(),
   configure: vi.fn(),
   refresh: vi.fn(),
+  assign: vi.fn(),
   bridge: { embedded: true },
 }));
 
@@ -18,6 +19,7 @@ vi.mock('../../../utils/pluginBridge', () => ({
   isPluginEmbed: () => bridge.embedded,
   configureFlashforgeBridgeInPlugin: configure,
   requestFlashforgeObservationRefresh: refresh,
+  requestFlashforgeSlotAssignment: assign,
   requestPluginCapabilities: vi.fn(),
   subscribeToPluginCapabilities: vi.fn((callback) => {
     callback(new Set(['flashforge-lan-bridge']));
@@ -92,5 +94,39 @@ describe('Flashforge through OrcaSlicer', () => {
 
     expect(container).toBeEmptyDOMElement();
     expect(status).not.toHaveBeenCalled();
+  });
+
+  it('hands a saved assignment to the plugin only for a station linked through OrcaSlicer', async () => {
+    const slot = {
+      id: 501, provider_index: 1, assignment_revision: 4,
+      assignment: { preset_id: null, spool_id: 12, source_ts: null },
+    };
+    const linked = { ...printer, connectors: [{
+      provider: 'flashforge', transport: 'orca_plugin_lan', material_system_id: 9, active: true,
+    }] } as unknown as PhysicalPrinter;
+    const deliver = (target: PhysicalPrinter, feed: MaterialSystem = system) => (
+      flashforgeAdapter.deliverAssignment!({ printer: target, system: feed, slot } as never)
+    );
+
+    assign.mockResolvedValueOnce({ ok: true, code: 'ok' });
+    await expect(deliver(linked)).resolves.toEqual({ status: 'delivered' });
+    expect(assign).toHaveBeenCalledWith(7, 9, {
+      materialSlotId: 501, providerIndex: 1, assignmentRevision: 4,
+      desired: { presetId: null, spoolId: 12, sourceTs: null },
+    });
+
+    // The printer cannot name the spool's material: saved, and the reason is kept.
+    assign.mockResolvedValueOnce({ ok: false, code: 'material_unsupported' });
+    await expect(deliver(linked)).resolves.toEqual({
+      status: 'saved_only', code: 'material_unsupported', physicallyApplied: false,
+    });
+
+    // Edge sets no slots, a single spool has none, and a browser holds no connection.
+    assign.mockClear();
+    await expect(deliver(printer)).resolves.toBeNull();
+    await expect(deliver(linked, { ...system, kind: 'direct_feed' } as MaterialSystem)).resolves.toBeNull();
+    bridge.embedded = false;
+    await expect(deliver(linked)).resolves.toBeNull();
+    expect(assign).not.toHaveBeenCalled();
   });
 });

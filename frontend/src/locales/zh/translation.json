@@ -8508,6 +8508,7 @@
       "savedOnlySpoolIdsUnavailable": "分配已保存到 FilamentHub。Happy Hare 未提供料盘 ID，因此未更改打印机映射。",
       "savedOnlySlotEmpty": "分配已保存到 FilamentHub。打印机报告该槽位为空，因此未更改材料数据。",
       "savedOnlyMaterialMismatch": "分配已保存到 FilamentHub。所选耗材配置与料盘不匹配。",
+      "savedOnlyMaterialUnsupported": "分配已保存到 FilamentHub。打印机的材料列表中没有该料盘的材料，因此未更改槽位。",
       "savedOnlySpoolFactsUnavailable": "分配已保存到 FilamentHub。料盘材料或颜色信息不完整，因此未更新打印机。",
       "savedOnlySnapshotFailed": "分配已保存到 FilamentHub。FilamentHub 无法获取打印机的最新状态。",
       "savedOnlyUnreachable": "分配已保存到 FilamentHub。无法连接打印机，请从 OrcaSlicer 重试。",

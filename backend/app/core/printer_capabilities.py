@@ -62,7 +62,11 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # that estimate by progress: Edge always, the plugin while OrcaSlicer is
     # open.
     ("flashforge", "edge_agent"): frozenset({"read", "presence", "consumption"}),
-    ("flashforge", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
+    # Only the plugin sets a station slot's material, and only a station has
+    # slots to set: a single-spool printer does not report this capability.
+    ("flashforge", "orca_plugin_lan"): frozenset(
+        {"read", "presence", "consumption", "write"}
+    ),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -110,10 +114,11 @@ _FLASHFORGE_NO_SPOOL = (
     "The printer knows the material set on it, never which spool is loaded.",
 )
 _FLASHFORGE_NO_READER = ("device", "The printer has no tag reader.")
-_FLASHFORGE_WRITE = (
+_FLASHFORGE_EDGE_WRITE = (
     "planned",
-    "The LAN API can set a slot's material and colour (msConfig_cmd); not built, and not "
-    "yet tried on a printer.",
+    "The plugin sets a station slot when an assignment is saved inside OrcaSlicer. Edge "
+    "sends a printer nothing unless its connection opts in, and that delivery is not built "
+    "for Flashforge.",
 )
 _KLIPPER_ELSEWHERE = (
     "elsewhere",
@@ -149,12 +154,11 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
     ("happy_hare", "spoolman_compat"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
     ("happy_hare", "legacy_adapter"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
     ("flashforge", "edge_agent"): {
-        "write": _FLASHFORGE_WRITE,
+        "write": _FLASHFORGE_EDGE_WRITE,
         "spool_identity": _FLASHFORGE_NO_SPOOL,
         "tag_read": _FLASHFORGE_NO_READER,
     },
     ("flashforge", "orca_plugin_lan"): {
-        "write": _FLASHFORGE_WRITE,
         "spool_identity": _FLASHFORGE_NO_SPOOL,
         "tag_read": _FLASHFORGE_NO_READER,
     },

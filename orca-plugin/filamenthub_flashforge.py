@@ -15,6 +15,12 @@ whole job and the print progress; the two give a running figure, marked as
 an estimate, that is charged to the spool in the slot that is feeding. Where
 the printer leaves a doubt about that slot, nothing is charged.
 
+A station slot's material and colour can be set (``msConfig_cmd``), within
+what the printer can show: a fixed list of material names and a palette of
+24 colours, which differ between the AD5X and the Creator 5. The command is
+documented by the community reference and not confirmed on a printer; the
+caller reads the slot back and believes only that.
+
 FH Edge reads the same API and keeps the same books (edge-agent
 ``providers/flashforge.py`` and ``usage.py``). The two are held to one shared
 reading and one shared print scenario so they cannot drift apart.
@@ -33,6 +39,33 @@ FLASHFORGE_PROVIDER = "flashforge"
 FLASHFORGE_HOST_TYPE = "flashforge"
 FLASHFORGE_IDENTITY_KIND = "flashforge_serial"
 FLASHFORGE_CAPABILITIES = ("read", "presence", "consumption")
+# Product IDs whose station slots can be set, with what each can show. The
+# two palettes follow the same hues but differ by a few units per swatch, and
+# the Creator 5 stores white for any colour that is not exactly its own.
+FLASHFORGE_AD5X_PID = 38
+_FLASHFORGE_AD5X_COLORS = (
+    "#FFFFFF", "#FEF043", "#DCF478", "#0ACC38", "#067749", "#0C6283",
+    "#0DE2A0", "#75D9F3", "#45A8F9", "#2750E0", "#46328E", "#A03CF7",
+    "#F330F9", "#D4B0DC", "#F95D73", "#F72224", "#7C4B00", "#F98D33",
+    "#FDEBD5", "#D3C4A3", "#AF7836", "#898989", "#BCBCBC", "#161616",
+)
+_FLASHFORGE_CREATOR5_COLORS = (
+    "#FFFFFF", "#FFF245", "#DEF578", "#21CC3D", "#167A4B", "#156682",
+    "#24E4A0", "#7BD9F0", "#4CAAF8", "#2E54DD", "#48358C", "#A341F7",
+    "#F435F6", "#D5B4DE", "#FA6173", "#F82D29", "#805003", "#F9903B",
+    "#FCEBD7", "#D5C5A1", "#B17C38", "#8C8C89", "#BEBEBE", "#1B1B1B",
+)
+_FLASHFORGE_AD5X_MATERIALS = (
+    "PLA", "PETG", "PLA-CF", "PETG-CF", "ABS", "SILK", "PET-CF", "PAHT-CF",
+    "PA-CF", "TPU", "PC", "PA", "PC-ABS", "PPS-CF",
+)
+_FLASHFORGE_CREATOR5_MATERIALS = (
+    "PLA", "PETG", "PLA-CF", "PETG-CF", "ABS", "ASA", "SILK", "PET-CF",
+    "PAHT-CF", "S-PAHT", "S-Multi", "PA-CF", "HIPS", "PVA", "TPU-90A",
+    "TPU-95A", "TPU-64D", "PC", "PA", "PC-ABS", "PPS-CF",
+)
+# Names a spool may carry for something the printer lists under another name.
+_FLASHFORGE_MATERIAL_ALIASES = {"PLA-SILK": "SILK", "SILK-PLA": "SILK"}
 FLASHFORGE_API_PORT = 8898
 FLASHFORGE_MAX_SLOTS = 16
 # Product IDs from /detail: the 5M series feeds one spool, the others a station.
@@ -586,3 +619,167 @@ def capture_flashforge_usage(state, usage, route, observed_at):
     tracker["route"] = route
     tracker["pending_mm"] = pending
     return events
+
+
+def flashforge_can_set_slots(detail):
+    """Whether this printer has a station whose slots the command can set."""
+    return flashforge_product_id(detail) in FLASHFORGE_STATION_PIDS and isinstance(
+        _flashforge_field(detail, "matlStationInfo"), dict
+    )
+
+
+def flashforge_capabilities(detail):
+    """What this printer's connection can do; only a station takes a slot's material."""
+    capabilities = list(FLASHFORGE_CAPABILITIES)
+    if flashforge_can_set_slots(detail):
+        capabilities.append("write")
+    return capabilities
+
+
+def flashforge_material_name(detail, material):
+    """The printer's own name for a spool's material, or None when it lists none.
+
+    A name the printer does not list is not sent: the Creator 5 matches names
+    exactly, and a made-up one would leave the slot saying something else.
+    """
+    if not isinstance(material, str):
+        return None
+    wanted = re.sub(r"[\s_]+", "-", material.strip()).upper()
+    wanted = _FLASHFORGE_MATERIAL_ALIASES.get(wanted, wanted)
+    names = (
+        _FLASHFORGE_AD5X_MATERIALS
+        if flashforge_product_id(detail) == FLASHFORGE_AD5X_PID
+        else _FLASHFORGE_CREATOR5_MATERIALS
+    )
+    return next((name for name in names if name.upper() == wanted), None)
+
+
+def _flashforge_lab(color):
+    """CIE L*a*b* (D65) of an ``RRGGBB`` colour."""
+    channels = []
+    for offset in (0, 2, 4):
+        value = int(color[offset:offset + 2], 16) / 255.0
+        channels.append(
+            value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+        )
+    red, green, blue = channels
+    axes = []
+    for value, white in (
+        (0.4124564 * red + 0.3575761 * green + 0.1804375 * blue, 0.95047),
+        (0.2126729 * red + 0.7151522 * green + 0.0721750 * blue, 1.0),
+        (0.0193339 * red + 0.1191920 * green + 0.9503041 * blue, 1.08883),
+    ):
+        ratio = value / white
+        axes.append(
+            ratio ** (1.0 / 3.0) if ratio > 216.0 / 24389.0
+            else (24389.0 / 27.0 * ratio + 16.0) / 116.0
+        )
+    return 116.0 * axes[1] - 16.0, 500.0 * (axes[0] - axes[1]), 200.0 * (axes[1] - axes[2])
+
+
+def flashforge_color_difference(first, second):
+    """CIEDE2000 difference of two L*a*b* colours: how unlike they look."""
+    light_1, a_1, b_1 = first
+    light_2, a_2, b_2 = second
+    chroma_mean = (math.hypot(a_1, b_1) + math.hypot(a_2, b_2)) / 2.0
+    boost = 0.5 * (1.0 - math.sqrt(chroma_mean ** 7 / (chroma_mean ** 7 + 25.0 ** 7)))
+    a_1, a_2 = a_1 * (1.0 + boost), a_2 * (1.0 + boost)
+    chroma_1, chroma_2 = math.hypot(a_1, b_1), math.hypot(a_2, b_2)
+    hue_1 = math.degrees(math.atan2(b_1, a_1)) % 360.0 if chroma_1 else 0.0
+    hue_2 = math.degrees(math.atan2(b_2, a_2)) % 360.0 if chroma_2 else 0.0
+    turn = hue_2 - hue_1
+    if not chroma_1 * chroma_2:
+        turn = 0.0
+    elif turn > 180.0:
+        turn -= 360.0
+    elif turn < -180.0:
+        turn += 360.0
+    hue_step = 2.0 * math.sqrt(chroma_1 * chroma_2) * math.sin(math.radians(turn) / 2.0)
+    light_mean = (light_1 + light_2) / 2.0
+    chroma_mean = (chroma_1 + chroma_2) / 2.0
+    if not chroma_1 * chroma_2:
+        hue_mean = hue_1 + hue_2
+    elif abs(hue_1 - hue_2) <= 180.0:
+        hue_mean = (hue_1 + hue_2) / 2.0
+    elif hue_1 + hue_2 < 360.0:
+        hue_mean = (hue_1 + hue_2 + 360.0) / 2.0
+    else:
+        hue_mean = (hue_1 + hue_2 - 360.0) / 2.0
+    tone = (
+        1.0
+        - 0.17 * math.cos(math.radians(hue_mean - 30.0))
+        + 0.24 * math.cos(math.radians(2.0 * hue_mean))
+        + 0.32 * math.cos(math.radians(3.0 * hue_mean + 6.0))
+        - 0.20 * math.cos(math.radians(4.0 * hue_mean - 63.0))
+    )
+    light_scale = 1.0 + 0.015 * (light_mean - 50.0) ** 2 / math.sqrt(
+        20.0 + (light_mean - 50.0) ** 2
+    )
+    chroma_scale = 1.0 + 0.045 * chroma_mean
+    hue_scale = 1.0 + 0.015 * chroma_mean * tone
+    rotation = (
+        -2.0
+        * math.sqrt(chroma_mean ** 7 / (chroma_mean ** 7 + 25.0 ** 7))
+        * math.sin(math.radians(60.0 * math.exp(-(((hue_mean - 275.0) / 25.0) ** 2))))
+    )
+    light_term = (light_2 - light_1) / light_scale
+    chroma_term = (chroma_2 - chroma_1) / chroma_scale
+    hue_term = hue_step / hue_scale
+    return math.sqrt(
+        light_term ** 2 + chroma_term ** 2 + hue_term ** 2 + rotation * chroma_term * hue_term
+    )
+
+
+def flashforge_palette_color(detail, color_hex):
+    """The printer's swatch that looks most like a spool's colour, as it must be sent."""
+    match = _FLASHFORGE_COLOR.fullmatch(color_hex.strip()) if isinstance(color_hex, str) else None
+    if match is None:
+        return None
+    wanted = _flashforge_lab(match.group(1))
+    palette = (
+        _FLASHFORGE_AD5X_COLORS
+        if flashforge_product_id(detail) == FLASHFORGE_AD5X_PID
+        else _FLASHFORGE_CREATOR5_COLORS
+    )
+    return min(
+        palette,
+        key=lambda swatch: flashforge_color_difference(wanted, _flashforge_lab(swatch[1:])),
+    )
+
+
+def flashforge_control_url(address):
+    host = "[%s]" % address if ":" in address else address
+    return "http://%s:%d/control" % (host, FLASHFORGE_API_PORT)
+
+
+def flashforge_slot_command(serial, check_code, provider_index, material, color):
+    """The request that sets one station slot; slots are numbered from 1 on the wire."""
+    return {
+        "serialNumber": serial,
+        "checkCode": check_code,
+        "payload": {
+            "cmd": "msConfig_cmd",
+            "args": {"slot": provider_index + 1, "mt": material, "rgb": color},
+        },
+    }
+
+
+def flashforge_slot_settings(detail):
+    """What every station slot says now: ``{provider_index: (material, colour)}``.
+
+    Read from the printer's own fields whether or not filament is loaded, so a
+    slot can be compared before and after it is set.
+    """
+    station = _flashforge_field(detail, "matlStationInfo")
+    entries = _flashforge_field(station, "slotInfos") if isinstance(station, dict) else None
+    settings = {}
+    for entry in entries if isinstance(entries, list) else []:
+        slot_id = _flashforge_integer(entry.get("slotId")) if isinstance(entry, dict) else None
+        if slot_id is None or not 1 <= slot_id <= FLASHFORGE_MAX_SLOTS:
+            continue
+        color = entry.get("materialColor")
+        settings[slot_id - 1] = (
+            entry.get("materialName") if isinstance(entry.get("materialName"), str) else None,
+            color.strip().upper() if isinstance(color, str) else None,
+        )
+    return settings

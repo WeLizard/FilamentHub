@@ -8721,6 +8721,7 @@
       "savedOnlySpoolIdsUnavailable": "Назначение сохранено в FilamentHub. Happy Hare не передал идентификаторы катушек, поэтому карта принтера не изменена.",
       "savedOnlySlotEmpty": "Назначение сохранено в FilamentHub. Принтер сообщает, что слот пуст, поэтому данные материала не изменены.",
       "savedOnlyMaterialMismatch": "Назначение сохранено в FilamentHub. Выбранный профиль филамента не соответствует катушке.",
+      "savedOnlyMaterialUnsupported": "Назначение сохранено в FilamentHub. В списке материалов принтера нет материала этой катушки, поэтому слот не изменён.",
       "savedOnlySpoolFactsUnavailable": "Назначение сохранено в FilamentHub. Материал или цвет катушки указаны не полностью, поэтому принтер не изменён.",
       "savedOnlySnapshotFailed": "Назначение сохранено в FilamentHub. FilamentHub не удалось получить актуальное состояние принтера.",
       "savedOnlyUnreachable": "Назначение сохранено в FilamentHub. Принтер недоступен; повторите попытку из OrcaSlicer.",

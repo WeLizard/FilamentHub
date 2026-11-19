@@ -6,6 +6,7 @@ import {
   configureFlashforgeBridgeInPlugin,
   isPluginEmbed,
   requestFlashforgeObservationRefresh,
+  requestFlashforgeSlotAssignment,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
 } from '../../../utils/pluginBridge';
@@ -243,5 +244,33 @@ export const flashforgeAdapter: FeedAdapter = {
   edgeKinds: ['mmu', 'direct_feed'],
   orcaBridge: true,
   link: null,
+  // A station slot can be told the material and colour of the spool assigned
+  // to it. Only the plugin does that, so only inside OrcaSlicer and only for
+  // a printer linked through it; elsewhere the assignment is simply saved.
+  deliverAssignment: async ({ printer, system, slot }) => {
+    const linked = (printer.connectors ?? []).some(
+      (item) => item.provider === 'flashforge'
+        && item.transport === 'orca_plugin_lan'
+        && item.material_system_id === system.id
+        && item.active,
+    );
+    if (system.kind !== 'mmu' || !linked || !isPluginEmbed()) return null;
+    const result = await requestFlashforgeSlotAssignment(printer.id, system.id, {
+      materialSlotId: slot.id,
+      providerIndex: slot.provider_index,
+      assignmentRevision: slot.assignment_revision,
+      desired: slot.assignment ? {
+        presetId: slot.assignment.preset_id,
+        spoolId: slot.assignment.spool_id,
+        sourceTs: slot.assignment.source_ts,
+      } : null,
+    });
+    if (result.ok) return { status: 'delivered' };
+    if (result.code === 'physical_clear_unsupported') {
+      return { status: 'unsupported', code: result.code };
+    }
+    // The slot was set; only the report of it did not reach the site.
+    return { status: 'saved_only', code: result.code, physicallyApplied: result.code === 'snapshot_failed' };
+  },
   renderSetup: (context) => <FlashforgeSetup {...context} />,
 };

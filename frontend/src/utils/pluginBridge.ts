@@ -1212,11 +1212,12 @@ export interface FlashforgeBridgeResult {
 }
 
 function requestFlashforgeBridge(
-  type: 'configure-flashforge' | 'flashforge-refresh',
-  resultType: 'flashforge-setup-result' | 'flashforge-refresh-result',
+  type: 'configure-flashforge' | 'flashforge-refresh' | 'flashforge-assign',
+  resultType: 'flashforge-setup-result' | 'flashforge-refresh-result' | 'flashforge-assign-result',
   payload: Record<string, unknown>,
+  capability: 'flashforge-lan-bridge' | 'flashforge-material-write' = 'flashforge-lan-bridge',
 ): Promise<FlashforgeBridgeResult> {
-  if (!isPluginEmbed() || !activePluginCapabilities.has('flashforge-lan-bridge')) {
+  if (!isPluginEmbed() || !activePluginCapabilities.has(capability)) {
     return Promise.reject(new Error('flashforge bridge unavailable'));
   }
   const requestId = pluginRequestId('flashforge');
@@ -1279,6 +1280,21 @@ export function requestFlashforgeObservationRefresh(
   return requestFlashforgeBridge('flashforge-refresh', 'flashforge-refresh-result', {
     physicalPrinterId, materialSystemId,
   });
+}
+
+/**
+ * Ask the plugin to make a station slot say the material and colour of the
+ * spool just assigned to it. The page sends only the saved assignment; the
+ * plugin checks it against the site again and reads the printer back.
+ */
+export function requestFlashforgeSlotAssignment(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  commit: MaterialAssignmentCommit,
+): Promise<FlashforgeBridgeResult> {
+  return requestFlashforgeBridge('flashforge-assign', 'flashforge-assign-result', {
+    physicalPrinterId, materialSystemId, commit,
+  }, 'flashforge-material-write');
 }
 
 export interface HappyHareAssignmentChange {

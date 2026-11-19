@@ -663,6 +663,7 @@ PLUGIN_CAPABILITIES = (
     "printer-recovery-v1",
     "bambu-lan-bridge",
     "flashforge-lan-bridge",
+    "flashforge-material-write",
     "profile-sync",
     "profile-sync-scopes-v1",
     "bambu-material-write",
@@ -10887,6 +10888,7 @@ def stop_plugin_runtime():
 # filament. Monitoring without OrcaSlicer is what FH Edge is for.
 # fh-bundle: filamenthub_flashforge
 from filamenthub_flashforge import (
+    FLASHFORGE_AD5X_PID,
     FLASHFORGE_API_PORT,
     FLASHFORGE_AUTH_FAILED,
     FLASHFORGE_CAPABILITIES,
@@ -10900,14 +10902,22 @@ from filamenthub_flashforge import (
     FLASHFORGE_STATION_PIDS,
     FLASHFORGE_USAGE_CHECKPOINT_S,
     capture_flashforge_usage,
+    flashforge_can_set_slots,
+    flashforge_capabilities,
     flashforge_check_code,
+    flashforge_color_difference,
+    flashforge_control_url,
     flashforge_detail_body,
     flashforge_detail_result,
     flashforge_detail_url,
     flashforge_host,
+    flashforge_material_name,
+    flashforge_palette_color,
     flashforge_printer,
     flashforge_product_id,
     flashforge_serial,
+    flashforge_slot_command,
+    flashforge_slot_settings,
     flashforge_slots,
     flashforge_usage,
     flashforge_usage_route,
@@ -10923,7 +10933,17 @@ FLASHFORGE_READ_TIMEOUT = 8
 FLASHFORGE_CONNECTIONS_MAX_AGE_SECONDS = 300.0
 _FLASHFORGE_CONNECTIONS = {"items": None, "at": None}
 _FLASHFORGE_CONNECTIONS_LOCK = threading.Lock()
-FLASHFORGE_MESSAGES = frozenset({"configure-flashforge", "flashforge-refresh"})
+FLASHFORGE_MESSAGES = frozenset({
+    "configure-flashforge", "flashforge-refresh", "flashforge-assign",
+})
+_FLASHFORGE_RESULT_TYPES = {
+    "configure-flashforge": "flashforge-setup-result",
+    "flashforge-refresh": "flashforge-refresh-result",
+    "flashforge-assign": "flashforge-assign-result",
+}
+# The printer is read back this many times, a second apart, before a slot
+# that still says something else is called not set.
+FLASHFORGE_WRITE_CHECKS = 3
 _FLASHFORGE_CONFIG_LOCK = threading.RLock()
 
 
@@ -11097,7 +11117,7 @@ def build_flashforge_bridge_snapshot(binding, source_instance_id, detail):
         "transport": "orca_plugin_lan",
         "source_instance_id": source_instance_id,
         "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "capabilities": list(FLASHFORGE_CAPABILITIES),
+        "capabilities": flashforge_capabilities(detail),
         "printer": flashforge_printer(detail),
         "slots": slots,
         "slot_topology_complete": complete,
@@ -11232,7 +11252,7 @@ def configure_flashforge_bridge(
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": PLUGIN_VERSION,
-            "capabilities": list(FLASHFORGE_CAPABILITIES),
+            "capabilities": flashforge_capabilities(detail),
         },
     )
     try:
@@ -11289,6 +11309,176 @@ def configure_flashforge_bridge(
     return {"ok": True, "code": code}
 
 
+def send_flashforge_slot_command(connection, provider_index, material, color):
+    """Ask the printer to set one station slot; return a failure code or None.
+
+    The firmware answers "Success" even to a command it does not know, so its
+    answer proves nothing. The caller reads the slot back.
+    """
+    try:
+        sockaddr = _resolved_lan_address(connection["host"], FLASHFORGE_API_PORT)[3]
+        request = _plugin_request(
+            flashforge_control_url(sockaddr[0]),
+            data=json.dumps(flashforge_slot_command(
+                connection["serial"], connection["check_code"], provider_index, material, color
+            )).encode("utf-8"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+            },
+            method="POST",
+        )
+        with _urlopen_authorized(request, FLASHFORGE_READ_TIMEOUT) as response:
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError:
+        return "command_failed"
+    except (OSError, ValueError, urllib.error.URLError):
+        return "unreachable"
+    try:
+        answer = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return "command_failed"
+    if not isinstance(answer, dict) or answer.get("code") != 0:
+        return "command_failed"
+    return None
+
+
+def apply_flashforge_slot_material(connection, provider_index, material_type, color_hex, wait=time.sleep):
+    """Make one station slot say a spool's material and colour.
+
+    Returns ``(code, detail)``: ``code`` is None only when the printer, read
+    again, says what was asked. The colour becomes the nearest of the printer's
+    own swatches and the material one of its own names, because it can show
+    nothing else. A printer in the middle of a job is left alone.
+    """
+    detail, _failure = read_flashforge_detail(connection)
+    if detail is None:
+        return "unreachable", None
+    if not flashforge_can_set_slots(detail):
+        return "not_applied", detail
+    if flashforge_printer(detail)["state"] in ("printing", "paused", "preparing"):
+        return "printer_busy", detail
+    before = flashforge_slot_settings(detail)
+    if provider_index not in before:
+        return "slot_not_found", detail
+    color = flashforge_palette_color(detail, color_hex)
+    if color is None or not isinstance(material_type, str) or not material_type.strip():
+        return "spool_facts_unavailable", detail
+    material = flashforge_material_name(detail, material_type)
+    if material is None:
+        return "material_unsupported", detail
+    wanted = (material, color)
+    if before[provider_index] == wanted:
+        return None, detail
+    failure = send_flashforge_slot_command(connection, provider_index, material, color)
+    if failure:
+        return failure, detail
+    for check in range(FLASHFORGE_WRITE_CHECKS):
+        if check:
+            wait(1.0)
+        ensure_worker_generation_active()
+        current, _failure = read_flashforge_detail(connection)
+        if current is None:
+            continue
+        detail = current
+        after = flashforge_slot_settings(current)
+        if after.get(provider_index) != wanted:
+            continue
+        if any(after.get(index) != before[index] for index in before if index != provider_index):
+            # The command reached a slot it was not addressed to. Say so rather
+            # than call the delivery a success.
+            fh_log("Flashforge slot command changed another slot")
+            return "verification_failed", detail
+        return None, detail
+    return "not_applied", detail
+
+
+def assign_flashforge_slot(
+    physical_printer_id, material_system_id, token, commit, connections, deadline
+):
+    """Deliver one saved assignment to its station slot; return the page result."""
+    def failed(code):
+        return {"ok": False, "code": code}
+
+    if not token:
+        return failed("auth")
+    binding = next(
+        (
+            item for item in _load_flashforge_bindings()
+            if item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        ),
+        None,
+    )
+    connection = None if binding is None else next(
+        (
+            item for item in connections or []
+            if item["serial"] == binding["serial"] and item["check_code"]
+        ),
+        None,
+    )
+    if connection is None:
+        return failed("connection_not_found")
+    if time.monotonic() > deadline:
+        return failed("expired")
+    source_instance_id = plugin_source_instance_id()
+    _device, _system, _slot, context_error = _material_commit_context(
+        token, source_instance_id, FLASHFORGE_PROVIDER,
+        physical_printer_id, material_system_id, commit,
+    )
+    if context_error:
+        return failed(context_error)
+    desired = commit.get("desired")
+    if desired is None:
+        # A slot's material can be replaced, not removed.
+        return failed("physical_clear_unsupported")
+    if desired.get("spoolId") is None:
+        return failed("assignment_incomplete")
+    # The spool as the site knows it, asked for with the printer's own link.
+    status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
+    if status == 401:
+        _forget_flashforge_binding(physical_printer_id, binding["bridge_token"])
+        return failed("connection_not_found")
+    snapshot = _decode_json_object(body) if status == 200 else None
+    if snapshot is None:
+        return failed("server")
+    slot = next(
+        (
+            item for item in snapshot.get("slots") or []
+            if isinstance(item, dict)
+            and item.get("material_slot_id") == commit.get("materialSlotId")
+        ),
+        None,
+    )
+    spool = slot.get("spool") if isinstance(slot, dict) else None
+    if (
+        slot is None
+        or slot.get("index") != commit.get("providerIndex")
+        or slot.get("assignment_revision") != commit.get("assignmentRevision")
+        or not isinstance(spool, dict)
+        or spool.get("id") != desired.get("spoolId")
+    ):
+        return failed("stale_assignment")
+    if time.monotonic() > deadline:
+        return failed("expired")
+    code, detail = apply_flashforge_slot_material(
+        connection, commit["providerIndex"], spool.get("material_type"), spool.get("color_hex")
+    )
+    if code:
+        return failed(code)
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
+    )
+    report = _flashforge_report_code(status, body)
+    if report == "unpaired":
+        _forget_flashforge_binding(physical_printer_id, binding["bridge_token"])
+    # The slot is set either way; the site just has not been told yet.
+    return {"ok": report == "ok", "code": "ok" if report == "ok" else "snapshot_failed"}
+
+
 def _positive_ids(msg):
     physical_printer_id = msg.get("physicalPrinterId")
     material_system_id = msg.get("materialSystemId")
@@ -11331,6 +11521,24 @@ def handle_flashforge_message(catalog, msg):
             catalog._deliver("flashforge-setup-result", requestId=request_id, result=result)
             if result.get("ok"):
                 wake_flashforge_watch()
+    elif msg_type == "flashforge-assign":
+        commit = msg.get("commit")
+        if not _valid_immediate_material_commit(commit):
+            return
+        token = (load_saved_auth() or {}).get("accessToken") or ""
+        deadline = time.monotonic() + 20.0
+
+        def job():
+            try:
+                result = assign_flashforge_slot(
+                    ids[0], ids[1], token, commit, connections, deadline
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Flashforge slot delivery failed: %s" % type(exc).__name__)
+                result = {"ok": False, "code": "command_failed"}
+            catalog._deliver("flashforge-assign-result", requestId=request_id, result=result)
     else:
         def job():
             try:
@@ -11352,8 +11560,7 @@ def handle_flashforge_message(catalog, msg):
 
     if BACKGROUND_WORKER.submit(job) is False:
         catalog._deliver(
-            "flashforge-setup-result" if msg_type == "configure-flashforge"
-            else "flashforge-refresh-result",
+            _FLASHFORGE_RESULT_TYPES[msg_type],
             requestId=request_id,
             result={"ok": False, "code": "unavailable"},
         )
