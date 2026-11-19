@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrintProfile } from '../types/api';
-import { CreatePrintProfileModal, buildStructuredAdvancedSettings, buildStructuredAdvancedValues } from './CreatePrintProfileModal';
+import {
+  CreatePrintProfileModal,
+  buildStructuredAdvancedSettings,
+  buildStructuredAdvancedValues,
+  dropEditedLegacyOrcaKeys,
+} from './CreatePrintProfileModal';
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(),
@@ -64,6 +69,21 @@ describe('structured process field round trip', () => {
     const cleared = buildStructuredAdvancedSettings({ ...values, toolchange_cyclic_order: '' }, source);
     expect(cleared).toHaveProperty('toolchange_cyclic_order', '');
     expect(buildStructuredAdvancedSettings(buildStructuredAdvancedValues({}), {})).toEqual({});
+  });
+
+  it('reads Orca nightly names of adaptive infill and drops them only after an edit', () => {
+    const nightly = { tpms_adaptive: 'smooth_blend', tpms_interior_density: '12%', adaptive_infill_gradient: 'linear' };
+    const values = buildStructuredAdvancedValues(nightly);
+    expect(values).toMatchObject({ adaptive_infill_mode: 'smooth_blend', adaptive_infill_interior_density: '12', adaptive_infill_gradient: 'linear' });
+
+    const untouched: Record<string, unknown> = { ...nightly, ...buildStructuredAdvancedSettings(values, nightly) };
+    dropEditedLegacyOrcaKeys(untouched, values, nightly);
+    expect(untouched).toEqual(nightly);
+
+    const editedValues = { ...values, adaptive_infill_mode: 'lobes' };
+    const edited: Record<string, unknown> = { ...nightly, ...buildStructuredAdvancedSettings(editedValues, nightly) };
+    dropEditedLegacyOrcaKeys(edited, editedValues, nightly);
+    expect(edited).toEqual({ adaptive_infill_mode: 'lobes', tpms_interior_density: '12%', adaptive_infill_gradient: 'linear' });
   });
 
   it('disables dependencies, reenables on change and saves hidden original values', async () => {

@@ -344,18 +344,41 @@ const readStructuredAdvancedFieldValue = (
   settings: Record<string, unknown> | undefined,
   field: OrcaStructuredFieldDef,
 ): string => {
+  // Orca renames a legacy key on load, so a profile that only has the old name
+  // already uses its value.
+  const key = settings?.[field.key] === undefined
+    ? field.legacyKeys?.find((legacyKey) => settings?.[legacyKey] !== undefined) ?? field.key
+    : field.key;
   switch (field.kind) {
     case 'boolean':
-      return readSettingBooleanString(settings, field.key);
+      return readSettingBooleanString(settings, key);
     case 'integerList':
     case 'floatList':
     case 'stringList':
-      return readSettingList(settings, field.key).join('\n');
+      return readSettingList(settings, key).join('\n');
     case 'percent':
-      return stripPercentSuffix(readSettingString(settings, field.key));
+      return stripPercentSuffix(readSettingString(settings, key));
     default:
-      return readSettingString(settings, field.key);
+      return readSettingString(settings, key);
   }
+};
+
+/**
+ * Drops the legacy names of edited fields: Orca renames them on load, so a
+ * stale value could override the edit.
+ */
+export const dropEditedLegacyOrcaKeys = (
+  settings: Record<string, unknown>,
+  values: Record<string, string>,
+  sourceSettings?: Record<string, unknown>,
+): void => {
+  ORCA_ADVANCED_FIELD_DEFS.forEach((field) => {
+    if (!field.legacyKeys) return;
+    if ((values[field.key] ?? '') === readStructuredAdvancedFieldValue(sourceSettings, field)) return;
+    field.legacyKeys.forEach((legacyKey) => {
+      delete settings[legacyKey];
+    });
+  });
 };
 
 export const buildStructuredAdvancedValues = (settings: Record<string, unknown> | undefined): Record<string, string> =>
@@ -411,6 +434,10 @@ export const buildStructuredAdvancedSettings = (
     const currentUiValue = values[field.key] ?? '';
     const normalized = normalizeStructuredAdvancedFieldValue(field, currentUiValue);
     const originalUiValue = readStructuredAdvancedFieldValue(sourceSettings, field);
+    // An untouched value read from a legacy name stays under that name only.
+    if (currentUiValue === originalUiValue && sourceSettings?.[field.key] === undefined) {
+      return acc;
+    }
     applyOrcaStructuredUiSetting(
       acc,
       sourceSettings ?? {},
@@ -978,6 +1005,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       compatible_printers: compatiblePrinters,
     };
     delete mergedSettings.compatible_printers_condition;
+    dropEditedLegacyOrcaKeys(mergedSettings, structuredAdvancedValues, sourceSettings);
 
     const setOrDelete = (key: string, value: string) => {
       if (value) {
@@ -1183,14 +1211,16 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     t(`createPrintProfile.fieldValues.${fieldKey}.${normalizeI18nKeyPart(option)}`, {
       defaultValue: ORCA_ADVANCED_ENUM_LABELS[fieldKey]?.[option]?.[structuredLabelLocale] ?? humanizeOrcaValue(option),
     });
+  // Orca also gates some process options on the core infill pattern.
+  const structuredDependencyValues = { ...structuredAdvancedValues, sparse_infill_pattern: infillPattern.trim() };
   const renderStructuredAdvancedField = (field: OrcaStructuredFieldDef) => {
     const value = structuredAdvancedValues[field.key] ?? '';
     const enumOptions = ORCA_ADVANCED_ENUM_OPTIONS[field.key] ?? [];
     const label = getStructuredFieldLabel(field.key);
-    const enabled = isOrcaStructuredFieldEnabled(field, structuredAdvancedValues);
+    const enabled = isOrcaStructuredFieldEnabled(field, structuredDependencyValues);
     const widthClassName = field.compact === 'distance'
       ? 'w-full sm:w-[14ch] max-w-full'
-      : field.compact === 'boolean' ? 'w-full sm:w-auto max-w-full' : 'w-full';
+      : field.compact === 'boolean' || field.compact === 'select' ? 'w-full sm:w-auto max-w-full' : 'w-full';
     const commonClassName =
       `${widthClassName} rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none disabled:opacity-50`;
     const hintKey = `createPrintProfile.fieldHints.${field.key}`;

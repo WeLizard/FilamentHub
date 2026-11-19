@@ -365,6 +365,32 @@ const ORCA_LONG_RETRACTION_LEVEL_OPTIONS: CanonicalOption[] = [
   { value: '2', labelKey: 'printerProfile.options.longRetractionLevel.filament' },
 ];
 
+const ORCA_COLLISION_VOLUME_MODE_OPTIONS: CanonicalOption[] = [
+  { value: 'shared', labelKey: 'printerProfile.options.collisionVolumeMode.shared' },
+  { value: 'toolhead_offset', labelKey: 'printerProfile.options.collisionVolumeMode.toolheadOffset' },
+  { value: 'per_extruder', labelKey: 'printerProfile.options.collisionVolumeMode.perExtruder' },
+];
+
+const ORCA_IMEX_TOOL_LAYOUT_OPTIONS: CanonicalOption[] = [
+  { value: 'front-left', labelKey: 'printerProfile.options.imexToolLayout.frontLeft' },
+  { value: 'front-right', labelKey: 'printerProfile.options.imexToolLayout.frontRight' },
+  { value: 'rear-left', labelKey: 'printerProfile.options.imexToolLayout.rearLeft' },
+  { value: 'rear-right', labelKey: 'printerProfile.options.imexToolLayout.rearRight' },
+];
+
+// Front/rear means nothing on a single gantry, so Orca offers only left and right.
+const ORCA_IMEX_SINGLE_GANTRY_TOOL_LAYOUT_OPTIONS: CanonicalOption[] = [
+  { value: 'front-left', labelKey: 'printerProfile.options.imexToolLayout.left' },
+  { value: 'front-right', labelKey: 'printerProfile.options.imexToolLayout.right' },
+];
+
+const ORCA_IMEX_VIZ_THEME_OPTIONS: CanonicalOption[] = [
+  { value: 'standard', labelKey: 'printerProfile.options.imexVizTheme.standard' },
+  { value: 'deuteranopia', labelKey: 'printerProfile.options.imexVizTheme.deuteranopia' },
+  { value: 'tritanopia', labelKey: 'printerProfile.options.imexVizTheme.tritanopia' },
+  { value: 'high_contrast', labelKey: 'printerProfile.options.imexVizTheme.highContrast' },
+];
+
 const ORCA_PRINTER_GCODE_FIELDS = [
   { key: 'file_start_gcode', labelKey: 'printerProfile.gcode.fileStart' },
   { key: 'machine_start_gcode', labelKey: 'printerProfile.gcode.machineStart' },
@@ -416,6 +442,8 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'bed_custom_model',
   'bed_custom_texture',
   'bed_exclude_area',
+  'bed_exclude_volume_mode',
+  'bed_exclude_volumes',
   'bed_mesh_max',
   'bed_mesh_min',
   'bed_mesh_probe_distance',
@@ -460,6 +488,15 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'input_shaping_freq_y',
   'input_shaping_type',
   'hotend_model',
+  'imex_carriage_margin',
+  'imex_firmware_managed_zones',
+  'imex_gantry_count',
+  'imex_nozzle_clearance_x',
+  'imex_nozzle_clearance_y',
+  'imex_tool_layout',
+  'imex_tools_per_gantry',
+  'imex_viz_theme',
+  'is_imex',
   'layer_change_gcode',
   'long_retractions_when_cut',
   'machine_end_gcode',
@@ -1499,6 +1536,10 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       { key: 'z_offset', labelKey: 'printerProfile.bed.zOffset', placeholder: '0', unit: t('printerProfile.units.mm') },
       { key: 'preferred_orientation', labelKey: 'printerProfile.bed.preferredOrientation', placeholder: '0', unit: t('printerProfile.units.deg') },
     ];
+    const printerExtruderCount = Math.max(1, nozzleDiameters.length);
+    const collisionVolumeMode = getMetadataString('bed_exclude_volume_mode') || null;
+    // Orca edits per-extruder volumes on the extruder pages and then ignores the shared set.
+    const collisionVolumesPerExtruder = printerExtruderCount > 1 && collisionVolumeMode === 'per_extruder';
     const printableSpaceCompatibilityFields: Array<{ key: string; labelKey: string; isList?: boolean; placeholder?: string; unit?: string }> = [
       { key: 'bed_shape', labelKey: 'printerProfile.bed.shape', isList: true, placeholder: '0x0, 256x0, 256x256, 0x256' },
     ];
@@ -1769,6 +1810,47 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <TooltipLabel
+                    htmlFor="bed_exclude_volumes"
+                    label={t('printerProfile.bed.collisionVolumes')}
+                    tooltipText={t('printerProfile.help.tooltips.collisionVolumes')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                  />
+                  <input
+                    id="bed_exclude_volumes"
+                    type="text"
+                    value={getMetadataString('bed_exclude_volumes')}
+                    onChange={(e) => handleMetadataStringChange('bed_exclude_volumes', e.target.value)}
+                    disabled={collisionVolumesPerExtruder}
+                    placeholder="0..40;0x0, 30x0, 30x30, 0x30"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 font-mono text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {collisionVolumesPerExtruder
+                      ? t('printerProfile.bed.collisionVolumesPerExtruderHint')
+                      : t('printerProfile.bed.collisionVolumesHint')}
+                  </p>
+                </div>
+                {printerExtruderCount > 1 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <TooltipLabel
+                        label={t('printerProfile.bed.collisionVolumeMode')}
+                        tooltipText={t('printerProfile.help.tooltips.collisionVolumeMode')}
+                        className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                      />
+                      <CustomSelect
+                        value={collisionVolumeMode}
+                        onChange={(value) => handleMetadataStringChange('bed_exclude_volume_mode', (value as string) || '')}
+                        options={buildTranslatedOptions(ORCA_COLLISION_VOLUME_MODE_OPTIONS, collisionVolumeMode)}
+                        placeholder={t('printerProfile.selectType')}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <details className="group mt-4 rounded-lg border border-white/10 bg-white/[0.03]">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
@@ -2792,6 +2874,40 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
 
   const renderMultimaterialTab = () => {
     const selectedBedTemperatureFormula = getMetadataString('bed_temperature_formula') || null;
+    const isImex = getMetadataBoolean('is_imex');
+    const imexToolLayout = getMetadataString('imex_tool_layout') || null;
+    const imexVizTheme = getMetadataString('imex_viz_theme') || null;
+    const imexSingleGantry = (Number.parseInt(getMetadataString('imex_gantry_count'), 10) || 1) <= 1;
+    const imexInputClassName =
+      'w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 disabled:opacity-50';
+    const renderImexNumberField = (
+      key: string,
+      labelKey: string,
+      options: { min: number; max?: number; step: number; placeholder: string; widthClassName: string; unit?: string; tooltipKey?: string },
+    ) => (
+      <div key={key}>
+        <TooltipLabel
+          htmlFor={key}
+          label={t(labelKey)}
+          tooltipText={options.tooltipKey ? t(options.tooltipKey) : undefined}
+          className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+        />
+        <div className="flex items-center gap-2">
+          <input
+            id={key}
+            type="number"
+            min={options.min}
+            max={options.max}
+            step={options.step}
+            value={getMetadataString(key)}
+            onChange={(e) => handleMetadataStringChange(key, e.target.value)}
+            placeholder={options.placeholder}
+            className={`${imexInputClassName} ${options.widthClassName}`}
+          />
+          {options.unit ? <span className="text-xs text-gray-400">{options.unit}</span> : null}
+        </div>
+      </div>
+    );
 
     return (
       <div className="space-y-6">
@@ -3027,6 +3143,79 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   <p className="text-xs text-gray-500 mt-1">{t('printerProfile.multi.machineToolChangeTimeHint')}</p>
                 </div>
               </div>
+            </div>
+
+            <div>
+              <TooltipHeading
+                title={t('printerProfile.sections.multimaterialImex')}
+                tooltipText={t('printerProfile.help.tooltips.imex')}
+              />
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="is_imex"
+                  checked={isImex}
+                  onChange={(e) => handleMetadataBooleanChange('is_imex', e.target.checked)}
+                  className="w-4 h-4 rounded border-white/30 bg-white/10"
+                />
+                <label htmlFor="is_imex" className="text-gray-300 text-sm">
+                  {t('printerProfile.imex.isImex')}
+                </label>
+              </div>
+              <fieldset disabled={!isImex} className="mt-4 min-w-0 space-y-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="imex_firmware_managed_zones"
+                    checked={getMetadataBoolean('imex_firmware_managed_zones')}
+                    onChange={(e) => handleMetadataBooleanChange('imex_firmware_managed_zones', e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 disabled:opacity-50"
+                  />
+                  <TooltipLabel
+                    htmlFor="imex_firmware_managed_zones"
+                    label={t('printerProfile.imex.firmwareManagedZones')}
+                    tooltipText={t('printerProfile.help.tooltips.imexFirmwareManagedZones')}
+                    className="inline-flex items-center gap-1.5 text-sm text-gray-300"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  {renderImexNumberField('imex_gantry_count', 'printerProfile.imex.gantryCount', { min: 1, max: 2, step: 1, placeholder: '1', widthClassName: 'sm:w-[8ch]' })}
+                  {renderImexNumberField('imex_tools_per_gantry', 'printerProfile.imex.toolsPerGantry', { min: 1, max: 4, step: 1, placeholder: '2', widthClassName: 'sm:w-[8ch]' })}
+                  {renderImexNumberField('imex_nozzle_clearance_x', 'printerProfile.imex.nozzleClearanceX', { min: 0, step: 0.1, placeholder: '30', widthClassName: 'sm:w-[12ch]', unit: t('printerProfile.units.mm'), tooltipKey: 'printerProfile.help.tooltips.imexNozzleClearance' })}
+                  {renderImexNumberField('imex_nozzle_clearance_y', 'printerProfile.imex.nozzleClearanceY', { min: 0, step: 0.1, placeholder: '30', widthClassName: 'sm:w-[12ch]', unit: t('printerProfile.units.mm'), tooltipKey: 'printerProfile.help.tooltips.imexNozzleClearance' })}
+                  {renderImexNumberField('imex_carriage_margin', 'printerProfile.imex.carriageMargin', { min: 0, max: 200, step: 0.1, placeholder: '0', widthClassName: 'sm:w-[12ch]', unit: t('printerProfile.units.mm'), tooltipKey: 'printerProfile.help.tooltips.imexCarriageMargin' })}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <TooltipLabel
+                      label={t('printerProfile.imex.toolLayout')}
+                      tooltipText={t('printerProfile.help.tooltips.imexToolLayout')}
+                      className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-300"
+                    />
+                    <CustomSelect
+                      value={imexToolLayout}
+                      onChange={(value) => handleMetadataStringChange('imex_tool_layout', (value as string) || '')}
+                      options={buildTranslatedOptions(
+                        imexSingleGantry ? ORCA_IMEX_SINGLE_GANTRY_TOOL_LAYOUT_OPTIONS : ORCA_IMEX_TOOL_LAYOUT_OPTIONS,
+                        imexToolLayout,
+                      )}
+                      placeholder={t('printerProfile.selectType')}
+                      disabled={!isImex}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-300">{t('printerProfile.imex.vizTheme')}</label>
+                    <CustomSelect
+                      value={imexVizTheme}
+                      onChange={(value) => handleMetadataStringChange('imex_viz_theme', (value as string) || '')}
+                      options={buildTranslatedOptions(ORCA_IMEX_VIZ_THEME_OPTIONS, imexVizTheme)}
+                      placeholder={t('printerProfile.selectType')}
+                      disabled={!isImex}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">{t('printerProfile.imex.modesHint')}</p>
+              </fieldset>
             </div>
           </div>
         )}

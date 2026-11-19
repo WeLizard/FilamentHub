@@ -174,6 +174,24 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
     "lightning_straightening_angle": {"label": "Lightning straightening angle", "unit": "°"},
     "process_change_extrusion_role_gcode": {"label": "Change extrusion role G-code", "unit": None},
     "relative_bridge_angle": {"label": "Relative bridge angle", "unit": None},
+    "adaptive_infill_mode": {"label": "Adaptive infill density", "unit": None},
+    "adaptive_infill_interior_density": {"label": "Adaptive infill interior density", "unit": "%"},
+    "adaptive_infill_gradient": {"label": "Adaptive infill gradient", "unit": None},
+    "infill_complete_top": {"label": "Fill pattern tops", "unit": None},
+    "high_precision_gcode": {"label": "High precision G-code", "unit": None},
+    "exclude_object_tolerance": {"label": "Object outline tolerance", "unit": "mm"},
+    # Printer presets
+    "bed_exclude_volumes": {"label": "Toolhead collision volumes", "unit": None},
+    "bed_exclude_volume_mode": {"label": "Collision volume behavior", "unit": None},
+    "is_imex": {"label": "IDEX/IQEX printer", "unit": None},
+    "imex_firmware_managed_zones": {"label": "Firmware-managed zones", "unit": None},
+    "imex_gantry_count": {"label": "Gantry count", "unit": None},
+    "imex_tools_per_gantry": {"label": "Tools per gantry", "unit": None},
+    "imex_tool_layout": {"label": "Tool 0 position", "unit": None},
+    "imex_nozzle_clearance_x": {"label": "Nozzle clearance X", "unit": "mm"},
+    "imex_nozzle_clearance_y": {"label": "Nozzle clearance Y", "unit": "mm"},
+    "imex_carriage_margin": {"label": "Carriage safety margin", "unit": "mm"},
+    "imex_viz_theme": {"label": "Zone visualization theme", "unit": None},
 }
 
 

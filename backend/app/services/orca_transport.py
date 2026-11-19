@@ -249,6 +249,10 @@ ORCA_SCALAR_FIELDS: dict[str, frozenset[str]] = {
     "time_lapse_gcode", "toolchange_gcode", "use_3mf", "use_firmware_retraction",
     "use_relative_e_distances", "wait_for_temp_on_wipe_tower", "wipe_tower_type",
     "wrapping_detection_gcode", "wrapping_detection_layers", "z_lift_type", "z_offset",
+    "bed_exclude_volume_mode", "bed_exclude_volumes", "enable_belt_purge_tower",
+    "imex_carriage_margin", "imex_firmware_managed_zones", "imex_gantry_count",
+    "imex_nozzle_clearance_x", "imex_nozzle_clearance_y", "imex_tool_layout",
+    "imex_tools_per_gantry", "imex_viz_theme", "is_imex",
     }),
     "process": frozenset({
     "accel_to_decel", "accel_to_decel_enable", "accel_to_decel_factor",
@@ -380,6 +384,12 @@ ORCA_SCALAR_FIELDS: dict[str, frozenset[str]] = {
     "wipe_tower_max_purge_speed", "wipe_tower_no_sparse_layers", "wipe_tower_rib_width",
     "wipe_tower_rotation_angle", "wipe_tower_wall_type", "xy_contour_compensation",
     "xy_hole_compensation", "z_direction_outwall_speed_continuous",
+    "adaptive_infill_gradient", "adaptive_infill_interior_density", "adaptive_infill_mode",
+    "belt_purge_tower_object", "belt_purge_tower_width", "exclude_object_tolerance",
+    "extra_brim_width", "high_precision_gcode", "imex_head_filament_map",
+    "imex_parallel_mode", "infill_complete_top", "leading_brim_length",
+    "sparse_infill_anchor_max", "tpms_adaptive", "tpms_adaptive_gradient",
+    "tpms_interior_density",
     }),
 }
 

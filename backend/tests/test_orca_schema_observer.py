@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.services.orca_field_registry import ORCA_PRESET_FIELDS
 from app.services.orca_schema_observer import (
+    OrcaPresetScope,
     detect_unknown_orca_fields,
     observe_orca_schema_fields,
 )
@@ -45,6 +46,77 @@ def test_new_process_fields_have_scoped_registry_transport_and_history_support()
         assert key in ORCA_FIELD_LABELS
         assert key not in ORCA_PRESET_FIELDS["machine"]
         assert key not in ORCA_PRESET_FIELDS["filament"]
+
+
+# Samples as OrcaSlicer main (2026-11) serializes them in synced presets.
+NOVEMBER_2026_FIELDS: dict[OrcaPresetScope, dict[str, object]] = {
+    "process": {
+        "adaptive_infill_mode": "distance_warp",
+        "adaptive_infill_interior_density": "5%",
+        "adaptive_infill_gradient": "linear",
+        "infill_complete_top": "0",
+        "high_precision_gcode": "1",
+        "exclude_object_tolerance": "0.1",
+        "belt_purge_tower_width": "35",
+        "belt_purge_tower_object": "0",
+        "leading_brim_length": "0",
+        "extra_brim_width": "0",
+        "imex_parallel_mode": "primary",
+        "imex_head_filament_map": "",
+        "tpms_adaptive": "disabled",
+        "tpms_adaptive_gradient": "linear",
+        "tpms_interior_density": "5%",
+        "sparse_infill_anchor_max": "20",
+    },
+    "machine": {
+        "bed_exclude_volume_mode": "shared",
+        "bed_exclude_volumes": "10..40;0x0, 30x0, 30x30",
+        "extruder_bed_exclude_volumes": '""',
+        "enable_belt_purge_tower": "0",
+        "is_imex": "1",
+        "imex_firmware_managed_zones": "0",
+        "imex_gantry_count": "1",
+        "imex_tools_per_gantry": "2",
+        "imex_tool_layout": "front-left",
+        "imex_nozzle_clearance_x": "30",
+        "imex_nozzle_clearance_y": "30",
+        "imex_carriage_margin": "0",
+        "imex_viz_theme": "standard",
+        "imex_mode_names": "",
+        "imex_mode_active_tools": "",
+        "imex_mode_gcodes": "",
+        "plugins": "",
+    },
+    "filament": {
+        "filament_ids": ["GFG99"],
+        "plugin_config_overrides": "",
+        "cooling_slowdown_logic": ["uniform_cooling"],
+        "cooling_perimeter_transition_distance": ["10"],
+    },
+}
+
+
+def test_november_2026_orca_fields_are_reviewed_and_round_trip_unchanged() -> None:
+    from app.services.orca_transport import (
+        build_orca_transport_settings,
+        merge_orca_roundtrip_settings,
+    )
+
+    for scope, settings in NOVEMBER_2026_FIELDS.items():
+        assert detect_unknown_orca_fields(settings, scope) == [], scope
+        exported = build_orca_transport_settings(settings, scope)
+        assert exported == settings, scope
+        assert merge_orca_roundtrip_settings(settings, exported, scope) == settings, scope
+
+    # Values the editor stores as numbers still leave as Orca's string tokens.
+    exported = build_orca_transport_settings(
+        {"imex_gantry_count": 2, "is_imex": True, "imex_carriage_margin": 2.5}, "machine"
+    )
+    assert exported == {"imex_gantry_count": "2", "is_imex": "1", "imex_carriage_margin": "2.5"}
+
+    # Filament keys that arrived inside a process payload stay unreviewed there.
+    leaked = detect_unknown_orca_fields({"full_fan_speed_layer": "3"}, "process")
+    assert [field.field_name for field in leaked] == ["full_fan_speed_layer"]
 
 
 @requires_bundle

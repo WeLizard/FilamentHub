@@ -4692,6 +4692,18 @@
     "spoolPriceRecommended": "建议"
   },
   "printerProfile": {
+    "imex": {
+      "isImex": "IDEX/IQEX 打印机",
+      "firmwareManagedZones": "固件管理区域",
+      "gantryCount": "龙门数量",
+      "toolsPerGantry": "每个龙门的工具头数",
+      "toolLayout": "工具头 0 位置",
+      "nozzleClearanceX": "喷嘴避让距离 X",
+      "nozzleClearanceY": "喷嘴避让距离 Y",
+      "carriageMargin": "安全边距",
+      "vizTheme": "区域颜色",
+      "modesHint": "并行打印模式（复制、镜像及其 G-code）在 OrcaSlicer 中设置；FilamentHub 原样保留。"
+    },
     "titleCreate": "创建打印机配置",
     "titleEdit": "编辑打印机配置",
     "titleClone": "克隆打印机配置",
@@ -4769,6 +4781,7 @@
       "notes": "备注"
     },
     "sections": {
+      "multimaterialImex": "IDEX/IQEX",
       "bedConstraints": "热床和约束",
       "flagsAndModes": "标志和模式",
       "printableSpace": "可打印空间",
@@ -4835,6 +4848,10 @@
       "margin": "网格边距 (mm)"
     },
     "bed": {
+      "collisionVolumes": "工具头碰撞体积",
+      "collisionVolumesHint": "“XxY, XxY, ...”表示全高多边形，“ZMIN..ZMAX;XxY, ...”表示限定 Z 范围的体积。多个体积用“|”分隔。与热床排除区域叠加。",
+      "collisionVolumesPerExtruderHint": "每个挤出机的单独体积在 OrcaSlicer 中设置；FilamentHub 原样保留，共享体积不再使用。",
+      "collisionVolumeMode": "碰撞体积行为",
       "shape": "热床形状 (mm)",
       "excludeArea": "热床排除区域",
       "customRectangle": "自定义矩形",
@@ -4949,6 +4966,13 @@
       "canonicalValues": "规范 Orca 值：{{values}}",
       "oneValuePerLine": "每行一个值。这保留了其项目可能包含逗号的数组。",
       "tooltips": {
+        "imex": "适用于具有多个独立滑车、可并行打印副本或镜像副本的打印机。",
+        "imexFirmwareManagedZones": "以热床原点切片主区域，副本和镜像的偏移由固件处理，例如 RepRapFirmware 复制模式。",
+        "imexNozzleClearance": "喷嘴到碰撞侧滑车边缘的距离，决定每个区域边界处禁止打印带的宽度。",
+        "imexCarriageMargin": "在主区域内每个滑车边界处显示的提示带。放在其中的零件仍会切片。",
+        "imexToolLayout": "工具头 T0 所在的热床角落。单龙门时只需区分左右。",
+        "collisionVolumes": "工具头不得碰撞的体积：模型和生成的材料会避开，空驶会绕行，并据此检查 G-code。",
+        "collisionVolumeMode": "所有喷嘴共享、按各喷嘴偏移移动，或为每个挤出机单独设置。",
         "junctionDeviation": "控制路径通过角落的舍入量。较低的值更准确地保持角落但可能会减慢打印机；较高的值更积极地平滑转弯，可能会增加铃声。",
         "singleExtruderMultiMaterial": "SEMM 代表单挤出机多材料。当多种材料或颜色共享一个热端并依次通过它而不是使用单独的喷嘴进行进给时，使用它。",
         "bedTemperatureFormula": "选择在多材料打印中驱动热床温度的已加载耗材：第一种耗材或具有最高热床温度要求的耗材。",
@@ -5020,6 +5044,25 @@
       }
     },
     "options": {
+      "collisionVolumeMode": {
+        "shared": "所有喷嘴共享",
+        "toolheadOffset": "相对工具头（喷嘴偏移）",
+        "perExtruder": "每个挤出机单独设置"
+      },
+      "imexToolLayout": {
+        "frontLeft": "左前",
+        "frontRight": "右前",
+        "rearLeft": "左后",
+        "rearRight": "右后",
+        "left": "左",
+        "right": "右"
+      },
+      "imexVizTheme": {
+        "standard": "标准",
+        "deuteranopia": "绿色盲 / 红色盲（红绿色盲）",
+        "tritanopia": "蓝色盲（蓝黄色盲）",
+        "highContrast": "高对比度"
+      },
       "legacyValue": "传统值",
       "printerStructure": {
         "undefine": "未定义",
@@ -7655,6 +7698,12 @@
       "notes": "备注"
     },
     "fieldLabels": {
+      "adaptive_infill_mode": "自适应密度",
+      "adaptive_infill_interior_density": "内部密度",
+      "adaptive_infill_gradient": "自适应渐变",
+      "infill_complete_top": "填满图案顶部",
+      "high_precision_gcode": "高精度 G-code",
+      "exclude_object_tolerance": "轮廓线公差",
       "unsupported_wall_last": "最后打印无支撑墙",
       "wipe_inward": "向内擦拭",
       "wipe_inward_distance": "向内擦拭距离（毫米或 %）",
@@ -7685,6 +7734,12 @@
       "filamentOrder": "请输入以逗号分隔的正整数耗材编号，例如 3,2,1,4。"
     },
     "fieldHints": {
+      "adaptive_infill_mode": "实验性功能。让 Gyroid、TPMS-D 和 TPMS-FK 填充的密度渐变：表面使用稀疏填充密度，中心使用内部密度。其他图案不可用。",
+      "adaptive_infill_interior_density": "启用自适应密度时模型中心的填充密度。",
+      "adaptive_infill_gradient": "密度从表面到中心的变化方式：匀速、先慢后快或先快后慢。",
+      "infill_complete_top": "完全填满 3D 蜂窝填充图案的顶部。",
+      "high_precision_gcode": "实验性功能。坐标和挤出量多写一位小数。可能有助于小喷嘴和极薄层高；G-code 文件约增大 10%。",
+      "exclude_object_tolerance": "用于排除对象的轮廓与实际轮廓的最大偏差。值越大点越少，适合解析较慢的固件；0 保留所有点。",
       "unsupported_wall_last": "启用悬垂检测时，先打印提供支撑的墙和桥接，再打印完全悬空的墙环。",
       "wipe_inward": "将外墙擦拭路径移到已打印的内墙上方，以减少接缝痕迹。没有可支撑的内墙时使用常规擦拭。",
       "wipe_inward_distance": "需要启用向内擦拭。百分比相对于实际外墙宽度；偏移受墙宽和相邻墙间距限制。0 禁用偏移。",
@@ -7711,6 +7766,21 @@
       "zaa_minimize_perimeter_height": "超过此表面角度时，Z 轮廓会减少靠近周长墙的高度变化。"
     },
     "fieldValues": {
+      "adaptive_infill_mode": {
+        "disabled": "禁用",
+        "distance_warp": "距离扭曲",
+        "smooth_blend": "平滑混合",
+        "stepped_shells": "阶梯壳层",
+        "lobes": "分瓣",
+        "normal_z": "垂直于 Z",
+        "normal_y": "垂直于 Y",
+        "normal_x": "垂直于 X"
+      },
+      "adaptive_infill_gradient": {
+        "linear": "线性",
+        "quadratic": "二次",
+        "exponential": "指数"
+      },
       "toolchange_ordering": {
         "default": "默认",
         "cyclic": "循环"

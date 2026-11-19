@@ -22,6 +22,10 @@ _OBSOLETE = "obsolete: OrcaSlicer drops it on load (ignore list of PrintConfigDe
 _RENAMED = "old name: OrcaSlicer renames it on load (PrintConfigDef::handle_legacy)"
 _TYPO = "misspelled key in shipped profiles; OrcaSlicer discards it as an unknown key"
 _PLACEHOLDER = "G-code placeholder name, not a stored option"
+_NIGHTLY_SHARED = (
+    "shared plugin overrides key written only by nightlies before OrcaSlicer split it "
+    "per preset kind; not an option at the pinned upstream commit"
+)
 _FOREIGN = (
     "not defined by PrintConfig.cpp at the pinned upstream commit; appears in shipped "
     "vendor/fork profiles and is discarded by OrcaSlicer as an unknown key"
@@ -45,7 +49,8 @@ _NON_UI_FILAMENT_KEYS_BY_REASON: dict[str, tuple[str, ...]] = {
         "type",
         "version",
     ),
-    _PROJECT_LEVEL: ("filament_colour", "filament_settings_id", "plugins"),
+    _PROJECT_LEVEL: ("filament_colour", "filament_ids", "filament_settings_id", "plugins"),
+    _NIGHTLY_SHARED: ("plugin_config_overrides",),
     _OBSOLETE: (
         "bed_temperature",
         "bed_temperature_difference",
@@ -64,6 +69,8 @@ _NON_UI_FILAMENT_KEYS_BY_REASON: dict[str, tuple[str, ...]] = {
         "box_temperature_range_high",
         "box_temperature_range_low",
         "circle_compensation_speed",
+        "cooling_perimeter_transition_distance",
+        "cooling_slowdown_logic",
         "cool_cds_fan_start_at_height",
         "cool_special_cds_fan_speed",
         "counter_coef_1",

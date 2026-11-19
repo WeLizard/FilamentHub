@@ -19,6 +19,15 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "filament_colour",
             "is_custom_defined",
             "plugins",
+            # Project-level per-slot ids (coStrings, outside every preset list)
+            # and the shared plugin overrides key that only nightlies wrote
+            # before Orca split it per preset kind.
+            "filament_ids",
+            "plugin_config_overrides",
+            # Bambu Studio cooling options carried by imported profiles; Orca
+            # discards them on load, FilamentHub keeps them as passthrough.
+            "cooling_perimeter_transition_distance",
+            "cooling_slowdown_logic",
             "activate_air_filtration",
             "activate_air_filtration_during_print",
             "activate_air_filtration_on_completion",
@@ -275,6 +284,26 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             # Reviewed forward-compatible Orca and vendor extension fields.
             # Supported controls are surfaced by the process editor; plugin
             # and vendor metadata remains lossless opaque passthrough.
+            "adaptive_infill_gradient",
+            "adaptive_infill_interior_density",
+            "adaptive_infill_mode",
+            "exclude_object_tolerance",
+            "high_precision_gcode",
+            "infill_complete_top",
+            # Belt-printer options: Orca shows them only for belt printers,
+            # which the website does not configure yet; kept as passthrough.
+            "belt_purge_tower_object",
+            "belt_purge_tower_width",
+            "extra_brim_width",
+            "leading_brim_length",
+            # Per-plate IDEX/IQEX state Orca never shows in the process tab.
+            "imex_head_filament_map",
+            "imex_parallel_mode",
+            # Nightly names Orca renames on load (PrintConfigDef::handle_legacy).
+            "sparse_infill_anchor_max",
+            "tpms_adaptive",
+            "tpms_adaptive_gradient",
+            "tpms_interior_density",
             "bottom_layer_direction",
             "bottom_surface_fill_order",
             "bridge_line_width",
@@ -775,6 +804,25 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             # Connection data is stripped by the storage boundary even when a
             # field name is accepted here for queue pruning.
             "is_custom_defined",
+            "bed_exclude_volume_mode",
+            "bed_exclude_volumes",
+            "enable_belt_purge_tower",
+            "extruder_bed_exclude_volumes",
+            "imex_carriage_margin",
+            "imex_firmware_managed_zones",
+            "imex_gantry_count",
+            "imex_mode_active_tools",
+            "imex_mode_gcodes",
+            "imex_mode_names",
+            "imex_nozzle_clearance_x",
+            "imex_nozzle_clearance_y",
+            "imex_tool_layout",
+            "imex_tools_per_gantry",
+            "imex_viz_theme",
+            "is_imex",
+            # Print-preset plugin manifest that some nightlies also wrote into
+            # printer presets; opaque passthrough.
+            "plugins",
             "belt_frame_tilt_angle",
             "belt_frame_tilt_decouple",
             "belt_preslice_global",

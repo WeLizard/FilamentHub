@@ -43,6 +43,30 @@ describe('Orca process field registry', () => {
     expect(isOrcaStructuredFieldEnabled(tower, {})).toBe(true);
   });
 
+  it('gates the November 2026 Orca process fields like Orca does', () => {
+    const keys = ORCA_ADVANCED_FIELD_DEFS.map((item) => item.key);
+    expect(keys.slice(keys.indexOf('adaptive_infill_mode'), keys.indexOf('adaptive_infill_mode') + 4)).toEqual([
+      'adaptive_infill_mode', 'adaptive_infill_interior_density', 'adaptive_infill_gradient', 'gyroid_optimized',
+    ]);
+    for (const key of ['adaptive_infill_mode', 'adaptive_infill_interior_density', 'adaptive_infill_gradient', 'infill_complete_top', 'high_precision_gcode', 'exclude_object_tolerance']) {
+      expect(ORCA_ADVANCED_FIELD_LABELS[key]).toBeDefined();
+    }
+    const mode = field('adaptive_infill_mode');
+    expect(isOrcaStructuredFieldEnabled(mode, { sparse_infill_pattern: 'tpmsd' })).toBe(true);
+    expect(isOrcaStructuredFieldEnabled(mode, { sparse_infill_pattern: 'grid' })).toBe(false);
+    expect(isOrcaStructuredFieldEnabled(mode, {})).toBe(true);
+    const density = field('adaptive_infill_interior_density');
+    expect(isOrcaStructuredFieldEnabled(density, { sparse_infill_pattern: 'gyroid', adaptive_infill_mode: 'disabled' })).toBe(false);
+    expect(isOrcaStructuredFieldEnabled(density, { sparse_infill_pattern: 'gyroid', adaptive_infill_mode: 'lobes' })).toBe(true);
+    expect(isOrcaStructuredFieldEnabled(field('gyroid_optimized'), { sparse_infill_pattern: 'gyroid', adaptive_infill_mode: 'lobes' })).toBe(false);
+    expect(isOrcaStructuredFieldEnabled(field('infill_complete_top'), { sparse_infill_pattern: '3dhoneycomb' })).toBe(true);
+    expect(isOrcaStructuredFieldEnabled(field('infill_complete_top'), { sparse_infill_pattern: 'gyroid' })).toBe(false);
+    expect(isOrcaStructuredFieldEnabled(field('exclude_object_tolerance'), { exclude_object: '0' })).toBe(false);
+    for (const key of ['leading_brim_length', 'extra_brim_width', 'belt_purge_tower_width', 'imex_parallel_mode']) {
+      expect(ORCA_ADVANCED_FIELD_KEYS.has(key)).toBe(false);
+    }
+  });
+
   it('validates edited distances and cyclic sequences without supplying defaults', () => {
     for (const value of ['', '0', '0.20', '50%', '100%']) {
       expect(isOrcaStructuredFieldValueValid(field('wipe_inward_distance'), value)).toBe(true);

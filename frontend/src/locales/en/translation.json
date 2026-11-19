@@ -4702,6 +4702,18 @@
     "spoolPriceRecommended": "rec."
   },
   "printerProfile": {
+    "imex": {
+      "isImex": "IDEX/IQEX printer",
+      "firmwareManagedZones": "Firmware-managed zones",
+      "gantryCount": "Gantry count",
+      "toolsPerGantry": "Tools per gantry",
+      "toolLayout": "Tool 0 position",
+      "nozzleClearanceX": "Nozzle clearance X",
+      "nozzleClearanceY": "Nozzle clearance Y",
+      "carriageMargin": "Safety margin",
+      "vizTheme": "Zone colors",
+      "modesHint": "Parallel print modes (copy, mirror and their G-code) are set in OrcaSlicer; FilamentHub keeps them unchanged."
+    },
     "titleCreate": "Create printer profile",
     "titleEdit": "Edit printer profile",
     "titleClone": "Clone printer profile",
@@ -4779,6 +4791,7 @@
       "notes": "Notes"
     },
     "sections": {
+      "multimaterialImex": "IDEX/IQEX",
       "bedConstraints": "Bed & constraints",
       "flagsAndModes": "Flags & modes",
       "printableSpace": "Printable space",
@@ -4845,6 +4858,10 @@
       "margin": "Mesh margin (mm)"
     },
     "bed": {
+      "collisionVolumes": "Toolhead collision volumes",
+      "collisionVolumesHint": "\"XxY, XxY, ...\" is a full-height polygon, \"ZMIN..ZMAX;XxY, ...\" a volume limited in Z. Separate volumes with \"|\". Adds to the bed exclude areas.",
+      "collisionVolumesPerExtruderHint": "Individual volumes per extruder are set in OrcaSlicer; FilamentHub keeps them unchanged and the shared volumes are not used.",
+      "collisionVolumeMode": "Collision volume behavior",
       "shape": "Bed shape (mm)",
       "excludeArea": "Bed exclude areas",
       "customRectangle": "Custom rectangle",
@@ -4959,6 +4976,13 @@
       "canonicalValues": "Canonical Orca values: {{values}}",
       "oneValuePerLine": "One value per line. This preserves arrays whose items may include commas.",
       "tooltips": {
+        "imex": "For printers with several independent carriages that can print copies or mirrored copies in parallel.",
+        "imexFirmwareManagedZones": "Slices the primary zone at the bed origin and leaves the copy and mirror offsets to the firmware, for example RepRapFirmware duplication mode.",
+        "imexNozzleClearance": "Distance from the nozzle to the carriage edge on the collision side; sets the width of the no-print strip at each zone boundary.",
+        "imexCarriageMargin": "Advisory strip drawn inside the primary zone at each carriage boundary. Parts placed there still slice.",
+        "imexToolLayout": "Bed corner where tool T0 sits. On a single gantry only left or right matters.",
+        "collisionVolumes": "Volumes the toolhead must not hit: models and generated material avoid them, travel routes around them and the G-code is checked against them.",
+        "collisionVolumeMode": "Shared by all nozzles, moved by each nozzle's offset, or set separately for every extruder.",
         "junctionDeviation": "Controls how much paths are rounded through corners. Lower values hold corners more accurately but can slow the printer more; higher values smooth turns more aggressively and may increase ringing.",
         "singleExtruderMultiMaterial": "SEMM stands for Single Extruder Multi Material. Use it when multiple materials or colors share one hotend and are fed through it one after another instead of using separate nozzles.",
         "bedTemperatureFormula": "Chooses which loaded filament drives the bed temperature in multi-material prints: the first filament or the one with the highest bed-temperature requirement.",
@@ -5030,6 +5054,25 @@
       }
     },
     "options": {
+      "collisionVolumeMode": {
+        "shared": "Shared by all nozzles",
+        "toolheadOffset": "Toolhead-relative (nozzle offsets)",
+        "perExtruder": "Individual per extruder"
+      },
+      "imexToolLayout": {
+        "frontLeft": "Front-left",
+        "frontRight": "Front-right",
+        "rearLeft": "Rear-left",
+        "rearRight": "Rear-right",
+        "left": "Left",
+        "right": "Right"
+      },
+      "imexVizTheme": {
+        "standard": "Standard",
+        "deuteranopia": "Deuteranopia / protanopia (red-green)",
+        "tritanopia": "Tritanopia (blue-yellow)",
+        "highContrast": "High contrast"
+      },
       "legacyValue": "legacy value",
       "printerStructure": {
         "undefine": "Undefined",
@@ -7674,6 +7717,12 @@
       "notes": "Notes"
     },
     "fieldLabels": {
+      "adaptive_infill_mode": "Adaptive density",
+      "adaptive_infill_interior_density": "Interior density",
+      "adaptive_infill_gradient": "Adaptive gradient",
+      "infill_complete_top": "Fill pattern tops",
+      "high_precision_gcode": "High precision G-code",
+      "exclude_object_tolerance": "Outline tolerance",
       "unsupported_wall_last": "Print unsupported walls last",
       "wipe_inward": "Wipe inward",
       "wipe_inward_distance": "Wipe inward distance (mm or %)",
@@ -7704,6 +7753,12 @@
       "filamentOrder": "Enter positive filament numbers separated by commas (e.g. 3,2,1,4)."
     },
     "fieldHints": {
+      "adaptive_infill_mode": "Experimental. Grades Gyroid, TPMS-D and TPMS-FK infill: sparse infill density at the surface, interior density at the center. Not available for other patterns.",
+      "adaptive_infill_interior_density": "Infill density at the center of the object when adaptive density is on.",
+      "adaptive_infill_gradient": "How density changes from the surface to the center: evenly, slowly at first, or quickly at first.",
+      "infill_complete_top": "Completely fills the tops of the 3D Honeycomb infill pattern.",
+      "high_precision_gcode": "Experimental. Writes one more decimal place for coordinates and extrusion. Can help with small nozzles and very thin layers; the G-code grows by about 10%.",
+      "exclude_object_tolerance": "How far the object outline sent for object exclusion may deviate from the real outline. Larger values give fewer points for slow firmware; 0 keeps every point.",
       "unsupported_wall_last": "With overhang detection enabled, delays fully unsupported wall loops until supporting walls and bridges are printed.",
       "wipe_inward": "Moves the external-wall wipe over an already printed inner wall to reduce seam marks. Falls back to a normal wipe when no supporting inner wall is available.",
       "wipe_inward_distance": "Requires inward wiping. Percentage is relative to actual outer-wall width; the offset is limited by wall width and spacing. 0 disables the offset.",
@@ -7730,6 +7785,21 @@
       "zaa_minimize_perimeter_height": "Surface angle above which Z contouring minimizes changes near perimeter walls."
     },
     "fieldValues": {
+      "adaptive_infill_mode": {
+        "disabled": "Disabled",
+        "distance_warp": "Distance warp",
+        "smooth_blend": "Smooth blend",
+        "stepped_shells": "Stepped shells",
+        "lobes": "Lobes",
+        "normal_z": "Normal Z",
+        "normal_y": "Normal Y",
+        "normal_x": "Normal X"
+      },
+      "adaptive_infill_gradient": {
+        "linear": "Linear",
+        "quadratic": "Quadratic",
+        "exponential": "Exponential"
+      },
       "toolchange_ordering": {
         "default": "Default",
         "cyclic": "Cyclic"

@@ -28,8 +28,13 @@ export interface OrcaStructuredFieldDef {
   max?: number;
   step?: number | 'any';
   placeholder?: string;
-  enabledWhen?: Record<string, string>;
-  compact?: 'boolean' | 'distance';
+  /** Parent values (one or any of several) under which Orca enables the option. */
+  enabledWhen?: Record<string, string | readonly string[]>;
+  /** Parent values under which Orca disables the option. */
+  disabledWhen?: Record<string, string>;
+  /** Older names OrcaSlicer renames to this key on load (PrintConfigDef::handle_legacy). */
+  legacyKeys?: readonly string[];
+  compact?: 'boolean' | 'select' | 'distance';
   validation?: 'distanceOrPercent' | 'filamentOrder';
   preserveEditedEmptyString?: boolean;
 }
@@ -37,11 +42,13 @@ export interface OrcaStructuredFieldDef {
 export const isOrcaStructuredFieldEnabled = (
   field: OrcaStructuredFieldDef,
   values: Record<string, string>,
-): boolean => Object.entries(field.enabledWhen ?? {}).every(([key, expected]) => {
-  const actual = values[key];
+): boolean =>
   // An unresolved inherited value is not evidence that the option is disabled.
-  return !actual || actual === expected;
-});
+  Object.entries(field.enabledWhen ?? {}).every(([key, expected]) => {
+    const actual = values[key];
+    return !actual || (typeof expected === 'string' ? actual === expected : expected.includes(actual));
+  })
+  && Object.entries(field.disabledWhen ?? {}).every(([key, blocked]) => values[key] !== blocked);
 
 export const isOrcaStructuredFieldValueValid = (field: OrcaStructuredFieldDef, raw: string): boolean => {
   const value = raw.trim();
@@ -70,6 +77,9 @@ const buildFieldDefs = (
 ): OrcaStructuredFieldDef[] => splitLines(keysBlock).map((key) => ({ key, kind, tab, section }));
 
 const enumValues = (valuesBlock: string): string[] => splitLines(valuesBlock);
+
+/** Patterns Orca can grade with adaptive density (is_adaptive_infill_pattern). */
+const ADAPTIVE_INFILL_PATTERNS = ['gyroid', 'tpmsd', 'tpmsfk'] as const;
 
 export const ORCA_STRUCTURED_TAB_ORDER: OrcaStructuredFieldTab[] = [
   'quality',
@@ -123,7 +133,10 @@ export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
   { key: 'top_surface_expansion_direction', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
   { key: 'sparse_infill_smooth_factor', kind: 'percent', tab: 'strength', section: 'infill', min: 0, max: 100, step: 1, placeholder: '0' },
   { key: 'separated_infills', kind: 'boolean', tab: 'strength', section: 'infill' },
-  { key: 'gyroid_optimized', kind: 'boolean', tab: 'strength', section: 'infill' },
+  { key: 'adaptive_infill_mode', kind: 'enum', tab: 'strength', section: 'infill', enabledWhen: { sparse_infill_pattern: ADAPTIVE_INFILL_PATTERNS }, legacyKeys: ['tpms_adaptive'], compact: 'select' },
+  { key: 'adaptive_infill_interior_density', kind: 'percent', tab: 'strength', section: 'infill', min: 1, max: 100, step: 1, placeholder: '5', enabledWhen: { sparse_infill_pattern: ADAPTIVE_INFILL_PATTERNS }, disabledWhen: { adaptive_infill_mode: 'disabled' }, legacyKeys: ['tpms_interior_density'], compact: 'distance' },
+  { key: 'adaptive_infill_gradient', kind: 'enum', tab: 'strength', section: 'infill', enabledWhen: { sparse_infill_pattern: ADAPTIVE_INFILL_PATTERNS }, disabledWhen: { adaptive_infill_mode: 'disabled' }, legacyKeys: ['tpms_adaptive_gradient'], compact: 'select' },
+  { key: 'gyroid_optimized', kind: 'boolean', tab: 'strength', section: 'infill', enabledWhen: { sparse_infill_pattern: 'gyroid', adaptive_infill_mode: 'disabled' } },
   { key: 'lightning_overhang_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
   { key: 'lightning_prune_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
   { key: 'lightning_straightening_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
@@ -205,6 +218,7 @@ small_area_infill_flow_compensation
 symmetric_infill_y_axis
 `,
   ),
+  { key: 'infill_complete_top', kind: 'boolean', tab: 'strength', section: 'infill', enabledWhen: { sparse_infill_pattern: '3dhoneycomb' } },
   ...buildFieldDefs(
     'boolean',
     'strength',
@@ -409,10 +423,15 @@ fuzzy_skin_first_layer
 reduce_infill_retraction
 gcode_add_line_number
 gcode_comments
+`,
+  ),
+  { key: 'high_precision_gcode', kind: 'boolean', tab: 'others', section: 'gcodeOutput' },
+  ...buildFieldDefs('boolean', 'others', 'gcodeOutput', `
 gcode_label_objects
 exclude_object
 `,
   ),
+  { key: 'exclude_object_tolerance', kind: 'float', tab: 'others', section: 'gcodeOutput', min: 0, max: 5, step: 0.01, placeholder: '0.1', enabledWhen: { exclude_object: '1' }, compact: 'distance' },
   ...buildFieldDefs(
     'enum',
     'others',
@@ -1271,6 +1290,12 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   fuzzy_skin_ripple_offset: { en: 'Ripple offset', ru: 'Смещение ряби' },
   fuzzy_skin_ripples_per_layer: { en: 'Ripples per layer', ru: 'Волн на слой' },
   gyroid_optimized: { en: 'Gyroid Z-buckling optimization', ru: 'Оптимизация гироида против изгиба по Z' },
+  adaptive_infill_mode: { en: 'Adaptive density', ru: 'Адаптивная плотность' },
+  adaptive_infill_interior_density: { en: 'Interior density', ru: 'Внутренняя плотность' },
+  adaptive_infill_gradient: { en: 'Adaptive gradient', ru: 'Адаптивный градиент' },
+  infill_complete_top: { en: 'Fill pattern tops', ru: 'Заполнять верх шаблона' },
+  high_precision_gcode: { en: 'High precision G-code', ru: 'Повышенная точность координат' },
+  exclude_object_tolerance: { en: 'Outline tolerance', ru: 'Допуск контура объекта' },
   hole_to_polyhole_max_edges: { en: 'Maximum polyhole edge count', ru: 'Максимум граней полигонального отверстия' },
   initial_layer_travel_jerk: { en: 'First layer travel jerk', ru: 'Рывок перемещений первого слоя' },
   ironing_expansion: { en: 'Ironing expansion', ru: 'Расширение области разглаживания' },
@@ -1539,6 +1564,21 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   xy_hole_compensation: { en: 'X-Y hole compensation', ru: 'Расширение пустот в слое' },
 };
 export const ORCA_ADVANCED_ENUM_OPTIONS: Record<string, string[]> = {
+  adaptive_infill_mode: enumValues(`
+disabled
+distance_warp
+smooth_blend
+stepped_shells
+lobes
+normal_z
+normal_y
+normal_x
+`),
+  adaptive_infill_gradient: enumValues(`
+linear
+quadratic
+exponential
+`),
   bottom_surface_fill_order: enumValues(`
 default
 outward
@@ -1732,6 +1772,21 @@ all
 };
 
 export const ORCA_ADVANCED_ENUM_LABELS: Record<string, Record<string, { en: string; ru: string }>> = {
+  adaptive_infill_mode: {
+    disabled: { en: 'Disabled', ru: 'Отключено' },
+    distance_warp: { en: 'Distance warp', ru: 'Деформация по расстоянию' },
+    smooth_blend: { en: 'Smooth blend', ru: 'Плавное смешивание' },
+    stepped_shells: { en: 'Stepped shells', ru: 'Ступенчатые оболочки' },
+    lobes: { en: 'Lobes', ru: 'Доли' },
+    normal_z: { en: 'Normal Z', ru: 'Нормаль Z' },
+    normal_y: { en: 'Normal Y', ru: 'Нормаль Y' },
+    normal_x: { en: 'Normal X', ru: 'Нормаль X' },
+  },
+  adaptive_infill_gradient: {
+    linear: { en: 'Linear', ru: 'Линейный' },
+    quadratic: { en: 'Quadratic', ru: 'Квадратичный' },
+    exponential: { en: 'Exponential', ru: 'Экспоненциальный' },
+  },
   bottom_surface_fill_order: {
     default: { en: 'Default', ru: 'По умолчанию' },
     outward: { en: 'Outward', ru: 'Наружу' },
