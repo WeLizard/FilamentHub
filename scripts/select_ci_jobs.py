@@ -42,8 +42,20 @@ def select_components(paths: list[str]) -> set[str]:
                 selected.add("backend")
             elif path.startswith("edge-agent/tests/fixtures/qidi_box/"):
                 selected.update(("backend", "plugins"))
+            # The plugin tests read the Flashforge and Bambu readings they
+            # share with Edge.
+            elif path.startswith(
+                ("edge-agent/tests/fixtures/flashforge/", "edge-agent/tests/fixtures/bambu/")
+            ):
+                selected.add("plugins")
         elif path.startswith(("orca-plugin/", "octoprint-plugin/")):
             selected.add("plugins")
+            # Edge carries copies of these modules and fails while a copy differs.
+            if path in (
+                "orca-plugin/filamenthub_bambu.py",
+                "orca-plugin/filamenthub_bambu_trust.py",
+            ):
+                selected.add("edge")
         elif path != "README.md":
             # Scripts, workflows, infrastructure and new/unclassified paths can
             # affect multiple components. They always receive the full checks.

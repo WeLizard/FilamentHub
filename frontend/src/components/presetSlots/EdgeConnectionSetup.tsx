@@ -11,6 +11,11 @@ import type { AdapterViewContext } from './adapters/types';
 import { isPairingAccessDenied, retryPairingStatusQuery } from './pairingPolling';
 
 const EDGE_TRANSPORT = 'edge_agent' as const;
+// Printers Edge reaches over their own LAN service ask for their own credentials.
+const LAN_PRINTER_TEXT = {
+  flashforge: { add: 'presetSlots.edge.addToNodeFlashforge', security: 'presetSlots.edge.securityFlashforge' },
+  bambu: { add: 'presetSlots.edge.addToNodeBambu', security: 'presetSlots.edge.securityBambu' },
+} as const;
 
 export function edgePairingRefetchInterval(
   error: unknown,
@@ -126,7 +131,17 @@ export function EdgeConnectionSetup({
   };
 
   const edgeProvider = status?.provider ?? system.provider;
-  const connectionOptions = JSON.stringify(edgeProvider === 'flashforge' ? {
+  const lanPrinter = edgeProvider === 'flashforge' || edgeProvider === 'bambu'
+    ? LAN_PRINTER_TEXT[edgeProvider] : null;
+  const connectionOptions = JSON.stringify(edgeProvider === 'bambu' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'bambu',
+    printer_url: 'PRINTER-LAN-IP',
+    serial_number: 'SERIAL-FROM-PRINTER',
+    access_code: 'ACCESS-CODE-FROM-PRINTER',
+    pairing_code: pairingCode,
+  } : edgeProvider === 'flashforge' ? {
     id: `printer-${printer.id}`,
     name: printer.name,
     adapter: 'flashforge',
@@ -253,7 +268,7 @@ export function EdgeConnectionSetup({
           <p className="mt-1.5 text-[11px] leading-4 text-gray-400">
             {t('presetSlots.edge.codeHint')}
           </p>
-          <p className="mt-2 text-xs text-gray-300">{t(edgeProvider === 'flashforge' ? 'presetSlots.edge.addToNodeFlashforge' : 'presetSlots.edge.addToNode')}</p>
+          <p className="mt-2 text-xs text-gray-300">{t(lanPrinter?.add ?? 'presetSlots.edge.addToNode')}</p>
           <pre className="mt-2 overflow-x-auto rounded bg-black/30 p-2 text-[11px] text-gray-200">
             {connectionOptions}
           </pre>
@@ -262,7 +277,7 @@ export function EdgeConnectionSetup({
 
       <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-4 text-sky-100/65">
         <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" />
-        {t(edgeProvider === 'flashforge' ? 'presetSlots.edge.securityFlashforge' : 'presetSlots.edge.security')}
+        {t(lanPrinter?.security ?? 'presetSlots.edge.security')}
       </p>
       <ConfirmModal isOpen={confirmRevoke} onClose={() => { if (!revoking) setConfirmRevoke(false); }}
         onConfirm={revoke} isLoading={revoking} variant="warning"

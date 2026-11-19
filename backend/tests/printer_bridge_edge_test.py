@@ -63,7 +63,7 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
         assert response.status_code == 200
 
     await pair("orca_plugin_lan", ["read", "presence"], "orca")
-    await pair("edge_agent", ["read", "consumption"], "edge")
+    await pair("edge_agent", ["read"], "edge")
 
     connectors = (await db_session.scalars(
         select(PhysicalPrinterConnector).where(
@@ -86,7 +86,8 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
     )
     assert revoked.status_code == 204
     await db_session.refresh(system)
-    assert system.capabilities == []
+    # What only OrcaSlicer provided is gone; Edge still reads the printer.
+    assert system.capabilities == ["read"]
     edge = next(item for item in connectors if item.transport == "edge_agent")
     await db_session.refresh(edge)
     assert edge.active is True

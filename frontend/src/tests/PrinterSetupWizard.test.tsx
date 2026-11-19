@@ -126,7 +126,7 @@ describe('PrinterSetupWizard', () => {
     } finally { storage.mockRestore(); history.mockRestore(); }
   });
   it('does not offer Edge for an unsupported existing feed system or block manual tracking', async () => {
-    show({ ...saved, material_systems: [{ provider: 'bambu', slots: [] }] } as unknown as PhysicalPrinter);
+    show({ ...saved, material_systems: [{ provider: 'octoprint', slots: [] }] } as unknown as PhysicalPrinter);
     expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
     savePrinter();
     await screen.findByText('printerSetup.saved');
@@ -457,7 +457,8 @@ describe('PrinterSetupWizard', () => {
     fireEvent.focus(screen.getByLabelText('printerSetup.model'));
     fireEvent.click(await screen.findByRole('button', { name: 'Bambu Lab P1S' }));
     fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
-    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    // A Bambu printer links through OrcaSlicer or, without it running, through FH Edge.
+    expect(screen.getByText('printerSetup.routes.edge')).toBeInTheDocument();
     expect(screen.queryByText('printerSetup.connections.octoprint')).not.toBeInTheDocument();
     expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
     fireEvent.click(screen.getByText('printerSetup.routes.manual'));
@@ -577,8 +578,9 @@ describe('PrinterSetupWizard', () => {
     await waitFor(() => expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms'));
     fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
     expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.bambu');
-    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'printerSetup.saveAndConnect' })).toBeInTheDocument();
+    // Outside OrcaSlicer the plugin cannot pair, so the route that can work is offered first.
+    expect(screen.getByText('printerSetup.routes.edge')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('printerSetup.routes.orca')).toBeInTheDocument();
   });
 
   it('restores a zero-slot Happy Hare card manually instead of sending an empty map', async () => {
@@ -597,7 +599,7 @@ describe('PrinterSetupWizard', () => {
     mocks.model.mockResolvedValue({ id: 99, name: 'Bambu Lab P1S', manufacturer: 'Bambulab' });
     show({ ...saved, printer_id: 99 });
     await waitFor(() => expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.bambu'));
-    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    expect(screen.getByText('printerSetup.routes.edge')).toBeInTheDocument();
     expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.setup.mock.calls[0][0]).toBe(saved.id);

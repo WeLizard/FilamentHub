@@ -70,10 +70,20 @@ function BambuSetup({
       && item.material_system_id === system.id,
   ) ?? null;
   const observation = connector?.status_observation ?? null;
+  const edgeLinked = (printer.connectors ?? []).some(
+    (item) => item.provider === 'bambu'
+      && item.transport === 'edge_agent'
+      && item.material_system_id === system.id
+      && item.active,
+  );
+  // This card sets up the OrcaSlicer route. Outside OrcaSlicer a printer that is
+  // linked through FH Edge has nothing to do here.
+  const relevant = Boolean(onConnectionObserved) || pluginEmbed || connector != null || !edgeLinked;
 
   const statusQuery = useQuery({
     queryKey: ['printer-bridge-status', printer.id, system.id],
     queryFn: () => printerBridgeAPI.status(printer.id, system.id),
+    enabled: relevant,
     staleTime: 10_000,
     refetchOnWindowFocus: true,
     retry: retryPairingStatusQuery,
@@ -193,6 +203,8 @@ function BambuSetup({
     autoConnectAttempted.current = true;
     void configure();
   }, [autoConnect, issuing, needsConnection, pluginEmbed, statusQuery.isLoading, supported]);
+
+  if (!relevant) return null;
 
   return (
     <div className="mb-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
@@ -363,7 +375,7 @@ export const bambuAdapter: FeedAdapter = {
     connectionProviders: ['bambu'],
     connectionLabelKey: 'printerSetup.connections.bambu',
     connectionHintKey: 'printerSetup.connections.bambuHint',
-    methods: ['orca'],
+    methods: ['orca', 'edge'],
     matchesModel: (model) => /^(bambu|bambulab|bambu lab)$/i.test(model.manufacturer?.trim() ?? ''),
     topologies: [
       { id: 'external', labelKey: 'printerSetup.feed.noAms', kind: 'direct_feed',
@@ -380,6 +392,10 @@ export const bambuAdapter: FeedAdapter = {
   fixedSlots: null,
   topologyFromProvider: true,
   capabilities: ['read', 'write', 'presence'],
+  // FH Edge reads the same printer report over the LAN; setting a slot's
+  // material still goes through OrcaSlicer.
+  supportsEdge: true,
+  edgeKinds: ['mmu', 'direct_feed'],
   link: null,
   deliverAssignment: async ({ printer, system, slot }) => {
     const result = await requestBambuSlotAssignment(printer.id, system.id, {

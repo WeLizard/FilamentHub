@@ -89,7 +89,9 @@ class FlashforgeProviderTest(unittest.TestCase):
         self.assertNotIn("color_hex", slots[3])
         self.assertTrue(all(slot["spool_identity_known"] is False for slot in slots.values()))
         # The station names slot 1 as current and only its nozzle is hot.
-        self.assertEqual([slots[index]["active_feed"] for index in range(4)], [True, False, False, False])
+        self.assertEqual(
+            [slots[index]["active_feed"] for index in range(4)], [True, False, False, False]
+        )
 
     def test_feed_shape_follows_the_reported_model(self) -> None:
         base = json.loads(FIXTURE.read_text())

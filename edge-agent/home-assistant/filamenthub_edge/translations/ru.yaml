@@ -17,25 +17,28 @@ configuration:
         description: Выключите для паузы только этого подключения. По умолчанию включено; очередь событий сохраняется.
       adapter:
         name: Адаптер
-        description: moonraker — принтеры на Klipper; flashforge — Flashforge Adventurer 5M / 5M Pro, AD5X и Creator 5 / 5 Pro в режиме LAN. Если не указан, используется moonraker.
+        description: moonraker — принтеры на Klipper; flashforge — Flashforge Adventurer 5M / 5M Pro, AD5X и Creator 5 / 5 Pro в режиме LAN; bambu — принтеры Bambu Lab. Если не указан, используется moonraker.
       pairing_code:
         name: Код подключения
         description: Одноразовый код из FilamentHub для этого принтера. Удалите код после успешного подключения.
       material_provider:
         name: Система подачи
-        description: happy_hare — MMU Happy Hare; legacy — прямая подача Klipper; flashforge — станция материалов Flashforge (для адаптера flashforge выбирается автоматически).
+        description: happy_hare — MMU Happy Hare; legacy — прямая подача Klipper; flashforge и bambu выбираются автоматически для одноимённых адаптеров.
       moonraker_url:
         name: Адрес Moonraker
         description: Локальный HTTP(S)-адрес принтера, доступный из HA, например http://192.168.1.20:7125. Не адрес самого HA.
       printer_url:
         name: Адрес принтера
-        description: Локальный адрес принтера Flashforge, доступный из HA, например http://192.168.1.40. Если порт не указан, используется 8898.
+        description: "Локальный адрес принтера, доступный из HA. Flashforge: например http://192.168.1.40 (если порт не указан, используется 8898). Bambu Lab: только IP-адрес, например 192.168.1.50."
       serial_number:
         name: Серийный номер
-        description: Только для Flashforge. Серийный номер из настроек принтера.
+        description: Для Flashforge и Bambu Lab. Серийный номер из настроек принтера.
       check_code:
         name: Код проверки
         description: Только для Flashforge. Показывается на экране сети принтера после включения режима LAN; в FilamentHub не отправляется.
+      access_code:
+        name: Код доступа
+        description: Только для Bambu Lab. Показывается на экране принтера в настройках сети; в FilamentHub не отправляется.
       moonraker_api_key:
         name: API-ключ Moonraker
         description: Необязательный локальный ключ; он не отправляется в FilamentHub.

@@ -98,9 +98,38 @@ API выключен, а при возврате в LAN код проверки 
 Edge передаёт состояние принтера и текущее задание. У AD5X и Creator 5 — четыре
 слота станции материалов: есть ли пруток, материал и цвет, заданные на принтере;
 у Adventurer 5M / 5M Pro — материал единственной катушки (нужна прошивка 2.x
-или новее). Принтер не
-сообщает расход по головам и активную голову, поэтому это подключение не
-списывает пластик с катушек.
+или новее).
+
+Принтер не измеряет расход: он сообщает оценку слайсера на всё задание. Edge
+умножает её на прогресс печати и списывает с катушки, назначенной слоту, который
+сейчас подаёт, с пометкой «оценка». Если подающий слот под сомнением или оценки
+нет, ничего не списывается.
+
+#### Bambu Lab
+
+На экране принтера откройте настройки сети и запишите код доступа и IP-адрес;
+серийный номер — в сведениях об устройстве. Режим «Только LAN» не обязателен.
+
+```yaml
+- id: p1s
+  name: P1S
+  adapter: bambu
+  printer_url: 192.168.1.50
+  serial_number: СЕРИЙНЫЙ-НОМЕР
+  access_code: КОД-ДОСТУПА
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge держит одно соединение с принтером и передаёт его состояние, текущее
+задание, все слоты AMS и внешнюю катушку: есть ли пруток, материал, цвет,
+остаток, который измерил принтер, и метку катушки Bambu. Принтеру Edge
+отправляет только запрос состояния, один раз на соединение. Расход через Edge
+пока не считается, а материал слота с сайта задаётся через плагин в OrcaSlicer.
+
+Edge запоминает сертификат, который принтер показал, когда впервые принял код
+доступа. Если позже по этому адресу ответит другое устройство, код доступа ему
+не отправляется, а причина попадает в журнал. После замены принтера или его
+платы дайте подключению новый `id`.
 
 ### Обновление и восстановление
 
@@ -229,9 +258,40 @@ local API off, and returning to LAN mode can change the check code.
 Edge reports the printer state and current job. On the AD5X and Creator 5 it
 reports the four material-station slots: whether filament is loaded, plus the
 material and colour set on the printer; on the Adventurer 5M / 5M Pro, the single
-spool's material (firmware 2.x or later is required). The
-printer reports neither per-tool usage nor the active tool, so this connection
-does not debit spools.
+spool's material (firmware 2.x or later is required).
+
+The printer measures no filament; it reports the slicer's estimate for the whole
+job. Edge scales that estimate by the print progress and debits the spool
+assigned to the slot that is feeding, marking the amount as an estimate. Nothing
+is charged when the feeding slot is in doubt or the printer gives no estimate.
+
+#### Bambu Lab
+
+On the printer's screen, open the network settings and note the access code and
+the IP address; the serial number is in the device information. LAN-only mode is
+not required.
+
+```yaml
+- id: p1s
+  name: P1S
+  adapter: bambu
+  printer_url: 192.168.1.50
+  serial_number: SERIAL-FROM-PRINTER
+  access_code: ACCESS-CODE-FROM-PRINTER
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge keeps one connection to the printer open and reports its state, the current
+job, and every AMS slot and external spool: whether filament is loaded, its
+material and colour, the amount the printer measured as remaining, and the tag of
+a Bambu spool. It asks the printer for its status once per connection and sends
+it nothing else. Usage is not counted through Edge yet, and setting a slot's
+material from the website still goes through the OrcaSlicer plugin.
+
+Edge remembers the certificate the printer showed when it first accepted the
+access code. If another device later answers at that address, it does not
+receive the access code and the log says why. After replacing the printer or its
+mainboard, give the connection a new `id`.
 
 Happy Hare inventory and assignments use Moonraker's native Spoolman integration.
 Follow the [printer setup guide](https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation)
@@ -326,7 +386,26 @@ Spoolman 集成；请先完成
 ```
 
 Edge 上报打印机状态和当前任务。AD5X 和 Creator 5 上报耗材站的四个槽位：是否装有耗材，以及打印机上设置的材料和颜色；Adventurer 5M / 5M Pro 上报单卷耗材在打印机上设置的材料（需要 2.x 或更高版本固件）。
-打印机不报告各打印头的用量和当前打印头，因此此连接不会从料盘扣减耗材。
+
+打印机不测量耗材用量，只上报切片软件对整个任务的估算。Edge 按打印进度折算，并从分配给当前供料槽位的料盘中扣减，同时标记为估算值。当前供料槽位不确定或没有估算时，不扣减。
+
+#### Bambu Lab
+
+在打印机屏幕的网络设置中记下访问码和 IP 地址；序列号在设备信息中。无需开启“仅局域网”模式。
+
+```yaml
+- id: p1s
+  name: P1S
+  adapter: bambu
+  printer_url: 192.168.1.50
+  serial_number: 打印机序列号
+  access_code: 打印机访问码
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge 与打印机保持一条连接，上报打印机状态、当前任务，以及每个 AMS 槽位和外置料盘：是否装有耗材、材料、颜色、打印机测得的余量和 Bambu 料盘标签。Edge 每次连接只向打印机请求一次状态，不发送其他内容。目前尚不通过 Edge 统计用量；在网站上设置槽位材料仍需通过 OrcaSlicer 插件。
+
+Edge 会记住打印机首次接受访问码时出示的证书。之后如果有其他设备在该地址应答，Edge 不会向它发送访问码，并在日志中说明原因。更换打印机或主板后，请为该连接设置新的 `id`。
 
 ### 更新与恢复
 

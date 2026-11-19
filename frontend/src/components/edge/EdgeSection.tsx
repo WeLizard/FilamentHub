@@ -8,7 +8,7 @@ import { EdgeMap } from './EdgeMap';
 
 const BENEFITS = ['slots', 'oneNode', 'keys'] as const;
 const FORMS = ['linux', 'docker', 'homeAssistant', 'kit'] as const;
-const PRINTERS = ['happyHare', 'klipper', 'qidi', 'flashforgeStation', 'flashforgeSingle'] as const;
+const PRINTERS = ['happyHare', 'klipper', 'qidi', 'flashforgeStation', 'flashforgeSingle', 'bambu'] as const;
 const STEPS = ['printer', 'install', 'pair'] as const;
 const OTHER_WAYS = [
   { key: 'bambu', to: '/download' },

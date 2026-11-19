@@ -35,10 +35,9 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("bambu", "orca_plugin_lan"): frozenset(
         {"read", "write", "presence", "tag_read", "consumption"}
     ),
-    # The current Edge runtime has no Bambu provider. Pairing can preserve an
-    # existing connector identity, but it must not turn that placeholder into
-    # read, identity or consumption authority.
-    ("bambu", "edge_agent"): frozenset(),
+    # Edge holds the printer's LAN MQTT link and reads what the plugin reads.
+    # It does not yet count a job's filament or set a slot's material.
+    ("bambu", "edge_agent"): frozenset({"read", "presence", "tag_read"}),
     ("octoprint", "bridge_https"): frozenset(
         {"read", "write", "spool_identity", "consumption"}
     ),
@@ -91,9 +90,15 @@ _NO_SPOOL_ON_BAMBU = (
     "The printer identifies its own RFID tags, never a FilamentHub spool; tag_read carries "
     "what it knows.",
 )
-_NO_BAMBU_ON_EDGE = (
+_BAMBU_EDGE_USAGE = (
     "planned",
-    "Edge has no Bambu provider yet; a Bambu printer is read only while OrcaSlicer is open.",
+    "Edge reads the printer but does not yet fetch the job's file, which is where the "
+    "per-slot estimate comes from; usage is counted while OrcaSlicer is open.",
+)
+_BAMBU_EDGE_WRITE = (
+    "planned",
+    "Setting a slot's material needs the Bambu filament code the plugin takes from "
+    "OrcaSlicer's presets; Edge has no source for it yet.",
 )
 _HAPPY_HARE_SPOOLMAN = (
     "elsewhere",
@@ -122,11 +127,8 @@ _KLIPPER_ELSEWHERE = (
 ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
     ("bambu", "orca_plugin_lan"): {"spool_identity": _NO_SPOOL_ON_BAMBU},
     ("bambu", "edge_agent"): {
-        "read": _NO_BAMBU_ON_EDGE,
-        "presence": _NO_BAMBU_ON_EDGE,
-        "consumption": _NO_BAMBU_ON_EDGE,
-        "write": _NO_BAMBU_ON_EDGE,
-        "tag_read": _NO_BAMBU_ON_EDGE,
+        "consumption": _BAMBU_EDGE_USAGE,
+        "write": _BAMBU_EDGE_WRITE,
         "spool_identity": _NO_SPOOL_ON_BAMBU,
     },
     ("octoprint", "bridge_https"): {

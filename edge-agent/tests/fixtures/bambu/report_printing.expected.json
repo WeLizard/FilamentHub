@@ -1,0 +1,65 @@
+{
+  "printer": {
+    "state": "printing",
+    "progress_percent": 42,
+    "remaining_seconds": 3600,
+    "current_layer": 17,
+    "total_layers": 80,
+    "job_name": "fixture.3mf",
+    "nozzle_temperature": 220.5,
+    "nozzle_target_temperature": 220.0,
+    "bed_temperature": 60.0,
+    "bed_target_temperature": 60.0,
+    "chamber_temperature": 38.0,
+    "wifi_signal": "-52dBm"
+  },
+  "slots": [
+    {
+      "provider_index": 0,
+      "label": "AMS 1 \u00b7 1",
+      "kind": "slot",
+      "present": true,
+      "active_feed": false,
+      "material": "PLA",
+      "color_hex": "FF6A13",
+      "remaining_percent": 81,
+      "tag_uid": "5D3C2B1A00FF4E6D8C7B6A5948372615",
+      "tag_technology": "unknown"
+    },
+    {
+      "provider_index": 1,
+      "label": "AMS 1 \u00b7 2",
+      "kind": "slot",
+      "present": true,
+      "active_feed": true,
+      "material": "PETG",
+      "color_hex": "1A1A1A"
+    },
+    {
+      "provider_index": 2,
+      "label": "AMS 1 \u00b7 3",
+      "kind": "slot",
+      "present": false,
+      "active_feed": false
+    },
+    {
+      "provider_index": 3,
+      "label": "AMS 1 \u00b7 4",
+      "kind": "slot",
+      "present": true,
+      "active_feed": false,
+      "material": "ABS"
+    },
+    {
+      "provider_index": 254,
+      "label": "External spool 2",
+      "kind": "external",
+      "present": true,
+      "active_feed": false,
+      "material": "TPU",
+      "color_hex": "00AE42",
+      "remaining_percent": 0
+    }
+  ],
+  "slot_topology_complete": true
+}

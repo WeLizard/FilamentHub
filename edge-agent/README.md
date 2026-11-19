@@ -256,6 +256,38 @@ Creator 5, a second hot nozzle), when the printer gives no estimate, or for
 the part of a job that ran before Edge started watching it. Assign spools to
 slots on the website.
 
+### Bambu Lab
+
+Edge reads the printer's own LAN service (MQTT over TLS, port 8883). On the
+printer's screen, open the network settings and note the access code and the IP
+address; the serial number is in the device information. LAN-only mode is not
+required.
+
+```json
+{
+  "id": "p1s",
+  "name": "P1S",
+  "adapter": "bambu",
+  "pairing_code": "FH-ZZZZZ-ZZZZZ",
+  "printer_url": "192.168.1.50",
+  "serial_number": "SERIAL-FROM-PRINTER",
+  "access_code": "ACCESS-CODE-FROM-PRINTER"
+}
+```
+
+The serial number and access code stay in this local file. Edge keeps one
+connection to the printer open and reports its state, the current job, and every
+AMS slot and external spool: whether filament is loaded, its material and colour,
+the amount the printer measured as remaining, and the tag of a Bambu spool. It
+asks the printer for its whole status once per connection and sends it nothing
+else. Usage is not counted through Edge yet, and setting a slot's material from
+the website still goes through the OrcaSlicer plugin.
+
+Edge remembers the certificate the printer showed when it first accepted the
+access code. If another device later answers at that address, it does not
+receive the access code and the log says why. After replacing the printer or its
+mainboard, reset the connection (`--reset-connection`) or give it a new `id`.
+
 In OrcaSlicer, use **Check printer** for a fresh local comparison and explicit
 adopt/apply actions. Without Orca, assignments exchange through native Happy Hare
 Spoolman support. For an explicit refresh, the current documented command is

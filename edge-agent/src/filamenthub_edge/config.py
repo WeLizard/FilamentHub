@@ -16,6 +16,7 @@ from .http import normalize_origin
 MAX_OPTIONS_BYTES = 64 * 1024
 MAX_CONNECTIONS = 32
 CONNECTION_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
+BAMBU_SERIAL = re.compile(r"[A-Za-z0-9._-]{4,64}\Z")
 
 
 def _as_bool(value: Any, *, default: bool = False) -> bool:
@@ -63,6 +64,30 @@ def _load_options(path: Path, *, required: bool = False) -> dict[str, Any]:
     return decoded
 
 
+def _bambu_endpoint(value: str) -> str:
+    """A Bambu printer is named by its address alone; it speaks MQTT, not HTTP."""
+    raw = value.strip()
+    try:
+        parsed = urlsplit(raw if "://" in raw else f"mqtts://{raw}")
+        port = parsed.port
+    except ValueError as exc:
+        raise ConfigurationError("Bambu printer address has an invalid port") from exc
+    if (
+        parsed.scheme != "mqtts"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ConfigurationError(
+            "a Bambu printer address is its IP address or host name, for example 192.168.1.50"
+        )
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    return f"mqtts://{host}:{port or 8883}"
+
+
 def _text(value: Any, name: str, *, maximum: int = 256) -> str:
     if not isinstance(value, str) or len(value) > maximum or any(ord(c) < 32 for c in value):
         raise ConfigurationError(f"invalid {name}")
@@ -90,6 +115,7 @@ class EdgeConfig:
     node_instance_id: str | None = None
     serial_number: str | None = None
     check_code: str | None = field(default=None, repr=False)
+    access_code: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -157,6 +183,7 @@ class NodeConfig:
                 "printer_url",
                 "serial_number",
                 "check_code",
+                "access_code",
             }:
                 raise ConfigurationError("Unknown Edge connection options")
             identifier = _text(entry.get("id"), "connection id", maximum=64)
@@ -165,19 +192,46 @@ class NodeConfig:
             seen_ids.add(identifier)
             adapter = _text(entry.get("adapter", "moonraker"), "adapter", maximum=50)
             flashforge = adapter == "flashforge"
+            bambu = adapter == "bambu"
             provider = _text(
-                entry.get("material_provider", "flashforge" if flashforge else "happy_hare"),
+                entry.get(
+                    "material_provider",
+                    "flashforge" if flashforge else "bambu" if bambu else "happy_hare",
+                ),
                 "material provider",
                 maximum=50,
             )
             if entry.get("printer_url") and entry.get("moonraker_url"):
                 raise ConfigurationError("set either printer_url or moonraker_url, not both")
-            endpoint = normalize_origin(
-                _text(entry.get("printer_url") or entry.get("moonraker_url"), "printer URL"),
-                allow_http=True,
+            address = _text(
+                entry.get("printer_url") or entry.get("moonraker_url"), "printer URL"
+            )
+            endpoint = (
+                _bambu_endpoint(address) if bambu else normalize_origin(address, allow_http=True)
             )
             serial_number = _text(entry.get("serial_number", ""), "serial number", maximum=64)
             check_code = _text(entry.get("check_code", ""), "check code", maximum=64)
+            access_code = _text(entry.get("access_code", ""), "access code", maximum=64)
+            if bambu:
+                if (
+                    provider != "bambu"
+                    or not BAMBU_SERIAL.fullmatch(serial_number)
+                    or not access_code
+                ):
+                    raise ConfigurationError(
+                        "a Bambu connection requires serial_number and access_code"
+                    )
+                if (
+                    check_code
+                    or entry.get("moonraker_url")
+                    or entry.get("moonraker_api_key")
+                    or _as_bool(entry.get("auto_refresh"))
+                ):
+                    raise ConfigurationError(
+                        "Moonraker and Flashforge options do not apply to Bambu"
+                    )
+            elif access_code:
+                raise ConfigurationError("access_code applies only to Bambu")
             if flashforge:
                 if provider != "flashforge" or not serial_number or not check_code:
                     raise ConfigurationError(
@@ -187,8 +241,11 @@ class NodeConfig:
                     raise ConfigurationError("Moonraker options do not apply to Flashforge")
                 if urlsplit(endpoint).port is None:
                     endpoint = f"{endpoint}:8898"
-            elif serial_number or check_code:
-                raise ConfigurationError("serial_number and check_code apply only to Flashforge")
+            elif check_code or (serial_number and not bambu):
+                raise ConfigurationError(
+                    "serial_number applies only to Flashforge and Bambu, check_code only to "
+                    "Flashforge"
+                )
             parsed = urlsplit(endpoint)
             key = (
                 parsed.scheme,
@@ -216,6 +273,7 @@ class NodeConfig:
                     or None,
                     serial_number=serial_number or None,
                     check_code=check_code or None,
+                    access_code=access_code or None,
                     state_path=directory / "connections" / f"{identifier}.json",
                     sync_interval=_as_int(
                         entry.get("sync_interval"), default=interval, minimum=15, maximum=3600

@@ -26,6 +26,32 @@ def isolated_bambu_storage(plugin_module, monkeypatch, tmp_path):
     monkeypatch.setattr(plugin_module, "AUTH_FILE", str(tmp_path / "auth.json"))
 
 
+# One report and one expected reading are shared with FH Edge, which builds the
+# same snapshot with its own code.
+EDGE_FIXTURES = Path(__file__).resolve().parents[2] / "edge-agent" / "tests" / "fixtures" / "bambu"
+
+
+def test_snapshot_matches_the_reading_shared_with_edge(plugin_module):
+    report = json.loads((EDGE_FIXTURES / "report_printing.json").read_text(encoding="utf-8"))
+    expected = json.loads(
+        (EDGE_FIXTURES / "report_printing.expected.json").read_text(encoding="utf-8")
+    )
+
+    snapshot = plugin_module.build_bambu_bridge_snapshot(
+        {"material_system_id": 12}, "fixture-plugin-instance-0001", report
+    )
+
+    def stated(item):
+        # Edge leaves out what the printer did not say; the plugin sends null.
+        return {key: value for key, value in item.items() if value is not None}
+
+    assert {
+        "printer": stated(snapshot["printer"]),
+        "slots": [stated(slot) for slot in snapshot["slots"]],
+        "slot_topology_complete": snapshot["slot_topology_complete"],
+    } == expected
+
+
 def test_bambu_bridge_declares_exact_runtime_capabilities(plugin_module):
     assert plugin_module._bambu_capabilities({}) == ["read", "write", "presence", "consumption"]
     assert plugin_module._bambu_capabilities(_bambu_report()) == [

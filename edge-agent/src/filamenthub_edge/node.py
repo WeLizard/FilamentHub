@@ -11,10 +11,12 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from threading import Event
 from typing import Any
+from urllib.parse import urlsplit
 
 from .cloud import FilamentHubCloud
 from .config import CONNECTION_ID, MAX_CONNECTIONS, EdgeConfig, NodeConfig
 from .errors import AuthenticationError, ConfigurationError, EdgeError, PairingRequired, StateError
+from .providers.bambu import MQTT_PORT, BambuProvider
 from .providers.base import EdgeProvider
 from .providers.flashforge import FlashforgeProvider
 from .providers.moonraker import MoonrakerProvider
@@ -28,6 +30,28 @@ MAX_KNOWN_CONNECTIONS = 256
 
 
 def _provider(config: EdgeConfig) -> EdgeProvider:
+    try:
+        return _build_provider(config)
+    except ValueError as exc:
+        # A malformed serial number is a setting to correct, not a crash.
+        raise ConfigurationError("The printer serial number is invalid") from exc
+
+
+def _build_provider(config: EdgeConfig) -> EdgeProvider:
+    if config.adapter == "bambu" and config.material_provider == "bambu":
+        if not config.serial_number or not config.access_code:
+            raise ConfigurationError("A Bambu connection requires its LAN credentials")
+        endpoint = urlsplit(config.moonraker_url)
+        return BambuProvider(
+            endpoint.hostname or "",
+            port=endpoint.port or MQTT_PORT,
+            serial_number=config.serial_number,
+            access_code=config.access_code,
+            timeout=config.request_timeout,
+            # Beside the connection's own state, never inside it: the
+            # runtime owns that file.
+            trust_path=config.state_path.with_name(f"{config.connection_id}.bambu.json"),
+        )
     if config.adapter == "flashforge" and config.material_provider == "flashforge":
         if not config.serial_number or not config.check_code:
             raise ConfigurationError("A Flashforge connection requires its LAN credentials")
@@ -197,6 +221,13 @@ class EdgeNode:
                 runtime.shutdown()
             except Exception:
                 logger.error("Connection %s shutdown left queued state for recovery", key)
+            # A provider that holds a link to its printer lets go of it.
+            close = getattr(getattr(runtime, "provider", None), "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.error("Connection %s did not close its printer link", key)
 
     def reset_connection(self, key: str) -> None:
         if not self.initialized:
@@ -204,7 +235,12 @@ class EdgeNode:
         config = self.configured.get(key)
         if config is None:
             raise ConfigurationError("Restore this connection's configuration before resetting it")
-        self._build(config).reset_connection()
+        runtime = self._build(config)
+        runtime.reset_connection()
+        # A new binding starts without what was remembered about the old printer.
+        forget = getattr(getattr(runtime, "provider", None), "forget", None)
+        if callable(forget):
+            forget()
 
     def diagnostic_status(self, *, connection_id: str | None = None) -> dict[str, Any]:
         ids = self.known_ids | self.configured.keys()

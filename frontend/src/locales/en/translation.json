@@ -1785,12 +1785,16 @@
       "flashforgeSingle": {
         "name": "Flashforge Adventurer 5M / 5M Pro",
         "sees": "The spool and its material. Usage is counted from the slicer's estimate for the job."
+      },
+      "bambu": {
+        "name": "Bambu Lab",
+        "sees": "AMS slots and the external spool: material, colour, remaining filament and Bambu spool tags. Read-only."
       }
     },
     "otherTitle": "When you do not need Edge",
     "other": {
       "bambu": {
-        "text": "Bambu Lab printers connect through the plugin in OrcaSlicer.",
+        "text": "Bambu Lab usage and choosing a material for an AMS slot still go through the plugin in OrcaSlicer.",
         "link": "OrcaSlicer section"
       },
       "octoprint": {
@@ -8733,7 +8737,9 @@
       "disconnect": "Disconnect this printer from Edge",
       "disconnectHint": "Only this connection's access will be revoked. Other printers on the node will keep working. Saved Edge events are not deleted; reconnect this same printer to deliver them.",
       "addToNodeFlashforge": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address, and enter the serial number and the check code from the printer's network screen (enable LAN mode first). Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
-      "securityFlashforge": "The printer address, serial number and check code stay on the Edge device and are never sent to FilamentHub."
+      "securityFlashforge": "The printer address, serial number and check code stay on the Edge device and are never sent to FilamentHub.",
+      "addToNodeBambu": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address, and enter the serial number and the access code: both are shown on the printer's screen, in the network settings. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
+      "securityBambu": "The printer address, serial number and access code stay on the Edge device and are never sent to FilamentHub."
     },
     "happyHare": {
       "inventoryError": "Moonraker must use this FH printer's keyed [spoolman] URL. Check the setting and restart Moonraker while idle. Gates were read, but spool IDs cannot be safely matched.",

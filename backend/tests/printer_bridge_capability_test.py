@@ -325,12 +325,12 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
 
 
 @pytest.mark.asyncio
-async def test_unimplemented_bambu_edge_keeps_identity_without_capabilities(
+async def test_bambu_edge_reads_the_feed_and_claims_nothing_it_cannot_do(
     auth_client: AsyncClient,
 ) -> None:
     printer_id, system_id, source_instance_id, headers = await _paired_bridge(
         auth_client,
-        ["read", "presence", "spool_identity", "consumption", "tag_read"],
+        ["read", "presence", "spool_identity", "consumption", "tag_read", "write"],
         provider="bambu",
         transport="edge_agent",
     )
@@ -340,9 +340,11 @@ async def test_unimplemented_bambu_edge_keeps_identity_without_capabilities(
         for item in printer["connectors"]
         if item["provider"] == "bambu" and item["transport"] == "edge_agent"
     )
-    assert connector["capabilities"] == []
+    # Edge reads what the printer reports. It names no FilamentHub spool, and
+    # until it counts a job's filament or sets a slot it may not say it does.
+    assert set(connector["capabilities"]) == {"read", "presence", "tag_read"}
 
-    rejected = await auth_client.post(
+    accepted = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",
         headers=headers,
         json={
@@ -353,14 +355,20 @@ async def test_unimplemented_bambu_edge_keeps_identity_without_capabilities(
                 transport="edge_agent",
             ),
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "slots": [{"provider_index": 0}],
+            "capabilities": ["read", "presence", "tag_read"],
+            "slot_topology_complete": True,
+            "slots": [
+                {
+                    "provider_index": 0,
+                    "present": True,
+                    "material": "PLA",
+                    "tag_uid": "5D3C2B1A00FF4E6D8C7B6A5948372615",
+                    "tag_technology": "unknown",
+                }
+            ],
         },
     )
-    assert rejected.status_code == 409
-    assert rejected.json()["detail"] == {
-        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
-        "params": {"capability": "presence"},
-    }
+    assert accepted.status_code == 200, accepted.text
 
 
 @pytest.mark.asyncio
