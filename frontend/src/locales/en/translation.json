@@ -7851,7 +7851,17 @@
       "concentric": "Concentric",
       "hilbertcurve": "Hilbert Curve",
       "archimedeanchords": "Archimedean Chords",
-      "octagramspiral": "Octagram Spiral"
+      "octagramspiral": "Octagram Spiral",
+      "zigzag": "Zig Zag",
+      "crosszag": "Cross Zag",
+      "lockedzag": "Locked Zag",
+      "triangles": "Triangles",
+      "tri-hexagon": "Tri-hexagon",
+      "quartercubic": "Quarter Cubic",
+      "lateral-honeycomb": "Lateral Honeycomb",
+      "lateral-lattice": "Lateral Lattice",
+      "tpmsd": "TPMS-D",
+      "tpmsfk": "TPMS-FK"
     },
     "supportTypes": {
       "normal(auto)": "Normal (Auto)",

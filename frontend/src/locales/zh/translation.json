@@ -7832,7 +7832,17 @@
       "concentric": "同心圆",
       "hilbertcurve": "希尔伯特曲线",
       "archimedeanchords": "阿基米德弦",
-      "octagramspiral": "八角螺旋"
+      "octagramspiral": "八角螺旋",
+      "zigzag": "之字形",
+      "crosszag": "交叉之字",
+      "lockedzag": "限定之字",
+      "triangles": "三角形",
+      "tri-hexagon": "内六边形",
+      "quartercubic": "四分之一立方体",
+      "lateral-honeycomb": "侧向蜂窝",
+      "lateral-lattice": "侧向晶格",
+      "tpmsd": "TPMS-D",
+      "tpmsfk": "TPMS-FK"
     },
     "supportTypes": {
       "normal(auto)": "普通（自动）",

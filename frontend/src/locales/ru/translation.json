@@ -8044,7 +8044,17 @@
       "concentric": "Концентрический",
       "hilbertcurve": "Кривая Гильберта",
       "archimedeanchords": "Архимедовы хорды",
-      "octagramspiral": "Восьмиконечная спираль"
+      "octagramspiral": "Восьмиконечная спираль",
+      "zigzag": "Зигзаг",
+      "crosszag": "Смещённый зигзаг",
+      "lockedzag": "Двойной зигзаг",
+      "triangles": "Треугольники",
+      "tri-hexagon": "Звёзды",
+      "quartercubic": "Четверной кубический",
+      "lateral-honeycomb": "Боковые соты",
+      "lateral-lattice": "Боковая решётка",
+      "tpmsd": "TPMS-D",
+      "tpmsfk": "TPMS-FK"
     },
     "supportTypes": {
       "normal(auto)": "Обычные (авто)",
