@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -73,8 +74,7 @@ def test_snapshot_matches_the_reading_shared_with_edge(plugin_module):
 
     assert {key: snapshot[key] for key in expected} == expected
     assert (snapshot["provider"], snapshot["transport"]) == ("flashforge", "orca_plugin_lan")
-    # No per-tool usage exists on this API, so consumption is never claimed.
-    assert snapshot["capabilities"] == ["read", "presence"]
+    assert snapshot["capabilities"] == ["read", "presence", "consumption"]
 
 
 def test_connections_come_from_orcas_flashforge_printer_presets(plugin_module, monkeypatch):
@@ -110,7 +110,7 @@ def test_linking_pairs_the_printer_and_keeps_its_credentials_out_of_storage(brid
     assert result == {"ok": True, "code": "ok"}
     _path, _token, pairing = calls.paired[0]
     assert (pairing["provider"], pairing["transport"]) == ("flashforge", "orca_plugin_lan")
-    assert pairing["capabilities"] == ["read", "presence"]
+    assert pairing["capabilities"] == ["read", "presence", "consumption"]
     # The same account-scoped evidence FH Edge computes for this serial number.
     evidence = hmac.new(
         bytes.fromhex(DISCOVERY_KEY),
@@ -257,3 +257,176 @@ def test_the_check_code_is_sent_only_to_a_private_address(plugin_module, monkeyp
     assert plugin.read_flashforge_detail(dict(_connection(), host="printer.lan")) == (
         None, "permission",
     )
+
+
+def _detail_with(overrides):
+    """The fixture reading with some fields replaced; None removes a field."""
+    detail = copy.deepcopy(_detail())
+    for key, value in overrides.items():
+        target = detail["matlStationInfo"] if key == "currentSlot" else detail
+        if value is None:
+            target.pop(key, None)
+        else:
+            target[key] = value
+    return detail
+
+
+def test_usage_books_match_the_print_scenario_shared_with_edge(plugin_module):
+    # FH Edge follows the same printer with its own tracker. One job, told
+    # reading by reading, must cost the same whichever of the two watched it.
+    scenario = json.loads((EDGE_FIXTURES / "usage_scenario.json").read_text(encoding="utf-8"))
+    books = {}
+
+    for step, expected in zip(scenario["steps"], scenario["expected"], strict=True):
+        detail = _detail_with(step["detail"])
+        slots, _complete = plugin_module.flashforge_slots(detail)
+        events = plugin_module.capture_flashforge_usage(
+            books,
+            plugin_module.flashforge_usage(detail),
+            plugin_module.flashforge_usage_route(slots, scenario["desired"]),
+            step["at"],
+        )
+        for event in events:
+            event.pop("job_id")
+            for item in event["items"]:
+                item["used_length_mm"] = round(item["used_length_mm"], 3)
+        assert events == expected, step["at"]
+
+
+@pytest.fixture
+def watched(bridge, monkeypatch):
+    """A linked printer, its connection copied from OrcaSlicer, and a watcher driven by hand."""
+    plugin, calls, _stored = bridge
+    plugin.configure_flashforge_bridge(7, 9, "FH-AAAAA-BBBBB", "", [_connection()])
+    calls.posted.clear()
+    calls.reads.clear()
+    calls.desired = []
+    calls.reading = {"status": "ready"}
+    calls.failure = None
+    monkeypatch.setitem(plugin._FLASHFORGE_CONNECTIONS, "items", [_connection()])
+    monkeypatch.setattr(plugin, "FLASHFORGE_USAGE_RETRY_SECONDS", 0.0)
+    monkeypatch.setattr(plugin, "FLASHFORGE_SNAPSHOT_MIN_SECONDS", 0.0)
+
+    def read(connection):
+        calls.reads.append(connection)
+        if calls.failure:
+            return None, calls.failure
+        return _detail_with(calls.reading), None
+
+    def desired(path, token):
+        calls.desired.append(path)
+        return 200, json.dumps({"slots": [{
+            "index": 0, "usage_route_proof": "proof-slot-1", "spool": {"id": 11},
+        }]}).encode("utf-8")
+
+    monkeypatch.setattr(plugin, "read_flashforge_detail", read)
+    monkeypatch.setattr(plugin, "http_get_bridge_json", desired)
+
+    def batches():
+        return [payload for path, _token, payload in calls.posted if path.endswith("usage-batches")]
+
+    def at(status, progress):
+        calls.reading = {"status": status, "printProgress": progress}
+
+    return SimpleNamespace(plugin=plugin, calls=calls, batches=batches, at=at,
+                           runtime=plugin.FlashforgeWatchRuntime())
+
+
+def test_a_watched_print_is_charged_once_even_when_the_answer_is_lost(watched):
+    plugin, calls = watched.plugin, watched.calls
+    watched.at("printing", 0.10)
+    assert watched.runtime.watch_once() == plugin.FLASHFORGE_WATCH_PRINTING_SECONDS
+    watched.at("printing", 0.50)
+    watched.runtime.watch_once()
+    assert watched.batches() == []
+
+    # The job ends, and the site's answer to the batch never arrives.
+    calls.post_status = 0
+    watched.at("completed", 0.99)
+    assert watched.runtime.watch_once() == plugin.FLASHFORGE_WATCH_IDLE_SECONDS
+    (lost,) = watched.batches()
+    (event,) = lost["events"]
+    (item,) = event["items"]
+    assert (lost["provider"], lost["transport"], lost["sequence"]) == (
+        "flashforge", "orca_plugin_lan", 1,
+    )
+    assert (event["event_type"], event["outcome"]) == ("terminal", "completed")
+    # From the first reading (10 %) to the whole estimate of the fixture job.
+    assert item["used_length_mm"] == pytest.approx(6170.0 * 0.9)
+    assert (item["spool_id"], item["usage_route_proof"]) == (11, "proof-slot-1")
+    assert (item["consumption_kind"], item["estimate_source"]) == ("estimated", "slicer_progress")
+
+    # OrcaSlicer is restarted: the same batch is offered again, unchanged, and
+    # once it is acknowledged nothing is sent a second time.
+    calls.post_status = 200
+    calls.post_body = json.dumps({"accepted": True, "ack_sequence": 1}).encode("utf-8")
+    restarted = plugin.FlashforgeWatchRuntime()
+    restarted.watch_once()
+    assert watched.batches() == [lost, lost]
+    restarted.watch_once()
+    plugin.FlashforgeWatchRuntime().watch_once()
+    assert watched.batches() == [lost, lost]
+
+
+def test_an_idle_printer_costs_the_site_nothing(watched):
+    watched.runtime.watch_once()
+    reports = len(watched.calls.posted)
+    assert reports == 1  # what the printer says, once
+
+    # Nothing changed but a nozzle cooling down.
+    watched.calls.reading = {"status": "ready", "nozzleTemps": [31.0, 25.1, 24.9, 25.0]}
+    watched.runtime.watch_once()
+
+    assert len(watched.calls.posted) == reports
+    assert watched.calls.desired == []
+
+
+def test_a_printer_orcaslicer_has_not_allowed_is_left_alone_until_the_person_acts(
+    watched, monkeypatch
+):
+    # Every attempt on an address OrcaSlicer has not allowed is another
+    # permission question on the person's screen.
+    watched.calls.failure = "permission"
+    watched.runtime.watch_once()
+    watched.runtime.watch_once()
+    assert len(watched.calls.reads) == 1
+
+    monkeypatch.setattr(watched.runtime, "start", lambda: None)
+    watched.runtime.wake()
+    watched.runtime.watch_once()
+    assert len(watched.calls.reads) == 2
+
+
+def test_books_that_fell_behind_the_server_take_its_number(watched):
+    plugin, calls = watched.plugin, watched.calls
+    watched.at("printing", 0.10)
+    watched.runtime.watch_once()
+    calls.post_status = 409
+    calls.post_body = json.dumps({"detail": {
+        "code": "ERR_PRINTER_BRIDGE_BATCH_OUT_OF_ORDER", "params": {"expected_sequence": 5},
+    }}).encode("utf-8")
+    watched.at("completed", 1.0)
+    watched.runtime.watch_once()
+
+    calls.post_status = 200
+    calls.post_body = json.dumps({"accepted": True, "ack_sequence": 5}).encode("utf-8")
+    watched.runtime.watch_once()
+
+    refused, accepted = watched.batches()
+    assert (refused["sequence"], accepted["sequence"]) == (1, 5)
+    # The same events under the server's number: nothing is counted twice.
+    assert [event["event_id"] for event in accepted["events"]] == [
+        event["event_id"] for event in refused["events"]
+    ]
+
+
+def test_a_link_the_site_revoked_is_dropped_by_the_watcher(watched):
+    plugin = watched.plugin
+    watched.at("printing", 0.10)
+    plugin.http_get_bridge_json = lambda path, token: (401, b"")
+
+    watched.runtime.watch_once()
+
+    assert plugin._load_flashforge_bindings() == []
+    # Nothing is linked any more, so the thread has nothing to stay for.
+    assert watched.runtime.watch_once() is None

@@ -193,6 +193,31 @@ class FlashforgeProviderTest(unittest.TestCase):
 
         self.assertEqual([event["items"] for event in events], [[]])
 
+    def test_a_whole_job_matches_the_scenario_shared_with_the_orca_plugin(self) -> None:
+        # The plugin follows the same printer with its own books. One job,
+        # told reading by reading, must cost the same whichever watched it.
+        scenario = json.loads(
+            FIXTURE.with_name("usage_scenario.json").read_text(encoding="utf-8")
+        )
+        state = EdgeState(desired_snapshot=scenario["desired"])
+        for step, expected in zip(scenario["steps"], scenario["expected"], strict=True):
+            response = json.loads(FIXTURE.read_text())
+            for key, value in step["detail"].items():
+                detail = response["detail"]
+                target = detail["matlStationInfo"] if key == "currentSlot" else detail
+                if value is None:
+                    target.pop(key, None)
+                else:
+                    target[key] = value
+            snapshot = provider(FlashforgeHttp(response)).observe()
+            events = capture_usage_events(state, snapshot, observed_at=step["at"])
+            for event in events:
+                event.pop("job_id")
+                for item in event["items"]:
+                    item["used_length_mm"] = round(item["used_length_mm"], 3)
+            with self.subTest(at=step["at"]):
+                self.assertEqual(events, expected)
+
     def test_without_an_estimate_there_is_no_usage_to_report(self) -> None:
         response = json.loads(FIXTURE.read_text())
         del response["detail"]["estimatedRightLen"]

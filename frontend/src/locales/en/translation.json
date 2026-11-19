@@ -169,7 +169,7 @@
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
-      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate, through FH Edge only."
+      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate while OrcaSlicer is open or FH Edge is running."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -8833,7 +8833,7 @@
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several Flashforge printers. Choose this one:",
-      "onDemand": "Data refreshes on connect, when this card opens in OrcaSlicer and on sync. Connect FH Edge for continuous monitoring.",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while OrcaSlicer is running, the plugin follows the print and counts usage from the slicer's estimate. With OrcaSlicer closed, FH Edge does.",
       "localOnly": "The address, serial number and check code stay in OrcaSlicer and are never sent to FilamentHub.",
       "result": {
         "notFound": "OrcaSlicer has no Flashforge printer. Open the printer's connection settings in OrcaSlicer, choose the Flashforge host type and enter the address.",

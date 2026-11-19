@@ -169,7 +169,7 @@
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
       "flashforge": "闪铸（5M、AD5X、Creator 5）",
-      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；用量按切片软件的估算统计，且仅通过 FH Edge。"
+      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；OrcaSlicer 打开或 FH Edge 运行时，用量按切片软件的估算统计。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -8811,7 +8811,7 @@
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台闪铸打印机，请选择：",
-      "onDemand": "数据会在连接时、在 OrcaSlicer 中打开此卡片时以及同步时刷新。如需持续监控，请连接 FH Edge。",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页后，只要 OrcaSlicer 在运行，插件就会跟踪打印并按切片软件的估算统计用量。OrcaSlicer 关闭时由 FH Edge 负责。",
       "localOnly": "地址、序列号和校验码保留在 OrcaSlicer 中，不会发送到 FilamentHub。",
       "result": {
         "notFound": "OrcaSlicer 中没有闪铸打印机。请在 OrcaSlicer 中打开打印机连接设置，选择 Flashforge 主机类型并填写地址。",

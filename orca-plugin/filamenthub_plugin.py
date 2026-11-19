@@ -10567,8 +10567,17 @@ def save_stock_alert_cursor(alert_id):
     )
 
 
-class StockAlertRuntime:
-    """One bounded daemon that shows each new low-stock alert once."""
+class _BoundedDaemonRuntime:
+    """One daemon thread that an unload stops and a reload replaces.
+
+    A subclass names its thread and writes ``_run_loop``, which ends with
+    ``_retire_current_thread``. Every I/O it starts is refused once ``stop``
+    has been called, and a thread still inside a slow request when the plugin
+    is loaded again is replaced only after it has left.
+    """
+
+    thread_name = ""
+    label = ""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -10577,8 +10586,6 @@ class StockAlertRuntime:
         self._stop = threading.Event()
         self._restart_requested = False
         self._generation = 0
-        self._failures = 0
-        self._rejected = {}
 
     def _start_locked(self):
         self._stop.clear()
@@ -10586,16 +10593,16 @@ class StockAlertRuntime:
         thread = threading.Thread(
             target=self._run,
             args=(self._generation,),
-            name="filamenthub-stock-alerts",
+            name=self.thread_name,
             daemon=True,
         )
-        self._thread = thread if start_audited_thread(thread, "stock alerts") else None
+        self._thread = thread if start_audited_thread(thread, self.label) else None
 
     def authorize_external_operation(self, generation):
         with self._lock:
             if self._stop.is_set() or generation != self._generation:
                 raise PluginLifecycleStopped(
-                    "Stock alert lifecycle generation has stopped"
+                    "%s lifecycle generation has stopped" % self.label
                 )
 
     def start(self):
@@ -10608,7 +10615,7 @@ class StockAlertRuntime:
                 return
             self._restart_requested = False
             if not background_threads_permitted():
-                _DEFERRED_BACKGROUND.add("stock alerts")
+                _DEFERRED_BACKGROUND.add(self.label)
                 return
             self._start_locked()
 
@@ -10639,6 +10646,18 @@ class StockAlertRuntime:
             with bind_lifecycle_generation(self, generation):
                 return self._run_loop()
         return self._run_loop()
+
+
+class StockAlertRuntime(_BoundedDaemonRuntime):
+    """One bounded daemon that shows each new low-stock alert once."""
+
+    thread_name = "filamenthub-stock-alerts"
+    label = "stock alerts"
+
+    def __init__(self):
+        super().__init__()
+        self._failures = 0
+        self._rejected = {}
 
     def _run_loop(self):
         self._wake.wait(random.uniform(*STOCK_ALERT_FIRST_POLL_RANGE))
@@ -10802,6 +10821,8 @@ def resume_deferred_background_threads():
                 if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
                     BAMBU_BRIDGE_RUNTIME.start()
                 STOCK_ALERT_RUNTIME.start()
+                if _load_flashforge_bindings():
+                    FLASHFORGE_WATCH_RUNTIME.start()
             except Exception as exc:
                 fh_log("deferred background start failed: %s" % type(exc).__name__)
 
@@ -10825,6 +10846,8 @@ def start_plugin_runtime(storage_initialized=False):
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
         STOCK_ALERT_RUNTIME.start()
+        if _load_flashforge_bindings():
+            FLASHFORGE_WATCH_RUNTIME.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)
@@ -10846,6 +10869,7 @@ def stop_plugin_runtime():
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
     STOCK_ALERT_RUNTIME.stop()
+    FLASHFORGE_WATCH_RUNTIME.stop()
     return True
 
 
@@ -10858,8 +10882,9 @@ def stop_plugin_runtime():
 # its private file holds only the FilamentHub bridge token, the serial number
 # that selects the Orca connection, and the account-scoped identity evidence.
 #
-# The printer is read when the person connects it, opens its card or syncs.
-# Continuous monitoring without OrcaSlicer is what FH Edge is for.
+# The printer is read when the person connects it, opens its card or syncs,
+# and while OrcaSlicer is open a watcher follows its prints to count their
+# filament. Monitoring without OrcaSlicer is what FH Edge is for.
 # fh-bundle: filamenthub_flashforge
 from filamenthub_flashforge import (
     FLASHFORGE_API_PORT,
@@ -10868,10 +10893,13 @@ from filamenthub_flashforge import (
     FLASHFORGE_HOST_TYPE,
     FLASHFORGE_IDENTITY_KIND,
     FLASHFORGE_LAN_MODE_OFF,
+    FLASHFORGE_MAX_JOB_LENGTH_MM,
     FLASHFORGE_MAX_SLOTS,
     FLASHFORGE_PROVIDER,
     FLASHFORGE_SINGLE_SPOOL_PIDS,
     FLASHFORGE_STATION_PIDS,
+    FLASHFORGE_USAGE_CHECKPOINT_S,
+    capture_flashforge_usage,
     flashforge_check_code,
     flashforge_detail_body,
     flashforge_detail_result,
@@ -10881,11 +10909,20 @@ from filamenthub_flashforge import (
     flashforge_product_id,
     flashforge_serial,
     flashforge_slots,
+    flashforge_usage,
+    flashforge_usage_route,
+    flush_flashforge_usage,
 )
 # fh-bundle-end
 
 MAX_FLASHFORGE_BRIDGES = 32
 FLASHFORGE_READ_TIMEOUT = 8
+# Orca's presets can be read on the UI thread only. The watcher works from
+# the copy taken there the last time the person used FilamentHub; it is
+# refreshed when older than this, and never written anywhere.
+FLASHFORGE_CONNECTIONS_MAX_AGE_SECONDS = 300.0
+_FLASHFORGE_CONNECTIONS = {"items": None, "at": None}
+_FLASHFORGE_CONNECTIONS_LOCK = threading.Lock()
 FLASHFORGE_MESSAGES = frozenset({"configure-flashforge", "flashforge-refresh"})
 _FLASHFORGE_CONFIG_LOCK = threading.RLock()
 
@@ -10924,6 +10961,11 @@ def _snapshot_local_flashforge_connections():
             })
     except Exception as exc:
         fh_log("local Flashforge scan failed: %s" % type(exc).__name__)
+    else:
+        # Only a completed scan replaces what the watcher works from.
+        with _FLASHFORGE_CONNECTIONS_LOCK:
+            _FLASHFORGE_CONNECTIONS["items"] = [dict(item) for item in connections]
+            _FLASHFORGE_CONNECTIONS["at"] = time.monotonic()
     return connections
 
 
@@ -11287,6 +11329,8 @@ def handle_flashforge_message(catalog, msg):
                 fh_log("Flashforge setup failed: %s" % type(exc).__name__)
                 result = {"ok": False, "code": "invalid"}
             catalog._deliver("flashforge-setup-result", requestId=request_id, result=result)
+            if result.get("ok"):
+                wake_flashforge_watch()
     else:
         def job():
             try:
@@ -11303,6 +11347,8 @@ def handle_flashforge_message(catalog, msg):
                 requestId=request_id,
                 result={"ok": code == "ok", "code": code},
             )
+            if code == "ok":
+                wake_flashforge_watch()
 
     if BACKGROUND_WORKER.submit(job) is False:
         catalog._deliver(
@@ -11328,6 +11374,366 @@ def refresh_flashforge_bindings_after_sync():
             fh_log("Flashforge refresh failed: %s" % type(exc).__name__)
 
     BACKGROUND_WORKER.submit(job)
+
+
+# --------------------------------------------------------------------------- #
+# Following a Flashforge print while OrcaSlicer is open
+# --------------------------------------------------------------------------- #
+# The printer measures no filament: a job's usage is the slicer's estimate
+# followed by the print progress, and following means reading the printer again
+# and again while it prints. One bounded thread does that for every linked
+# printer. It asks FilamentHub for the current assignments only while a job is
+# being counted, reports a printer only when what it says has changed, and an
+# idle printer costs the site nothing.
+FLASHFORGE_WATCH_PRINTING_SECONDS = 30.0
+FLASHFORGE_WATCH_IDLE_SECONDS = 120.0
+FLASHFORGE_WATCH_FIRST_RANGE = (10.0, 60.0)
+FLASHFORGE_WATCH_JITTER_RATIO = 0.2
+FLASHFORGE_SNAPSHOT_MIN_SECONDS = 60.0
+FLASHFORGE_USAGE_RETRY_SECONDS = 60.0
+# A printer OrcaSlicer has not allowed is left alone until the person acts:
+# every attempt would be another permission question.
+FLASHFORGE_PERMISSION_BACKOFF_SECONDS = 1800.0
+FLASHFORGE_USAGE_QUEUE_LIMIT = 512
+FLASHFORGE_USAGE_BATCH_EVENTS = 32
+FLASHFORGE_USAGE_JOURNAL_BYTES = 2 * 1024 * 1024
+_FLASHFORGE_QUIET_STATES = frozenset({"idle", "finished", "failed", "unknown"})
+_FLASHFORGE_TEMPERATURES = (
+    "nozzle_temperature", "nozzle_target_temperature", "bed_temperature",
+    "bed_target_temperature", "chamber_temperature",
+)
+
+
+def refresh_flashforge_connections():
+    """Keep the watcher's copy of Orca's Flashforge connections current (UI thread)."""
+    now = time.monotonic()
+    with _FLASHFORGE_CONNECTIONS_LOCK:
+        checked = _FLASHFORGE_CONNECTIONS["at"]
+        if checked is not None and now - checked < FLASHFORGE_CONNECTIONS_MAX_AGE_SECONDS:
+            return
+        # Also the time of a check that found nothing linked, so that people
+        # without a Flashforge printer pay for one small read in five minutes.
+        _FLASHFORGE_CONNECTIONS["at"] = now
+    if not _load_flashforge_bindings():
+        return
+    _snapshot_local_flashforge_connections()
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            FLASHFORGE_WATCH_RUNTIME.start()
+
+
+def _flashforge_usage_journal(binding, source_instance_id):
+    """Where one link's usage books are kept.
+
+    The bridge token is not part of the name: linking the same printer again
+    continues the same numbered sequence of batches on the server.
+    """
+    name = hashlib.sha256(json.dumps([
+        binding["physical_printer_id"], binding["material_system_id"], source_instance_id,
+    ]).encode("utf-8")).hexdigest()
+    return os.path.join(
+        os.path.dirname(FLASHFORGE_CONFIG_FILE), "flashforge_usage", name + ".json"
+    )
+
+
+def _load_flashforge_usage_books(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            books = json.loads(handle.read(FLASHFORGE_USAGE_JOURNAL_BYTES + 1))
+    except FileNotFoundError:
+        return {"version": 1, "next_sequence": 1, "tracker": None, "events": [], "outbox": None}
+    except (OSError, ValueError):
+        return None
+    if (
+        isinstance(books, dict)
+        and books.get("version") == 1
+        and type(books.get("next_sequence")) is int
+        and books["next_sequence"] >= 1
+        and isinstance(books.get("events"), list)
+        and (books.get("tracker") is None or isinstance(books["tracker"], dict))
+        and (books.get("outbox") is None or isinstance(books["outbox"], dict))
+    ):
+        return books
+    return None
+
+
+def _flashforge_report_digest(snapshot):
+    """What a report says, apart from when it was read.
+
+    The temperatures of a printer that is not printing drift all day and tell
+    nobody anything, so they do not make a report new.
+    """
+    payload = {key: value for key, value in snapshot.items() if key != "observed_at"}
+    printer = payload.get("printer") or {}
+    if printer.get("state") in _FLASHFORGE_QUIET_STATES:
+        payload["printer"] = {
+            key: value for key, value in printer.items() if key not in _FLASHFORGE_TEMPERATURES
+        }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
+    """One bounded daemon follows the prints of every linked Flashforge printer."""
+
+    thread_name = "filamenthub-flashforge-watch"
+    label = "Flashforge watch"
+
+    def __init__(self):
+        super().__init__()
+        self._books = {}
+        self._reported = {}
+        self._usage_retry_at = {}
+        self._blocked_until = {}
+        self._logged = {}
+
+    def wake(self):
+        """The person just used a Flashforge card: look now, and ask again if refused."""
+        with self._lock:
+            self._blocked_until.clear()
+        self.start()
+        self._wake.set()
+
+    def _run_loop(self):
+        # Many plugin instances can start at once after a slicer update; their
+        # first automatic reads are spread out. A person's action interrupts it.
+        self._wake.wait(random.uniform(*FLASHFORGE_WATCH_FIRST_RANGE))
+        self._wake.clear()
+        while not self._stop.is_set():
+            try:
+                delay = self.watch_once()
+            except PluginLifecycleStopped:
+                break
+            except Exception as exc:
+                if self._stop.is_set():
+                    break
+                self._log("watch", type(exc).__name__)
+                delay = FLASHFORGE_WATCH_IDLE_SECONDS
+            if delay is None or self._stop.is_set():
+                # Nothing is linked: the thread ends until a printer is.
+                break
+            spread = delay * FLASHFORGE_WATCH_JITTER_RATIO
+            self._wake.wait(random.uniform(delay - spread, delay + spread))
+            self._wake.clear()
+        self._retire_current_thread()
+
+    def _log(self, subject, detail):
+        if self._logged.get(subject) != detail:
+            self._logged[subject] = detail
+            if detail is not None:
+                fh_log("Flashforge %s: %s" % (subject, detail))
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = _load_flashforge_bindings()
+        if not bindings:
+            return None
+        with _FLASHFORGE_CONNECTIONS_LOCK:
+            connections = _FLASHFORGE_CONNECTIONS["items"]
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return FLASHFORGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return FLASHFORGE_WATCH_PRINTING_SECONDS if printing else FLASHFORGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Follow one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        with self._lock:
+            if now < self._blocked_until.get(key, 0.0):
+                return False
+        connection = next(
+            (
+                item for item in connections
+                if item["serial"] == binding["serial"] and item["check_code"]
+            ),
+            None,
+        )
+        if connection is None:
+            return False
+        path = _flashforge_usage_journal(binding, source_instance_id)
+        books = self._books.get(path)
+        if books is None:
+            books = _load_flashforge_usage_books(path)
+            if books is None:
+                # Books that cannot be read are not replaced by empty ones: the
+                # numbered sequence they hold is what keeps a batch from being
+                # counted twice.
+                self._log("usage books", "unreadable")
+                return False
+        # A failed write must not advance the books kept in memory.
+        books = json.loads(json.dumps(books))
+        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        detail, failure = read_flashforge_detail(connection)
+        if self._stop.is_set():
+            return False
+        if detail is None:
+            if failure == "permission":
+                with self._lock:
+                    self._blocked_until[key] = now + FLASHFORGE_PERMISSION_BACKOFF_SECONDS
+            # What is already charged to a spool is handed over now; the
+            # stretch nobody reads is charged to nobody when readings resume.
+            if len(books["events"]) < FLASHFORGE_USAGE_QUEUE_LIMIT:
+                books["events"].extend(flush_flashforge_usage(books, observed_at, "disconnect"))
+            capture_flashforge_usage(books, None, None, observed_at)
+            self._settle(binding, source_instance_id, path, books)
+            return False
+        slots, _complete = flashforge_slots(detail)
+        usage = flashforge_usage(detail)
+        tracker = books.get("tracker")
+        in_job = usage is not None and usage["state"] in ("printing", "paused")
+        counting = in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))
+        if not counting:
+            capture_flashforge_usage(books, usage, None, observed_at)
+        else:
+            status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
+            if status == 401:
+                _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+                return False
+            desired = None
+            if status == 200:
+                try:
+                    desired = json.loads(body.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    desired = None
+            if not isinstance(desired, dict) or len(books["events"]) >= FLASHFORGE_USAGE_QUEUE_LIMIT:
+                # Without the site's assignments no spool can be named.
+                capture_flashforge_usage(books, None, None, observed_at)
+            else:
+                books["events"].extend(capture_flashforge_usage(
+                    books, usage, flashforge_usage_route(slots, desired), observed_at
+                ))
+        if not self._settle(binding, source_instance_id, path, books):
+            return in_job
+        self._report(binding, source_instance_id, key, detail, now)
+        return in_job
+
+    def _settle(self, binding, source_instance_id, path, books):
+        """Write the books, then hand the oldest batch to FilamentHub."""
+        if books.get("outbox") is None and books["events"]:
+            events = books["events"][:FLASHFORGE_USAGE_BATCH_EVENTS]
+            books["events"] = books["events"][FLASHFORGE_USAGE_BATCH_EVENTS:]
+            books["outbox"] = {
+                "material_system_id": binding["material_system_id"],
+                "provider": FLASHFORGE_PROVIDER,
+                "transport": "orca_plugin_lan",
+                "source_instance_id": source_instance_id,
+                "sequence": books["next_sequence"],
+                "events": [
+                    dict(event, event_id="%s:%d" % (event["job_id"], event["segment_sequence"]))
+                    for event in events
+                ],
+            }
+        if not self._write(path, books):
+            return False
+        pending = books.get("outbox")
+        if pending is None or time.monotonic() < self._usage_retry_at.get(path, 0.0):
+            return True
+        if self._stop.is_set():
+            return True
+        status, body, retry_after = http_post_bridge_json(
+            "/printer-bridge/usage-batches", binding["bridge_token"], pending
+        )
+        try:
+            answer = json.loads(body.decode("utf-8")) if body else {}
+        except (UnicodeDecodeError, ValueError):
+            answer = {}
+        if (
+            status == 200
+            and isinstance(answer, dict)
+            and answer.get("accepted") is True
+            and answer.get("ack_sequence") == pending["sequence"]
+        ):
+            self._write(path, dict(books, outbox=None, next_sequence=pending["sequence"] + 1))
+            self._usage_retry_at.pop(path, None)
+            self._log("usage upload", None)
+            return True
+        if status == 401:
+            _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+            return False
+        detail = answer.get("detail") if isinstance(answer, dict) else None
+        expected = (detail.get("params") or {}).get("expected_sequence") if (
+            isinstance(detail, dict)
+            and detail.get("code") == "ERR_PRINTER_BRIDGE_BATCH_OUT_OF_ORDER"
+            and isinstance(detail.get("params"), dict)
+        ) else None
+        if status == 409 and type(expected) is int and expected > pending["sequence"]:
+            # The server has counted further than these books remember (they
+            # were lost and started again). Each event keeps its own identity,
+            # so taking the server's number cannot count anything twice.
+            self._write(path, dict(
+                books, outbox=dict(pending, sequence=expected), next_sequence=expected
+            ))
+        self._usage_retry_at[path] = time.monotonic() + max(
+            FLASHFORGE_USAGE_RETRY_SECONDS, retry_after or 0
+        )
+        self._log("usage upload", "HTTP %s" % status)
+        return True
+
+    def _write(self, path, books):
+        if self._books.get(path) == books:
+            return True
+        try:
+            write_json_atomic(path, books, mode=0o600)
+        except OSError as exc:
+            self._log("usage books", type(exc).__name__)
+            return False
+        self._books[path] = books
+        self._log("usage books", None)
+        return True
+
+    def _report(self, binding, source_instance_id, key, detail, now):
+        """Tell FilamentHub what the printer says, when that is news."""
+        snapshot = build_flashforge_bridge_snapshot(binding, source_instance_id, detail)
+        digest = _flashforge_report_digest(snapshot)
+        previous_digest, reported_at = self._reported.get(key, (None, None))
+        if digest == previous_digest or (
+            reported_at is not None and now - reported_at < FLASHFORGE_SNAPSHOT_MIN_SECONDS
+        ):
+            return
+        if self._stop.is_set():
+            return
+        status, body, _retry_after = http_post_bridge_json(
+            "/printer-bridge/snapshot", binding["bridge_token"], snapshot
+        )
+        code = _flashforge_report_code(status, body)
+        if code == "unpaired":
+            _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+        elif code == "ok":
+            self._reported[key] = (digest, now)
+        else:
+            # Tried: not again before the usual interval.
+            self._reported[key] = (previous_digest, now)
+
+
+FLASHFORGE_WATCH_RUNTIME = FlashforgeWatchRuntime()
+
+
+def wake_flashforge_watch():
+    """Start or hurry the watcher, only from the currently loaded plugin."""
+    with _PLUGIN_RUNTIME_LOCK:
+        expected_epoch = _PLUGIN_RUNTIME_EPOCH
+    worker = globals().get("BACKGROUND_WORKER")
+    authorize = getattr(worker, "authorize_external_operation", None)
+    if callable(authorize):
+        authorize()
+    else:
+        ensure_worker_generation_active()
+    # Unload either follows this short wake and stops the watcher, or wins
+    # first and makes this call a no-op; a later reload has another epoch.
+    with _PLUGIN_RUNTIME_LOCK:
+        if not _PLUGIN_RUNTIME_ACTIVE or _PLUGIN_RUNTIME_EPOCH != expected_epoch:
+            return False
+        FLASHFORGE_WATCH_RUNTIME.wake()
+        return True
 
 
 class _PluginRuntimeLifecycleMixin:
@@ -13789,6 +14195,7 @@ class FilamentHubCatalog(
 
     def on_message(self, msg):
         prime_background_runtime()
+        refresh_flashforge_connections()
         denied_before = worker_denial_count()
         try:
             self._handle_message(msg)

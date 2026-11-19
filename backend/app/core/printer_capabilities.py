@@ -58,11 +58,11 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
         {"read", "write", "presence", "spool_identity", "consumption"}
     ),
     # Flashforge's LAN API reports no spool identity and no measured usage,
-    # only the slicer's estimate for the job. Edge watches the whole print
-    # and counts that estimate by progress; the plugin reads on demand and
-    # cannot follow a job, so it claims no consumption.
+    # only the slicer's estimate for the job. Whoever watches the print counts
+    # that estimate by progress: Edge always, the plugin while OrcaSlicer is
+    # open.
     ("flashforge", "edge_agent"): frozenset({"read", "presence", "consumption"}),
-    ("flashforge", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    ("flashforge", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -154,11 +154,6 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
         "tag_read": _FLASHFORGE_NO_READER,
     },
     ("flashforge", "orca_plugin_lan"): {
-        "consumption": (
-            "planned",
-            "The plugin reads the printer on request; counting the job estimate needs it to "
-            "watch the whole print, as Edge does.",
-        ),
         "write": _FLASHFORGE_WRITE,
         "spool_identity": _FLASHFORGE_NO_SPOOL,
         "tag_read": _FLASHFORGE_NO_READER,

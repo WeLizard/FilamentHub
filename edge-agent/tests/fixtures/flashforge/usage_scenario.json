@@ -1,0 +1,241 @@
+{
+  "about": "One job watched from 10 % to the end: a pause, a change of the feeding slot, five minutes of printing, a reading without an estimate, completion. Each step overrides fields of detail_printing.json; currentSlot belongs to matlStationInfo; null removes a field.",
+  "desired": {
+    "slots": [
+      {
+        "index": 0,
+        "assignment_revision": 3,
+        "usage_route_proof": "proof-slot-1",
+        "spool": {
+          "id": 11
+        }
+      },
+      {
+        "index": 1,
+        "assignment_revision": 5,
+        "usage_route_proof": "proof-slot-2",
+        "spool": {
+          "id": 12
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "at": "2026-11-19T10:00:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.1,
+        "printDuration": 100
+      }
+    },
+    {
+      "at": "2026-11-19T10:02:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.2,
+        "printDuration": 220
+      }
+    },
+    {
+      "at": "2026-11-19T10:03:00+00:00",
+      "detail": {
+        "status": "paused",
+        "printProgress": 0.25,
+        "printDuration": 280
+      }
+    },
+    {
+      "at": "2026-11-19T10:05:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.3,
+        "printDuration": 400
+      }
+    },
+    {
+      "at": "2026-11-19T10:06:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.4,
+        "printDuration": 460,
+        "nozzleTargetTemps": [
+          0,
+          230,
+          0,
+          0
+        ],
+        "currentSlot": 2
+      }
+    },
+    {
+      "at": "2026-11-19T10:12:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.6,
+        "printDuration": 800,
+        "nozzleTargetTemps": [
+          0,
+          230,
+          0,
+          0
+        ],
+        "currentSlot": 2
+      }
+    },
+    {
+      "at": "2026-11-19T10:13:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.65,
+        "printDuration": 860,
+        "estimatedRightLen": null,
+        "nozzleTargetTemps": [
+          0,
+          230,
+          0,
+          0
+        ],
+        "currentSlot": 2
+      }
+    },
+    {
+      "at": "2026-11-19T10:15:00+00:00",
+      "detail": {
+        "status": "printing",
+        "printProgress": 0.8,
+        "printDuration": 1000,
+        "nozzleTargetTemps": [
+          0,
+          230,
+          0,
+          0
+        ],
+        "currentSlot": 2
+      }
+    },
+    {
+      "at": "2026-11-19T10:20:00+00:00",
+      "detail": {
+        "status": "completed",
+        "printProgress": 0.99,
+        "printDuration": 1300,
+        "nozzleTargetTemps": [
+          0,
+          230,
+          0,
+          0
+        ],
+        "currentSlot": 2
+      }
+    }
+  ],
+  "expected": [
+    [],
+    [],
+    [
+      {
+        "contract_version": 2,
+        "segment_sequence": 1,
+        "event_type": "checkpoint",
+        "reasons": [
+          "paused"
+        ],
+        "observed_at": "2026-11-19T10:03:00+00:00",
+        "started_at": "2026-11-19T10:00:00+00:00",
+        "items": [
+          {
+            "slot_index": 0,
+            "spool_id": 11,
+            "used_length_mm": 925.5,
+            "evidence": "route_proof",
+            "usage_route_proof": "proof-slot-1",
+            "consumption_kind": "estimated",
+            "estimate_source": "slicer_progress"
+          }
+        ],
+        "file_name": "bracket.3mf",
+        "duration_s": 280.0
+      }
+    ],
+    [],
+    [
+      {
+        "contract_version": 2,
+        "segment_sequence": 2,
+        "event_type": "checkpoint",
+        "reasons": [
+          "tool_change"
+        ],
+        "observed_at": "2026-11-19T10:06:00+00:00",
+        "started_at": "2026-11-19T10:00:00+00:00",
+        "items": [
+          {
+            "slot_index": 0,
+            "spool_id": 11,
+            "used_length_mm": 308.5,
+            "evidence": "route_proof",
+            "usage_route_proof": "proof-slot-1",
+            "consumption_kind": "estimated",
+            "estimate_source": "slicer_progress"
+          }
+        ],
+        "file_name": "bracket.3mf",
+        "duration_s": 460.0
+      }
+    ],
+    [
+      {
+        "contract_version": 2,
+        "segment_sequence": 3,
+        "event_type": "checkpoint",
+        "reasons": [
+          "periodic"
+        ],
+        "observed_at": "2026-11-19T10:12:00+00:00",
+        "started_at": "2026-11-19T10:00:00+00:00",
+        "items": [
+          {
+            "slot_index": 1,
+            "spool_id": 12,
+            "used_length_mm": 1234.0,
+            "evidence": "route_proof",
+            "usage_route_proof": "proof-slot-2",
+            "consumption_kind": "estimated",
+            "estimate_source": "slicer_progress"
+          }
+        ],
+        "file_name": "bracket.3mf",
+        "duration_s": 800.0
+      }
+    ],
+    [],
+    [],
+    [
+      {
+        "contract_version": 2,
+        "segment_sequence": 4,
+        "event_type": "terminal",
+        "reasons": [
+          "terminal"
+        ],
+        "observed_at": "2026-11-19T10:20:00+00:00",
+        "started_at": "2026-11-19T10:00:00+00:00",
+        "items": [
+          {
+            "slot_index": 1,
+            "spool_id": 12,
+            "used_length_mm": 1234.0,
+            "evidence": "route_proof",
+            "usage_route_proof": "proof-slot-2",
+            "consumption_kind": "estimated",
+            "estimate_source": "slicer_progress"
+          }
+        ],
+        "file_name": "bracket.3mf",
+        "outcome": "completed",
+        "duration_s": 1300.0
+      }
+    ]
+  ]
+}

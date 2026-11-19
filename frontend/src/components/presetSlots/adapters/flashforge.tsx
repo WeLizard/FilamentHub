@@ -25,8 +25,9 @@ const KEEPS_PAIRING_CODE = new Set(['choose', 'permission']);
  * The OrcaSlicer route. The plugin reads the printer's address, serial number
  * and check code from its connection settings in OrcaSlicer, so this card asks
  * for nothing: it issues a pairing code and reports what the plugin answered.
- * The printer is read on connect, when this card opens and on sync, never on a
- * timer; FH Edge is the route for continuous observation.
+ * The card asks for a reading on connect and when it opens. While OrcaSlicer is
+ * open the plugin also follows the printer on its own to count a job's filament;
+ * FH Edge is the route for watching without OrcaSlicer.
  */
 function FlashforgeSetup({
   printer,
@@ -129,7 +130,7 @@ function FlashforgeSetup({
       autoConnectAttempted.current = true;
       void connect();
     } else if (paired && !refreshedOnOpen.current) {
-      // One read when the card opens; nothing polls the printer afterwards.
+      // One read when the card opens; the page itself never polls the printer.
       refreshedOnOpen.current = true;
       void refresh();
     }
@@ -218,8 +219,8 @@ function FlashforgeSetup({
 // Flashforge printers on the LAN API (port 8898): the AD5X and Creator 5 /
 // 5 Pro report a four-slot material station, the Adventurer 5M / 5M Pro one
 // spool with the material set on the printer. There is no spool identity and
-// no measured usage; Edge, which watches the whole print, counts the slicer's
-// estimate for the job, while the plugin reads on demand and counts nothing.
+// no measured usage: whoever watches the print (Edge always, the plugin while
+// OrcaSlicer is open) counts the slicer's estimate for the job.
 export const flashforgeAdapter: FeedAdapter = {
   id: 'flashforge',
   onboarding: {

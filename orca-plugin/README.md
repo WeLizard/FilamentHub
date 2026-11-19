@@ -208,12 +208,24 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 - Supported: Adventurer 5M / 5M Pro (firmware 2.x+), AD5X and Creator 5 / 5 Pro
   on stock firmware in LAN mode (`POST http://<printer>:8898/detail`). Older
   models speak a different TCP protocol without material data.
-- The connector claims `read` and `presence` only. The printer reports no
-  per-tool usage and no confirmed active tool, so spools are never debited.
+- The connector claims `read`, `presence` and `consumption`. The printer
+  measures no filament; it reports the slicer's estimate for the job, which is
+  followed by the print progress and charged, as an estimate, to the spool in
+  the slot that is feeding. Where the printer leaves a doubt about that slot,
+  nothing is charged. FH Edge keeps the same books; one shared print scenario
+  holds the two to the same result.
 - The request goes only to a private or link-local address, resolved once.
   The firmware offers plain HTTP only; the check code never leaves the LAN.
 - The printer is read when the person connects it, opens its card or syncs.
-  There is no polling thread; FH Edge is the route for continuous observation.
+  While OrcaSlicer is open, one watcher thread also follows every linked
+  printer: every 30 s during a job, every 2 min otherwise. It works from the
+  copy of OrcaSlicer's connection settings taken on the UI thread the last
+  time the FilamentHub tab was used in this session (never written to disk),
+  so after a restart it starts once the tab has been opened. An idle printer
+  costs FilamentHub no request; a printer OrcaSlicer has not allowed is left
+  alone until the person acts. Usage books live in `flashforge_usage/` beside
+  the bindings and survive a restart. FH Edge is the route for watching
+  without OrcaSlicer.
 - The page sends `configure-flashforge` / `flashforge-refresh` with FilamentHub
   ids, the one-time pairing code and an optional opaque local reference, and
   receives a result code. It never receives an address, serial or check code.
