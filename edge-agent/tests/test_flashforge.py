@@ -18,6 +18,8 @@ from filamenthub_edge.config import NodeConfig
 from filamenthub_edge.errors import ConfigurationError, HttpRequestError, ProviderUnavailable
 from filamenthub_edge.node import build_connection
 from filamenthub_edge.providers.flashforge import FlashforgeProvider
+from filamenthub_edge.state import EdgeState
+from filamenthub_edge.usage import capture_usage_events
 
 FIXTURE = Path(__file__).parent / "fixtures" / "flashforge" / "detail_printing.json"
 
@@ -86,8 +88,8 @@ class FlashforgeProviderTest(unittest.TestCase):
         self.assertNotIn("material", slots[3])
         self.assertNotIn("color_hex", slots[3])
         self.assertTrue(all(slot["spool_identity_known"] is False for slot in slots.values()))
-        # currentSlot is not a confirmed active-tool signal.
-        self.assertTrue(all("active_feed" not in slot for slot in slots.values()))
+        # The station names slot 1 as current and only its nozzle is hot.
+        self.assertEqual([slots[index]["active_feed"] for index in range(4)], [True, False, False, False])
 
     def test_feed_shape_follows_the_reported_model(self) -> None:
         base = json.loads(FIXTURE.read_text())
@@ -130,12 +132,69 @@ class FlashforgeProviderTest(unittest.TestCase):
         snapshot = provider(FlashforgeHttp(unknown)).observe()
         self.assertEqual((snapshot.slots, snapshot.slot_topology_complete), ([], False))
 
-    def test_no_consumption_is_claimed_without_per_tool_usage(self) -> None:
-        snapshot = provider(FlashforgeHttp()).observe()
+    def _print(self, readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Follow one job through the usage tracker, as the runtime does."""
+        state = EdgeState(desired_snapshot={"slots": [{"index": 0, "spool": {"id": 11}}]})
+        base = json.loads(FIXTURE.read_text())
+        events: list[dict[str, Any]] = []
+        for reading in readings:
+            response = copy.deepcopy(base)
+            response["detail"].update(reading)
+            snapshot = provider(FlashforgeHttp(response)).observe()
+            events += capture_usage_events(
+                state, snapshot, observed_at="2026-11-19T10:00:00+00:00"
+            )
+        return events
 
-        self.assertIsNone(snapshot.usage)
-        self.assertEqual(snapshot.capabilities, ["read", "presence"])
+    def test_job_estimate_is_charged_to_the_feeding_slot_as_an_estimate(self) -> None:
+        snapshot = provider(FlashforgeHttp()).observe()
+        self.assertEqual(snapshot.capabilities, ["read", "presence", "consumption"])
         self.assertEqual(snapshot.device_identity, ("flashforge_serial", "SNMQRB9400123"))
+
+        events = self._print([
+            {"status": "printing", "printProgress": 0.0},
+            {"status": "printing", "printProgress": 0.5},
+            # The last reading before the end is rarely exactly 100 %.
+            {"status": "completed", "printProgress": 0.98},
+        ])
+
+        self.assertEqual([event["event_type"] for event in events], ["terminal"])
+        self.assertEqual(events[0]["outcome"], "completed")
+        (item,) = events[0]["items"]
+        self.assertEqual((item["slot_index"], item["spool_id"]), (0, 11))
+        # The whole slicer estimate of the fixture job, and marked as such.
+        self.assertAlmostEqual(item["used_length_mm"], 6170.0)
+        self.assertEqual(
+            (item["consumption_kind"], item["estimate_source"]),
+            ("estimated", "slicer_progress"),
+        )
+
+    def test_a_cancelled_job_is_charged_only_for_what_was_printed(self) -> None:
+        events = self._print([
+            {"status": "printing", "printProgress": 0.0},
+            {"status": "printing", "printProgress": 0.25},
+            {"status": "cancel", "printProgress": 0.25},
+        ])
+
+        self.assertEqual(events[0]["outcome"], "cancelled")
+        self.assertAlmostEqual(events[0]["items"][0]["used_length_mm"], 6170.0 * 0.25)
+
+    def test_no_spool_is_charged_when_the_feeding_slot_is_in_doubt(self) -> None:
+        # Two hot nozzles: the estimate is one figure for the job and cannot
+        # be split between them, so it is charged to nobody.
+        doubt = {"nozzleTargetTemps": [220, 240, 0, 0]}
+        events = self._print([
+            {"status": "printing", "printProgress": 0.0, **doubt},
+            {"status": "printing", "printProgress": 0.5, **doubt},
+            {"status": "completed", "printProgress": 1.0, **doubt},
+        ])
+
+        self.assertEqual([event["items"] for event in events], [[]])
+
+    def test_without_an_estimate_there_is_no_usage_to_report(self) -> None:
+        response = json.loads(FIXTURE.read_text())
+        del response["detail"]["estimatedRightLen"]
+        self.assertIsNone(provider(FlashforgeHttp(response)).observe().usage)
 
     def test_printer_status_uses_only_unambiguous_readings(self) -> None:
         snapshot = provider(FlashforgeHttp()).observe()

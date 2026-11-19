@@ -169,7 +169,7 @@
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
-      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; it does not track usage."
+      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate, through FH Edge only."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -1780,11 +1780,11 @@
       },
       "flashforgeStation": {
         "name": "Flashforge AD5X, Creator 5 / 5 Pro",
-        "sees": "The four material-station slots. These printers do not report usage."
+        "sees": "The four material-station slots. Usage is counted from the slicer's estimate for the job."
       },
       "flashforgeSingle": {
         "name": "Flashforge Adventurer 5M / 5M Pro",
-        "sees": "The spool and its material. These printers do not report usage."
+        "sees": "The spool and its material. Usage is counted from the slicer's estimate for the job."
       }
     },
     "otherTitle": "When you do not need Edge",

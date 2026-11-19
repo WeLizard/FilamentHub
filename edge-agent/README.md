@@ -244,10 +244,17 @@ printer state and current job. On the AD5X and Creator 5 it reports the four
 material-station slots: whether filament is loaded, plus the material and colour
 set on the printer. On the Adventurer 5M / 5M Pro it reports the single spool's
 material set on the printer. Older models (Adventurer 3/4, Guider, Finder) use
-a different protocol and are not supported. The printer does not
-report filament usage per tool or which tool is printing, so this connection
-does not debit spools; assign spools to slots on the website. Printers running
-Klipper-based community firmware use the Moonraker adapter instead.
+a different protocol and are not supported. Printers running Klipper-based
+community firmware use the Moonraker adapter instead.
+
+The printer measures no filament; it reports the slicer's estimate for the
+whole job. Edge scales that estimate by the print progress and debits the
+spool assigned to the slot that is feeding, marking the amount as an
+estimate. A finished job is charged its whole estimate, a cancelled one only
+what was printed. Nothing is charged when the feeding slot is in doubt (on a
+Creator 5, a second hot nozzle), when the printer gives no estimate, or for
+the part of a job that ran before Edge started watching it. Assign spools to
+slots on the website.
 
 In OrcaSlicer, use **Check printer** for a fresh local comparison and explicit
 adopt/apply actions. Without Orca, assignments exchange through native Happy Hare

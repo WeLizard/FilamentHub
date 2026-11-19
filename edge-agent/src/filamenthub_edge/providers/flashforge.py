@@ -12,9 +12,11 @@ feeds a single spool and reports only the material set on the printer.
 Older models (Adventurer 3/4, Guider, Finder) speak a different TCP protocol
 without material data and are not handled here.
 
-The printer reports no per-tool filament usage and no confirmed active tool,
-so this provider reads printer state and slot materials only. It does not
-claim consumption.
+The printer measures no filament. It reports the slicer's estimate for the
+whole job and the print progress; this provider turns the two into a running
+figure, marked as an estimate, and names the slot that is feeding. Where the
+printer leaves a doubt about that slot, no slot is named and nothing is
+charged to a spool.
 """
 
 from __future__ import annotations
@@ -46,6 +48,17 @@ _STATES = {
     "cancel": "failed",
     "error": "failed",
 }
+# What the usage tracker understands; other states carry no usage evidence.
+_USAGE_STATES = {
+    "ready": "standby",
+    "printing": "printing",
+    "pausing": "paused",
+    "paused": "paused",
+    "completed": "complete",
+    "cancel": "cancelled",
+    "error": "error",
+}
+MAX_JOB_LENGTH_MM = 10_000_000.0
 # Product IDs from /detail: the 5M series feeds one spool, the others a station.
 SINGLE_SPOOL_PIDS = frozenset({35, 36})  # Adventurer 5M, 5M Pro
 STATION_PIDS = frozenset({38, 40, 41})  # AD5X, Creator 5, Creator 5 Pro
@@ -207,6 +220,8 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
             "kind": "external",
             "present": None,
             "spool_identity_known": False,
+            # The only feed this printer has.
+            "active_feed": True,
         }
         material = _material(detail.get("rightFilamentType"))
         if material:
@@ -241,12 +256,68 @@ def build_slots(detail: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
             if color:
                 slot["color_hex"] = color
         slots[slot_id - 1] = slot
+    active = _active_slot(detail, station, slots)
+    for index, slot in slots.items():
+        slot["active_feed"] = index == active
     ordered = [slots[index] for index in sorted(slots)]
     count = _integer(_field(station, "slotCnt"))
     complete = (
         count is not None and count == len(ordered) > 0 and sorted(slots) == list(range(count))
     )
     return ordered, complete
+
+
+def _active_slot(
+    detail: dict[str, Any], station: dict[str, Any], slots: dict[int, dict[str, Any]]
+) -> int | None:
+    """The slot feeding the nozzle now, or None when the printer leaves a doubt."""
+    current = _integer(_field(station, "currentSlot"))
+    if current is None or slots.get(current - 1, {}).get("present") is not True:
+        return None
+    targets = detail.get("nozzleTargetTemps")
+    if isinstance(targets, list) and len(targets) > 1:
+        heated = [
+            index for index, target in enumerate(targets) if (_number(target) or 0) > 0
+        ]
+        # A printer with a nozzle per slot heats the one in use. A second hot
+        # nozzle, or a hot nozzle that is not this slot's, is a doubt.
+        if len(heated) > 1 or (heated and heated[0] != current - 1):
+            return None
+    return current - 1
+
+
+def build_usage(detail: dict[str, Any]) -> dict[str, Any] | None:
+    """The job's filament so far: the slicer's estimate scaled by progress."""
+    state = _USAGE_STATES.get(str(detail.get("status") or "").strip().lower())
+    if state is None:
+        return None
+    if state == "standby":
+        return {"state": state, "filament_used_mm": 0.0}
+    total = _number(detail.get("estimatedRightLen"))
+    progress = _number(detail.get("printProgress"))
+    job = _text(detail.get("printFileName"), 300)
+    if (
+        total is None
+        or not 0 < total <= MAX_JOB_LENGTH_MM
+        or progress is None
+        or not 0 <= progress <= 1
+        or not job
+    ):
+        return None
+    if state == "complete":
+        # A finished job used its whole estimate, whatever the last reading said.
+        progress = 1.0
+    usage: dict[str, Any] = {
+        "state": state,
+        "file_name": job,
+        "filament_used_mm": total * progress,
+        "estimate_source": "slicer_progress",
+    }
+    duration = _number(detail.get("printDuration"))
+    if duration is not None and 0 <= duration <= 31_536_000:
+        usage["print_duration_s"] = duration
+        usage["total_duration_s"] = duration
+    return usage
 
 
 class FlashforgeProvider:
@@ -262,7 +333,7 @@ class FlashforgeProvider:
         self.http = http_client or JsonHttpClient(base_url, allow_http=True, timeout=timeout)
         self.serial_number = normalize_serial(serial_number)
         self._check_code = check_code
-        self._capabilities = ["read", "presence"]
+        self._capabilities = ["read", "presence", "consumption"]
 
     def capabilities(self) -> list[str]:
         return list(self._capabilities)
@@ -298,7 +369,7 @@ class FlashforgeProvider:
             slots=slots,
             slot_topology_complete=complete,
             capabilities=self.capabilities(),
-            usage=None,
+            usage=build_usage(detail),
             # The printer accepted this exact serial number, which makes it
             # device-read identity evidence rather than a configured label.
             device_identity=(IDENTITY_KIND, self.serial_number.upper()),

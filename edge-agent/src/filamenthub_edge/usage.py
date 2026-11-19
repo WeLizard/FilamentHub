@@ -83,6 +83,7 @@ def _new_tracker(
         "last_total_duration_s": float(usage.get("total_duration_s") or 0.0),
         "last_emitted_print_duration_s": float(usage.get("print_duration_s") or 0.0),
         "route": route,
+        "estimate_source": usage.get("estimate_source"),
         "next_segment_sequence": 1,
         "pending_length_mm": 0.0,
         "terminal_emitted": terminal_emitted,
@@ -130,6 +131,10 @@ def _event(
         )
         if route.get("usage_route_proof") is not None:
             items[-1]["usage_route_proof"] = route["usage_route_proof"]
+        if tracker.get("estimate_source"):
+            # The provider computed this figure; nothing measured it.
+            items[-1]["consumption_kind"] = "estimated"
+            items[-1]["estimate_source"] = tracker["estimate_source"]
     result: dict[str, Any] = {
         "contract_version": 2,
         "job_id": tracker["job_id"],

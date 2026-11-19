@@ -254,6 +254,25 @@ def flashforge_printer(detail):
     return printer
 
 
+def _flashforge_active_slot(detail, station, slots):
+    """The slot feeding the nozzle now, or None when the printer leaves a doubt."""
+    current = _flashforge_integer(_flashforge_field(station, "currentSlot"))
+    if current is None or slots.get(current - 1, {}).get("present") is not True:
+        return None
+    targets = detail.get("nozzleTargetTemps")
+    if isinstance(targets, list) and len(targets) > 1:
+        heated = [
+            index
+            for index, target in enumerate(targets)
+            if (_flashforge_number(target) or 0) > 0
+        ]
+        # A printer with a nozzle per slot heats the one in use. A second hot
+        # nozzle, or a hot nozzle that is not this slot's, is a doubt.
+        if len(heated) > 1 or (heated and heated[0] != current - 1):
+            return None
+    return current - 1
+
+
 def flashforge_slots(detail):
     """Return the feed slots and whether they form the printer's complete feed."""
     pid = flashforge_product_id(detail)
@@ -266,6 +285,8 @@ def flashforge_slots(detail):
             "kind": "external",
             "present": None,
             "spool_identity_known": False,
+            # The only feed this printer has.
+            "active_feed": True,
         }
         material = _flashforge_material(detail.get("rightFilamentType"))
         if material:
@@ -307,6 +328,9 @@ def flashforge_slots(detail):
             if color:
                 slot["color_hex"] = color
         slots[slot_id - 1] = slot
+    active = _flashforge_active_slot(detail, station, slots)
+    for index, slot in slots.items():
+        slot["active_feed"] = index == active
     ordered = [slots[index] for index in sorted(slots)]
     count = _flashforge_integer(_flashforge_field(station, "slotCnt"))
     complete = (

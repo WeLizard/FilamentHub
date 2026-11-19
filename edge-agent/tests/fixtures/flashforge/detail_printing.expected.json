@@ -20,7 +20,8 @@
       "present": true,
       "spool_identity_known": false,
       "material": "PLA",
-      "color_hex": "4CAAF8"
+      "color_hex": "4CAAF8",
+      "active_feed": true
     },
     {
       "provider_index": 1,
@@ -29,21 +30,24 @@
       "present": true,
       "spool_identity_known": false,
       "material": "PETG",
-      "color_hex": "FFFFFF"
+      "color_hex": "FFFFFF",
+      "active_feed": false
     },
     {
       "provider_index": 2,
       "label": "Slot 3",
       "kind": "slot",
       "present": false,
-      "spool_identity_known": false
+      "spool_identity_known": false,
+      "active_feed": false
     },
     {
       "provider_index": 3,
       "label": "Slot 4",
       "kind": "slot",
       "present": true,
-      "spool_identity_known": false
+      "spool_identity_known": false,
+      "active_feed": false
     }
   ],
   "slot_topology_complete": true

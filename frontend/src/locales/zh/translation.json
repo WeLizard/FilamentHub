@@ -169,7 +169,7 @@
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
       "flashforge": "闪铸（5M、AD5X、Creator 5）",
-      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；不统计用量。"
+      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；用量按切片软件的估算统计，且仅通过 FH Edge。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -1779,11 +1779,11 @@
       },
       "flashforgeStation": {
         "name": "Flashforge AD5X、Creator 5 / 5 Pro",
-        "sees": "材料站的四个槽位。这些打印机不上报用量。"
+        "sees": "材料站的四个槽位。用量按切片软件对该任务的估算统计。"
       },
       "flashforgeSingle": {
         "name": "Flashforge Adventurer 5M / 5M Pro",
-        "sees": "料盘及其材料。这些打印机不上报用量。"
+        "sees": "料盘及其材料。用量按切片软件对该任务的估算统计。"
       }
     },
     "otherTitle": "什么时候不需要 Edge",

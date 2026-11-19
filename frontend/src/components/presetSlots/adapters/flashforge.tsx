@@ -217,8 +217,9 @@ function FlashforgeSetup({
 
 // Flashforge printers on the LAN API (port 8898): the AD5X and Creator 5 /
 // 5 Pro report a four-slot material station, the Adventurer 5M / 5M Pro one
-// spool with the material set on the printer. There is no per-tool usage,
-// active tool or spool identity, so both routes claim read and presence only.
+// spool with the material set on the printer. There is no spool identity and
+// no measured usage; Edge, which watches the whole print, counts the slicer's
+// estimate for the job, while the plugin reads on demand and counts nothing.
 export const flashforgeAdapter: FeedAdapter = {
   id: 'flashforge',
   onboarding: {

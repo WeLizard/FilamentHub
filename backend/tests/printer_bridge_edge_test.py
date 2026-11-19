@@ -1211,8 +1211,9 @@ async def test_legacy_edge_snapshot_uses_observation_watermark_not_heartbeat(
 
 
 @pytest.mark.asyncio
-async def test_flashforge_edge_reports_station_slots_without_claiming_consumption(
+async def test_flashforge_edge_reports_station_slots_and_estimated_usage(
     auth_client: AsyncClient,
+    auth_user: User,
     db_session: AsyncSession,
 ) -> None:
     created = await auth_client.post(
@@ -1231,6 +1232,26 @@ async def test_flashforge_edge_reports_station_slots_without_claiming_consumptio
     )
     assert system_response.status_code in {200, 201}, system_response.text
     system_id = system_response.json()["material_systems"][0]["id"]
+    first_slot = system_response.json()["material_systems"][0]["slots"][0]
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{first_slot['id']}",
+        json={
+            "expected_revision": first_slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+        },
+    )
+    assert assigned.status_code == 200, assigned.text
     source_instance_id = "flashforge-edge-instance-01"
     pairing = await auth_client.post(
         f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
@@ -1245,7 +1266,7 @@ async def test_flashforge_edge_reports_station_slots_without_claiming_consumptio
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
             "node_instance_id": "edge-node-flashforge-01",
-            # A runtime claiming more than the printer can prove is trimmed.
+            # The printer cannot tell one spool from another: that claim is trimmed.
             "capabilities": ["read", "presence", "consumption", "spool_identity"],
         },
     )
@@ -1258,7 +1279,7 @@ async def test_flashforge_edge_reports_station_slots_without_claiming_consumptio
     )
     assert connector is not None
     assert connector.provider == "flashforge"
-    assert sorted(connector.capabilities) == ["presence", "read"]
+    assert sorted(connector.capabilities) == ["consumption", "presence", "read"]
 
     headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
     snapshot = await auth_client.post(
@@ -1269,7 +1290,7 @@ async def test_flashforge_edge_reports_station_slots_without_claiming_consumptio
             "provider": "flashforge",
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
-            "capabilities": ["read", "presence"],
+            "capabilities": ["read", "presence", "consumption"],
             "sequence": 1,
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "printer": {"state": "printing", "job_name": "bracket.3mf", "progress_percent": 42},
@@ -1292,3 +1313,45 @@ async def test_flashforge_edge_reports_station_slots_without_claiming_consumptio
     system = printer["material_systems"][0]
     assert system["provider"] == "flashforge"
     assert sorted(slot["provider_index"] for slot in system["slots"]) == [0, 1, 2, 3]
+
+    # The printer measures nothing: what Edge sends is the slicer's estimate
+    # scaled by progress, and it has to reach the spool marked as such.
+    usage = await auth_client.post(
+        "/api/v1/printer-bridge/usage-batches",
+        headers=headers,
+        json={
+            "material_system_id": system_id,
+            "provider": "flashforge",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "sequence": 1,
+            "events": [
+                {
+                    "contract_version": 2,
+                    "event_id": f"{source_instance_id}:job-1:1",
+                    "job_id": f"{source_instance_id}:job-1",
+                    "segment_sequence": 1,
+                    "event_type": "terminal",
+                    "reasons": ["terminal"],
+                    "outcome": "completed",
+                    "file_name": "bracket.3mf",
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                    "items": [
+                        {
+                            "slot_index": 0,
+                            "spool_id": spool.id,
+                            "used_length_mm": 6170.0,
+                            "evidence": "current_assignment",
+                            "consumption_kind": "estimated",
+                            "estimate_source": "slicer_progress",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    assert usage.status_code == 200, usage.text
+    expected_weight = 6170.0 * math.pi * (1.75 / 2.0) ** 2 / 1000.0 * 1.24
+    assert usage.json()["events"][0]["consumed_weight_g"] == pytest.approx(expected_weight)
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == pytest.approx(expected_weight)
