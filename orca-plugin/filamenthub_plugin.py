@@ -9778,6 +9778,27 @@ def _buffer_bambu_usage_report(stream, report, observed_at):
     pending.append(observation)
 
 
+def _bridge_expected_sequence(status, body):
+    """The batch number the server expects next, when it refused ours for its number.
+
+    Books that were lost or started again number their batches from an old
+    point, and the server would refuse them for ever. Every event carries its
+    own identity, so going on from the server's number counts nothing twice.
+    """
+    if status != 409:
+        return None
+    answer = _decode_json_object(body)
+    detail = answer.get("detail") if answer else None
+    if not isinstance(detail, dict) or detail.get("code") not in {
+        "ERR_PRINTER_BRIDGE_BATCH_OUT_OF_ORDER",
+        "ERR_PRINTER_BRIDGE_BATCH_CONFLICT",
+    }:
+        return None
+    params = detail.get("params")
+    expected = params.get("expected_sequence") if isinstance(params, dict) else None
+    return expected if type(expected) is int and expected > 0 else None
+
+
 class BambuBridgeRuntime:
     """One bounded daemon serializes all configured local Bambu observations."""
 
@@ -9918,18 +9939,29 @@ class BambuBridgeRuntime:
         if not config.get("bridge_token"):
             return False
         log_binding = (config["physical_printer_id"], config["material_system_id"])
+        # The books are named for the printer card and this installation, not
+        # for the bridge token: linking the printer again issues a new token,
+        # while the server goes on numbering this connection's batches.
         binding = hashlib.sha256(json.dumps([
-            *log_binding, source_instance_id, config["bridge_token"],
+            *log_binding, source_instance_id,
         ]).encode()).hexdigest()
         usage_root = os.path.dirname(BAMBU_CONFIG_FILE)
         path = os.path.join(usage_root, "bambu_usage", binding + ".json")
         state = self._usage_states.get(binding)
         if state is None:
+            # Books written before that were named with the token; the ones
+            # of the current link are taken over with what they still owe.
+            named_with_token = hashlib.sha256(json.dumps([
+                *log_binding, source_instance_id, config["bridge_token"],
+            ]).encode()).hexdigest()
             # A host upgrade may move the bridge credentials to native storage.
             # Resume the same binding's journal there without resetting its sequence.
             roots = dict.fromkeys((usage_root, fallback_plugin_storage_dir(), PLUGIN_DIR))
-            for root in filter(None, roots):
-                journal = os.path.join(root, "bambu_usage", binding + ".json")
+            for journal in (
+                os.path.join(root, "bambu_usage", name + ".json")
+                for root in filter(None, roots)
+                for name in (binding, named_with_token)
+            ):
                 try:
                     if os.path.getsize(journal) > 8 * 1024 * 1024:
                         raise ValueError("Bambu usage journal exceeds limit")
@@ -10044,6 +10076,15 @@ class BambuBridgeRuntime:
                 config.get("physical_printer_id"), config.get("bridge_token")
             )
             return False
+        expected = _bridge_expected_sequence(status, body)
+        if expected is not None and expected > pending["sequence"]:
+            renumbered = dict(state)
+            renumbered["outbox"] = dict(pending, sequence=expected)
+            renumbered["next_sequence"] = expected
+            if self._write_usage_journal(
+                log_binding, path, renumbered, stage="journal renumber"
+            ):
+                self._usage_states[binding] = renumbered
         self._usage_retry_at[binding] = time.monotonic() + max(60, retry_after or 0)
         fh_log("Bambu usage upload pending: HTTP %s" % status)
         return observation_accepted
@@ -11866,16 +11907,8 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
         if status == 401:
             _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
             return False
-        detail = answer.get("detail") if isinstance(answer, dict) else None
-        expected = (detail.get("params") or {}).get("expected_sequence") if (
-            isinstance(detail, dict)
-            and detail.get("code") == "ERR_PRINTER_BRIDGE_BATCH_OUT_OF_ORDER"
-            and isinstance(detail.get("params"), dict)
-        ) else None
-        if status == 409 and type(expected) is int and expected > pending["sequence"]:
-            # The server has counted further than these books remember (they
-            # were lost and started again). Each event keeps its own identity,
-            # so taking the server's number cannot count anything twice.
+        expected = _bridge_expected_sequence(status, body)
+        if expected is not None and expected > pending["sequence"]:
             self._write(path, dict(
                 books, outbox=dict(pending, sequence=expected), next_sequence=expected
             ))

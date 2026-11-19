@@ -47,8 +47,10 @@ async def test_flashforge_station_reports_through_the_orca_plugin_bridge(
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.2.10",
-            # The printer API proves no usage; a wider claim is trimmed.
-            "capabilities": ["read", "presence", "consumption", "write"],
+            # The printer names no spool and reads no tag; a wider claim is trimmed.
+            "capabilities": [
+                "read", "presence", "consumption", "write", "spool_identity", "tag_read",
+            ],
         },
     )
     assert paired.status_code == 200, paired.text
@@ -59,7 +61,7 @@ async def test_flashforge_station_reports_through_the_orca_plugin_bridge(
         )
     )
     assert connector is not None and connector.provider == "flashforge"
-    assert sorted(connector.capabilities) == ["presence", "read"]
+    assert sorted(connector.capabilities) == ["consumption", "presence", "read", "write"]
 
     snapshot = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",

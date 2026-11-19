@@ -761,3 +761,88 @@ def test_runtime_retries_same_batch_when_journal_ack_write_fails(
     committed = json.loads(journal.read_text())
     assert committed["outbox"] is None
     assert committed["next_sequence"] == 2
+
+
+@pytest.fixture
+def books(plugin_module, tmp_path, monkeypatch):
+    """A runtime whose journal lives in a temporary folder and whose site answers as told."""
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
+    monkeypatch.setattr(plugin_module, "http_get_bridge_json",
+                        lambda *_args: (200, json.dumps(_desired()).encode()))
+    monkeypatch.setattr(plugin_module, "read_bambu_consumption_file", lambda *_args: None)
+    site = {"answer": None, "posts": []}
+
+    def post(_path, token, payload):
+        site["posts"].append((token, json.loads(json.dumps(payload))))
+        if site["answer"] is not None:
+            return site["answer"]
+        return 200, json.dumps({"accepted": True, "ack_sequence": payload["sequence"]}).encode(), 0
+
+    monkeypatch.setattr(plugin_module, "http_post_bridge_json", post)
+
+    def print_job(token, job, runtime=None):
+        """One job seen running and finished through the link with this token."""
+        runtime = runtime or plugin_module.BambuBridgeRuntime()
+        config = {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": token}
+        for state, remaining, minute in (("RUNNING", 1000, 0), ("FINISH", 990, 5)):
+            runtime._record_usage(
+                config, "instance", _report(state, remaining=remaining, job=job),
+                "2026-09-19T10:%02d:00+00:00" % minute,
+            )
+        return runtime
+
+    return site, print_job, tmp_path / "bambu_usage"
+
+
+def test_linking_the_printer_again_goes_on_with_the_same_books(books):
+    site, print_job, _folder = books
+
+    print_job("first-link", "job-1")
+    # "Change connection" pairs again: a new token for the same printer card,
+    # while the server keeps numbering this connection's batches.
+    print_job("second-link", "job-2")
+
+    assert [(token, payload["sequence"]) for token, payload in site["posts"]] == [
+        ("first-link", 1), ("second-link", 2),
+    ]
+
+
+def test_books_written_under_the_token_are_taken_over(books, plugin_module):
+    site, print_job, folder = books
+    # What an earlier plugin version left behind for the current link.
+    old_name = plugin_module.hashlib.sha256(
+        json.dumps([3, 5, "instance", "token"]).encode()
+    ).hexdigest()
+    folder.mkdir()
+    (folder / (old_name + ".json")).write_text(
+        json.dumps({"version": 1, "next_sequence": 7, "events": []}), encoding="utf-8"
+    )
+
+    print_job("token", "job-1")
+
+    assert [payload["sequence"] for _token, payload in site["posts"]] == [7]
+
+
+@pytest.mark.parametrize("code", [
+    "ERR_PRINTER_BRIDGE_BATCH_CONFLICT", "ERR_PRINTER_BRIDGE_BATCH_OUT_OF_ORDER",
+])
+def test_books_refused_for_their_number_go_on_from_the_servers(books, code):
+    site, print_job, _folder = books
+    # These books start at 1, but the server has already counted four batches
+    # of this connection: the state a re-linked printer was left in before.
+    site["answer"] = (409, json.dumps({
+        "detail": {"code": code, "params": {"expected_sequence": 5}},
+    }).encode(), 0)
+    runtime = print_job("token", "job-1")
+    site["answer"] = None
+    runtime._usage_retry_at.clear()
+
+    runtime._record_usage(
+        {"physical_printer_id": 3, "material_system_id": 5, "bridge_token": "token"},
+        "instance", _report("FINISH", remaining=990), "2026-09-19T10:06:00+00:00",
+    )
+
+    (_t1, refused), (_t2, accepted) = site["posts"]
+    assert (refused["sequence"], accepted["sequence"]) == (1, 5)
+    # The same events under the server's number: nothing is counted twice.
+    assert accepted["events"] == refused["events"]

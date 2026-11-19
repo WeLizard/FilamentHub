@@ -429,6 +429,19 @@ async def require_printer_bridge_token(db: AsyncSession, token: str | None) -> P
     return PrinterBridgeContext(credential=credential, connector=connector)
 
 
+async def _next_batch_sequence(
+    db: AsyncSession, connector_id: int, source_instance_id: str
+) -> int:
+    last_sequence = await db.scalar(
+        select(func.max(PrinterBridgeReceipt.sequence)).where(
+            PrinterBridgeReceipt.connector_id == connector_id,
+            PrinterBridgeReceipt.source_instance_id == source_instance_id,
+            PrinterBridgeReceipt.receipt_kind == BATCH_RECEIPT_KIND,
+        )
+    )
+    return int(last_sequence or 0) + 1
+
+
 async def record_printer_bridge_usage_batch(
     db: AsyncSession,
     context: PrinterBridgeContext,
@@ -470,20 +483,26 @@ async def record_printer_bridge_usage_batch(
     )
     if existing is not None:
         if existing.payload_hash != payload_hash or existing.response_payload is None:
-            raise_error(409, ERR_PRINTER_BRIDGE_BATCH_CONFLICT)
+            # A helper whose books were lost or started again numbers its
+            # batches from an old point. Tell it where this connection stands,
+            # or it would offer the same number for ever.
+            raise_error(
+                409,
+                ERR_PRINTER_BRIDGE_BATCH_CONFLICT,
+                {
+                    "expected_sequence": await _next_batch_sequence(
+                        db, connector.id, payload.source_instance_id
+                    )
+                },
+            )
         response = PrinterBridgeUsageBatchResponse.model_validate(existing.response_payload)
         connector.last_seen_at = _now()
         await db.commit()
         return response.model_copy(update={"deduplicated": True})
 
-    last_sequence = await db.scalar(
-        select(func.max(PrinterBridgeReceipt.sequence)).where(
-            PrinterBridgeReceipt.connector_id == connector.id,
-            PrinterBridgeReceipt.source_instance_id == payload.source_instance_id,
-            PrinterBridgeReceipt.receipt_kind == BATCH_RECEIPT_KIND,
-        )
+    expected_sequence = await _next_batch_sequence(
+        db, connector.id, payload.source_instance_id
     )
-    expected_sequence = int(last_sequence or 0) + 1
     if payload.sequence != expected_sequence:
         raise_error(
             409,

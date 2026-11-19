@@ -544,7 +544,12 @@ async def test_edge_usage_batches_ack_replay_order_and_atomic_ledger_application
         json=conflicting_payload,
     )
     assert conflict.status_code == 409
-    assert conflict.json()["detail"]["code"] == "ERR_PRINTER_BRIDGE_BATCH_CONFLICT"
+    # A helper that lost its books offers an old number with other contents.
+    # It is told where the numbering stands, or it could never get past it.
+    assert conflict.json()["detail"] == {
+        "code": "ERR_PRINTER_BRIDGE_BATCH_CONFLICT",
+        "params": {"expected_sequence": 2},
+    }
 
     gap = await auth_client.post(
         "/api/v1/printer-bridge/usage-batches",
