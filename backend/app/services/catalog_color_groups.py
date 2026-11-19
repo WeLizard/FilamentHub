@@ -108,6 +108,46 @@ _NORMALIZED_COLOR_LABELS = {
 }
 
 
+# Colour words people actually type, in the languages of the catalogue's
+# authors. Used to notice a colour typed where a name belongs (a brand called
+# "BIQU AZUL"); never to rename anything.
+_EXTRA_COLOR_WORDS = (
+    # en
+    "beige", "ivory", "cream", "cyan", "magenta", "teal", "navy", "transparent",
+    "clear", "natural", "terracotta", "turquoise",
+    # ru, uk
+    "бежевый", "прозрачный", "натуральный", "бирюзовый", "чорний", "білий", "сірий",
+    "червоний", "жовтий", "зелений", "синій", "фіолетовий", "рожевий", "коричневий",
+    # es
+    "negro", "blanco", "gris", "rojo", "naranja", "amarillo", "verde", "azul", "morado",
+    "violeta", "rosa", "marron", "marrón", "dorado", "plateado", "terracota",
+    "transparente",
+    # pt
+    "preto", "branco", "cinza", "vermelho", "laranja", "amarelo", "roxo", "marrom",
+    "prateado",
+    # it
+    "nero", "bianco", "grigio", "rosso", "arancione", "giallo", "blu", "viola",
+    "marrone", "oro", "argento",
+    # fr
+    "noir", "blanc", "rouge", "jaune", "vert", "bleu", "doré", "argent",
+    # de
+    "schwarz", "weiss", "weiß", "grau", "rot", "gelb", "grün", "blau", "lila",
+    "braun", "silber",
+    # pl
+    "czarny", "biały", "szary", "czerwony", "pomarańczowy", "żółty", "zielony",
+    "niebieski", "fioletowy", "różowy", "brązowy", "złoty", "srebrny",
+)
+_COLOR_WORDS = frozenset(
+    _normalize_search(word)
+    for word in (*_EXTRA_COLOR_WORDS, *(label for labels in _COLOR_LABELS.values() for label in labels))
+)
+
+
+def is_color_word(word: str) -> bool:
+    """Whether ``word`` on its own names a colour in a common language."""
+    return _normalize_search(word) in _COLOR_WORDS
+
+
 def color_group_labels() -> dict[FilamentColorGroup, tuple[str, ...]]:
     """Visible ru/en/zh labels of every colour group, as written (not normalized)."""
     return dict(_COLOR_LABELS)

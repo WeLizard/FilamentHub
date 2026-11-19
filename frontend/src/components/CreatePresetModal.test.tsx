@@ -733,4 +733,13 @@ describe('readSimilarBrands', () => {
       readSimilarBrands({ code: 'ERR_BRAND_SIMILAR_EXISTS', params: { candidates: [{ id: 1, name: 'A' }] } }),
     ).toEqual({ candidates: [{ id: 1, name: 'A' }], exact: false });
   });
+
+  it('offers the brand name without a colour typed into it, even with no similar brand', () => {
+    expect(
+      readSimilarBrands({
+        code: 'ERR_BRAND_SIMILAR_EXISTS',
+        params: { candidates: [], color_word: 'ROJO', name_without_color: 'SNAP' },
+      }),
+    ).toEqual({ candidates: [], exact: false, colorWord: 'ROJO', nameWithoutColor: 'SNAP' });
+  });
 });

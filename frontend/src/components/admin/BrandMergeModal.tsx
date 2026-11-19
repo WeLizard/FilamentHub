@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
 import { AlertTriangle, ArrowLeftRight, GitMerge, Loader2 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
-import type { BrandMergeFilamentRow } from '../../types/api';
+import type { BrandMergeField, BrandMergeFilamentRow } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
 import { MergeContributions, MergeFilamentOption, mergeFilamentLabel } from '../FilamentMergeModal';
@@ -17,6 +17,36 @@ interface BrandRef {
   id: number;
   name: string;
 }
+
+const listEntryLabel = (entry: unknown): string => {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry === 'object') {
+    const { url, name, platform } = entry as { url?: unknown; name?: unknown; platform?: unknown };
+    const title = [name, platform].find((part) => typeof part === 'string' && part);
+    if (typeof url === 'string') return title ? `${title}: ${url}` : url;
+  }
+  return JSON.stringify(entry);
+};
+
+const BrandFieldValue: React.FC<{ field: BrandMergeField['field']; value: BrandMergeField['source_value'] }> = ({
+  field,
+  value,
+}) => {
+  if (value === null || value === undefined || value === '') return <span className="block text-gray-500">—</span>;
+  if (field === 'logo' && typeof value === 'string') {
+    return <img src={value} alt="" className="mt-1 h-10 w-10 rounded bg-white/10 object-contain" />;
+  }
+  if (Array.isArray(value)) {
+    return (
+      <ul className="mt-1 space-y-0.5 break-all text-xs">
+        {value.map((entry, index) => (
+          <li key={index}>{listEntryLabel(entry)}</li>
+        ))}
+      </ul>
+    );
+  }
+  return <span className="mt-1 block break-words whitespace-pre-line">{String(value)}</span>;
+};
 
 interface BrandMergeModalProps {
   duplicate: BrandRef;
@@ -61,6 +91,13 @@ export const BrandMergeModal: React.FC<BrandMergeModalProps> = ({ duplicate, kep
     [preview, pairs],
   );
 
+  const [fieldChoices, setFieldChoices] = useState<Record<string, 'source' | 'target'>>({});
+  useEffect(() => setFieldChoices({}), [preview]);
+  const brandFields = preview?.fields ?? [];
+  const unresolvedFields = brandFields.filter(
+    (item) => item.outcome === 'conflict' && !fieldChoices[item.key],
+  );
+
   const mergeMutation = useMutation({
     mutationFn: () =>
       adminAPI.mergeBrand(source.id, {
@@ -71,6 +108,7 @@ export const BrandMergeModal: React.FC<BrandMergeModalProps> = ({ duplicate, kep
             source_filament_id: Number(sourceId),
             target_filament_id: targetId,
           })),
+        field_choices: fieldChoices,
       }),
     onSuccess: (brand) => {
       queryClient.invalidateQueries({ queryKey: ['admin-brands'] });
@@ -232,6 +270,64 @@ export const BrandMergeModal: React.FC<BrandMergeModalProps> = ({ duplicate, kep
               })}
             </div>
           )}
+
+          {preview && !preview.source_represented && brandFields.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-white">{t('catalogMerge.brandDetails')}</h4>
+              {brandFields.map((item) => {
+                const label = t(`catalogMerge.brandField.${item.field}`);
+                const needsChoice = item.outcome === 'conflict' && !fieldChoices[item.key];
+                return (
+                  <div
+                    key={item.key}
+                    className={`rounded-xl border p-3 text-sm ${
+                      needsChoice ? 'border-red-500/40 bg-red-500/10' : 'border-white/10 bg-white/5'
+                    }`}
+                  >
+                    <p className="font-medium text-white">
+                      {label}
+                      {item.country && <span className="ml-2 text-xs text-gray-400">{item.country}</span>}
+                    </p>
+                    {item.outcome === 'conflict' ? (
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        {(['target', 'source'] as const).map((side) => (
+                          <button
+                            key={side}
+                            type="button"
+                            aria-pressed={fieldChoices[item.key] === side}
+                            onClick={() => setFieldChoices((current) => ({ ...current, [item.key]: side }))}
+                            className={`min-w-0 rounded-lg border px-3 py-2 text-left transition-all ${
+                              fieldChoices[item.key] === side
+                                ? 'border-purple-400 bg-purple-500/20 text-white'
+                                : 'border-white/10 bg-white/5 text-gray-200 hover:bg-white/10'
+                            }`}
+                          >
+                            <span className="block text-xs text-gray-400">
+                              {side === 'target' ? target?.name : source.name}
+                            </span>
+                            <BrandFieldValue
+                              field={item.field}
+                              value={side === 'target' ? item.target_value : item.source_value}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-gray-300">
+                        <span className="text-xs text-emerald-300">
+                          {t(item.outcome === 'combine' ? 'catalogMerge.fieldCombine' : 'catalogMerge.fieldFill', {
+                            name: source.name,
+                          })}
+                        </span>
+                        <BrandFieldValue field={item.field} value={item.source_value} />
+                      </div>
+                    )}
+                    {needsChoice && <p className="mt-1 text-xs text-red-300">{t('catalogMerge.fieldConflict')}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 p-6">
@@ -247,7 +343,11 @@ export const BrandMergeModal: React.FC<BrandMergeModalProps> = ({ duplicate, kep
             type="button"
             onClick={() => mergeMutation.mutate()}
             disabled={
-              !preview || preview.source_represented || unresolved.length > 0 || mergeMutation.isPending
+              !preview ||
+              preview.source_represented ||
+              unresolved.length > 0 ||
+              unresolvedFields.length > 0 ||
+              mergeMutation.isPending
             }
             className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-white transition-all hover:bg-purple-700 disabled:opacity-50"
           >

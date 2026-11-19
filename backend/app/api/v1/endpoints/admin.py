@@ -549,7 +549,7 @@ async def merge_brand_admin(
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_MERGE_PAIR_INVALID)
         pairs[pair.source_filament_id] = pair.target_filament_id
     plan = await plan_brand_merge(db, source=source, target=target, pairs=pairs)
-    await merge_brands(db, plan)
+    await merge_brands(db, plan, data.field_choices)
     await db.commit()
     await db.refresh(target)
     return BrandResponse.model_validate(target)

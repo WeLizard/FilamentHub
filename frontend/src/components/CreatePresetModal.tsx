@@ -221,21 +221,33 @@ interface SimilarBrands {
   candidates: SimilarBrand[];
   // The name is identical, so "it is a different manufacturer" is not an option.
   exact: boolean;
+  // A colour typed at the end of the brand name ("SNAP ROJO"), and the name without it.
+  colorWord?: string;
+  nameWithoutColor?: string;
 }
 
 export function readSimilarBrands(detail: unknown): SimilarBrands | null {
   if (!detail || typeof detail !== 'object') return null;
   const payload = detail as {
     code?: string;
-    params?: { candidates?: SimilarBrand[]; id?: number; name?: string };
+    params?: {
+      candidates?: SimilarBrand[];
+      id?: number;
+      name?: string;
+      color_word?: string | null;
+      name_without_color?: string | null;
+    };
   };
   if (payload.code === 'ERR_BRAND_NAME_EXISTS') {
     const { id, name } = payload.params ?? {};
     return typeof id === 'number' && name ? { candidates: [{ id, name }], exact: true } : null;
   }
   if (payload.code !== 'ERR_BRAND_SIMILAR_EXISTS') return null;
-  const candidates = payload.params?.candidates;
-  return Array.isArray(candidates) && candidates.length > 0 ? { candidates, exact: false } : null;
+  const candidates = Array.isArray(payload.params?.candidates) ? payload.params.candidates : [];
+  const colorWord = payload.params?.color_word || undefined;
+  const nameWithoutColor = payload.params?.name_without_color || undefined;
+  if (candidates.length === 0 && !colorWord) return null;
+  return { candidates, exact: false, colorWord, nameWithoutColor };
 }
 
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
@@ -2905,9 +2917,30 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     )}
                           {similarBrands && (
                             <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
+                              {similarBrands.colorWord && (
+                                <div className="mb-2">
+                                  <p className="font-medium text-amber-200">
+                                    {t('presetModal.brandNameHasColor', { color: similarBrands.colorWord })}
+                                  </p>
+                                  {similarBrands.nameWithoutColor && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewBrandName(similarBrands.nameWithoutColor ?? '');
+                                        setSimilarBrands(null);
+                                      }}
+                                      className="mt-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-amber-50 transition-all hover:bg-amber-500/30"
+                                    >
+                                      {t('presetModal.useBrandNameWithoutColor', { name: similarBrands.nameWithoutColor })}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {similarBrands.candidates.length > 0 && (
                               <p className="font-medium text-amber-200">
                                 {t(similarBrands.exact ? 'presetModal.sameBrandTitle' : 'presetModal.similarBrandsTitle')}
                               </p>
+                              )}
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {similarBrands.candidates.map((candidate) => (
                                   <button

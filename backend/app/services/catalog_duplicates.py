@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -10,11 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.brand_slug_redirect import BrandSlugRedirect
+from app.services.catalog_color_groups import is_color_word
 from app.services.material_types import material_type_identity_key
 
 # One typo is a duplicate only when the name is long enough for a single
 # changed letter not to produce a different real brand ("U3" vs "U4").
 _TYPO_MIN_KEY_LENGTH = 5
+# "U3" plus a word is too short to suggest anything; "BIQU" plus a word is not.
+_WORD_PREFIX_MIN_LENGTH = 3
+_WORD_SEPARATORS = re.compile(r"[\W_]+", re.UNICODE)
 
 
 def comparable_name(value: str | None) -> str:
@@ -109,6 +114,38 @@ def brand_keys_similar(left: str, right: str) -> bool:
     return _within_one_edit(left, right)
 
 
+def brand_name_words(value: str) -> tuple[str, ...]:
+    """Brand name as comparable words: `BIQU Azul` -> ("biqu", "azul")."""
+    normalized = unicodedata.normalize("NFKC", value).casefold().replace("ё", "е")
+    return tuple(word for word in _WORD_SEPARATORS.split(normalized) if word)
+
+
+def brand_words_extend(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """One name is the other plus whole words: `BIQU` and `BIQU Azul`.
+
+    A colour, a material or a product line typed into the brand field produces
+    exactly this, and it goes unnoticed in either order: the longer name may be
+    created first, before the real brand exists.
+    """
+    shorter, longer = sorted((left, right), key=len)
+    return (
+        len(shorter) < len(longer)
+        and longer[: len(shorter)] == shorter
+        and len("".join(shorter)) >= _WORD_PREFIX_MIN_LENGTH
+    )
+
+
+def split_trailing_color(name: str) -> tuple[str, str] | None:
+    """Split a colour typed at the end of a brand name: `SNAP ROJO` -> (`SNAP`, `ROJO`)."""
+    words = name.split()
+    colour: list[str] = []
+    while len(words) > 1 and is_color_word(words[-1].strip(".,;:-_/()")):
+        colour.insert(0, words.pop())
+    if not colour:
+        return None
+    return " ".join(words), " ".join(colour)
+
+
 def _neighbourhood(key: str) -> set[str]:
     """Keys within one deletion; two keys one edit apart always share one."""
     variants = {key}
@@ -154,6 +191,10 @@ async def find_similar_brands(
     for key, brand_ids in keys.items():
         if brand_keys_similar(wanted, key):
             matched.update(brand_ids)
+    wanted_words = brand_name_words(name)
+    matched.update(
+        brand.id for brand in brands if brand_words_extend(wanted_words, brand_name_words(brand.name))
+    )
     if exclude_brand_id is not None:
         matched.discard(exclude_brand_id)
     return sorted(
@@ -178,5 +219,19 @@ async def find_duplicate_brand_pairs(db: AsyncSession) -> list[tuple[BrandIdenti
         for position, left in enumerate(ordered):
             for right in ordered[position + 1 :]:
                 if brand_keys_similar(brand_key[left], brand_key[right]):
+                    pairs.add((left, right))
+
+    # "BIQU" and "BIQU Azul" share their first word; only such brands can be
+    # one name plus extra words, so compare within those groups.
+    brand_words = {brand.id: brand_name_words(brand.name) for brand in brands}
+    by_first_word: dict[str, list[int]] = {}
+    for brand_id, words in brand_words.items():
+        if words:
+            by_first_word.setdefault(words[0], []).append(brand_id)
+    for brand_ids in by_first_word.values():
+        ordered = sorted(brand_ids)
+        for position, left in enumerate(ordered):
+            for right in ordered[position + 1 :]:
+                if brand_words_extend(brand_words[left], brand_words[right]):
                     pairs.add((left, right))
     return [(by_id[left], by_id[right]) for left, right in sorted(pairs)]

@@ -1,6 +1,7 @@
 """Schemas for folding duplicate brands and filaments."""
 
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -53,11 +54,32 @@ class BrandMergeFilamentRow(BaseModel):
     needs_pair: bool = False
 
 
+BrandMergeFieldName = Literal[
+    "logo", "website", "description", "currency", "shop_links", "social_media_urls"
+]
+
+
+class BrandMergeField(BaseModel):
+    """One brand detail the two brands do not share.
+
+    ``fill``: only the duplicate has it and it is kept. ``combine``: both lists
+    are kept together. ``conflict``: the administrator chooses one value.
+    """
+
+    key: str
+    field: BrandMergeFieldName
+    country: str | None = None
+    source_value: str | list[Any] | None = None
+    target_value: str | list[Any] | None = None
+    outcome: Literal["fill", "combine", "conflict"]
+
+
 class BrandMergePreview(BaseModel):
     source: MergeBrandSummary
     target: MergeBrandSummary
     source_represented: bool
     filaments: list[BrandMergeFilamentRow]
+    fields: list[BrandMergeField] = Field(default_factory=list)
 
 
 class BrandMergeFilamentPair(BaseModel):
@@ -68,6 +90,10 @@ class BrandMergeFilamentPair(BaseModel):
 class BrandMergeRequest(BaseModel):
     target_id: int = Field(..., ge=1)
     filament_pairs: list[BrandMergeFilamentPair] = Field(default_factory=list, max_length=2000)
+    # Conflicting details by preview ``key``: which brand's value stays.
+    field_choices: dict[str, Literal["source", "target"]] = Field(
+        default_factory=dict, max_length=200
+    )
 
 
 class DuplicateReviewAuthor(BaseModel):

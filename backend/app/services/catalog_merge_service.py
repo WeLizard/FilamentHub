@@ -7,8 +7,11 @@ separate merge log is kept.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 from fastapi import status
 from sqlalchemy import String, and_, cast, delete, func, select, update
@@ -17,6 +20,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.errors import (
     ERR_BRAND_MERGE_ANALYTICS_CONFLICT,
+    ERR_BRAND_MERGE_FIELD_CONFLICT,
     ERR_BRAND_MERGE_FILAMENT_CONFLICT,
     ERR_BRAND_MERGE_PAIR_INVALID,
     ERR_BRAND_MERGE_SOURCE_REPRESENTED,
@@ -64,6 +68,7 @@ from app.models.user_spool import UserSpool
 from app.models.weighted_preset_refresh_job import WeightedPresetRefreshJob
 from app.schemas.catalog_merge import (
     BrandDuplicatePair,
+    BrandMergeField,
     BrandMergeFilamentRow,
     BrandMergePreview,
     FilamentMergeCandidate,
@@ -344,8 +349,14 @@ async def _merge_country_cells(
     source_id: int,
     target_id: int,
     fields: tuple[str, ...],
+    combine_fields: tuple[str, ...] = (),
+    choices: Mapping[str, str] | None = None,
 ) -> None:
-    """Coalesce complementary market data; refuse contradictory values."""
+    """Coalesce complementary market data; contradictory values need a choice.
+
+    ``combine_fields`` are lists kept together. A contradiction is resolved by
+    ``choices["<country>:<field>"]`` and refused when nobody has chosen.
+    """
     source_cells = (
         await db.scalars(select(model).where(getattr(model, owner_key) == source_id))
     ).all()
@@ -377,12 +388,25 @@ async def _merge_country_cells(
             target_value = getattr(target_cell, name)
             if source_value is None:
                 continue
-            if target_value is not None and target_value != source_value:
-                raise_error(
-                    status.HTTP_409_CONFLICT,
-                    ERR_CATALOG_MERGE_COUNTRY_CONFLICT,
-                    {"country": source_cell.country, "field": name},
-                )
+            if name in combine_fields:
+                setattr(target_cell, name, _combined_list(target_value, source_value))
+                continue
+            differ = (
+                not _same_text(name, source_value, target_value)
+                if isinstance(source_value, str) and isinstance(target_value, str)
+                else target_value != source_value
+            )
+            if target_value is not None and differ:
+                choice = (choices or {}).get(f"{source_cell.country}:{name}")
+                if choice is None:
+                    raise_error(
+                        status.HTTP_409_CONFLICT,
+                        ERR_CATALOG_MERGE_COUNTRY_CONFLICT,
+                        {"country": source_cell.country, "field": name},
+                    )
+                if choice == "source":
+                    setattr(target_cell, name, source_value)
+                continue
             if target_value is None:
                 setattr(target_cell, name, source_value)
         if isinstance(source_cell, FilamentCountryCell) and target_cell.price is not None:
@@ -648,7 +672,162 @@ async def plan_brand_merge(
     return plan
 
 
-async def merge_brands(db: AsyncSession, plan: BrandMergePlan) -> None:
+_BRAND_TEXT_FIELDS = ("website", "description")
+_BRAND_LIST_FIELDS = ("shop_links", "social_media_urls")
+_CELL_FIELDS = ("website", "shop_links", "description", "social_media_urls", "currency")
+
+
+@dataclass
+class BrandFieldDifference:
+    field: Any  # BrandMergeFieldName
+    country: str | None
+    source_value: Any
+    target_value: Any
+    outcome: Any  # "fill" | "combine" | "conflict"
+
+    @property
+    def key(self) -> str:
+        return f"{self.country}:{self.field}" if self.country else self.field
+
+
+def _blank(value: object) -> bool:
+    return value is None or (isinstance(value, (str, list)) and not value)
+
+
+def _same_text(field_name: str, left: str, right: str) -> bool:
+    left, right = left.strip(), right.strip()
+    if field_name == "website":
+        return left.rstrip("/").casefold() == right.rstrip("/").casefold()
+    if field_name == "currency":
+        return left.upper() == right.upper()
+    return left == right
+
+
+def _combined_list(target: list | None, source: list | None) -> list:
+    """``target`` followed by the entries of ``source`` it does not have yet."""
+    combined = list(target or [])
+    seen = {json.dumps(item, sort_keys=True, ensure_ascii=False) for item in combined}
+    for item in source or []:
+        marker = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if marker not in seen:
+            seen.add(marker)
+            combined.append(item)
+    return combined
+
+
+def _compare_value(
+    field_name: str, country: str | None, source_value: object, target_value: object
+) -> BrandFieldDifference | None:
+    if _blank(source_value):
+        return None
+    if field_name in _BRAND_LIST_FIELDS:
+        target_list = target_value if isinstance(target_value, list) else []
+        source_list = source_value if isinstance(source_value, list) else []
+        if _combined_list(target_list, source_list) == target_list:
+            return None
+        outcome = "fill" if _blank(target_value) else "combine"
+    elif _blank(target_value):
+        outcome = "fill"
+    elif _same_text(field_name, str(source_value), str(target_value)):
+        return None
+    else:
+        outcome = "conflict"
+    return BrandFieldDifference(field_name, country, source_value, target_value, outcome)
+
+
+async def brand_field_differences(
+    db: AsyncSession, *, source: Brand, target: Brand
+) -> list[BrandFieldDifference]:
+    """Brand details that a merge would add to, combine with or contest in ``target``.
+
+    Details only the duplicate has would otherwise vanish with it; details both
+    brands have but disagree on need a person's choice.
+    """
+    differences: list[BrandFieldDifference] = []
+    if source.logo_url and source.logo_url != target.logo_url:
+        differences.append(
+            BrandFieldDifference(
+                "logo",
+                None,
+                source.logo_url,
+                target.logo_url,
+                "conflict" if target.logo_url else "fill",
+            )
+        )
+    for field_name in (*_BRAND_TEXT_FIELDS, *_BRAND_LIST_FIELDS):
+        difference = _compare_value(
+            field_name, None, getattr(source, field_name), getattr(target, field_name)
+        )
+        if difference is not None:
+            differences.append(difference)
+    if (source.currency or "").upper() != (target.currency or "").upper():
+        differences.append(
+            BrandFieldDifference("currency", None, source.currency, target.currency, "conflict")
+        )
+
+    target_cells = {
+        cell.country: cell
+        for cell in (
+            await db.scalars(select(BrandCountryCell).where(BrandCountryCell.brand_id == target.id))
+        ).all()
+    }
+    source_cells = (
+        await db.scalars(
+            select(BrandCountryCell)
+            .where(BrandCountryCell.brand_id == source.id)
+            .order_by(BrandCountryCell.country)
+        )
+    ).all()
+    for source_cell in source_cells:
+        target_cell = target_cells.get(source_cell.country)
+        for field_name in _CELL_FIELDS:
+            difference = _compare_value(
+                field_name,
+                source_cell.country,
+                getattr(source_cell, field_name),
+                getattr(target_cell, field_name) if target_cell is not None else None,
+            )
+            if difference is not None:
+                differences.append(difference)
+    return differences
+
+
+def _apply_brand_field_choices(
+    source: Brand,
+    target: Brand,
+    differences: list[BrandFieldDifference],
+    choices: Mapping[str, str],
+) -> None:
+    """Carry the duplicate's brand-level details over to the kept brand."""
+    for difference in differences:
+        if difference.country is not None:
+            continue
+        if difference.outcome == "conflict":
+            choice = choices.get(difference.key)
+            if choice is None:
+                raise_error(
+                    status.HTTP_409_CONFLICT,
+                    ERR_BRAND_MERGE_FIELD_CONFLICT,
+                    {"field": difference.field},
+                )
+            if choice == "target":
+                continue
+        if difference.field == "logo":
+            target.logo_url = source.logo_url
+            target.logo_bg = source.logo_bg
+        elif difference.outcome == "combine":
+            setattr(
+                target,
+                difference.field,
+                _combined_list(getattr(target, difference.field), getattr(source, difference.field)),
+            )
+        else:
+            setattr(target, difference.field, getattr(source, difference.field))
+
+
+async def merge_brands(
+    db: AsyncSession, plan: BrandMergePlan, field_choices: Mapping[str, str] | None = None
+) -> None:
     """Fold ``plan.source`` into ``plan.target`` and delete ``plan.source``."""
     source, target = plan.source, plan.target
     if await brand_is_represented(db, source):
@@ -659,6 +838,13 @@ async def merge_brands(db: AsyncSession, plan: BrandMergePlan) -> None:
             ERR_BRAND_MERGE_FILAMENT_CONFLICT,
             {"filament_name": plan.conflicts[0].name},
         )
+    choices = field_choices or {}
+    _apply_brand_field_choices(
+        source,
+        target,
+        await brand_field_differences(db, source=source, target=target),
+        choices,
+    )
 
     target_lines = {
         line.name.strip().casefold(): line
@@ -724,7 +910,9 @@ async def merge_brands(db: AsyncSession, plan: BrandMergePlan) -> None:
         owner_key="brand_id",
         source_id=source.id,
         target_id=target.id,
-        fields=("website", "shop_links", "description", "social_media_urls", "currency"),
+        fields=_CELL_FIELDS,
+        combine_fields=_BRAND_LIST_FIELDS,
+        choices=choices,
     )
     target_months = select(BrandMonthlyAnalyticsRelease.month).where(
         BrandMonthlyAnalyticsRelease.brand_id == target.id
@@ -868,6 +1056,17 @@ async def build_brand_merge_preview(
         target=await _brand_summary(db, target),
         source_represented=await brand_is_represented(db, source),
         filaments=rows,
+        fields=[
+            BrandMergeField(
+                key=difference.key,
+                field=difference.field,
+                country=difference.country,
+                source_value=difference.source_value,
+                target_value=difference.target_value,
+                outcome=difference.outcome,
+            )
+            for difference in await brand_field_differences(db, source=source, target=target)
+        ],
     )
 
 

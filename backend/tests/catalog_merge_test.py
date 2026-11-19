@@ -278,6 +278,73 @@ async def test_brand_merge_refuses_conflicting_country_details(
 
 
 @pytest.mark.asyncio
+async def test_brand_merge_keeps_the_duplicates_details_and_asks_about_conflicts(
+    admin_client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    # Before, a duplicate's website, logo and links vanished with it silently.
+    target = Brand(
+        name="Details Target", slug="details-target", active=True,
+        description="Kept text", shop_links=[{"name": "Shop", "url": "https://a.example"}],
+    )
+    source = Brand(
+        name="Details Source", slug="details-source", active=True,
+        description="Other text", website="https://source.example",
+        logo_url="/uploads/brands/source.png",
+        shop_links=[
+            {"name": "Shop", "url": "https://a.example"},
+            {"name": "Market", "url": "https://b.example"},
+        ],
+    )
+    db_session.add_all([target, source])
+    await db_session.flush()
+    db_session.add_all([
+        BrandCountryCell(brand_id=target.id, country="TR", website="https://tr-target.example"),
+        BrandCountryCell(brand_id=source.id, country="TR", website="https://tr-source.example"),
+    ])
+    await db_session.commit()
+
+    preview = await admin_client.get(
+        f"/api/v1/admin/brands/{source.id}/merge-preview", params={"target_id": target.id}
+    )
+    assert preview.status_code == 200, preview.text
+    outcomes = {item["key"]: item["outcome"] for item in preview.json()["fields"]}
+    assert outcomes == {
+        "logo": "fill",
+        "website": "fill",
+        "description": "conflict",
+        "shop_links": "combine",
+        "TR:website": "conflict",
+    }
+
+    undecided = await admin_client.post(
+        f"/api/v1/admin/brands/{source.id}/merge",
+        json={"target_id": target.id, "field_choices": {"TR:website": "source"}},
+    )
+    assert undecided.status_code == 409
+    assert undecided.json()["detail"]["code"] == "ERR_BRAND_MERGE_FIELD_CONFLICT"
+
+    merged = await admin_client.post(
+        f"/api/v1/admin/brands/{source.id}/merge",
+        json={
+            "target_id": target.id,
+            "field_choices": {"description": "target", "TR:website": "source"},
+        },
+    )
+    assert merged.status_code == 200, merged.text
+    target_id = target.id
+    db_session.expire_all()
+    kept = await db_session.get(Brand, target_id)
+    assert (kept.description, kept.website, kept.logo_url) == (
+        "Kept text", "https://source.example", "/uploads/brands/source.png",
+    )
+    assert [link["url"] for link in kept.shop_links] == ["https://a.example", "https://b.example"]
+    cell = await db_session.scalar(
+        select(BrandCountryCell).where(BrandCountryCell.brand_id == target_id)
+    )
+    assert cell.website == "https://tr-source.example"
+
+
+@pytest.mark.asyncio
 async def test_brand_merge_keeps_immutable_monthly_releases(
     admin_client: AsyncClient, db_session: AsyncSession,
 ) -> None:
@@ -572,6 +639,42 @@ async def test_brand_creation_points_at_existing_brand_with_typo(
 
 
 @pytest.mark.asyncio
+async def test_brand_creation_notices_extra_words_and_a_typed_colour(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Seen in production: the colour went into the brand field first, and the
+    # real brand was created later beside it.
+    db_session.add(Brand(name="BIQU AZUL", slug="biqu-azul", active=True))
+    await db_session.commit()
+
+    response = await auth_client.post("/api/v1/brands/", json={"name": "BIQU"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["params"]["candidates"][0]["name"] == "BIQU AZUL"
+
+    response = await auth_client.post("/api/v1/brands/", json={"name": "BIQU Azul PLA"})
+    assert response.json()["detail"]["params"]["candidates"][0]["name"] == "BIQU AZUL"
+
+    response = await auth_client.post("/api/v1/brands/", json={"name": "SNAP ROJO"})
+    assert response.status_code == 409
+    params = response.json()["detail"]["params"]
+    assert (params["candidates"], params["color_word"], params["name_without_color"]) == (
+        [],
+        "ROJO",
+        "SNAP",
+    )
+
+    for name in ("Black Magic 3D", "Rosa3D", "Gold"):
+        created = await auth_client.post("/api/v1/brands/", json={"name": name})
+        assert created.status_code == 201, name
+
+    confirmed = await auth_client.post(
+        "/api/v1/brands/", params={"confirm_similar": True}, json={"name": "SNAP ROJO"}
+    )
+    assert confirmed.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_admin_sees_typo_brand_pairs(
     admin_client: AsyncClient,
     db_session: AsyncSession,
@@ -584,6 +687,9 @@ async def test_admin_sees_typo_brand_pairs(
             Brand(name="U4", slug="u4", active=True),
             Brand(name="SeedBrand 0001", slug="seed-brand-0001", active=True),
             Brand(name="SeedBrand 0002", slug="seed-brand-0002", active=True),
+            Brand(name="BIQU", slug="biqu", active=True),
+            Brand(name="BIQU Azul", slug="biqu-azul", active=True),
+            Brand(name="U3 Pro", slug="u3-pro", active=True),
         ]
     )
     await db_session.commit()
@@ -594,4 +700,4 @@ async def test_admin_sees_typo_brand_pairs(
     pairs = {
         frozenset((pair["first"]["name"], pair["second"]["name"])) for pair in response.json()
     }
-    assert pairs == {frozenset(("GEEETECH", "GREEETECH"))}
+    assert pairs == {frozenset(("GEEETECH", "GREEETECH")), frozenset(("BIQU", "BIQU Azul"))}

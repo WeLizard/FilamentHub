@@ -2862,9 +2862,28 @@ export interface BrandMergeFilamentRow {
   needs_pair: boolean;
 }
 
+export type BrandMergeFieldName =
+  | 'logo'
+  | 'website'
+  | 'description'
+  | 'currency'
+  | 'shop_links'
+  | 'social_media_urls';
+
+/** A brand detail the two brands do not share; `conflict` needs a choice. */
+export interface BrandMergeField {
+  key: string;
+  field: BrandMergeFieldName;
+  country: string | null;
+  source_value: string | unknown[] | null;
+  target_value: string | unknown[] | null;
+  outcome: 'fill' | 'combine' | 'conflict';
+}
+
 export interface BrandMergePreview {
   source: MergeBrandSummary;
   target: MergeBrandSummary;
   source_represented: boolean;
   filaments: BrandMergeFilamentRow[];
+  fields?: BrandMergeField[];
 }

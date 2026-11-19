@@ -45,7 +45,11 @@ from app.services.brand_slug_service import (
     resolve_brand_identifier,
     suggest_brand_slug,
 )
-from app.services.catalog_duplicates import comparable_name, find_similar_brands
+from app.services.catalog_duplicates import (
+    comparable_name,
+    find_similar_brands,
+    split_trailing_color,
+)
 from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.file_service import (
     save_brand_logo,
@@ -278,7 +282,10 @@ async def create_brand(
             ERR_BRAND_NAME_EXISTS,
             {"id": same_name.id, "name": same_name.name, "slug": same_name.slug},
         )
-    if similar and not confirm_similar:
+    # A colour typed into the brand field ("SNAP ROJO") starts a fake brand even
+    # when the real one does not exist yet; the colour belongs to the material.
+    trailing_color = split_trailing_color(data.name)
+    if (similar or trailing_color) and not confirm_similar:
         raise_error(
             409,
             ERR_BRAND_SIMILAR_EXISTS,
@@ -286,7 +293,9 @@ async def create_brand(
                 "candidates": [
                     {"id": brand.id, "name": brand.name, "slug": brand.slug}
                     for brand in similar[:5]
-                ]
+                ],
+                "color_word": trailing_color[1] if trailing_color else None,
+                "name_without_color": trailing_color[0] if trailing_color else None,
             },
         )
 

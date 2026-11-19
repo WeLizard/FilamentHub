@@ -2697,6 +2697,7 @@ export const adminAPI = {
     data: {
       target_id: number;
       filament_pairs: { source_filament_id: number; target_filament_id: number }[];
+      field_choices?: Record<string, 'source' | 'target'>;
     },
   ): Promise<Brand> => {
     const response = await api.post<Brand>(`/admin/brands/${sourceId}/merge`, data);
