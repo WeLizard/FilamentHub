@@ -68,6 +68,109 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
 }
 
 
+# The needs every connection is measured against. The remaining names
+# (local_command, tag_write) are operations a few adapters offer, not something
+# every printer owner expects, and stay outside this rule.
+PARITY_CAPABILITIES: tuple[str, ...] = (
+    "read",
+    "presence",
+    "spool_identity",
+    "consumption",
+    "write",
+    "tag_read",
+)
+
+GapKind = Literal["device", "elsewhere", "planned"]
+# Why a connection lacks a need. "device": the printer or its API cannot
+# provide it. "elsewhere": the same printer gets it through another
+# connection. "planned": it can be built and has not been yet. A connection
+# may lack a need only for a reason written here; the "planned" entries are the
+# list of what is left to do.
+_NO_SPOOL_ON_BAMBU = (
+    "device",
+    "The printer identifies its own RFID tags, never a FilamentHub spool; tag_read carries "
+    "what it knows.",
+)
+_NO_BAMBU_ON_EDGE = (
+    "planned",
+    "Edge has no Bambu provider yet; a Bambu printer is read only while OrcaSlicer is open.",
+)
+_HAPPY_HARE_SPOOLMAN = (
+    "elsewhere",
+    "Happy Hare takes assignments and reports usage through its own Spoolman connection.",
+)
+_TAGS_NOT_ON_SPOOLMAN = (
+    "elsewhere",
+    "A tag seen in a slot is reported by Edge or the plugin; this connection carries "
+    "spools and usage only.",
+)
+_FLASHFORGE_NO_SPOOL = (
+    "device",
+    "The printer knows the material set on it, never which spool is loaded.",
+)
+_FLASHFORGE_NO_READER = ("device", "The printer has no tag reader.")
+_FLASHFORGE_WRITE = (
+    "planned",
+    "The LAN API can set a slot's material and colour (msConfig_cmd); not built, and not "
+    "yet tried on a printer.",
+)
+_KLIPPER_ELSEWHERE = (
+    "elsewhere",
+    "A Klipper printer without an MMU reports through Moonraker's own Spoolman connection "
+    "and through Edge; this connection grants nothing itself.",
+)
+ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
+    ("bambu", "orca_plugin_lan"): {"spool_identity": _NO_SPOOL_ON_BAMBU},
+    ("bambu", "edge_agent"): {
+        "read": _NO_BAMBU_ON_EDGE,
+        "presence": _NO_BAMBU_ON_EDGE,
+        "consumption": _NO_BAMBU_ON_EDGE,
+        "write": _NO_BAMBU_ON_EDGE,
+        "tag_read": _NO_BAMBU_ON_EDGE,
+        "spool_identity": _NO_SPOOL_ON_BAMBU,
+    },
+    ("octoprint", "bridge_https"): {
+        "presence": ("device", "OctoPrint does not know whether filament is loaded."),
+        "tag_read": ("device", "No tag reader is reachable through OctoPrint."),
+    },
+    ("moonraker", "edge_agent"): {
+        "write": (
+            "device",
+            "A Klipper printer without an MMU has no slot whose material could be set.",
+        ),
+        "spool_identity": (
+            "device",
+            "Klipper names no spool; the assignment made on the site is the only link.",
+        ),
+        "tag_read": ("device", "A Klipper printer without an MMU has no tag reader."),
+    },
+    ("happy_hare", "edge_agent"): {"write": _HAPPY_HARE_SPOOLMAN},
+    ("happy_hare", "orca_plugin_lan"): {
+        "write": _HAPPY_HARE_SPOOLMAN,
+        "consumption": _HAPPY_HARE_SPOOLMAN,
+    },
+    ("happy_hare", "spoolman_compat"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
+    ("happy_hare", "legacy_adapter"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
+    ("flashforge", "edge_agent"): {
+        "write": _FLASHFORGE_WRITE,
+        "spool_identity": _FLASHFORGE_NO_SPOOL,
+        "tag_read": _FLASHFORGE_NO_READER,
+    },
+    ("flashforge", "orca_plugin_lan"): {
+        "consumption": (
+            "planned",
+            "The plugin reads the printer on request; counting the job estimate needs it to "
+            "watch the whole print, as Edge does.",
+        ),
+        "write": _FLASHFORGE_WRITE,
+        "spool_identity": _FLASHFORGE_NO_SPOOL,
+        "tag_read": _FLASHFORGE_NO_READER,
+    },
+    ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
+    ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
+}
+
+
 def capability_ceiling(*, provider: str, transport: str) -> frozenset[str]:
     """Return the known ceiling, retaining vocabulary compatibility for new adapters."""
     return ADAPTER_CAPABILITY_MANIFESTS.get((provider, transport), CAPABILITY_NAMES)

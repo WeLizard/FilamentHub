@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.printer_capabilities import (
+    ADAPTER_CAPABILITY_GAPS,
     ADAPTER_CAPABILITY_MANIFESTS,
     CAPABILITY_NAMES,
+    PARITY_CAPABILITIES,
     capability_ceiling,
     has_capability,
     normalize_capabilities,
@@ -20,6 +22,28 @@ def test_every_adapter_manifest_uses_only_canonical_capabilities() -> None:
         capabilities <= CAPABILITY_NAMES
         for capabilities in ADAPTER_CAPABILITY_MANIFESTS.values()
     )
+
+
+def test_a_connection_lacks_a_need_only_for_a_written_reason() -> None:
+    # Every printer owner expects the same things of a connection. One that
+    # cannot give them says whether the printer is the limit, another
+    # connection covers it, or it is simply not built yet.
+    unexplained = []
+    stale = []
+    for pair, granted in ADAPTER_CAPABILITY_MANIFESTS.items():
+        gaps = ADAPTER_CAPABILITY_GAPS.get(pair, {})
+        assert set(gaps) <= set(PARITY_CAPABILITIES), pair
+        for need in PARITY_CAPABILITIES:
+            if need in granted:
+                if need in gaps:
+                    stale.append((pair, need))
+                continue
+            kind, reason = gaps.get(need, ("", ""))
+            if kind not in {"device", "elsewhere", "planned"} or len(reason) < 20:
+                unexplained.append((pair, need))
+    assert unexplained == [], unexplained
+    assert stale == [], stale
+    assert set(ADAPTER_CAPABILITY_GAPS) <= set(ADAPTER_CAPABILITY_MANIFESTS)
 
 
 def test_known_adapter_is_bounded_by_its_manifest() -> None:
