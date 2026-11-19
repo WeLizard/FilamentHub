@@ -102,6 +102,7 @@ The catalogue, presets and basic tracking of your own spools are free, and they 
 
 - A FilamentHub account for the catalogue, preset synchronization, spool inventory and slice history.
 - An OrcaSlicer build with Python plugin support.
+- Windows or Linux. The plugin has no Windows-only parts and installs on macOS, but macOS has not been tested yet. If presets do not appear in OrcaSlicer on a Mac, please turn on developer mode in the plugin settings and send a report with **Report a problem** in the FilamentHub tab.
 - Local-network access to the printer for optional Bambu or Happy Hare integration.
 
 On OrcaSlicer builds with the plugin preset API (2.5.0-alpha and later), a newly imported or updated preset appears in the slicer's preset selectors immediately. Older builds need a restart first.
