@@ -17,6 +17,7 @@ import {
   Palette,
   Fan,
   Layers,
+  Factory,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI, printersAPI, physicalPrintersAPI } from '../api/client';
@@ -32,6 +33,7 @@ import { ViewModeToggle } from '../components/ViewModeToggle';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { useDebounce } from '../hooks/useDebounce';
 import { useStoredViewMode } from '../hooks/useStoredViewMode';
+import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { SEOHead } from '../components/SEOHead';
 import {
   formatTemperatureRange,
@@ -61,6 +63,7 @@ import {
 
 const CATALOG_PAGE_SIZE = 24;
 const DESKTOP_TABLE_MEDIA_QUERY = '(min-width: 1280px)';
+const CATALOG_GROUPINGS = ['none', 'brand'] as const;
 
 export const CatalogPage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -71,6 +74,8 @@ export const CatalogPage: React.FC = () => {
   const [viewMode, setViewMode] = useStoredViewMode('catalog.resultsView', user?.id);
   const canUseTableView = useDesktopCatalogTable();
   const effectiveViewMode = canUseTableView ? viewMode : 'grid';
+  const [grouping, setGrouping] = useStoredUiChoice('catalog.groupBy', user?.id, CATALOG_GROUPINGS, 'none');
+  const groupByBrand = grouping === 'brand';
   const queryClient = useQueryClient();
   const initialUrlFilters = useRef(parseCatalogSearch(location.search).filters);
   const [searchQuery, setSearchQuery] = useState(initialUrlFilters.current.q);
@@ -272,6 +277,7 @@ export const CatalogPage: React.FC = () => {
         printer_id: printerFilter,
         // Страна — часть ключа: иначе москвич увидит немецкие цены из кеша.
         country: catalogCountry,
+        group_by: grouping,
       },
     ],
     queryFn: ({ pageParam }) =>
@@ -286,6 +292,7 @@ export const CatalogPage: React.FC = () => {
         brand_id: brandFilter || undefined,
         printer_id: printerFilter || undefined,
         country: catalogCountry || undefined,
+        group_by: groupByBrand ? 'brand' : undefined,
         page: pageParam,
         size: CATALOG_PAGE_SIZE,
       }),
@@ -345,6 +352,15 @@ export const CatalogPage: React.FC = () => {
     [filamentsData],
   );
   const total = filamentsData?.pages[0]?.total ?? 0;
+  const brandCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const catalogPage of filamentsData?.pages ?? []) {
+      for (const [brandId, count] of Object.entries(catalogPage.brand_counts ?? {})) {
+        counts.set(Number(brandId), count);
+      }
+    }
+    return counts;
+  }, [filamentsData]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -587,12 +603,25 @@ export const CatalogPage: React.FC = () => {
             />
           </div>
 
-          <div className="pt-1">
+          <div className="flex items-center justify-between gap-3 pt-1">
             <p className="text-xs text-gray-400 sm:text-sm" aria-live="polite">
               {total > 0
                 ? t('catalogPage.resultsRange', { start: 1, end: filaments.length, total })
                 : t('catalogPage.resultsCount', { count: 0 })}
             </p>
+            <button
+              type="button"
+              onClick={() => setGrouping(groupByBrand ? 'none' : 'brand')}
+              aria-pressed={groupByBrand}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors sm:text-sm ${
+                groupByBrand
+                  ? 'border-purple-400/50 bg-purple-600 text-white'
+                  : 'border-white/20 bg-white/10 text-gray-300 hover:text-white'
+              }`}
+            >
+              <Factory className="h-4 w-4" aria-hidden />
+              {t('catalogPage.groupByBrand')}
+            </button>
           </div>
         </div>
       </div>
@@ -605,7 +634,55 @@ export const CatalogPage: React.FC = () => {
         }`}
         aria-busy={isFetchingFilaments}
       >
-        {(filamentsData?.pages ?? []).map((catalogPage, pageIndex) => (
+        {groupByBrand && (filamentsData?.pages ?? []).map((catalogPage, pageIndex, loadedPages) => {
+          // A brand that continues from the previous page gets no second header.
+          const previousPage = loadedPages[pageIndex - 1];
+          const previousBrandId = previousPage?.items[previousPage.items.length - 1]?.brand_id ?? null;
+          return (
+            <OffscreenSection
+              key={`brand:${effectiveViewMode}:${catalogPage.items[0]?.id ?? pageIndex}`}
+              className="space-y-4"
+            >
+              {brandRuns(catalogPage.items).map((run, runIndex) => (
+                <section key={`${run.brandId}:${run.items[0].id}`} className="space-y-4">
+                  {(runIndex > 0 || run.brandId !== previousBrandId) && (
+                    <BrandGroupHeader filament={run.items[0]} count={brandCounts.get(run.brandId)} />
+                  )}
+                  {effectiveViewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                      {run.items.map((filament) => (
+                        <CatalogFilamentCard
+                          key={filament.id}
+                          filament={filament}
+                          isSelected={selectedFilament === filament.id}
+                          onSelect={handleSavePreset}
+                          onShowQR={handleToggleQr}
+                          showQR={showQR === filament.id}
+                          onClick={handleOpenFilament}
+                          savedPresetIds={savedPresetIds}
+                          configuredNozzleHrc={configuredNozzleHrc}
+                          fitsPrinter={printerMatchedIds.has(filament.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <CatalogFilamentTable
+                      filaments={run.items}
+                      onSelect={handleSavePreset}
+                      onShowQR={handleToggleQr}
+                      showQR={showQR}
+                      savedPresetIds={savedPresetIds}
+                      configuredNozzleHrc={configuredNozzleHrc}
+                      printerMatchedIds={printerMatchedIds}
+                      onOpenFilament={handleOpenFilament}
+                    />
+                  )}
+                </section>
+              ))}
+            </OffscreenSection>
+          );
+        })}
+        {!groupByBrand && (filamentsData?.pages ?? []).map((catalogPage, pageIndex) => (
           <OffscreenSection
             key={`${effectiveViewMode}:${catalogPage.items[0]?.id ?? pageIndex}`}
             className={effectiveViewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : undefined}
@@ -686,6 +763,45 @@ export const CatalogPage: React.FC = () => {
     </>
   );
 };
+
+interface BrandRun {
+  brandId: number;
+  items: Filament[];
+}
+
+/** Splits a brand-ordered page into consecutive runs of one brand. */
+function brandRuns(items: Filament[]): BrandRun[] {
+  const runs: BrandRun[] = [];
+  for (const filament of items) {
+    const last = runs[runs.length - 1];
+    if (last && last.brandId === filament.brand_id) last.items.push(filament);
+    else runs.push({ brandId: filament.brand_id, items: [filament] });
+  }
+  return runs;
+}
+
+function BrandGroupHeader({ filament, count }: { filament: Filament; count?: number }) {
+  const { t } = useTranslation();
+  const name = filament.brand_name ?? '—';
+  return (
+    <h2 className="flex items-center gap-3 border-b border-white/15 pb-2 pt-2">
+      {filament.brand_slug ? (
+        <Link
+          to={`/brands/${filament.brand_slug}`}
+          className={`text-lg font-bold hover:underline sm:text-xl ${filament.brand_verified ? 'text-green-400' : 'text-white'}`}
+        >
+          {name}
+        </Link>
+      ) : (
+        <span className="text-lg font-bold text-white sm:text-xl">{name}</span>
+      )}
+      {filament.brand_verified && <Shield className="h-4 w-4 text-green-400" aria-hidden />}
+      {count != null && (
+        <span className="text-sm font-normal text-gray-400">{t('catalogPage.resultsCount', { count })}</span>
+      )}
+    </h2>
+  );
+}
 
 interface MaterialCardProps {
   filament: Filament;

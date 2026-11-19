@@ -492,6 +492,11 @@ async def list_filaments(
         pattern=r"^[A-Za-z]{2}$",
         description="Страна читателя: подставляет местные сведения там, где они заполнены.",
     ),
+    group_by: Literal["none", "brand"] = Query(
+        "none",
+        description="brand: материалы одного бренда идут подряд, а `brand_counts` "
+        "сообщает, сколько их у каждого бренда этой страницы при тех же фильтрах.",
+    ),
 ) -> FilamentListResponse:
     """Получить список материалов.
 
@@ -542,6 +547,14 @@ async def list_filaments(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
+    # A brand's materials must stay together across pages, so grouping orders
+    # by brand before anything else; within a brand the usual order applies.
+    group_order = ()
+    if group_by == "brand":
+        if not normalized_search:
+            query = query.join(Brand, Filament.brand_id == Brand.id)
+        group_order = (func.lower(Brand.name), Brand.id)
+
     # Paginate
     offset = (page - 1) * size
     if printer_id is not None:
@@ -559,9 +572,9 @@ async def list_filaments(
             )
             .exists()
         )
-        query = query.order_by(fits_printer.desc(), Filament.name, Filament.id)
+        query = query.order_by(*group_order, fits_printer.desc(), Filament.name, Filament.id)
     else:
-        query = query.order_by(Filament.name, Filament.id)
+        query = query.order_by(*group_order, Filament.name, Filament.id)
     query = query.offset(offset).limit(size)
 
     # Execute
@@ -587,6 +600,18 @@ async def list_filaments(
             .distinct()
         )
         printer_matched_ids = sorted({row[0] for row in matched_rows if row[0] is not None})
+
+    # A group can span pages, so its size comes from the filtered count rather
+    # than from the rows that happen to be on this page.
+    brand_counts: dict[int, int] = {}
+    page_brand_ids = {filament.brand_id for filament in filaments}
+    if group_by == "brand" and page_brand_ids:
+        brand_count_rows = await db.execute(
+            count_query.with_only_columns(Filament.brand_id, func.count())
+            .where(Filament.brand_id.in_(page_brand_ids))
+            .group_by(Filament.brand_id)
+        )
+        brand_counts = {int(brand_id): int(count) for brand_id, count in brand_count_rows}
 
     country_cells = await cells_for(db, filament_ids, country)
 
@@ -659,6 +684,7 @@ async def list_filaments(
         size=size,
         pages=pages,
         printer_matched_ids=printer_matched_ids,
+        brand_counts=brand_counts,
     )
 
 

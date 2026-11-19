@@ -28,6 +28,45 @@ async def test_list_filaments_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_brand_grouping_keeps_a_brand_together_across_pages(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Without brand ordering, page two would reopen a brand already closed on
+    page one, and a page-local count would understate a group that spans pages."""
+    zeta = Brand(name="Zeta", slug="zeta")
+    alpha = Brand(name="alpha", slug="alpha")
+    db_session.add_all([zeta, alpha])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Filament(brand_id=zeta.id, name="A PLA", slug="zeta-a", material_type="PLA", diameter=1.75),
+            Filament(brand_id=alpha.id, name="B PLA", slug="alpha-b", material_type="PLA", diameter=1.75),
+            Filament(brand_id=zeta.id, name="C PLA", slug="zeta-c", material_type="PLA", diameter=1.75),
+            Filament(brand_id=alpha.id, name="D PETG", slug="alpha-d", material_type="PETG", diameter=1.75),
+            Filament(brand_id=alpha.id, name="E PLA", slug="alpha-e", material_type="PLA", diameter=1.75),
+        ]
+    )
+    await db_session.commit()
+
+    params = {"group_by": "brand", "material_base": "PLA", "size": 2}
+    first = (await client.get("/api/v1/filaments/", params=params)).json()
+    second = (await client.get("/api/v1/filaments/", params={**params, "page": 2})).json()
+
+    assert [item["name"] for item in first["items"] + second["items"]] == [
+        "B PLA",
+        "E PLA",
+        "A PLA",
+        "C PLA",
+    ]
+    assert first["brand_counts"] == {str(alpha.id): 2}
+    assert second["brand_counts"] == {str(zeta.id): 2}
+
+    ungrouped = (await client.get("/api/v1/filaments/", params={"material_base": "PLA"})).json()
+    assert [item["name"] for item in ungrouped["items"]] == ["A PLA", "B PLA", "C PLA", "E PLA"]
+    assert ungrouped["brand_counts"] == {}
+
+
+@pytest.mark.asyncio
 async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSession):
     """Test creating a filament."""
     # Create brand first

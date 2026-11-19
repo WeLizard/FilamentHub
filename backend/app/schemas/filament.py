@@ -750,6 +750,9 @@ class FilamentListResponse(BaseModel):
     pages: int
     # Which of these materials have a preset for the printer asked about.
     printer_matched_ids: list[int] = []
+    # With group_by=brand: how many materials each brand on this page has under
+    # the same filters, so a group spanning pages still shows its full size.
+    brand_counts: dict[int, int] = {}
 
 
 class FilamentCommonEditRequest(BaseModel):

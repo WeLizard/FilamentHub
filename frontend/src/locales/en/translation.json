@@ -1647,6 +1647,7 @@
     "viewMode": "Catalog view",
     "cardsView": "Cards",
     "tableView": "Table",
+    "groupByBrand": "By brand",
     "tableCaption": "Catalog materials in a compact table",
     "tableColor": "Colour",
     "tableMaterial": "Material",

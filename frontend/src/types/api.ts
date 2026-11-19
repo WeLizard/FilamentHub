@@ -1125,6 +1125,8 @@ export interface RefreshTokenResponse {
 export interface FilamentListResponse extends ListResponse<Filament> {
   /** Which of the listed materials have a preset for the printer asked about. */
   printer_matched_ids: number[];
+  /** With group_by=brand: each listed brand's material count under the same filters. */
+  brand_counts?: Record<string, number>;
 }
 
 export interface OrcaSliceReport {

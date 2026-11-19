@@ -1239,6 +1239,8 @@ export const filamentsAPI = {
     country?: string;
     color_group?: import('../types/api').FilamentColorGroup;
     multicolor?: boolean;
+    /** Keeps each brand's materials together across pages and returns `brand_counts`. */
+    group_by?: 'brand';
   }, options?: { bypassSharedCache?: boolean }) => {
     const response = await api.get<FilamentListResponse>('/filaments/', {
       params,

@@ -290,6 +290,39 @@ describe('CatalogPage', () => {
     expect(screen.queryByText('1.24 catalogPage.units.gcm3')).not.toBeInTheDocument();
   });
 
+  it('groups by brand without repeating a header for a brand continued on the next page', async () => {
+    const fiberLab = (id: number, name: string) => ({ ...catalogFilament, id, slug: `f-${id}`, name });
+    const nordPla = { ...catalogFilament, id: 30, slug: 'nord-pla', name: 'Nord PLA', brand_id: 9, brand_name: 'Nord', brand_slug: 'nord', brand_verified: false };
+    listFilamentsMock.mockImplementation(async (params: { page: number; group_by?: string }) => {
+      if (params.group_by !== 'brand') return catalogResponse([fiberLab(17, 'PETG CF')]);
+      return params.page === 1
+        ? { ...catalogResponse([fiberLab(17, 'PETG CF')]), total: 3, pages: 2, brand_counts: { 3: 2 } }
+        : { ...catalogResponse([fiberLab(18, 'PLA Matte'), nordPla]), total: 3, page: 2, pages: 2, brand_counts: { 3: 2, 9: 1 } };
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CatalogPage />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('PETG CF')).toBeInTheDocument();
+    const brandHeaders = () => screen.queryAllByRole('heading', { level: 2 })
+      .filter((heading) => heading.querySelector('a[href^="/brands/"]'));
+    expect(brandHeaders()).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'catalogPage.groupByBrand' }));
+    await waitFor(() => {
+      expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({ page: 1, group_by: 'brand' }));
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.loadMore' }));
+    expect(await screen.findByText('Nord PLA')).toBeInTheDocument();
+
+    expect(brandHeaders().map((header) => header.querySelector('a')?.textContent)).toEqual(['FiberLab', 'Nord']);
+    expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
+      anonymous: { 'catalog.groupBy': 'brand' },
+    });
+  });
+
   it('switches to the table without refetching and restores the remembered view', async () => {
     stubDesktopLayout(true);
     listFilamentsMock.mockResolvedValue(catalogResponse([interactiveTableFilament]));
