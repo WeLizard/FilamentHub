@@ -740,6 +740,27 @@ class MaterialTypeGroup(BaseModel):
     filament_count: int = 0
 
 
+class CatalogBrandFamily(BaseModel):
+    """How many of a brand's matching materials belong to one base polymer."""
+
+    base: str | None
+    count: int
+
+
+class CatalogBrandGroup(BaseModel):
+    """One brand in the catalogue's brand view, counted under the reader's filters."""
+
+    id: int
+    name: str
+    slug: str
+    logo_url: str | None = None
+    logo_bg: str | None = None
+    verified: bool = False
+    materials_count: int
+    # Largest families first: the card shows what the brand mostly makes.
+    families: list[CatalogBrandFamily] = []
+
+
 class FilamentListResponse(BaseModel):
     """Schema for Filament list response."""
 
@@ -750,9 +771,13 @@ class FilamentListResponse(BaseModel):
     pages: int
     # Which of these materials have a preset for the printer asked about.
     printer_matched_ids: list[int] = []
-    # With group_by=brand: how many materials each brand on this page has under
-    # the same filters, so a group spanning pages still shows its full size.
-    brand_counts: dict[int, int] = {}
+    # With group_by=brand the page holds brands instead of materials: `items` is
+    # empty, `total`/`pages` count brands and `materials_total` counts materials.
+    brand_groups: list[CatalogBrandGroup] = []
+    materials_total: int | None = None
+    # With group_by=family/line: the full size of each group on this page, keyed by
+    # the family or line id ("" for materials without one).
+    group_counts: dict[str, int] = {}
 
 
 class FilamentCommonEditRequest(BaseModel):

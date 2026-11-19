@@ -79,6 +79,13 @@ class FilamentReviewListResponse(BaseModel):
     pages: int
 
 
+class BrandRatingStats(BaseModel):
+    """Средний рейтинг бренда по материалам, у которых есть отзывы."""
+
+    avg_rating: float | None = Field(None, description="Средний рейтинг материалов бренда")
+    rated_filaments: int = Field(0, description="Сколько материалов бренда имеют рейтинг")
+
+
 class FilamentRatingStats(BaseModel):
     """Статистика рейтингов материала."""
 

@@ -1,5 +1,6 @@
 """FilamentReview endpoints."""
 
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,6 +26,7 @@ from app.models.preset import Preset
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.filament_review import (
+    BrandRatingStats,
     FilamentRatingStats,
     FilamentReviewCreate,
     FilamentReviewListResponse,
@@ -260,6 +262,59 @@ async def list_filament_reviews(
     )
 
 
+async def _filament_rating(
+    filament_id: int, reviews: Sequence[FilamentReview], db: AsyncSession
+) -> tuple[float | None, float | None]:
+    """A material's rating and success rate: weighted by its presets when they
+    allow it, otherwise the plain mean of its reviews."""
+    from app.services.preset_ratings import calculate_filament_weighted_rating
+
+    weighted_rating, weighted_success_rate = await calculate_filament_weighted_rating(filament_id, db)
+    if weighted_rating is not None:
+        return weighted_rating, weighted_success_rate
+    count = len(reviews)
+    return (
+        sum(review.rating for review in reviews) / count,
+        sum(1 for review in reviews if review.success) / count * 100.0,
+    )
+
+
+@router.get("/brand/{brand_id}/stats", response_model=BrandRatingStats)
+async def get_brand_rating_stats(
+    brand_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandRatingStats:
+    """Средний рейтинг бренда по его материалам, у которых есть отзывы.
+
+    Один запрос вместо запроса статистики на каждый материал страницы бренда;
+    считаются только материалы с отзывами, а их у бренда единицы.
+    """
+    from app.models.filament import Filament
+
+    result = await db.execute(
+        select(FilamentReview)
+        .join(Filament, Filament.id == FilamentReview.filament_id)
+        .where(
+            Filament.brand_id == brand_id,
+            Filament.active.is_(True),
+            FilamentReview.active.is_(True),
+        )
+    )
+    by_filament: dict[int, list[FilamentReview]] = {}
+    for review in result.scalars():
+        by_filament.setdefault(review.filament_id, []).append(review)
+
+    ratings = [
+        rating
+        for filament_id, reviews in by_filament.items()
+        if (rating := (await _filament_rating(filament_id, reviews, db))[0]) is not None
+    ]
+    return BrandRatingStats(
+        avg_rating=round(sum(ratings) / len(ratings), 2) if ratings else None,
+        rated_filaments=len(ratings),
+    )
+
+
 @router.get("/filament/{filament_id}/stats", response_model=FilamentRatingStats)
 async def get_filament_rating_stats(
     filament_id: int,
@@ -268,7 +323,6 @@ async def get_filament_rating_stats(
 ) -> FilamentRatingStats:
     """Получить статистику рейтингов для материала."""
     from app.models.filament import Filament
-    from app.services.preset_ratings import calculate_filament_weighted_rating
 
     # Проверяем существование материала
     filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -293,19 +347,7 @@ async def get_filament_rating_stats(
             rating_distribution={},
         )
 
-    # Вычисляем взвешенный рейтинг филамента на основе пресетов
-    weighted_rating, weighted_success_rate = await calculate_filament_weighted_rating(filament_id, db)
-
-    # Если есть взвешенный рейтинг, используем его, иначе простое среднее всех отзывов
-    if weighted_rating is not None:
-        avg_rating = weighted_rating
-        success_rate = weighted_success_rate
-    else:
-        # Fallback: простое среднее всех отзывов
-        total_reviews_count = len(reviews)
-        avg_rating = sum(r.rating for r in reviews) / total_reviews_count
-        success_count = sum(1 for r in reviews if r.success)
-        success_rate = (success_count / total_reviews_count) * 100.0
+    avg_rating, success_rate = await _filament_rating(filament_id, reviews, db)
 
     # Распределение рейтингов
     rating_distribution: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}

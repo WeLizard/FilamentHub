@@ -8,6 +8,7 @@ from app.models.brand import Brand
 from app.models.brand_territorial_grant import GrantSource
 from app.models.filament import Filament
 from app.models.filament_country_cell import FilamentCountryCell
+from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
@@ -28,14 +29,15 @@ async def test_list_filaments_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_brand_grouping_keeps_a_brand_together_across_pages(
+async def test_brand_view_counts_only_what_the_filters_let_through(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Without brand ordering, page two would reopen a brand already closed on
-    page one, and a page-local count would understate a group that spans pages."""
+    """The brand view must count under the reader's filters: a brand with no
+    matching material would otherwise be a card that opens onto nothing."""
     zeta = Brand(name="Zeta", slug="zeta")
     alpha = Brand(name="alpha", slug="alpha")
-    db_session.add_all([zeta, alpha])
+    petg_only = Brand(name="Mid", slug="mid")
+    db_session.add_all([zeta, alpha, petg_only])
     await db_session.flush()
     db_session.add_all(
         [
@@ -43,27 +45,74 @@ async def test_brand_grouping_keeps_a_brand_together_across_pages(
             Filament(brand_id=alpha.id, name="B PLA", slug="alpha-b", material_type="PLA", diameter=1.75),
             Filament(brand_id=zeta.id, name="C PLA", slug="zeta-c", material_type="PLA", diameter=1.75),
             Filament(brand_id=alpha.id, name="D PETG", slug="alpha-d", material_type="PETG", diameter=1.75),
-            Filament(brand_id=alpha.id, name="E PLA", slug="alpha-e", material_type="PLA", diameter=1.75),
+            Filament(brand_id=alpha.id, name="E PLA+", slug="alpha-e", material_type="PLA+", diameter=1.75),
+            Filament(brand_id=petg_only.id, name="F PETG", slug="mid-f", material_type="PETG", diameter=1.75),
         ]
     )
     await db_session.commit()
 
-    params = {"group_by": "brand", "material_base": "PLA", "size": 2}
+    params = {"group_by": "brand", "material_base": "PLA", "size": 1}
     first = (await client.get("/api/v1/filaments/", params=params)).json()
     second = (await client.get("/api/v1/filaments/", params={**params, "page": 2})).json()
 
-    assert [item["name"] for item in first["items"] + second["items"]] == [
-        "B PLA",
-        "E PLA",
-        "A PLA",
-        "C PLA",
+    assert (first["total"], first["pages"], first["materials_total"]) == (2, 2, 4)
+    assert first["items"] == []
+    assert [(group["name"], group["materials_count"]) for group in first["brand_groups"]] == [
+        ("alpha", 2)
     ]
-    assert first["brand_counts"] == {str(alpha.id): 2}
-    assert second["brand_counts"] == {str(zeta.id): 2}
+    assert [(group["name"], group["materials_count"]) for group in second["brand_groups"]] == [
+        ("Zeta", 2)
+    ]
 
-    ungrouped = (await client.get("/api/v1/filaments/", params={"material_base": "PLA"})).json()
-    assert [item["name"] for item in ungrouped["items"]] == ["A PLA", "B PLA", "C PLA", "E PLA"]
-    assert ungrouped["brand_counts"] == {}
+    everything = (await client.get("/api/v1/filaments/", params={"group_by": "brand"})).json()
+    alpha_card = everything["brand_groups"][0]
+    assert alpha_card["slug"] == "alpha"
+    assert alpha_card["families"] == [
+        {"base": "PLA", "count": 2},
+        {"base": "PETG", "count": 1},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_family_and_line_groups_stay_together_across_pages(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Lazy loading must not reopen a group already closed on an earlier page, and
+    a header must count the whole group rather than the rows of one page."""
+    brand = Brand(name="Grouped", slug="grouped")
+    db_session.add(brand)
+    await db_session.flush()
+    silk = FilamentLine(brand_id=brand.id, name="Silk")
+    db_session.add(silk)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Filament(brand_id=brand.id, name="A", slug="g-a", material_type="PLA", diameter=1.75),
+            Filament(brand_id=brand.id, name="B", slug="g-b", material_type="PETG", diameter=1.75),
+            Filament(
+                brand_id=brand.id, name="C", slug="g-c", material_type="PLA", diameter=1.75,
+                line_id=silk.id,
+            ),
+            Filament(brand_id=brand.id, name="D", slug="g-d", material_type="PETG", diameter=1.75),
+        ]
+    )
+    await db_session.commit()
+
+    async def pages(group_by: str):
+        params = {"brand_id": brand.id, "group_by": group_by, "size": 2}
+        return [
+            (await client.get("/api/v1/filaments/", params={**params, "page": page})).json()
+            for page in (1, 2)
+        ]
+
+    first, second = await pages("family")
+    assert [item["name"] for item in first["items"] + second["items"]] == ["B", "D", "A", "C"]
+    assert first["group_counts"] == {"PETG": 2}
+    assert second["group_counts"] == {"PLA": 2}
+
+    first, second = await pages("line")
+    assert [item["name"] for item in first["items"] + second["items"]] == ["C", "A", "B", "D"]
+    assert first["group_counts"] == {str(silk.id): 1, "": 3}
 
 
 @pytest.mark.asyncio

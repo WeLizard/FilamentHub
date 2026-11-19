@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   Building2,
   Shield,
@@ -11,14 +11,22 @@ import {
   Star,
   ArrowLeft,
   Search,
+  Rows3,
+  Layers,
+  Tags,
 } from 'lucide-react';
-import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
+import { brandsAPI, filamentsAPI, filamentLinesAPI, filamentReviewsAPI } from '../api/client';
 import type { Filament } from '../types/api';
 import { useReaderCountry } from '../hooks/useReaderCountry';
+import { useLoadMoreOnScroll } from '../hooks/useLoadMoreOnScroll';
+import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
+import { useAuth } from '../contexts/AuthContext';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
+import { OffscreenSection } from '../components/OffscreenSection';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { FilamentHandlingBadges } from '../components/FilamentHandlingBadges';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
@@ -90,14 +98,44 @@ const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick
   </div>
 );
 
+const BRAND_PAGE_SIZE = 48;
+const CARD_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4';
+const BRAND_GROUPINGS = ['none', 'family', 'line'] as const;
+type BrandGrouping = (typeof BRAND_GROUPINGS)[number];
+
+/** The value a material is grouped under; "" for one without a family or line. */
+function groupKey(filament: Filament, grouping: BrandGrouping): string {
+  if (grouping === 'family') return filament.base_material_type ?? '';
+  if (grouping === 'line') return filament.line_id != null ? String(filament.line_id) : '';
+  return '';
+}
+
+/** Splits a page in server order into consecutive runs of one group. */
+function groupRuns(items: Filament[], grouping: BrandGrouping) {
+  const runs: { key: string; items: Filament[] }[] = [];
+  for (const filament of items) {
+    const key = groupKey(filament, grouping);
+    const last = runs[runs.length - 1];
+    if (last && last.key === key) last.items.push(filament);
+    else runs.push({ key, items: [filament] });
+  }
+  return runs;
+}
+
 export const BrandDetailPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
+  // The catalogue's brand view links here with the reader's search and family.
+  const [searchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '');
+  const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(
+    () => searchParams.get('material') || null,
+  );
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const readerCountry = useReaderCountry();
+  const { user } = useAuth();
+  const [grouping, setGrouping] = useStoredUiChoice('brandPage.groupBy', user?.id, BRAND_GROUPINGS, 'none');
 
   // Загружаем бренд
   const {
@@ -111,35 +149,58 @@ export const BrandDetailPage: React.FC = () => {
   });
 
   // Загружаем филаменты бренда
+  // Grouping by line is offered only to a brand that has lines.
+  const { data: brandLines = [] } = useQuery({
+    queryKey: ['filament-lines', brand?.id],
+    queryFn: () => filamentLinesAPI.list(brand!.id),
+    enabled: !!brand?.id,
+  });
+  const effectiveGrouping: BrandGrouping = grouping === 'line' && brandLines.length === 0 ? 'none' : grouping;
+
   const {
     data: filamentsData,
     isLoading: isLoadingFilaments,
     error: filamentsError,
-  } = useQuery({
-    queryKey: ['brand-filaments', brand?.id, searchQuery, materialTypeFilter, readerCountry],
-    queryFn: () =>
+    isFetching: isFetchingFilaments,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['brand-filaments', brand?.id, searchQuery, materialTypeFilter, readerCountry, effectiveGrouping],
+    queryFn: ({ pageParam }) =>
       filamentsAPI.list({
-        page: 1,
-        size: 100,
+        page: pageParam,
+        size: BRAND_PAGE_SIZE,
         brand_id: brand!.id,
         search: searchQuery || undefined,
         material_base: materialTypeFilter || undefined,
         country: readerCountry,
+        group_by: effectiveGrouping === 'none' ? undefined : effectiveGrouping,
       }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined),
     enabled: !!brand?.id,
   });
 
-  // Загружаем рейтинги для всех филаментов бренда (хук должен быть ДО early returns)
-  const filamentIds = (filamentsData?.items || []).map((f) => f.id);
-  const { data: ratingsData } = useQuery({
-    queryKey: ['brand-ratings', brand?.id, filamentIds],
-    queryFn: async () => {
-      const stats = await Promise.all(
-        filamentIds.map((fid) => filamentReviewsAPI.getStats(fid).catch(() => null))
-      );
-      return stats;
-    },
-    enabled: filamentIds.length > 0,
+  // Families and the material count describe the whole brand, not the loaded part
+  // or the family picked in the filter.
+  const { data: brandSummary } = useQuery({
+    queryKey: ['brand-filaments', 'summary', brand?.id],
+    queryFn: () => filamentsAPI.list({ brand_id: brand!.id, group_by: 'brand', size: 1 }),
+    enabled: !!brand?.id,
+  });
+
+  // One request for the brand's rating instead of one per listed material.
+  const { data: brandRating } = useQuery({
+    queryKey: ['brand-rating', brand?.id],
+    queryFn: () => filamentReviewsAPI.getBrandStats(brand!.id),
+    enabled: !!brand?.id,
+  });
+
+  const loadMoreRef = useLoadMoreOnScroll<HTMLDivElement>({
+    hasNextPage,
+    isFetching: isFetchingFilaments,
+    fetchNextPage,
   });
 
   useEffect(() => {
@@ -168,32 +229,20 @@ export const BrandDetailPage: React.FC = () => {
     );
   }
 
-  const filaments = filamentsData?.items || [];
+  const filaments = (filamentsData?.pages ?? []).flatMap((page) => page.items);
+  const brandGroup = brandSummary?.brand_groups?.[0];
   // Фильтр по семейству: PLA показывает и PLA+, и PLA SILK.
   const materialFamilies = Array.from(
-    new Set(filaments.map((f) => f.base_material_type ?? OTHER_MATERIAL_BASE))
+    new Set([
+      ...(brandGroup?.families ?? []).map((family) => family.base ?? OTHER_MATERIAL_BASE),
+      ...(materialTypeFilter ? [materialTypeFilter] : []),
+    ])
   ).sort((a, b) => Number(a === OTHER_MATERIAL_BASE) - Number(b === OTHER_MATERIAL_BASE) || a.localeCompare(b));
 
-  const filteredFilaments = filaments.filter((f) => {
-    if (materialTypeFilter && (f.base_material_type ?? OTHER_MATERIAL_BASE) !== materialTypeFilter) {
-      return false;
-    }
-    return true;
-  });
-  const orderedFilaments = [
-    ...filteredFilaments.filter((filament) => filament.line_id != null),
-    ...filteredFilaments.filter((filament) => filament.line_id == null),
-  ];
 
   // Вычисляем статистику
-  const totalFilaments = filaments.length;
-  const ratingsWithData = (ratingsData || []).filter(
-    (s) => s && s.avg_rating !== null && s.avg_rating !== undefined && s.total_reviews > 0
-  );
-  const avgRating =
-    ratingsWithData.length > 0
-      ? ratingsWithData.reduce((acc, s) => acc + (s!.avg_rating || 0), 0) / ratingsWithData.length
-      : null;
+  const totalFilaments = brandGroup?.materials_count ?? filamentsData?.pages[0]?.total ?? 0;
+  const avgRating = brandRating?.avg_rating ?? null;
 
   const seoDescription = brand.description
     ? brand.description.slice(0, 160)
@@ -361,6 +410,21 @@ export const BrandDetailPage: React.FC = () => {
               placeholder={t('brandDetailPage.materialType')}
             />
           </div>
+          <SegmentedToggle
+            value={effectiveGrouping}
+            onChange={setGrouping}
+            options={[
+              { value: 'none', label: t('brandDetailPage.groupNone'), icon: Rows3 },
+              { value: 'family', label: t('brandDetailPage.groupFamily'), icon: Layers },
+              ...(brandLines.length > 0
+                ? [{ value: 'line' as const, label: t('brandDetailPage.groupLine'), icon: Tags }]
+                : []),
+            ]}
+            ariaLabel={t('brandDetailPage.groupBy')}
+            showLabels
+            labelClassName="hidden lg:inline"
+            className="shrink-0 self-start md:self-auto"
+          />
         </div>
       </div>
 
@@ -369,20 +433,74 @@ export const BrandDetailPage: React.FC = () => {
         <div className="text-center py-12 text-gray-400">{t('brandDetailPage.loadingFilaments')}</div>
       ) : filamentsError ? (
         <div className="text-center py-12 text-red-400">{t('brandDetailPage.errorLoadingFilaments')}</div>
-      ) : filteredFilaments.length === 0 ? (
+      ) : filaments.length === 0 ? (
         <div className="text-center py-12">
           <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-400 text-xl">{t('brandDetailPage.noFilamentsFound')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {orderedFilaments.map((filament) => (
-            <BrandFilamentCard
-              key={filament.id}
-              filament={filament}
-              onClick={() => navigate(filamentPublicPath(filament))}
-            />
+        // Pages arrive in the server's order and a page far off screen drops its
+        // cards, so a large brand neither reshuffles nor weighs on the browser.
+        <div className="space-y-4">
+          {(filamentsData?.pages ?? []).map((materialsPage, pageIndex) => (
+            <OffscreenSection
+              key={materialsPage.items[0]?.id ?? pageIndex}
+              className={effectiveGrouping === 'none' ? CARD_GRID : 'space-y-4'}
+            >
+              {effectiveGrouping === 'none'
+                ? materialsPage.items.map((filament) => (
+                  <BrandFilamentCard
+                    key={filament.id}
+                    filament={filament}
+                    onClick={() => navigate(filamentPublicPath(filament))}
+                  />
+                ))
+                : groupRuns(materialsPage.items, effectiveGrouping).map((run, runIndex) => {
+                  // A group continued from the previous page gets no second header.
+                  const previousPage = filamentsData?.pages[pageIndex - 1];
+                  const previousItem = previousPage?.items[previousPage.items.length - 1];
+                  const continues = runIndex === 0 && previousItem != null
+                    && groupKey(previousItem, effectiveGrouping) === run.key;
+                  const first = run.items[0];
+                  const title = effectiveGrouping === 'family'
+                    ? materialBaseLabel(t, first.base_material_type ?? null)
+                    : first.line_name ?? t('brandDetailPage.noLine');
+                  return (
+                    <section key={`${run.key}:${first.id}`} className="space-y-3">
+                      {!continues && (
+                        <h2 className="flex items-baseline gap-2 border-b border-white/15 pb-2 pt-2 text-lg font-semibold text-white">
+                          {title}
+                          <span className="text-sm font-normal text-gray-400">
+                            {materialsPage.group_counts?.[run.key] ?? run.items.length}
+                          </span>
+                        </h2>
+                      )}
+                      <div className={CARD_GRID}>
+                        {run.items.map((filament) => (
+                          <BrandFilamentCard
+                            key={filament.id}
+                            filament={filament}
+                            onClick={() => navigate(filamentPublicPath(filament))}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+            </OffscreenSection>
           ))}
+        </div>
+      )}
+      {hasNextPage && (
+        <div ref={loadMoreRef} className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/10 px-5 py-2 text-sm font-medium text-purple-100 transition hover:border-purple-300/40 hover:bg-purple-500/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isFetchingNextPage ? t('catalogPage.loadingMore') : t('catalogPage.loadMore')}
+          </button>
         </div>
       )}
     </div>

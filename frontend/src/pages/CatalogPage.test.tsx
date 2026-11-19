@@ -290,15 +290,27 @@ describe('CatalogPage', () => {
     expect(screen.queryByText('1.24 catalogPage.units.gcm3')).not.toBeInTheDocument();
   });
 
-  it('groups by brand without repeating a header for a brand continued on the next page', async () => {
-    const fiberLab = (id: number, name: string) => ({ ...catalogFilament, id, slug: `f-${id}`, name });
-    const nordPla = { ...catalogFilament, id: 30, slug: 'nord-pla', name: 'Nord PLA', brand_id: 9, brand_name: 'Nord', brand_slug: 'nord', brand_verified: false };
-    listFilamentsMock.mockImplementation(async (params: { page: number; group_by?: string }) => {
-      if (params.group_by !== 'brand') return catalogResponse([fiberLab(17, 'PETG CF')]);
-      return params.page === 1
-        ? { ...catalogResponse([fiberLab(17, 'PETG CF')]), total: 3, pages: 2, brand_counts: { 3: 2 } }
-        : { ...catalogResponse([fiberLab(18, 'PLA Matte'), nordPla]), total: 3, page: 2, pages: 2, brand_counts: { 3: 2, 9: 1 } };
-    });
+  it('shows brands instead of materials, keeps the filters in the brand link and remembers the choice', async () => {
+    locationMock.search = '?material=PLA';
+    listFilamentsMock.mockImplementation(async (params: { group_by?: string }) => (
+      params.group_by === 'brand'
+        ? {
+          ...catalogResponse([]),
+          total: 1,
+          materials_total: 2,
+          brand_groups: [{
+            id: 3,
+            name: 'FiberLab',
+            slug: 'fiberlab',
+            logo_url: null,
+            logo_bg: null,
+            verified: true,
+            materials_count: 2,
+            families: [{ base: 'PLA', count: 2 }],
+          }],
+        }
+        : catalogResponse([catalogFilament])
+    ));
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -306,21 +318,18 @@ describe('CatalogPage', () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText('PETG CF')).toBeInTheDocument();
-    const brandHeaders = () => screen.queryAllByRole('heading', { level: 2 })
-      .filter((heading) => heading.querySelector('a[href^="/brands/"]'));
-    expect(brandHeaders()).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'catalogPage.groupByBrand' }));
-    await waitFor(() => {
-      expect(listFilamentsMock).toHaveBeenCalledWith(expect.objectContaining({ page: 1, group_by: 'brand' }));
-    });
-    fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.loadMore' }));
-    expect(await screen.findByText('Nord PLA')).toBeInTheDocument();
-
-    expect(brandHeaders().map((header) => header.querySelector('a')?.textContent)).toEqual(['FiberLab', 'Nord']);
+    fireEvent.click(screen.getByRole('button', { name: 'catalogPage.showBrands' }));
+    const brandLink = await screen.findByRole('link', { name: /FiberLab/ });
+    expect(listFilamentsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ group_by: 'brand', material_base: 'PLA', page: 1 }),
+    );
+    expect(brandLink).toHaveAttribute('href', '/brands/fiberlab?material=PLA');
+    expect(screen.queryByText('PETG CF')).not.toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
-      anonymous: { 'catalog.groupBy': 'brand' },
+      anonymous: { 'catalog.subject': 'brands' },
     });
+    locationMock.search = '';
   });
 
   it('switches to the table without refetching and restores the remembered view', async () => {

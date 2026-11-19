@@ -1,6 +1,7 @@
 """Filament endpoints."""
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
@@ -53,6 +54,8 @@ from app.schemas.filament import (
     KNOWN_ADDITIVES,
     KNOWN_FILLERS,
     KNOWN_PROPERTY_CLAIMS,
+    CatalogBrandFamily,
+    CatalogBrandGroup,
     FilamentCommonEditRequest,
     FilamentCommonEditRequestResponse,
     FilamentCreate,
@@ -466,6 +469,111 @@ def _catalog_search_filter(search: str, country: str | None):
     return or_(*conditions)
 
 
+async def _catalog_brand_page(
+    db: AsyncSession, count_query, page: int, size: int, materials_total: int
+) -> FilamentListResponse:
+    """One page of brands that have materials under the catalogue's filters.
+
+    ``count_query`` already carries every filter, so grouping it by brand gives
+    each brand's count without loading a single material row.
+    """
+    per_brand = (
+        count_query.with_only_columns(
+            Filament.brand_id.label("brand_id"), func.count().label("materials")
+        )
+        .group_by(Filament.brand_id)
+        .subquery()
+    )
+    brand_total = await db.scalar(select(func.count()).select_from(per_brand)) or 0
+    rows = (
+        await db.execute(
+            select(Brand, per_brand.c.materials)
+            .join(per_brand, per_brand.c.brand_id == Brand.id)
+            .order_by(func.lower(Brand.name), Brand.id)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).all()
+
+    families: dict[int, list[CatalogBrandFamily]] = {}
+    brand_ids = [brand.id for brand, _ in rows]
+    if brand_ids:
+        family_rows = await db.execute(
+            count_query.with_only_columns(
+                Filament.brand_id, Filament.base_material_type, func.count()
+            )
+            .where(Filament.brand_id.in_(brand_ids))
+            .group_by(Filament.brand_id, Filament.base_material_type)
+            .order_by(Filament.brand_id, func.count().desc(), Filament.base_material_type)
+        )
+        for brand_id, base, count in family_rows:
+            families.setdefault(brand_id, []).append(CatalogBrandFamily(base=base, count=count))
+
+    return FilamentListResponse(
+        items=[],
+        total=brand_total,
+        page=page,
+        size=size,
+        pages=(brand_total + size - 1) // size if brand_total else 0,
+        materials_total=materials_total,
+        brand_groups=[
+            CatalogBrandGroup(
+                id=brand.id,
+                name=brand.name,
+                slug=brand.slug,
+                logo_url=brand.logo_url,
+                logo_bg=brand.logo_bg,
+                verified=bool(brand.verified),
+                materials_count=int(materials),
+                families=families.get(brand.id, []),
+            )
+            for brand, materials in rows
+        ],
+    )
+
+
+def _material_group_column(group_by: str):
+    """The column a material list is grouped by, or None for an ungrouped list."""
+    if group_by == "family":
+        return Filament.base_material_type
+    if group_by == "line":
+        return Filament.line_id
+    return None
+
+
+def _material_group_order(group_by: str) -> tuple:
+    """Groups in name order, materials without a family or line last."""
+    if group_by == "family":
+        return (Filament.base_material_type.is_(None), Filament.base_material_type)
+    if group_by == "line":
+        line_name = (
+            select(FilamentLine.name).where(FilamentLine.id == Filament.line_id).scalar_subquery()
+        )
+        return (Filament.line_id.is_(None), func.lower(line_name), Filament.line_id)
+    return ()
+
+
+async def _material_group_counts(
+    db: AsyncSession, count_query, group_by: str, filaments: Sequence[Filament]
+) -> dict[str, int]:
+    """Full size of each group on this page under the same filters; a group can
+    continue on the next page, so the page's own rows would understate it."""
+    column = _material_group_column(group_by)
+    if column is None or not filaments:
+        return {}
+    keys = {getattr(filament, column.key) for filament in filaments}
+    known = [key for key in keys if key is not None]
+    conditions = []
+    if known:
+        conditions.append(column.in_(known))
+    if None in keys:
+        conditions.append(column.is_(None))
+    rows = await db.execute(
+        count_query.with_only_columns(column, func.count()).where(or_(*conditions)).group_by(column)
+    )
+    return {"" if key is None else str(key): int(count) for key, count in rows}
+
+
 @router.get("/", response_model=FilamentListResponse)
 async def list_filaments(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -492,10 +600,12 @@ async def list_filaments(
         pattern=r"^[A-Za-z]{2}$",
         description="Страна читателя: подставляет местные сведения там, где они заполнены.",
     ),
-    group_by: Literal["none", "brand"] = Query(
+    group_by: Literal["none", "brand", "family", "line"] = Query(
         "none",
-        description="brand: материалы одного бренда идут подряд, а `brand_counts` "
-        "сообщает, сколько их у каждого бренда этой страницы при тех же фильтрах.",
+        description="brand: вместо материалов страница брендов (`brand_groups`), у каждого "
+        "число материалов под теми же фильтрами; `total`/`pages` считают бренды. "
+        "family/line: материалы одного семейства или линейки идут подряд, а `group_counts` "
+        "сообщает размер каждой группы этой страницы при тех же фильтрах.",
     ),
 ) -> FilamentListResponse:
     """Получить список материалов.
@@ -547,13 +657,10 @@ async def list_filaments(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    # A brand's materials must stay together across pages, so grouping orders
-    # by brand before anything else; within a brand the usual order applies.
-    group_order = ()
     if group_by == "brand":
-        if not normalized_search:
-            query = query.join(Brand, Filament.brand_id == Brand.id)
-        group_order = (func.lower(Brand.name), Brand.id)
+        return await _catalog_brand_page(db, count_query, page, size, total)
+    # A group must stay together across pages, so it is ordered first.
+    group_order = _material_group_order(group_by)
 
     # Paginate
     offset = (page - 1) * size
@@ -601,18 +708,7 @@ async def list_filaments(
         )
         printer_matched_ids = sorted({row[0] for row in matched_rows if row[0] is not None})
 
-    # A group can span pages, so its size comes from the filtered count rather
-    # than from the rows that happen to be on this page.
-    brand_counts: dict[int, int] = {}
-    page_brand_ids = {filament.brand_id for filament in filaments}
-    if group_by == "brand" and page_brand_ids:
-        brand_count_rows = await db.execute(
-            count_query.with_only_columns(Filament.brand_id, func.count())
-            .where(Filament.brand_id.in_(page_brand_ids))
-            .group_by(Filament.brand_id)
-        )
-        brand_counts = {int(brand_id): int(count) for brand_id, count in brand_count_rows}
-
+    group_counts = await _material_group_counts(db, count_query, group_by, filaments)
     country_cells = await cells_for(db, filament_ids, country)
 
     preset_stats: dict[int, dict[str, int]] = {}
@@ -684,7 +780,7 @@ async def list_filaments(
         size=size,
         pages=pages,
         printer_matched_ids=printer_matched_ids,
-        brand_counts=brand_counts,
+        group_counts=group_counts,
     )
 
 

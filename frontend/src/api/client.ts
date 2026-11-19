@@ -6,7 +6,7 @@ import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
 import type { CatalogCurationInput, CatalogCurationList, CatalogQuoteCheckReport, CatalogCurationPreview, CatalogCurationProposal, CatalogCurationServiceAccount, CatalogCurationServiceAccountCreated, CatalogCurationServiceAccountList } from '../types/api';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandDuplicatePair, BrandMergePreview, FilamentMergeCandidatesResponse, FilamentDuplicateReviewList, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPackaging, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandDuplicatePair, BrandMergePreview, BrandRatingStats, FilamentMergeCandidatesResponse, FilamentDuplicateReviewList, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPackaging, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -1239,8 +1239,9 @@ export const filamentsAPI = {
     country?: string;
     color_group?: import('../types/api').FilamentColorGroup;
     multicolor?: boolean;
-    /** Keeps each brand's materials together across pages and returns `brand_counts`. */
-    group_by?: 'brand';
+    /** brand: brands with their matching material counts (`brand_groups`) instead of materials;
+     *  family/line: materials kept together by family or line, with `group_counts`. */
+    group_by?: 'brand' | 'family' | 'line';
   }, options?: { bypassSharedCache?: boolean }) => {
     const response = await api.get<FilamentListResponse>('/filaments/', {
       params,
@@ -1568,6 +1569,12 @@ export const filamentReviewsAPI = {
 
   getStats: async (filamentId: number) => {
     const response = await api.get<FilamentRatingStats>(`/filament-reviews/filament/${filamentId}/stats`);
+    return response.data;
+  },
+
+  /** The brand's average over its rated materials, in one request. */
+  getBrandStats: async (brandId: number) => {
+    const response = await api.get<BrandRatingStats>(`/filament-reviews/brand/${brandId}/stats`);
     return response.data;
   },
 

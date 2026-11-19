@@ -1125,8 +1125,36 @@ export interface RefreshTokenResponse {
 export interface FilamentListResponse extends ListResponse<Filament> {
   /** Which of the listed materials have a preset for the printer asked about. */
   printer_matched_ids: number[];
-  /** With group_by=brand: each listed brand's material count under the same filters. */
-  brand_counts?: Record<string, number>;
+  /** With group_by=brand the page holds brands: `items` is empty and `total`/`pages` count brands. */
+  brand_groups?: CatalogBrandGroup[];
+  /** With group_by=brand: how many materials pass the filters across all brands. */
+  materials_total?: number | null;
+  /** With group_by=family/line: each group's full size, keyed by family or line id ("" for none). */
+  group_counts?: Record<string, number>;
+}
+
+/** A brand's average over the materials that have a rating. */
+export interface BrandRatingStats {
+  avg_rating: number | null;
+  rated_filaments: number;
+}
+
+export interface CatalogBrandFamily {
+  base: string | null;
+  count: number;
+}
+
+/** One brand in the catalogue's brand view, counted under the reader's filters. */
+export interface CatalogBrandGroup {
+  id: number;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  logo_bg: string | null;
+  verified: boolean;
+  materials_count: number;
+  /** Largest material families first. */
+  families: CatalogBrandFamily[];
 }
 
 export interface OrcaSliceReport {
