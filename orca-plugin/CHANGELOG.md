@@ -10,6 +10,7 @@ Newest first. The numbered entry matching the plugin version is used for release
 - Bambu filament usage keeps arriving after you change a linked printer's connection. Before, linking the same printer again could leave every later usage report refused; a plugin already stuck this way recovers on its own after the website update.
 - Your FilamentHub sign-in and local printer keys are no longer passed along when a server answers with a redirect to a different address.
 - A linked Bambu printer is now recognised by its certificate. If another device answers at the printer's address, the plugin does not send it the LAN access code. Nothing to set up: the certificate is remembered on the next connection, and a replacement issued by Bambu Lab for the same printer is accepted on its own.
+- macOS: when the Python built into OrcaSlicer cannot find trusted certificates, the plugin uses the system's certificate file, so it can reach FilamentHub, sign in and import presets. A problem report now says which certificates were used.
 - When OrcaSlicer has not yet allowed the plugin to reach a Klipper printer's address, the printer check says so and asks you to approve the request, instead of reporting the printer as unreachable. The new wording arrives with the website update.
 
 ## 0.2.9

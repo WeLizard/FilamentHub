@@ -706,7 +706,52 @@ BAMBU_REVOKE_STATE_MAX_BYTES = 32 * 1024
 BAMBU_REVOKE_MAX_PENDING = 16
 BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS = 60
 BAMBU_REVOKE_BACKOFF_MAX_SECONDS = 6 * 60 * 60
-_SSL_CTX = ssl.create_default_context()
+# Certificate bundles of common systems. OrcaSlicer ships its own Python, whose
+# OpenSSL looks for trusted certificates under its build prefix; on a user's Mac
+# that folder does not exist and Python cannot read the Keychain, so every HTTPS
+# request would fail verification. Windows loads its system store by itself.
+_FALLBACK_CA_FILES = (
+    "/etc/ssl/cert.pem",  # macOS, Alpine, Arch
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",  # Fedora, RHEL
+    "/etc/ssl/ca-bundle.pem",  # openSUSE
+    "/opt/homebrew/etc/openssl@3/cert.pem",
+    "/usr/local/etc/openssl@3/cert.pem",
+)
+
+
+def create_tls_context(
+    platform=None,
+    verify_paths=None,
+    candidates=_FALLBACK_CA_FILES,
+    context_factory=ssl.create_default_context,
+):
+    """The default TLS context, and where its trusted certificates come from."""
+    context = context_factory()
+    platform = platform or sys.platform
+    if platform == "win32":
+        return context, "system"
+    paths = verify_paths or ssl.get_default_verify_paths()
+    if paths.cafile or paths.capath:
+        return context, "system"
+    for candidate in candidates:
+        if not os.path.isfile(candidate):
+            continue
+        try:
+            context.load_verify_locations(cafile=candidate)
+        except (OSError, ssl.SSLError):
+            continue
+        return context, candidate
+    try:
+        import certifi
+
+        context.load_verify_locations(cafile=certifi.where())
+        return context, "certifi"
+    except Exception:
+        return context, "none"
+
+
+_SSL_CTX, _SSL_CA_SOURCE = create_tls_context()
 
 
 def normalize_plugin_settings(raw):
@@ -1421,12 +1466,16 @@ _DIAGNOSTIC_UNSAFE_CHARACTERS = re.compile(
 
 def diagnostic_report_text():
     """The newest part of the log, prepared for a user-sent problem report."""
-    header = "FilamentHub plugin %s\nOrcaSlicer %s (%s)\nPython %s\nOS %s\nLanguage %s\n\n" % (
+    header = (
+        "FilamentHub plugin %s\nOrcaSlicer %s (%s)\nPython %s\nOS %s\n"
+        "TLS certificates %s\nLanguage %s\n\n"
+    ) % (
         PLUGIN_VERSION,
         _CACHED_HOST_VERSION or "unknown",
         _CACHED_HOST_BUILD or "unknown",
         ".".join(str(part) for part in sys.version_info[:3]),
         sys.platform,
+        _SSL_CA_SOURCE,
         _CACHED_UI_LANGUAGE or "en",
     )
     text = redact_home(read_sync_log()).replace("\r\n", "\n")

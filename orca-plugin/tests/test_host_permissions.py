@@ -207,6 +207,64 @@ def test_loading_signin_and_diagnostics_never_query_the_computer_hostname(
     report = module.diagnostic_report_text()
     assert "Python %s\n" % ".".join(map(str, module.sys.version_info[:3])) in report
     assert "OS %s\n" % module.sys.platform in report
+    assert "TLS certificates %s\n" % module._SSL_CA_SOURCE in report
+
+
+class _RecordingContext:
+    def __init__(self, fail_on=()):
+        self.loaded = []
+        self.fail_on = set(fail_on)
+
+    def load_verify_locations(self, cafile):
+        if cafile in self.fail_on:
+            raise OSError("unreadable")
+        self.loaded.append(cafile)
+
+
+def _no_default_certificates():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(cafile=None, capath=None)
+
+
+def test_tls_context_uses_a_system_bundle_when_bundled_python_has_none(plugin_module, tmp_path):
+    # Orca's bundled Python on macOS looks for certificates under its build
+    # prefix; without a fallback every request to FilamentHub fails.
+    unreadable = tmp_path / "broken.pem"
+    unreadable.write_text("x")
+    bundle = tmp_path / "cert.pem"
+    bundle.write_text("x")
+    context = _RecordingContext(fail_on={str(unreadable)})
+
+    _, source = plugin_module.create_tls_context(
+        platform="darwin",
+        verify_paths=_no_default_certificates(),
+        candidates=(str(tmp_path / "missing.pem"), str(unreadable), str(bundle)),
+        context_factory=lambda: context,
+    )
+
+    assert source == str(bundle)
+    assert context.loaded == [str(bundle)]
+
+
+def test_tls_context_keeps_working_defaults_untouched(plugin_module, tmp_path):
+    from types import SimpleNamespace
+
+    bundle = tmp_path / "cert.pem"
+    bundle.write_text("x")
+    for platform, paths in (
+        ("win32", _no_default_certificates()),
+        ("linux", SimpleNamespace(cafile=None, capath="/etc/ssl/certs")),
+    ):
+        context = _RecordingContext()
+        _, source = plugin_module.create_tls_context(
+            platform=platform,
+            verify_paths=paths,
+            candidates=(str(bundle),),
+            context_factory=lambda: context,
+        )
+        assert source == "system"
+        assert context.loaded == []
 
 
 def test_open_in_system_browser_falls_back_to_webbrowser(plugin_module, monkeypatch):
