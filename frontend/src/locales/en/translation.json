@@ -1833,7 +1833,7 @@
       "prototype": "Prototype",
       "hardware-verified": "Hardware verified"
     },
-    "kitAdminOnly": "Shown to administrators only: the kit has not passed hardware acceptance yet. Once linked, the node appears in the account and shows its connection; sending read tags to the account is the next stage. On the bench the reader's +5 V supply is connected by hand after USB power is up."
+    "kitAdminOnly": "Shown to administrators only: the kit has not passed hardware acceptance yet. Once linked, the node appears in the account and shows its connection; sending read tags to the account is the next stage."
   },
   "edgeKit": {
     "unsupportedBrowser": "Installing firmware needs Chrome or Edge on a computer: only they can talk to USB devices from a page.",
@@ -1939,9 +1939,10 @@
         "title": "Wiring",
         "board": "ESP32-C3",
         "reader": "PN5180",
-        "jumper": "jumper",
-        "unused": "The reader's GPIO, IRQ, AUX and REQ pins stay unconnected.",
-        "power": "In this revision the antenna supply (+5V) is switched by hand: put a jumper on this wire and close it after USB power is on. Open it before unplugging USB."
+        "boardCaption": "ESP32-C3 SuperMini, USB at the top",
+        "readerCaption": "PN5180, antenna on the right",
+        "note": "Seen from the component side, not to scale. The numbers in circles are the wires: nine in all, each running pad to pad; crossings in the drawing are not joints. Reader pads marked NC stay unconnected.",
+        "unused": "The reader's GPIO, IRQ, AUX and REQ pads stay unconnected."
       },
       "filesTitle": "Enclosure to print",
       "filesNote": "Print the shell face down, without supports; the ring can be filled with a second colour. Board sizes vary between sellers: PN5180 modules come as 69–70 × 37–39 mm. Check your board and adjust the sizes in the source if needed.",

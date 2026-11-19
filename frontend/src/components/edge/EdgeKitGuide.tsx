@@ -10,6 +10,7 @@ import { translateApiError } from '../../utils/translateApiError';
 import type { EdgeKit } from '../../utils/edgeFirmware';
 import { toast } from '../Toast';
 import { EdgeKitInstaller } from './EdgeKitInstaller';
+import { boardWiringFits, EdgeKitBoardWiring } from './EdgeKitBoardWiring';
 import { EdgeKitWiring } from './EdgeKitWiring';
 
 const FILES = '/edge-kit/';
@@ -109,24 +110,29 @@ export function EdgeKitGuide({ kit }: { kit: EdgeKit }) {
         />
       </div>
 
-      <div className="grid gap-10 md:grid-cols-2">
-        <div>
-          <h3 className={subheading}>{t('edgeKit.guide.partsTitle')}</h3>
-          <ul className="space-y-2 text-sm leading-6 text-gray-200">
-            {PARTS.map((part) => (
-              <li key={part} className="flex gap-3">
-                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300" />
-                {t(`edgeKit.guide.parts.${part}`, { board: kit.board, reader: kit.reader })}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3 className={subheading}>{t('edgeKit.guide.wiring.title')}</h3>
+      <div>
+        <h3 className={subheading}>{t('edgeKit.guide.partsTitle')}</h3>
+        <ul className="grid gap-x-10 gap-y-2 text-sm leading-6 text-gray-200 sm:grid-cols-2">
+          {PARTS.map((part) => (
+            <li key={part} className="flex gap-3">
+              <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300" />
+              {t(`edgeKit.guide.parts.${part}`, { board: kit.board, reader: kit.reader })}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-10">
+        <h3 className={subheading}>{t('edgeKit.guide.wiring.title')}</h3>
+        {/* The board drawing needs width to be read; a phone gets the plain list. */}
+        {boardWiringFits(kit.nfcPins) && (
+          <div className="hidden md:block">
+            <EdgeKitBoardWiring pins={kit.nfcPins} />
+          </div>
+        )}
+        <div className={boardWiringFits(kit.nfcPins) ? 'md:hidden' : undefined}>
           <EdgeKitWiring pins={kit.nfcPins} />
-          <p className="mt-3 max-w-xl rounded-lg border border-amber-300/30 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
-            {t('edgeKit.guide.wiring.power')}
-          </p>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-gray-400">{t('edgeKit.guide.wiring.unused')}</p>
         </div>
       </div>
 
