@@ -86,7 +86,7 @@ export function EdgeKitGuide({ kit }: { kit: EdgeKit }) {
   const canInstall = kit.status === 'released' || user?.role === 'admin';
 
   return (
-    <section id="edge-kit" className="mb-12 scroll-mt-24 border-t border-white/10 pt-12">
+    <section id="edge-kit-c3" className="mb-12 scroll-mt-24 border-t border-white/10 pt-12">
       <div className="mb-10 grid items-center gap-6 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.25fr)]">
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-3">

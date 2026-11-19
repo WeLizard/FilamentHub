@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
-import { EDGE_INSTALL_GUIDE_URL, fetchEdgeKits, type EdgeKit } from '../../utils/edgeFirmware';
+import { fetchEdgeKits, type EdgeKit } from '../../utils/edgeFirmware';
+import { EdgeBuildConfigurator } from './EdgeBuildConfigurator';
 import { EdgeKitGuide } from './EdgeKitGuide';
+import { EdgeLineup } from './EdgeLineup';
 import { EdgeMap } from './EdgeMap';
+import { EdgeRuntimeInstall } from './EdgeRuntimeInstall';
 
 const BENEFITS = ['slots', 'oneNode', 'keys'] as const;
-const FORMS = ['linux', 'docker', 'homeAssistant', 'kit'] as const;
 const PRINTERS = ['happyHare', 'klipper', 'qidi', 'flashforgeStation', 'flashforgeSingle', 'bambu'] as const;
 const STEPS = ['printer', 'install', 'pair'] as const;
 const OTHER_WAYS = [
@@ -95,15 +96,7 @@ export function EdgeSection() {
       <section id="edge-install" className="mb-14 scroll-mt-24 md:mb-20">
         <h2 className={heading}>{t('edgeSection.installTitle')}</h2>
         <p className={lead}>{t('edgeSection.installLead')}</p>
-        <dl className="mb-8 divide-y divide-white/10 border-y border-white/10">
-          {FORMS.map((form) => (
-            <div key={form} className="grid gap-1 py-4 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-6">
-              <dt className="font-semibold text-white">{t(`edgeSection.where.${form}.name`)}</dt>
-              <dd className="text-sm leading-6 text-gray-300">{t(`edgeSection.where.${form}.text`)}</dd>
-            </div>
-          ))}
-        </dl>
-        <ol className="mb-6 grid gap-6 md:grid-cols-3">
+        <ol className="mb-8 grid gap-6 md:grid-cols-3">
           {STEPS.map((step, index) => (
             <li key={step}>
               <p className="mb-1 text-3xl font-bold text-cyan-300">{index + 1}</p>
@@ -111,16 +104,15 @@ export function EdgeSection() {
             </li>
           ))}
         </ol>
-        <a
-          href={EDGE_INSTALL_GUIDE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-purple-500"
-        >
-          {t('edgeSection.installGuide')}
-          <ExternalLink className="h-4 w-4" />
-        </a>
+        <EdgeRuntimeInstall />
         <p className="mt-4 max-w-2xl text-sm leading-6 text-gray-400">{t('edgeSection.privacy')}</p>
+      </section>
+
+      <section id="edge-kit" className="mb-12 scroll-mt-24 border-t border-white/10 pt-12">
+        <h2 className={heading}>{t('edgeLineup.sectionTitle')}</h2>
+        <p className={lead}>{t('edgeLineup.sectionLead')}</p>
+        <EdgeLineup />
+        <EdgeBuildConfigurator />
       </section>
 
       {kits.map((kit) => <EdgeKitGuide key={kit.id} kit={kit} />)}

@@ -1822,24 +1822,6 @@
     },
     "installTitle": "How to install Edge",
     "installLead": "Any always-on computer on the same network as your printers will do. Pick what suits you.",
-    "where": {
-      "linux": {
-        "name": "Linux",
-        "text": "A service on the printer's computer or a mini PC. The usual choice for a Raspberry Pi running Klipper."
-      },
-      "docker": {
-        "name": "Docker",
-        "text": "A container on a home server or NAS."
-      },
-      "homeAssistant": {
-        "name": "Home Assistant",
-        "text": "The FilamentHub Edge app: added as a repository and set up in the Home Assistant interface."
-      },
-      "kit": {
-        "name": "Edge kit",
-        "text": "A separate ESP32 device with an NFC reader. You build it yourself; the guide is below. Prototype."
-      }
-    },
     "steps": {
       "printer": "Add the printer and its material system in your FilamentHub profile.",
       "install": "Install Edge following the guide and give it the printer's address.",
@@ -2002,6 +1984,367 @@
         "subject": "Edge kit: ready-made wanted",
         "message": "From the Edge page: a ready-made assembled kit is wanted."
       }
+    }
+  },
+  "edgeLineup": {
+    "sectionTitle": "Edge devices",
+    "sectionLead": "Edge can run as a program, or you can build a separate device with an NFC reader. Here is the whole line-up: what works already, what is designed and what is planned, with the wiring, parts and enclosure for each build.",
+    "title": "Line-up",
+    "lead": "Every device runs the same firmware and protocol: a home-built one can do what a ready-made one can. Designed builds have not been tested on hardware yet.",
+    "status": {
+      "prototype": "Prototype",
+      "design": "Design",
+      "concept": "Concept",
+      "planned": "Planned"
+    },
+    "devices": {
+      "tag": {
+        "name": "Edge Tag",
+        "text": "A desk tag reader: hold a spool to it and it is in your profile. Builds on ESP32-C3 and ESP32-S3, with or without a screen. The C3 build already links to an account."
+      },
+      "station": {
+        "name": "Edge Station",
+        "text": "A Tag next to the printer or shelf: 8 lit slot keys and a buzzer, optionally a screen and a temperature and humidity sensor. Powered from USB or the printer's 24 V supply."
+      },
+      "portable": {
+        "name": "Edge Tag with battery",
+        "text": "A handheld Tag on an 18650 cell: walk past shelves and dryers and record which spool is where. Charges over USB-C."
+      },
+      "lane": {
+        "name": "Edge Lane + Core",
+        "text": "A module for each lane of a multi-material system (ERCF, Box Turtle, Tradrack, a dryer): a key, an indicator, a spool sensor and optional NFC. Modules chain on one cable; an ESP32-S3 Core runs the chain."
+      },
+      "scales": {
+        "name": "Scales",
+        "text": "First we connect open scales the community already builds (TigerScale, SpoolmanScale), so spool weight reaches your profile. Our own scales come later."
+      }
+    },
+    "lane": {
+      "title": "Lane modules: the intended shape",
+      "text": "A concept for 8-spool systems. The bus between modules is not chosen yet: CAN or RS-485, decided on a test bench. The modules never join Klipper's CAN bus.",
+      "coreRole": "runs the chain",
+      "module": "key · LED · sensor",
+      "cable": "Chain cable (draft pin-out)",
+      "klipper": "Klipper CAN bus — kept apart",
+      "caption": "The CHAIN line sets the order of the modules and enables the terminator on the last one. Only one NFC field is on at a time, so neighbouring readers cannot mix up tags. This is a design: size, connector and prices are not chosen yet."
+    },
+    "readers": {
+      "title": "Which tags a reader can read",
+      "lead": "The reader decides which tags a device sees. Our builds use the PN5180: among available modules only it reads OpenPrintTag.",
+      "reader": "Reader",
+      "kinds": {
+        "ntag": "NTAG: FilamentHub, TigerTag, OpenSpool tags",
+        "mifare": "MIFARE Classic: Bambu Lab, Creality, Snapmaker",
+        "nfcv": "NFC-V: OpenPrintTag"
+      },
+      "rows": {
+        "pn5180": {
+          "name": "PN5180",
+          "ntag": "Yes",
+          "mifare": "Tag number; the contents are encrypted by the maker",
+          "nfcv": "Yes"
+        },
+        "pn532": {
+          "name": "PN532 (common in community builds)",
+          "ntag": "Yes",
+          "mifare": "Tag number",
+          "nfcv": "No"
+        },
+        "rc522": {
+          "name": "RC522",
+          "ntag": "Yes",
+          "mifare": "Tag number",
+          "nfcv": "No"
+        },
+        "phone": {
+          "name": "Phone",
+          "ntag": "Yes",
+          "mifare": "Depends on the model: many Android phones read the number, iPhone does not",
+          "nfcv": "Yes"
+        }
+      },
+      "note": "Boards with a PN532 or RC522 will work too: the site will show which tags they cannot read, and OpenPrintTag can be read with a phone. We do not crack or copy makers' protected tags."
+    },
+    "mount": {
+      "title": "Enclosure and mounting",
+      "tips": {
+        "metal": {
+          "title": "Metal near the antenna",
+          "text": "Aluminium extrusion and copper under the antenna shorten the read range. On a printer frame, put ferrite sheet behind the reader or keep it at least a centimetre away."
+        },
+        "distance": {
+          "title": "Range",
+          "text": "Hold the tag to the ring on the case: a PN5180 module reads at a few centimetres. We are still measuring the range through a spool's side."
+        },
+        "heat": {
+          "title": "Next to the printer",
+          "text": "Print a case near a hot bed or inside an enclosure in PETG or ASA: PLA softens there."
+        },
+        "inserts": {
+          "title": "Fasteners",
+          "text": "The cases take M2.5 self-tapping screws. If you will open one often, fit heat-set threaded inserts."
+        },
+        "test": {
+          "title": "Test-fit first",
+          "text": "Board sizes differ between sellers. Print the base first and check how the boards sit before printing the rest."
+        }
+      }
+    }
+  },
+  "edgeBuilds": {
+    "title": "Put your build together",
+    "lead": "Pick a ready variant or tick what you need: board, screen, power, keys. The wiring, parts list and enclosure follow your choice.",
+    "presets": {
+      "tagC3": {
+        "name": "Tag C3",
+        "text": "The simplest and cheapest: an ESP32-C3 SuperMini board and a PN5180 reader on USB power. This is the current prototype; the full guide with firmware is below."
+      },
+      "tagS3": {
+        "name": "Tag S3 with screen",
+        "text": "An ESP32-S3 board, a PN5180 reader, a small screen, an LED and a buzzer. The screen shows which spool it is and what to do next."
+      },
+      "portableS3": {
+        "name": "Tag S3 with battery",
+        "text": "Handheld: an 18650 cell charged over USB-C and a scan key that wakes the board. The screen shows the result."
+      },
+      "portableC3": {
+        "name": "Tag C3 with battery",
+        "text": "The cheapest handheld: switch it on and scan. Light and sound instead of a screen."
+      },
+      "touchS3": {
+        "name": "Tag S3 with touch screen",
+        "text": "A 2.8″ touch screen: pick the spool, place and slot on the device itself, without a phone."
+      },
+      "stationC3": {
+        "name": "Station C3",
+        "text": "A station by the printer: 8 lit slot keys and a buzzer, powered from the printer's 24 V supply through a step-down module."
+      },
+      "stationS3": {
+        "name": "Station S3",
+        "text": "A station with a screen and a temperature and humidity sensor, for a shelf or a drying cabinet."
+      }
+    },
+    "custom": "Your own build",
+    "customText": "We have no ready variant for this combination, but the wiring and parts below follow the same rules.",
+    "status": {
+      "prototype": "Prototype · firmware available",
+      "design": "Design · not tested on hardware"
+    },
+    "firmware": {
+      "ready": "Firmware exists. Installing it from the site opens once the kit passes hardware testing; until then administrators have it.",
+      "later": "There is no firmware for this build yet; it comes with hardware testing. You can build it now: the firmware will follow the pins in this wiring."
+    },
+    "options": {
+      "mcu": {
+        "label": "Board",
+        "c3": "ESP32-C3",
+        "s3": "ESP32-S3"
+      },
+      "display": {
+        "label": "Screen",
+        "none": "No screen",
+        "oled": "OLED 1.3″",
+        "touch": "Touch 2.8″"
+      },
+      "power": {
+        "label": "Power",
+        "usb": "USB",
+        "battery": "Battery",
+        "printer": "Printer 24 V"
+      },
+      "extras": "Extras",
+      "feedback": "Light and sound",
+      "keys": "8 slot keys",
+      "climate": "Temperature and humidity",
+      "feedbackWithKeys": "A station always has light and sound",
+      "rules": "A touch screen needs the S3: it needs extra memory. On the C3 a battery and keys do not fit together: there are not enough free pins."
+    },
+    "problems": {
+      "touchNeedsS3": "Needs the S3 board — we will switch to it",
+      "c3BatteryAndKeys": "Does not fit on the C3 together with a battery or keys"
+    },
+    "partsTitle": "Parts",
+    "powerTitle": "Power",
+    "parts": {
+      "boardC3": "ESP32-C3 SuperMini board",
+      "boardS3": "ESP32-S3-DevKitC-1 N16R8 board or compatible",
+      "reader": "PN5180 NFC reader with on-board antenna",
+      "oled": "1.3″ 128×64 OLED screen, I²C, 4 pins (SH1106)",
+      "touch": "2.8″ ILI9341 screen with XPT2046 touch, SPI",
+      "expander": "PCF8574 I²C expander module",
+      "keys": "12×12 mm tactile keys",
+      "leds": "WS2812B LEDs on individual boards",
+      "led": "WS2812B LED on a small board",
+      "buzzer": "3.3 V active buzzer module",
+      "climate": "SHT40 sensor board, I²C",
+      "pullup": "10 kΩ resistor",
+      "cell": "Protected 18650 cell",
+      "holder": "18650 holder with leads",
+      "charger": "TP4056 charger module with protection and USB-C",
+      "switch": "Slide switch",
+      "boost": "MT3608 step-up module",
+      "diode": "SS14 Schottky diode",
+      "divider": "100 kΩ resistor",
+      "wakeKey": "Scan key",
+      "buck": "MP1584 step-down module",
+      "powerPlug": "2-pin power connector (JST-XH or screw terminal)",
+      "wire": "Hook-up wire and a soldering iron",
+      "cable": "USB-C data cable",
+      "tags": "NTAG215 or NTAG216 tags",
+      "filament": "PLA or PETG for the enclosure",
+      "screws": "M2.5 × 8 mm self-tapping screws"
+    },
+    "power": {
+      "usb": {
+        "name": "USB-C",
+        "value": "5 V from a computer or charger"
+      },
+      "board": {
+        "name": "Board 5V pin",
+        "value": "feeds the reader and LEDs"
+      },
+      "cell": {
+        "name": "18650",
+        "value": "3.0–4.2 V"
+      },
+      "charger": {
+        "name": "TP4056",
+        "value": "charges over USB-C"
+      },
+      "switch": {
+        "name": "Switch",
+        "value": "cuts everything"
+      },
+      "boost": {
+        "name": "MT3608",
+        "value": "5.1 V"
+      },
+      "diode": {
+        "name": "SS14",
+        "value": "blocks reverse current"
+      },
+      "printer": {
+        "name": "Printer supply",
+        "value": "24 V"
+      },
+      "buck": {
+        "name": "MP1584",
+        "value": "24 → 5.1 V"
+      }
+    },
+    "notes": {
+      "sharedSpi": "The screen and the reader share one SPI bus: SCK, MISO and MOSI are common, each has its own CS.",
+      "c3Pullup": "On the C3, pull INT up to 3.3 V with a 10 kΩ resistor: GPIO2 must be high at power-on.",
+      "ledLevel": "WS2812B LEDs run on 5 V while the board's signal is 3.3 V; this usually works. If the LEDs glitch, add a 74AHCT125 level shifter.",
+      "battery": "Set the MT3608 output to 5.1 V before connecting the board. Switch battery power off before plugging the board into a computer.",
+      "c3Battery": "The C3 has no key wake-up on its free pins: a handheld C3 is turned on and off with the switch.",
+      "printerPower": "Set the MP1584 output to 5.1 V before connecting the board. Take 24 V from the printer's power connector, not from drivers or heaters.",
+      "usbBudget": "Eight LEDs at full brightness draw up to 0.5 A: use a 2 A USB supply or printer power. The firmware will keep brightness lower."
+    },
+    "wiring": {
+      "title": "Wiring",
+      "caption": "Simplified, not to scale. A dot is a connection; a crossing without a dot is not. Shared lines (power, I²C, SPI) are drawn as vertical buses, with a separate wire from the bus to each module.",
+      "notes": {
+        "touch": "Backlight LED to 3.3 V",
+        "keys": "P0–P7 → keys → GND",
+        "ledChain": "DOUT → next DIN, 8 in all",
+        "divider": "Divider between B+ and GND"
+      }
+    },
+    "filesTitle": "Enclosure",
+    "files": {
+      "shell": "Shell, STL",
+      "base": "Base, STL",
+      "mark": "Mark for a second colour, STL",
+      "cap": "Key cap, STL",
+      "caps": "Key caps, STL",
+      "clip": "2020 extrusion mount, STL",
+      "shellStep": "Shell, STEP",
+      "baseStep": "Base, STEP"
+    },
+    "enclosures": {
+      "none": "Only ready builds have a case: each is made for its exact set of parts. For your own combination, pick the nearest ready build or choose a case yourself; the wiring and parts stay the same.",
+      "note": "The FilamentHub mark on the lid sits over the antenna: hold the spool to it. It can be printed in a second colour. The board and screen sit in printed frames, small modules on double-sided foam tape. Part sizes are catalogue figures and the case has not been printed yet: print the base first and test-fit the parts.",
+      "tagC3": {
+        "alt": "Tag C3 enclosure on a desk",
+        "text": "The same enclosure as in the guide below: shell, base and a two-colour ring."
+      },
+      "tagS3": {
+        "alt": "Tag S3 with a screen and the FilamentHub mark",
+        "text": "A 132 × 50 × 27 mm bar: the reader under the mark, a screen window, an LED window, buzzer holes in the base, the board's ports in the end."
+      },
+      "portableS3": {
+        "alt": "Handheld Tag S3 with a screen and a key",
+        "text": "A 160 × 58 × 28 mm case: the cell under the reader, then the screen, scan key and LED. USB-C charging at the front, the board's ports at the back, the switch on the side."
+      },
+      "portableC3": {
+        "alt": "Handheld Tag C3 without a screen",
+        "text": "A 116 × 58 × 28 mm case: the reader with the cell under it, an LED, USB-C charging at the front, the board's port at the back, the switch on the side."
+      },
+      "touchS3": {
+        "alt": "Tag S3 with a touch screen",
+        "text": "A 182 × 60 × 25 mm case: the reader on the left, the touch screen window on the right, the LED between them. The board's ports are in the left end."
+      },
+      "stationC3": {
+        "alt": "Edge Station C3 with eight keys",
+        "text": "A 172 × 66 × 25 mm panel: the reader on the left, eight keys with light windows. The printer's 24 V comes in at the back, the board's port is on the left. Stands on a desk or clips to 2020 extrusion."
+      },
+      "stationS3": {
+        "alt": "Edge Station S3 with a screen and eight keys",
+        "text": "A 212 × 66 × 25 mm panel: the reader, a screen window, eight lit keys. A grille in the back wall serves the temperature and humidity sensor. Stands on a desk or clips to 2020 extrusion."
+      }
+    }
+  },
+  "edgeRuntime": {
+    "alpha": "Alpha {{version}}",
+    "alphaNote": "The Edge program is in alpha: it works, but installation and settings will still change. Unless you enable it, it sends no commands to the printer; it only reads and reports.",
+    "homeAssistant": {
+      "title": "Home Assistant",
+      "lead": "The FilamentHub Edge app for Home Assistant OS: installed from a repository, configured in Home Assistant's interface and updated with it.",
+      "fits": "For Home Assistant OS and Supervised. Home Assistant Container has no apps — use Docker.",
+      "imageAlt": "Diagram: the printer, Home Assistant running Edge, and FilamentHub",
+      "openInHa": "Add the repository to my Home Assistant",
+      "steps": {
+        "repository": "Settings → Apps → Store → menu → Repositories: add the address",
+        "install": "Find FilamentHub Edge in the store and install it.",
+        "configure": "On the Configuration tab add a printer: its address and the one-time code from the material system card on the site.",
+        "start": "Save, start it and enable start on boot. After the first connection the code can be removed."
+      },
+      "host": "Home Assistant",
+      "hostDetail": "app on HA OS"
+    },
+    "linux": {
+      "title": "Linux",
+      "lead": "A service on the Klipper computer or any always-on Linux machine: Raspberry Pi, mini PC, server.",
+      "fits": "Needs Python 3.11 or newer. Edge goes into its own environment and leaves Klipper and Moonraker alone.",
+      "imageAlt": "Diagram: the printer, Linux running Edge, and FilamentHub",
+      "steps": {
+        "install": "From the FilamentHub source folder, install Edge into its own environment:",
+        "options": "Create ~/.config/filamenthub-edge/options.json with permissions 600: the printer address and the one-time code.",
+        "service": "Run Edge as a user service:",
+        "clearCode": "After the first connection remove pairing_code from the file, keeping the id. To start the service after a reboot without logging in, enable loginctl enable-linger."
+      },
+      "host": "Linux",
+      "hostDetail": "systemd service"
+    },
+    "docker": {
+      "title": "Docker",
+      "lead": "A container on a home server or NAS. The link and the event queue live in their own volume.",
+      "fits": "Edge connects out on its own: no port forwarding or host networking. Give the printer's LAN address, not 127.0.0.1.",
+      "imageAlt": "Diagram: the printer, the Edge container, and FilamentHub",
+      "steps": {
+        "build": "Build the image from source:",
+        "options": "Put options.json — the same as for Linux — in a protected folder with permissions 600.",
+        "run": "Start the container:"
+      },
+      "host": "Docker",
+      "hostDetail": "container, /data volume"
+    },
+    "diagram": {
+      "printer": "Printer",
+      "cloud": "your profile",
+      "local": "local network",
+      "outbound": "HTTPS, outgoing connection"
     }
   },
   "downloadPage": {

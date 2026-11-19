@@ -1821,24 +1821,6 @@
     },
     "installTitle": "如何安装 Edge",
     "installLead": "任何与打印机在同一网络、常开的电脑都可以。选择适合您的方式。",
-    "where": {
-      "linux": {
-        "name": "Linux",
-        "text": "在打印机的电脑或迷你主机上作为服务运行。运行 Klipper 的 Raspberry Pi 通常这样安装。"
-      },
-      "docker": {
-        "name": "Docker",
-        "text": "家用服务器或 NAS 上的容器。"
-      },
-      "homeAssistant": {
-        "name": "Home Assistant",
-        "text": "FilamentHub Edge 应用：通过仓库添加，在 Home Assistant 界面中配置。"
-      },
-      "kit": {
-        "name": "Edge 套件",
-        "text": "带 NFC 读卡器的独立 ESP32 设备。需自己组装，说明见下文。原型。"
-      }
-    },
     "steps": {
       "printer": "在 FilamentHub 个人资料中添加打印机及其供料系统。",
       "install": "按照说明安装 Edge，并在其中填写打印机地址。",
@@ -2001,6 +1983,367 @@
         "subject": "Edge 套件：需要成品",
         "message": "来自 Edge 页面：需要组装好的成品套件。"
       }
+    }
+  },
+  "edgeLineup": {
+    "sectionTitle": "Edge 设备",
+    "sectionLead": "Edge 可以作为程序运行，也可以组装成带 NFC 读卡器的独立设备。这里是完整产品线：已可用的、已设计的和计划中的，每种组装都附接线、零件和外壳。",
+    "title": "产品线",
+    "lead": "所有设备使用同一固件和同一协议：自己组装的与成品功能相同。已设计的组装尚未在硬件上验证。",
+    "status": {
+      "prototype": "原型",
+      "design": "设计",
+      "concept": "概念",
+      "planned": "计划中"
+    },
+    "devices": {
+      "tag": {
+        "name": "Edge Tag",
+        "text": "桌面标签读卡器：把料盘靠近，它就出现在您的资料中。可用 ESP32-C3 或 ESP32-S3，有屏或无屏。C3 版本已可绑定账户。"
+      },
+      "station": {
+        "name": "Edge Station",
+        "text": "放在打印机或料架旁的 Tag：8 个带灯的槽位按键和蜂鸣器，可选屏幕和温湿度传感器。USB 供电或取自打印机 24 V 电源。"
+      },
+      "portable": {
+        "name": "带电池的 Edge Tag",
+        "text": "使用 18650 电池的手持 Tag：走过料架和干燥箱，记录每卷料盘的位置。USB-C 充电。"
+      },
+      "lane": {
+        "name": "Edge Lane + Core",
+        "text": "多色系统每条通道一个模块（ERCF、Box Turtle、Tradrack、干燥箱）：按键、指示灯、料盘传感器，可选 NFC。模块用一根线缆串联，由 ESP32-S3 的 Core 管理整条链。"
+      },
+      "scales": {
+        "name": "秤",
+        "text": "先接入社区已在制作的开源秤（TigerScale、SpoolmanScale），料盘重量将进入您的资料。我们自己的秤稍后推出。"
+      }
+    },
+    "lane": {
+      "title": "通道模块：设想的结构",
+      "text": "面向 8 卷系统的概念。模块之间的总线尚未选定：CAN 或 RS-485，由试验台对比决定。模块不接入 Klipper 的 CAN 总线。",
+      "coreRole": "管理整条链",
+      "module": "按键 · LED · 传感器",
+      "cable": "链路线缆（引脚草案）",
+      "klipper": "Klipper CAN 总线——分开",
+      "caption": "CHAIN 线确定模块顺序，并在最后一个模块上接入终端电阻。同一时间只开启一个 NFC 场，避免相邻读卡器混淆标签。这是设计方案：尺寸、连接器和价格尚未确定。"
+    },
+    "readers": {
+      "title": "读卡器能读哪些标签",
+      "lead": "读卡器决定设备能识别哪些标签。我们的组装使用 PN5180：在常见模块中只有它能读 OpenPrintTag。",
+      "reader": "读卡器",
+      "kinds": {
+        "ntag": "NTAG：FilamentHub、TigerTag、OpenSpool 标签",
+        "mifare": "MIFARE Classic：Bambu Lab、Creality、Snapmaker",
+        "nfcv": "NFC-V：OpenPrintTag"
+      },
+      "rows": {
+        "pn5180": {
+          "name": "PN5180",
+          "ntag": "是",
+          "mifare": "标签编号；内容由厂商加密",
+          "nfcv": "是"
+        },
+        "pn532": {
+          "name": "PN532（社区组装常用）",
+          "ntag": "是",
+          "mifare": "标签编号",
+          "nfcv": "否"
+        },
+        "rc522": {
+          "name": "RC522",
+          "ntag": "是",
+          "mifare": "标签编号",
+          "nfcv": "否"
+        },
+        "phone": {
+          "name": "手机",
+          "ntag": "是",
+          "mifare": "取决于机型：许多 Android 可读编号，iPhone 不行",
+          "nfcv": "是"
+        }
+      },
+      "note": "使用 PN532 或 RC522 的板子也可以：网站会显示它们读不了哪些标签，OpenPrintTag 可以用手机读取。我们不破解也不复制厂商的加密标签。"
+    },
+    "mount": {
+      "title": "外壳与安装",
+      "tips": {
+        "metal": {
+          "title": "天线附近的金属",
+          "text": "铝型材和天线下方的铜会缩短读取距离。装在打印机框架上时，在读卡器后垫铁氧体片，或至少隔开一厘米。"
+        },
+        "distance": {
+          "title": "距离",
+          "text": "把标签靠近外壳上的圆环：PN5180 模块可在几厘米内读取。隔着料盘侧板的距离我们仍在测量。"
+        },
+        "heat": {
+          "title": "靠近打印机",
+          "text": "靠近热床或放在封闭机箱内的外壳请用 PETG 或 ASA 打印：PLA 会变软。"
+        },
+        "inserts": {
+          "title": "紧固件",
+          "text": "外壳使用 M2.5 自攻螺丝。如需经常打开，请装热熔螺纹嵌件。"
+        },
+        "test": {
+          "title": "先试装",
+          "text": "不同卖家的板子尺寸不同。先打印底板，确认板子放得下，再打印其余部分。"
+        }
+      }
+    }
+  },
+  "edgeBuilds": {
+    "title": "组装您的设备",
+    "lead": "选择现成方案，或勾选需要的内容：主板、屏幕、供电、按键。接线、零件清单和外壳会随之更新。",
+    "presets": {
+      "tagC3": {
+        "name": "Tag C3",
+        "text": "最简单、最便宜：ESP32-C3 SuperMini 主板和 PN5180 读卡器，USB 供电。这是当前原型，带固件的完整说明见下方。"
+      },
+      "tagS3": {
+        "name": "带屏 Tag S3",
+        "text": "ESP32-S3 主板、PN5180 读卡器、小屏幕、LED 和蜂鸣器。屏幕显示是哪卷料盘以及下一步操作。"
+      },
+      "portableS3": {
+        "name": "带电池的 Tag S3",
+        "text": "手持：18650 电池 USB-C 充电，扫描键可唤醒主板。结果显示在屏幕上。"
+      },
+      "portableC3": {
+        "name": "带电池的 Tag C3",
+        "text": "最便宜的手持方案：打开开关即可扫描。用灯光和声音代替屏幕。"
+      },
+      "touchS3": {
+        "name": "带触摸屏的 Tag S3",
+        "text": "2.8″ 触摸屏：直接在设备上选择料盘、位置和槽位，无需手机。"
+      },
+      "stationC3": {
+        "name": "Station C3",
+        "text": "打印机旁的工作站：8 个带灯槽位按键和蜂鸣器，通过降压模块取自打印机 24 V 电源。"
+      },
+      "stationS3": {
+        "name": "Station S3",
+        "text": "带屏幕和温湿度传感器的工作站，适合料架或干燥柜。"
+      }
+    },
+    "custom": "自定义组装",
+    "customText": "我们没有这种组合的现成方案，但下面的接线和零件按同样规则生成。",
+    "status": {
+      "prototype": "原型 · 有固件",
+      "design": "设计 · 未经硬件验证"
+    },
+    "firmware": {
+      "ready": "已有固件。通过硬件验证后即可从网站安装；在此之前仅管理员可用。",
+      "later": "此组装暂无固件，将随硬件验证一起推出。现在即可组装：固件将按此接线图的引脚编写。"
+    },
+    "options": {
+      "mcu": {
+        "label": "主板",
+        "c3": "ESP32-C3",
+        "s3": "ESP32-S3"
+      },
+      "display": {
+        "label": "屏幕",
+        "none": "无屏",
+        "oled": "OLED 1.3″",
+        "touch": "触摸屏 2.8″"
+      },
+      "power": {
+        "label": "供电",
+        "usb": "USB",
+        "battery": "电池",
+        "printer": "打印机 24 V"
+      },
+      "extras": "附加",
+      "feedback": "灯光和声音",
+      "keys": "8 个槽位按键",
+      "climate": "温湿度",
+      "feedbackWithKeys": "工作站始终带灯光和声音",
+      "rules": "触摸屏只能用 S3：它需要额外内存。C3 上电池和按键无法同时使用：空闲引脚不够。"
+    },
+    "problems": {
+      "touchNeedsS3": "需要 S3 主板——将自动切换",
+      "c3BatteryAndKeys": "C3 上无法与电池或按键同时使用"
+    },
+    "partsTitle": "零件",
+    "powerTitle": "供电",
+    "parts": {
+      "boardC3": "ESP32-C3 SuperMini 主板",
+      "boardS3": "ESP32-S3-DevKitC-1 N16R8 或兼容主板",
+      "reader": "板载天线的 PN5180 NFC 读卡器",
+      "oled": "1.3″ 128×64 OLED 屏，I²C，4 针（SH1106）",
+      "touch": "2.8″ ILI9341 屏，带 XPT2046 触摸，SPI",
+      "expander": "PCF8574 I²C 扩展模块",
+      "keys": "12×12 mm 轻触按键",
+      "leds": "独立小板 WS2812B LED",
+      "led": "小板 WS2812B LED",
+      "buzzer": "3.3 V 有源蜂鸣器模块",
+      "climate": "SHT40 传感器板，I²C",
+      "pullup": "10 kΩ 电阻",
+      "cell": "带保护的 18650 电池",
+      "holder": "带引线的 18650 电池座",
+      "charger": "带保护和 USB-C 的 TP4056 充电模块",
+      "switch": "拨动开关",
+      "boost": "MT3608 升压模块",
+      "diode": "SS14 肖特基二极管",
+      "divider": "100 kΩ 电阻",
+      "wakeKey": "扫描键",
+      "buck": "MP1584 降压模块",
+      "powerPlug": "2 针电源接口（JST-XH 或接线端子）",
+      "wire": "连接线和电烙铁",
+      "cable": "可传数据的 USB-C 线",
+      "tags": "NTAG215 或 NTAG216 标签",
+      "filament": "外壳用 PLA 或 PETG",
+      "screws": "M2.5 × 8 mm 自攻螺丝"
+    },
+    "power": {
+      "usb": {
+        "name": "USB-C",
+        "value": "电脑或充电器 5 V"
+      },
+      "board": {
+        "name": "主板 5V 引脚",
+        "value": "为读卡器和 LED 供电"
+      },
+      "cell": {
+        "name": "18650",
+        "value": "3.0–4.2 V"
+      },
+      "charger": {
+        "name": "TP4056",
+        "value": "USB-C 充电"
+      },
+      "switch": {
+        "name": "开关",
+        "value": "切断全部"
+      },
+      "boost": {
+        "name": "MT3608",
+        "value": "5.1 V"
+      },
+      "diode": {
+        "name": "SS14",
+        "value": "防止电流倒流"
+      },
+      "printer": {
+        "name": "打印机电源",
+        "value": "24 V"
+      },
+      "buck": {
+        "name": "MP1584",
+        "value": "24 → 5.1 V"
+      }
+    },
+    "notes": {
+      "sharedSpi": "屏幕和读卡器共用一条 SPI 总线：SCK、MISO、MOSI 共用，各自有独立 CS。",
+      "c3Pullup": "在 C3 上用 10 kΩ 电阻将 INT 上拉到 3.3 V：上电时 GPIO2 必须为高电平。",
+      "ledLevel": "WS2812B 使用 5 V 供电，而主板信号为 3.3 V，通常可以工作。若 LED 闪烁异常，请加 74AHCT125 电平转换。",
+      "battery": "连接主板前先把 MT3608 输出调到 5.1 V。将主板连接电脑前，请关闭电池供电。",
+      "c3Battery": "C3 的空闲引脚不支持按键唤醒：手持 C3 用开关开关机。",
+      "printerPower": "连接主板前先把 MP1584 输出调到 5.1 V。24 V 请取自打印机电源接口，而不是驱动或加热器。",
+      "usbBudget": "八个 LED 满亮度最多耗电 0.5 A：请用 2 A USB 电源或打印机供电。固件会降低亮度。"
+    },
+    "wiring": {
+      "title": "接线图",
+      "caption": "简化示意，不按比例。圆点表示连接，没有圆点的交叉不相连。公共线路（电源、I²C、SPI）画成垂直总线，从总线分别引线到每个模块。",
+      "notes": {
+        "touch": "背光 LED 接 3.3 V",
+        "keys": "P0–P7 → 按键 → GND",
+        "ledChain": "DOUT → 下一个 DIN，共 8 个",
+        "divider": "B+ 与 GND 之间的分压"
+      }
+    },
+    "filesTitle": "外壳",
+    "files": {
+      "shell": "上壳，STL",
+      "base": "底板，STL",
+      "mark": "双色标志，STL",
+      "cap": "按键帽，STL",
+      "caps": "按键帽，STL",
+      "clip": "2020 型材支架，STL",
+      "shellStep": "上壳，STEP",
+      "baseStep": "底板，STEP"
+    },
+    "enclosures": {
+      "none": "只有现成方案才有外壳：每个外壳都按其确切零件设计。自定义组合请选择最接近的现成方案，或自行选择外壳；接线和零件不受影响。",
+      "note": "上壳的 FilamentHub 标志位于天线上方：把料盘靠近它。标志可用第二种颜色打印。主板和屏幕装在打印框内，小模块用双面泡棉胶固定。零件尺寸为目录数据，外壳尚未试打印：请先打印底板并试装零件。",
+      "tagC3": {
+        "alt": "桌上的 Tag C3 外壳",
+        "text": "与下方说明中的外壳相同：上壳、底板和双色圆环。"
+      },
+      "tagS3": {
+        "alt": "带屏幕和 FilamentHub 标志的 Tag S3",
+        "text": "132 × 50 × 27 mm 长条：标志下方是读卡器，有屏幕窗口、LED 窗口，底板有蜂鸣器孔，主板接口在端面。"
+      },
+      "portableS3": {
+        "alt": "带屏幕和按键的手持 Tag S3",
+        "text": "160 × 58 × 28 mm 外壳：读卡器下方是电池，其后是屏幕、扫描键和 LED。前端 USB-C 充电，后端为主板接口，侧面为开关。"
+      },
+      "portableC3": {
+        "alt": "无屏手持 Tag C3",
+        "text": "116 × 58 × 28 mm 外壳：读卡器下方是电池，带 LED，前端 USB-C 充电，后端为主板接口，侧面为开关。"
+      },
+      "touchS3": {
+        "alt": "带触摸屏的 Tag S3",
+        "text": "182 × 60 × 25 mm 外壳：左侧读卡器，右侧触摸屏窗口，中间为 LED。主板接口在左端。"
+      },
+      "stationC3": {
+        "alt": "带八个按键的 Edge Station C3",
+        "text": "172 × 66 × 25 mm 面板：左侧读卡器，八个带灯窗的按键。打印机 24 V 从背面接入，主板接口在左侧。可放在桌上或装在 2020 型材上。"
+      },
+      "stationS3": {
+        "alt": "带屏幕和八个按键的 Edge Station S3",
+        "text": "212 × 66 × 25 mm 面板：读卡器、屏幕窗口、八个带灯按键。后壁格栅供温湿度传感器使用。可放在桌上或装在 2020 型材上。"
+      }
+    }
+  },
+  "edgeRuntime": {
+    "alpha": "Alpha {{version}}",
+    "alphaNote": "Edge 程序处于 Alpha 阶段：已可工作，但安装和设置仍会变化。未经您启用，它不会向打印机发送指令，只读取并上报数据。",
+    "homeAssistant": {
+      "title": "Home Assistant",
+      "lead": "适用于 Home Assistant OS 的 FilamentHub Edge 应用：从仓库安装，在 Home Assistant 界面中配置，并随其一起更新。",
+      "fits": "适用于 Home Assistant OS 和 Supervised。Home Assistant Container 没有应用功能——请使用 Docker。",
+      "imageAlt": "示意图：打印机、运行 Edge 的 Home Assistant 与 FilamentHub",
+      "openInHa": "将仓库添加到我的 Home Assistant",
+      "steps": {
+        "repository": "设置 → 应用 → 商店 → 菜单 → 仓库：添加地址",
+        "install": "在商店中找到 FilamentHub Edge 并安装。",
+        "configure": "在“配置”页添加打印机：其地址和网站上送料系统卡片中的一次性代码。",
+        "start": "保存并启动，开启开机自启。首次连接后可删除代码。"
+      },
+      "host": "Home Assistant",
+      "hostDetail": "HA OS 中的应用"
+    },
+    "linux": {
+      "title": "Linux",
+      "lead": "在运行 Klipper 的电脑或任何常开的 Linux 设备上作为服务运行：树莓派、迷你主机、服务器。",
+      "fits": "需要 Python 3.11 或更新版本。Edge 安装在独立环境中，不影响 Klipper 和 Moonraker。",
+      "imageAlt": "示意图：打印机、运行 Edge 的 Linux 与 FilamentHub",
+      "steps": {
+        "install": "在 FilamentHub 源码目录中，将 Edge 安装到独立环境：",
+        "options": "创建权限为 600 的 ~/.config/filamenthub-edge/options.json：打印机地址和一次性代码。",
+        "service": "以用户服务方式运行 Edge：",
+        "clearCode": "首次连接后从文件中删除 pairing_code，保留 id。若要重启后无需登录即可启动服务，请启用 loginctl enable-linger。"
+      },
+      "host": "Linux",
+      "hostDetail": "systemd 服务"
+    },
+    "docker": {
+      "title": "Docker",
+      "lead": "家庭服务器或 NAS 上的容器。绑定和事件队列保存在独立卷中。",
+      "fits": "Edge 主动对外连接：无需端口转发或主机网络。打印机请填写局域网地址，而不是 127.0.0.1。",
+      "imageAlt": "示意图：打印机、Edge 容器与 FilamentHub",
+      "steps": {
+        "build": "从源码构建镜像：",
+        "options": "将 options.json（与 Linux 相同）放在权限为 600 的受保护目录中。",
+        "run": "启动容器："
+      },
+      "host": "Docker",
+      "hostDetail": "容器，/data 卷"
+    },
+    "diagram": {
+      "printer": "打印机",
+      "cloud": "您的资料",
+      "local": "局域网",
+      "outbound": "HTTPS，出站连接"
     }
   },
   "downloadPage": {
