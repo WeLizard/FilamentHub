@@ -109,7 +109,15 @@ class EdgeRuntime:
                 "Edge usage outbox is full; local counters were left untouched until "
                 "synchronization recovers"
             )
-        usage_events = capture_usage_events(self.state, snapshot, observed_at=observed_at)
+        # A printer with one filament counter is followed by the common tracker.
+        # A provider that counts another way (per slot, from the job's file)
+        # keeps its own books in the same durable state.
+        capture = getattr(self.provider, "capture_usage", None)
+        usage_events = (
+            capture(self.state, observed_at=observed_at)
+            if callable(capture)
+            else capture_usage_events(self.state, snapshot, observed_at=observed_at)
+        )
         if usage_events:
             self._enqueue_usage_batch(usage_events)
         else:

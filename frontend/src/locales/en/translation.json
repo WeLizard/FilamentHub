@@ -1788,13 +1788,13 @@
       },
       "bambu": {
         "name": "Bambu Lab",
-        "sees": "AMS slots and the external spool: material, colour, remaining filament and Bambu spool tags. Read-only."
+        "sees": "AMS slots and the external spool: material, colour, remaining filament and Bambu spool tags. Usage is counted from the slicer's estimate in the job's file."
       }
     },
     "otherTitle": "When you do not need Edge",
     "other": {
       "bambu": {
-        "text": "Bambu Lab usage and choosing a material for an AMS slot still go through the plugin in OrcaSlicer.",
+        "text": "Setting an AMS slot's material on a Bambu Lab printer still goes through the plugin in OrcaSlicer.",
         "link": "OrcaSlicer section"
       },
       "octoprint": {

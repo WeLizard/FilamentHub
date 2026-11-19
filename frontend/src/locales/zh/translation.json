@@ -1787,13 +1787,13 @@
       },
       "bambu": {
         "name": "Bambu Lab",
-        "sees": "AMS 槽位和外置料盘：材料、颜色、余量和 Bambu 料盘标签。只读。"
+        "sees": "AMS 槽位和外置料盘：材料、颜色、余量和 Bambu 料盘标签。用量按任务文件中切片软件的估算统计。"
       }
     },
     "otherTitle": "什么时候不需要 Edge",
     "other": {
       "bambu": {
-        "text": "Bambu Lab 的用量统计和为 AMS 槽位选择材料目前仍通过 OrcaSlicer 插件完成。",
+        "text": "在 Bambu Lab 打印机上设置 AMS 槽位的材料目前仍需通过 OrcaSlicer 插件。",
         "link": "OrcaSlicer 部分"
       },
       "octoprint": {

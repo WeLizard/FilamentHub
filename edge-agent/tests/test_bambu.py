@@ -27,10 +27,11 @@ from unittest.mock import patch
 
 from test_runtime import FakeCloud
 
+from filamenthub_edge.cloud import DesiredResult
 from filamenthub_edge.config import NodeConfig
 from filamenthub_edge.errors import ConfigurationError, ProviderUnavailable
 from filamenthub_edge.node import build_connection
-from filamenthub_edge.providers import bambu
+from filamenthub_edge.providers import bambu, bambu_files, bambu_tls
 from filamenthub_edge.providers.bambu import BambuProvider
 from filamenthub_edge.runtime import EdgeRuntime
 from filamenthub_edge.state import EdgeState, StateStore
@@ -158,6 +159,7 @@ def provider(broker: Broker, **options: Any) -> BambuProvider:
         access_code=ACCESS_CODE,
         timeout=options.pop("timeout", 3),
         connect=broker.connect,
+        read_estimate=options.pop("read_estimate", lambda report: None),
         **options,
     )
 
@@ -274,7 +276,7 @@ class BambuProviderTest(unittest.TestCase):
         self.assertEqual(len(second.slots), 5)
         self.assertTrue(first.slot_topology_complete)
         self.assertEqual(first.device_identity, ("bambu_serial", SERIAL))
-        self.assertEqual(first.capabilities, ["read", "presence", "tag_read"])
+        self.assertEqual(first.capabilities, ["read", "presence", "consumption", "tag_read"])
 
     def test_later_partial_reports_are_laid_over_the_whole_one(self) -> None:
         broker = Broker()
@@ -337,7 +339,7 @@ class BambuProviderTest(unittest.TestCase):
 
         self.assertEqual(snapshot.printer, {"state": "idle", "nozzle_temperature": 24.0})
         self.assertEqual((snapshot.slots, snapshot.slot_topology_complete), ([], False))
-        self.assertEqual(snapshot.capabilities, ["read", "presence"])
+        self.assertEqual(snapshot.capabilities, ["read", "presence", "consumption"])
 
     def test_observation_reaches_the_site_under_the_identity_the_plugin_uses(self) -> None:
         # A printer linked through OrcaSlicer and through Edge must stay one
@@ -419,7 +421,9 @@ class TlsPrinter:
         self._listener.close()
 
 
-class BambuTrustTest(unittest.TestCase):
+class PrinterCertificates(unittest.TestCase):
+    """A private authority, printer certificates it issued, and one it did not."""
+
     pki: Path
     _directory: tempfile.TemporaryDirectory[str]
 
@@ -465,6 +469,8 @@ class BambuTrustTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._directory.cleanup()
 
+
+class BambuTrustTest(PrinterCertificates):
     def setUp(self) -> None:
         self.printer = TlsPrinter(self.pki)
         self.addCleanup(self.printer.close)
@@ -472,7 +478,7 @@ class BambuTrustTest(unittest.TestCase):
         self.addCleanup(self.state.cleanup)
         self.trust_path = Path(self.state.name) / "connections" / "p1s.bambu.json"
         issuers = patch.object(
-            bambu, "BAMBU_CA_CERTIFICATES", (self.pki / "ca.pem").read_text(encoding="ascii")
+            bambu_tls, "BAMBU_CA_CERTIFICATES", (self.pki / "ca.pem").read_text(encoding="ascii")
         )
         retry = patch.object(bambu, "RETRY_REFUSED_S", 0.05)
         issuers.start()
@@ -561,6 +567,255 @@ class BambuTrustTest(unittest.TestCase):
         with self.assertRaisesRegex(ProviderUnavailable, "names another printer"):
             self.reader().observe()
         self.assertEqual(len(self.printer.broker.logins), logins)
+
+
+ESTIMATE = {"source": "slicer_gcode", "weights": {0: 20.0}, "sha256": "ab" * 32}
+
+
+class AssignedCloud(FakeCloud):
+    """The site with one spool assigned to the AMS slot the fixture prints from."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_upload = False
+
+    def desired_snapshot(self, **kwargs: Any) -> DesiredResult:
+        return DesiredResult(
+            True,
+            '"revision-1"',
+            {
+                "revision": "revision-1",
+                "physical_printer_id": 7,
+                "material_system_id": 9,
+                "system_name": "AMS",
+                "system_kind": "mmu",
+                "slots": [
+                    {
+                        "index": 1,
+                        "usage_route_proof": "proof-for-slot-1",
+                        "spool": {"id": 99, "initial_weight_g": 1000},
+                    }
+                ],
+            },
+        )
+
+
+class BambuUsageTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.store = StateStore(Path(self.directory.name) / "connections" / "p1s.json")
+        self.store.save(
+            EdgeState(
+                bridge_token="fhpb_" + "t" * 40,
+                printer_discovery_key="ab" * 32,
+                physical_printer_id=7,
+                material_system_id=9,
+            )
+        )
+        self.cloud = AssignedCloud()
+        self.readers: list[BambuProvider] = []
+        self.addCleanup(lambda: [item.close() for item in self.readers])
+
+    def start(self, broker: Broker) -> tuple[EdgeRuntime, BambuProvider]:
+        """Edge as it comes up: state from disk, a new link to the printer."""
+        reader = provider(broker, read_estimate=lambda report: dict(ESTIMATE))
+        self.readers.append(reader)
+        runtime = EdgeRuntime(
+            config=BambuConfigTest.load(BambuConfigTest.ENTRY).connections[0],
+            store=self.store,
+            state=self.store.load(),
+            cloud=self.cloud,  # type: ignore[arg-type]
+            provider=reader,
+        )
+        return runtime, reader
+
+    def cycle_at(self, runtime: EdgeRuntime, reader: BambuProvider, percent: int) -> None:
+        """Run a cycle once the reader has heard the printer reach ``percent``."""
+
+        def heard() -> None:
+            self.assertEqual(reader.observe().printer["progress_percent"], percent)
+
+        eventually(heard)
+        runtime.run_cycle()
+
+    def test_a_job_watched_across_a_restart_is_charged_once(self) -> None:
+        # The file says the job takes 20 g. Edge starts watching at 42 %, is
+        # restarted at 50 % and sees the job finish: 58 % of 20 g, charged to
+        # the spool the site put in the slot that is feeding, in one event.
+        broker = Broker()
+        runtime, reader = self.start(broker)
+        self.cycle_at(runtime, reader, 42)
+        broker.publish({"mc_percent": 50})
+        self.cycle_at(runtime, reader, 50)
+        self.assertEqual(self.cloud.usage_uploads, [])
+        reader.close()
+
+        restarted = Broker(reports=[{**fixture_report(), "mc_percent": 60}])
+        runtime, reader = self.start(restarted)
+        self.cycle_at(runtime, reader, 60)
+        restarted.publish({"gcode_state": "FINISH", "mc_percent": 100})
+        self.cycle_at(runtime, reader, 100)
+
+        self.assertEqual(len(self.cloud.usage_uploads), 1)
+        batch = self.cloud.usage_uploads[0]
+        self.assertEqual((batch["provider"], batch["transport"]), ("bambu", "edge_agent"))
+        (event,) = batch["events"]
+        self.assertEqual((event["event_type"], event["outcome"]), ("terminal", "completed"))
+        (item,) = event["items"]
+        self.assertAlmostEqual(item["used_weight_g"], 11.6)
+        self.assertEqual(
+            {key: item[key] for key in ("slot_index", "spool_id", "usage_route_proof")},
+            {"slot_index": 1, "spool_id": 99, "usage_route_proof": "proof-for-slot-1"},
+        )
+        self.assertEqual(
+            (item["consumption_kind"], item["estimate_source"]), ("estimated", "slicer_progress")
+        )
+        # A finished job no longer stands in the way of resetting the connection.
+        self.assertEqual(runtime.connection_reset_blockers(), [])
+
+        runtime.run_cycle()
+        self.assertEqual(len(self.cloud.usage_uploads), 1)
+
+    def test_a_starting_job_does_not_inherit_the_finished_one(self) -> None:
+        finished = {
+            **fixture_report(),
+            "gcode_state": "FINISH",
+            "mc_percent": 100,
+            "ams_mapping": [1],
+        }
+
+        again = bambu.carry_over(finished, {"gcode_state": "PREPARE"})
+        other = bambu.carry_over(finished, {"subtask_name": "another.3mf"})
+
+        # The same job sent again keeps its mapping; its progress starts over.
+        self.assertNotIn("mc_percent", again)
+        self.assertEqual(again["ams_mapping"], [1])
+        self.assertIn("ams", again)
+        # Another job must not be counted against the finished job's slots.
+        self.assertNotIn("ams_mapping", other)
+
+
+GCODE = b"; filament used [g] = 20.00\nG1 X1 E1\n"
+
+
+class FilePrinter:
+    """Implicit-TLS FTP holding print files, as much of it as Edge's reader uses."""
+
+    def __init__(self, pki: Path, *, data_certificate: str | None = None) -> None:
+        # The fixture report names its job "fixture.3mf".
+        self.files = {"/cache": ["fixture.3mf", "other.gcode"]}
+        self.logins: list[tuple[str, str]] = []
+        self._control = self._context(pki, "printer")
+        # Data connections from the control context can resume its session;
+        # another context forces a new one with its own certificate.
+        self._data = self._control if data_certificate is None else self._context(
+            pki, data_certificate
+        )
+        self._listener = socket.create_server(("127.0.0.1", 0))
+        self.port = self._listener.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    @staticmethod
+    def _context(pki: Path, name: str) -> ssl.SSLContext:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(pki / f"{name}.pem", pki / f"{name}.key")
+        return context
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                raw, _ = self._listener.accept()
+            except OSError:
+                return
+            try:
+                self._session(self._control.wrap_socket(raw, server_side=True))
+            except OSError:
+                raw.close()
+
+    def _session(self, control: ssl.SSLSocket) -> None:
+        def reply(text: str) -> None:
+            control.sendall(text.encode("ascii") + b"\r\n")
+
+        passive: socket.socket | None = None
+        user = ""
+        reply("220 ready")
+        for line in control.makefile("rb"):
+            command, _, argument = line.decode("ascii").strip().partition(" ")
+            if command == "USER":
+                user = argument
+                reply("331 password")
+            elif command == "PASS":
+                self.logins.append((user, argument))
+                reply("230 in")
+            elif command in {"PBSZ", "PROT", "TYPE"}:
+                reply("200 ok")
+            elif command == "PASV":
+                passive = socket.create_server(("127.0.0.1", 0))
+                port = passive.getsockname()[1]
+                reply("227 Entering Passive Mode (127,0,0,1,%d,%d)" % (port >> 8, port & 255))
+            elif command == "SIZE":
+                reply("213 %d" % len(GCODE))
+            elif command in {"NLST", "RETR"} and passive is not None:
+                body = GCODE if command == "RETR" else "".join(
+                    name + "\r\n" for name in self.files.get(argument, [])
+                ).encode("ascii")
+                reply("150 sending")
+                raw, _ = passive.accept()
+                passive.close()
+                try:
+                    data = self._data.wrap_socket(raw, server_side=True)
+                    data.sendall(body)
+                    data.unwrap().close()
+                except OSError:
+                    raw.close()
+                reply("226 done")
+            elif command == "QUIT":
+                reply("221 bye")
+                return
+            else:
+                reply("502 not here")
+
+    def close(self) -> None:
+        self._listener.close()
+
+
+class BambuFileTest(PrinterCertificates):
+    def read(self, printer: FilePrinter, report: dict[str, Any]) -> dict[str, Any] | None:
+        self.addCleanup(printer.close)
+        return bambu_files.read_job_estimate(
+            "127.0.0.1",
+            port=printer.port,
+            serial=SERIAL,
+            access_code=ACCESS_CODE,
+            memory=bambu_tls.CertificateMemory(None),
+            report=report,
+        )
+
+    def test_the_running_jobs_own_file_gives_the_estimate(self) -> None:
+        printer = FilePrinter(self.pki)
+
+        estimate = self.read(printer, fixture_report())
+
+        assert estimate is not None
+        self.assertEqual(estimate["weights"], {0: 20.0})
+        self.assertEqual(estimate["sha256"], hashlib.sha256(GCODE).hexdigest())
+        self.assertEqual(printer.logins, [("bblp", ACCESS_CODE)])
+
+    def test_a_job_whose_file_cannot_be_told_apart_has_no_estimate(self) -> None:
+        # Two files could be the job's; taking either would be a guess.
+        printer = FilePrinter(self.pki)
+        printer.files["/model"] = ["fixture.3mf"]
+
+        self.assertIsNone(self.read(printer, fixture_report()))
+
+    def test_a_file_served_by_another_device_is_not_believed(self) -> None:
+        # The control connection is the printer, but the file would come from
+        # somebody else: what it says about filament must not be charged.
+        printer = FilePrinter(self.pki, data_certificate="stranger")
+
+        with self.assertRaisesRegex(ProviderUnavailable, "changed certificate"):
+            self.read(printer, fixture_report())
 
 
 class BambuConfigTest(unittest.TestCase):

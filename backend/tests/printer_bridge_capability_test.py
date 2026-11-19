@@ -340,9 +340,9 @@ async def test_bambu_edge_reads_the_feed_and_claims_nothing_it_cannot_do(
         for item in printer["connectors"]
         if item["provider"] == "bambu" and item["transport"] == "edge_agent"
     )
-    # Edge reads what the printer reports. It names no FilamentHub spool, and
-    # until it counts a job's filament or sets a slot it may not say it does.
-    assert set(connector["capabilities"]) == {"read", "presence", "tag_read"}
+    # Edge reads what the printer reports and counts a job's filament. It names
+    # no FilamentHub spool, and until it can set a slot it may not say it does.
+    assert set(connector["capabilities"]) == {"read", "presence", "tag_read", "consumption"}
 
     accepted = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",
@@ -355,7 +355,7 @@ async def test_bambu_edge_reads_the_feed_and_claims_nothing_it_cannot_do(
                 transport="edge_agent",
             ),
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "capabilities": ["read", "presence", "tag_read"],
+            "capabilities": ["read", "presence", "tag_read", "consumption"],
             "slot_topology_complete": True,
             "slots": [
                 {

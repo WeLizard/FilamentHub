@@ -123,8 +123,17 @@ Edge передаёт состояние принтера и текущее за
 Edge держит одно соединение с принтером и передаёт его состояние, текущее
 задание, все слоты AMS и внешнюю катушку: есть ли пруток, материал, цвет,
 остаток, который измерил принтер, и метку катушки Bambu. Принтеру Edge
-отправляет только запрос состояния, один раз на соединение. Расход через Edge
-пока не считается, а материал слота с сайта задаётся через плагин в OrcaSlicer.
+отправляет только запрос состояния, один раз на соединение. Материал слота с
+сайта задаётся через плагин в OrcaSlicer.
+
+Принтер не измеряет расход. Edge читает с принтера файл текущего задания и берёт
+из него оценку слайсера по каждому прутку, ведёт её по слоям или по прогрессу
+печати и списывает с катушек, назначенных слотам, из которых печатает задание, с
+пометкой «оценка». С отменённого задания списывается только напечатанное. Если
+файл задания на принтере не найден, катушка Bambu с меткой учитывается по
+остатку, который сообщает принтер, а остальные не списываются. Часть задания до
+запуска Edge или во время обрыва связи не списывается. Если за тем же принтером
+следит и плагин в OrcaSlicer, сайт учитывает отчёты только одного из них.
 
 Edge запоминает сертификат, который принтер показал, когда впервые принял код
 доступа. Если позже по этому адресу ответит другое устройство, код доступа ему
@@ -285,8 +294,18 @@ Edge keeps one connection to the printer open and reports its state, the current
 job, and every AMS slot and external spool: whether filament is loaded, its
 material and colour, the amount the printer measured as remaining, and the tag of
 a Bambu spool. It asks the printer for its status once per connection and sends
-it nothing else. Usage is not counted through Edge yet, and setting a slot's
-material from the website still goes through the OrcaSlicer plugin.
+it nothing else. Setting a slot's material from the website still goes through
+the OrcaSlicer plugin.
+
+The printer measures no filament. Edge reads the running job's file from the
+printer for the slicer's estimate of each filament, follows it by layer or by
+print progress, and debits the spools assigned to the slots the job feeds from,
+marking the amounts as estimates. A cancelled job is charged what was printed.
+When no file on the printer matches the job, a Bambu spool with a tag is
+followed by the remaining weight the printer reports, and other spools are not
+charged. The part of a job before Edge started, or while the link was down, is
+not charged. If the OrcaSlicer plugin watches the same printer, the site deducts
+the reports of one of the two, never both.
 
 Edge remembers the certificate the printer showed when it first accepted the
 access code. If another device later answers at that address, it does not
@@ -403,7 +422,9 @@ Edge 上报打印机状态和当前任务。AD5X 和 Creator 5 上报耗材站�
   pairing_code: FH-ZZZZZ-ZZZZZ
 ```
 
-Edge 与打印机保持一条连接，上报打印机状态、当前任务，以及每个 AMS 槽位和外置料盘：是否装有耗材、材料、颜色、打印机测得的余量和 Bambu 料盘标签。Edge 每次连接只向打印机请求一次状态，不发送其他内容。目前尚不通过 Edge 统计用量；在网站上设置槽位材料仍需通过 OrcaSlicer 插件。
+Edge 与打印机保持一条连接，上报打印机状态、当前任务，以及每个 AMS 槽位和外置料盘：是否装有耗材、材料、颜色、打印机测得的余量和 Bambu 料盘标签。Edge 每次连接只向打印机请求一次状态，不发送其他内容。在网站上设置槽位材料仍需通过 OrcaSlicer 插件。
+
+打印机不测量耗材用量。Edge 从打印机读取当前任务的文件，取得切片软件对每种耗材的估算，按层或按打印进度折算，并从分配给任务所用槽位的料盘中扣减，同时标记为估算值。取消的任务只扣减已打印的部分。打印机上找不到与任务对应的文件时，带标签的 Bambu 料盘按打印机上报的余量统计，其他料盘不扣减。Edge 启动之前或连接中断期间打印的部分不扣减。如果 OrcaSlicer 插件也在监视同一台打印机，网站只采用其中一方的上报。
 
 Edge 会记住打印机首次接受访问码时出示的证书。之后如果有其他设备在该地址应答，Edge 不会向它发送访问码，并在日志中说明原因。更换打印机或主板后，请为该连接设置新的 `id`。
 

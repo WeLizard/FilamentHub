@@ -35,6 +35,7 @@ class ComponentSelectionTest(unittest.TestCase):
             },
             "orca-plugin/description.md": {"plugins"},
             "orca-plugin/filamenthub_bambu.py": {"plugins", "edge"},
+            "orca-plugin/filamenthub_plugin.py": {"plugins", "edge"},
             "edge-agent/tests/fixtures/bambu/report_printing.json": {"edge", "plugins"},
             "octoprint-plugin/pyproject.toml": {"plugins"},
         }

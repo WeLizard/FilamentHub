@@ -280,8 +280,20 @@ connection to the printer open and reports its state, the current job, and every
 AMS slot and external spool: whether filament is loaded, its material and colour,
 the amount the printer measured as remaining, and the tag of a Bambu spool. It
 asks the printer for its whole status once per connection and sends it nothing
-else. Usage is not counted through Edge yet, and setting a slot's material from
-the website still goes through the OrcaSlicer plugin.
+else. Setting a slot's material from the website still goes through the
+OrcaSlicer plugin.
+
+The printer measures no filament. Edge reads the file of the running job from
+the printer (its file service on port 990, same access code) for the slicer's
+estimate of each filament, follows it by layer where the file holds G-code and
+by progress otherwise, and debits the spools assigned to the slots the job
+feeds from, marking the amounts as estimates. A cancelled job is charged what
+was printed. When no file on the printer matches the job, a Bambu spool with a
+tag is followed by the remaining weight the printer reports for it, and any
+other spool is not charged. The part of a job that ran before Edge started
+watching, or while the link was down, is not charged. If the OrcaSlicer plugin
+watches the same printer, the site deducts the reports of one of the two, never
+both. Assign spools to slots on the website.
 
 Edge remembers the certificate the printer showed when it first accepted the
 access code. If another device later answers at that address, it does not

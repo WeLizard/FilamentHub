@@ -50,10 +50,12 @@ def select_components(paths: list[str]) -> set[str]:
                 selected.add("plugins")
         elif path.startswith(("orca-plugin/", "octoprint-plugin/")):
             selected.add("plugins")
-            # Edge carries copies of these modules and fails while a copy differs.
+            # Edge carries copies of code from these files and fails while a
+            # copy differs.
             if path in (
                 "orca-plugin/filamenthub_bambu.py",
                 "orca-plugin/filamenthub_bambu_trust.py",
+                "orca-plugin/filamenthub_plugin.py",
             ):
                 selected.add("edge")
         elif path != "README.md":

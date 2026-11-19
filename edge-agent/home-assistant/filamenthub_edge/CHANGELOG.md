@@ -6,7 +6,7 @@
   independent Moonraker/Happy Hare or direct-feed printer connections.
 - Local pairing credentials, persistent per-printer queues and shared node identity.
 - Flashforge printers over their LAN API and Bambu Lab printers over LAN MQTT, next to
-  Klipper.
+  Klipper. Both are charged the slicer's estimate for the job.
 - Transparent FilamentHub icon and logo, with app introduction, instructions and configuration
   labels in Russian, English and Chinese.
 - Private Supervisor options, unprivileged runtime and graceful shutdown.

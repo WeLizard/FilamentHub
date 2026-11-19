@@ -11,32 +11,39 @@ The connection stays open between observations. A reader thread keeps the
 merged report current and ``observe`` returns what it holds; when the link
 drops, the report is discarded and ``observe`` fails until a new one arrives.
 
+The printer measures no filament. Usage is the slicer's estimate for the job,
+read from the file being printed and followed by layer or progress; where no
+file can be read, a Bambu spool's own remaining-weight figure is followed
+instead. The bookkeeping is the plugin's (``_bambu_usage``), so a print costs
+the same whichever of the two watched it.
+
 Reading a report is shared with the OrcaSlicer plugin (``_bambu_report``), as
-is the rule for whose certificate is accepted (``_bambu_trust``). The network
-code is Edge's own: the plugin's is tied to OrcaSlicer's lifecycle.
+is the rule for whose certificate is accepted (``_bambu_trust``, applied in
+``bambu_tls``). The network code is Edge's own: the plugin's is tied to
+OrcaSlicer's lifecycle.
 """
 
 from __future__ import annotations
 
 import copy
-import ipaddress
+import ftplib
 import json
 import logging
 import math
 import re
 import secrets
 import select
-import socket
 import ssl
 import struct
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..errors import ProviderUnavailable, StateError
-from ..storage import JsonStateFile
+from ..errors import ProviderUnavailable
+from ..state import EdgeState
 from ._bambu_report import (
     BAMBU_EXTERNAL_TRAY_DEPUTY,
     BAMBU_EXTERNAL_TRAY_MAIN,
@@ -45,11 +52,15 @@ from ._bambu_report import (
     _bambu_tag_read_capable,
     parse_bambu_feed,
 )
-from ._bambu_trust import (
-    BAMBU_CA_CERTIFICATES,
-    bambu_certificate_fingerprint,
-    bambu_certificate_serial,
+from ._bambu_trust import bambu_certificate_fingerprint
+from ._bambu_usage import (
+    _bambu_file_candidates,
+    _bambu_job_key,
+    _buffer_bambu_usage_report,
+    capture_bambu_usage,
 )
+from .bambu_files import READ_ERRORS, read_job_estimate
+from .bambu_tls import CertificateMemory, CertificateRejected, open_printer, resolve_printer
 from .base import ProviderSnapshot
 from .moonraker import _tag_uid
 
@@ -67,7 +78,15 @@ RETRY_MAX_S = 300.0
 # A refused access code or certificate does not fix itself in seconds.
 RETRY_REFUSED_S = 60.0
 MAX_PACKET_BYTES = 2 * 1024 * 1024
-MAX_TRUST_BYTES = 4096
+# A file that could not be read is asked for again only after a while: the
+# printer is busy printing.
+ESTIMATE_RETRY_S = 600.0
+# Usage events one observation may queue; the rest wait for the next one.
+MAX_EVENTS_PER_CAPTURE = 64
+_JOB_IDENTITY = ("task_id", "subtask_id", "gcode_file", "subtask_name")
+# What the last report of a finished job says about a job that is starting.
+_JOB_PROGRESS = ("mc_percent", "mc_remaining_time", "layer_num", "total_layer_num", "print_error")
+_ESTIMATE_STATES = frozenset({"RUNNING", "PAUSE", "FINISH", "FAILED"})
 _STATES = {
     "RUNNING": "printing",
     "PAUSE": "paused",
@@ -83,10 +102,6 @@ NO_REPORT = "Bambu printer accepted the connection but sent no report; check the
 ACCESS_REFUSED = "Bambu printer rejected the access code"
 
 
-class CertificateRejected(ProviderUnavailable):
-    """The device at the printer's address is not the printer that was linked."""
-
-
 class _AccessRefused(Exception):
     pass
 
@@ -96,148 +111,6 @@ def normalize_serial(value: str) -> str:
     if not SERIAL_PATTERN.fullmatch(serial):
         raise ValueError("invalid Bambu serial number")
     return serial.upper()
-
-
-def resolve_printer(host: str, port: int) -> tuple[socket.AddressFamily, tuple[Any, ...]]:
-    """Resolve once and accept only an address inside the local network.
-
-    The access code is sent to whatever answers there, so it never goes to an
-    address on the public internet.
-    """
-    try:
-        candidates = socket.getaddrinfo(
-            host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
-        )
-    except (OSError, UnicodeError) as exc:
-        raise ProviderUnavailable("Bambu printer address could not be resolved") from exc
-    for family, _, _, _, sockaddr in candidates:
-        try:
-            address = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
-        except ValueError:
-            continue
-        local = address.is_private or address.is_link_local or address.is_loopback
-        if local and not (address.is_multicast or address.is_unspecified):
-            return family, sockaddr
-    raise ProviderUnavailable("Bambu printer address must be inside the local network")
-
-
-def _tls_context(*, verify: bool) -> ssl.SSLContext:
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    # A printer certificate names a serial number, not a host; the caller
-    # compares it.
-    context.check_hostname = False
-    if verify:
-        context.verify_mode = ssl.CERT_REQUIRED
-        # Bambu Lab's root certificates do not satisfy the strict X.509 checks
-        # that newer Python turns on by default.
-        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
-        context.load_verify_locations(cadata=BAMBU_CA_CERTIFICATES)
-    else:
-        context.verify_mode = ssl.CERT_NONE
-    return context
-
-
-def _handshake(
-    family: socket.AddressFamily, sockaddr: tuple[Any, ...], timeout: float, *, verify: bool
-) -> ssl.SSLSocket:
-    raw = socket.socket(family, socket.SOCK_STREAM)
-    raw.settimeout(timeout)
-    try:
-        raw.connect(sockaddr)
-        return _tls_context(verify=verify).wrap_socket(raw, server_hostname=None)
-    except BaseException:
-        raw.close()
-        raise
-
-
-def open_printer(
-    family: socket.AddressFamily,
-    sockaddr: tuple[Any, ...],
-    *,
-    serial: str,
-    pinned: str,
-    timeout: float,
-) -> ssl.SSLSocket:
-    """Connect to the printer that was linked and to nobody else.
-
-    A linked printer is recognised by the certificate it showed when it last
-    accepted the access code. A different certificate is accepted only when
-    Bambu Lab issued it to the same serial number; otherwise nothing, the
-    access code included, is sent. A printer seen for the first time is
-    trusted as it is: newer models are issued by certificates this build may
-    not carry yet, so the chain alone cannot be required of everyone.
-    """
-    deadline = time.monotonic() + timeout
-
-    def handshake(*, verify: bool) -> ssl.SSLSocket:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("Bambu TLS connection timed out")
-        return _handshake(family, sockaddr, remaining, verify=verify)
-
-    sock = handshake(verify=False)
-    if pinned and bambu_certificate_fingerprint(sock.getpeercert(True)) != pinned:
-        sock.close()
-        try:
-            sock = handshake(verify=True)
-        except ssl.SSLCertVerificationError:
-            raise CertificateRejected("Bambu printer certificate changed") from None
-        if bambu_certificate_serial(sock.getpeercert()) != serial:
-            sock.close()
-            raise CertificateRejected("Bambu certificate names another printer")
-    sock.settimeout(timeout)
-    return sock
-
-
-class CertificateMemory:
-    """The certificate a printer showed when it last accepted the access code."""
-
-    def __init__(self, path: Path | None) -> None:
-        self._file = JsonStateFile(path) if path is not None else None
-        self._held: dict[str, str] = {}
-
-    def pinned(self, serial: str) -> str:
-        if serial in self._held:
-            return self._held[serial]
-        if self._file is None:
-            return ""
-        try:
-            document = self._file.read_document(max_bytes=MAX_TRUST_BYTES) or {}
-        except StateError:
-            # An unreadable file is no evidence; the next accepted login rewrites it.
-            return ""
-        certificate = document.get("certificate")
-        if (
-            document.get("serial") != serial
-            or not isinstance(certificate, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", certificate)
-        ):
-            return ""
-        self._held[serial] = certificate
-        return certificate
-
-    def remember(self, serial: str, fingerprint: str) -> None:
-        if not fingerprint or self.pinned(serial) == fingerprint:
-            return
-        self._held = {serial: fingerprint}
-        if self._file is None:
-            return
-        try:
-            self._file.write_document(
-                {"serial": serial, "certificate": fingerprint}, max_bytes=MAX_TRUST_BYTES
-            )
-        except StateError:
-            # Held for this run; the next start learns it again.
-            logger.warning("Bambu printer certificate could not be saved")
-
-    def forget(self) -> None:
-        self._held = {}
-        if self._file is None:
-            return
-        try:
-            self._file.write_document({}, max_bytes=MAX_TRUST_BYTES)
-        except StateError:
-            logger.warning("Bambu printer certificate could not be forgotten")
 
 
 def _remaining_length(length: int) -> bytes:
@@ -327,6 +200,27 @@ def merge_report(previous: dict[str, Any], update: dict[str, Any]) -> dict[str, 
         else:
             result[key] = value
     return result
+
+
+def carry_over(known: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """What stays known about the printer when ``update`` arrives.
+
+    A partial report is laid over the last one, so a job that starts would
+    inherit the finished job's progress, and a job with another name the
+    finished job's filament-to-slot mapping, until the printer says otherwise.
+    """
+    if any(
+        update.get(name) and known.get(name) and update[name] != known[name]
+        for name in _JOB_IDENTITY
+    ):
+        known = {key: value for key, value in known.items() if key != "ams_mapping"}
+    if update.get("gcode_state") in {"PREPARE", "RUNNING"} and known.get("gcode_state") in {
+        "FINISH",
+        "FAILED",
+        "IDLE",
+    }:
+        known = {key: value for key, value in known.items() if key not in _JOB_PROGRESS}
+    return known
 
 
 def _has_feed(report: dict[str, Any]) -> bool:
@@ -436,6 +330,7 @@ class BambuProvider:
         trust_path: Path | None = None,
         port: int = MQTT_PORT,
         connect: Callable[[], Any] | None = None,
+        read_estimate: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
     ) -> None:
         self.serial_number = normalize_serial(serial_number)
         self._host = host
@@ -444,6 +339,7 @@ class BambuProvider:
         self._timeout = float(timeout)
         self._memory = CertificateMemory(trust_path)
         self._connect = connect or self._open
+        self._read_estimate = read_estimate or self._read_job_file
         self._lock = threading.Lock()
         self._complete = threading.Event()
         # Set while the reader waits before its next attempt: nothing will
@@ -456,9 +352,15 @@ class BambuProvider:
         self._failure = NO_ANSWER
         self._logged: str | None = None
         self._tags_seen = False
+        # Reports that changed what a job has used, kept until they are counted.
+        self._stream: dict[str, Any] = {}
+        self._estimate: dict[str, Any] | None = None
+        self._estimate_job: str | None = None
+        self._estimate_retry_at = 0.0
+        self._estimate_note: str | None = None
 
     def capabilities(self) -> list[str]:
-        capabilities = ["read", "presence"]
+        capabilities = ["read", "presence", "consumption"]
         if self._tags_seen:
             capabilities.append("tag_read")
         return capabilities
@@ -493,6 +395,91 @@ class BambuProvider:
             # The printer publishes only on the topic of its own serial number,
             # so a report received there is the device naming itself.
             device_identity=(IDENTITY_KIND, self.serial_number),
+        )
+
+    def capture_usage(self, state: EdgeState, *, observed_at: str) -> list[dict[str, Any]]:
+        """Count the reports gathered since the last call into usage events.
+
+        The books are kept in ``state.usage_tracker`` and so survive a restart.
+        Without the site's current assignments nothing is counted and the
+        reports wait: a spool is charged only through a slot it is known to be in.
+        """
+        desired = state.desired_snapshot
+        with self._lock:
+            pending = list(self._stream.get("usage_reports", []))
+        if not isinstance(desired, dict) or not pending:
+            return []
+        books = state.usage_tracker
+        if not isinstance(books, dict) or books.get("provider") != "bambu":
+            books = {"provider": "bambu"}
+        events: list[dict[str, Any]] = []
+        for observation in pending:
+            if len(events) >= MAX_EVENTS_PER_CAPTURE:
+                break
+            report = observation["report"]
+            tracker = books.get("tracker")
+            if report.pop("_fh_observation_gap", False) and isinstance(tracker, dict):
+                # Nothing is inferred across an interval nobody watched.
+                tracker["previous"] = {}
+            events.extend(
+                capture_bambu_usage(
+                    books, report, desired, self._estimate_for(report), observation["observed_at"]
+                )
+            )
+            with self._lock:
+                queue = self._stream.get("usage_reports", [])
+                if queue and queue[0] is observation:
+                    queue.pop(0)
+        tracker = books.get("tracker")
+        # What the runtime asks before a connection may be reset.
+        books["terminal_emitted"] = not isinstance(tracker, dict) or bool(
+            tracker.get("terminal") or tracker.get("inactive")
+        )
+        state.usage_tracker = books
+        return events
+
+    def _estimate_for(self, report: dict[str, Any]) -> dict[str, Any] | None:
+        job = _bambu_job_key(report)
+        if job != self._estimate_job:
+            self._estimate_job = job
+            self._estimate = None
+            self._estimate_retry_at = 0.0
+        if (
+            self._estimate is not None
+            or str(report.get("gcode_state") or "").upper() not in _ESTIMATE_STATES
+            or time.monotonic() < self._estimate_retry_at
+        ):
+            return self._estimate
+        self._estimate_retry_at = time.monotonic() + ESTIMATE_RETRY_S
+        note: str | None = None
+        try:
+            self._estimate = self._read_estimate(report)
+        except ftplib.error_perm:
+            note = "the printer refused to hand over the job's file"
+        except ProviderUnavailable as exc:
+            note = str(exc)
+        except READ_ERRORS as exc:
+            note = f"the job's file could not be read ({type(exc).__name__})"
+        else:
+            if self._estimate is None:
+                note = (
+                    "no file on the printer matches the job"
+                    if _bambu_file_candidates(report)
+                    else "the printer's report names no file"
+                )
+        if note != self._estimate_note:
+            self._estimate_note = note
+            if note is not None:
+                logger.warning("Bambu job estimate unavailable: %s", note)
+        return self._estimate
+
+    def _read_job_file(self, report: dict[str, Any]) -> dict[str, Any] | None:
+        return read_job_estimate(
+            self._host,
+            serial=self.serial_number,
+            access_code=self._access_code,
+            memory=self._memory,
+            report=report,
         )
 
     def forget(self) -> None:
@@ -558,6 +545,9 @@ class BambuProvider:
                 had_report = self._report is not None
                 self._report = None
                 self._complete.clear()
+                # The next report starts a new baseline for usage.
+                self._stream.pop("usage_signature", None)
+                self._stream["usage_gap_pending"] = True
             if had_report:
                 delay = RETRY_INITIAL_S
             self._resting.set()
@@ -652,11 +642,14 @@ class BambuProvider:
         if not isinstance(report, dict):
             return
         with self._lock:
-            merged = merge_report(self._report or {}, report)
+            merged = merge_report(carry_over(self._report or {}, report), report)
             self._report = merged
             if _bambu_tag_read_capable(merged):
                 self._tags_seen = True
             if "gcode_state" in merged:
+                _buffer_bambu_usage_report(
+                    self._stream, merged, datetime.now(timezone.utc).isoformat()
+                )
                 # A later failure of this link is a lost printer, not a wrong serial.
                 self._failure = NO_ANSWER
                 if _has_feed(merged):
