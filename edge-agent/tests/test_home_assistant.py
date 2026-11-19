@@ -16,10 +16,13 @@ APP = EDGE_ROOT / "home-assistant/filamenthub_edge"
 
 
 def test_repository_and_settings_are_usable_by_the_common_runtime(tmp_path):
-    repository = yaml.safe_load((EDGE_ROOT.parent / "repository.yaml").read_text(encoding="utf-8"))
-    assert repository == yaml.safe_load(
+    # The release copies home-assistant/ into the separate store repository; a root
+    # repository.yaml would turn this whole checkout into a second, unreleased feed.
+    assert not (EDGE_ROOT.parent / "repository.yaml").exists()
+    repository = yaml.safe_load(
         (EDGE_ROOT / "home-assistant/repository.yaml").read_text(encoding="utf-8")
     )
+    assert repository["name"] and repository["maintainer"]
     config = yaml.safe_load((APP / "config.yaml").read_text(encoding="utf-8"))
     assert config["slug"] == "filamenthub_edge"
     assert config["image"] == "ghcr.io/welizard/filamenthub-edge"

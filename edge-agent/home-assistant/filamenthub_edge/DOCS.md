@@ -9,7 +9,7 @@
 контейнером. HACS для этого приложения не используется.
 
 1. Откройте **Настройки → Приложения → Установить приложение → меню → Репозитории**.
-2. Добавьте `https://github.com/WeLizard/FilamentHub`, найдите **FilamentHub Edge**
+2. Добавьте `https://github.com/WeLizard/filamenthub-edge-home-assistant`, найдите **FilamentHub Edge**
    и нажмите **Установить**. Для установки из репозитория должен быть опубликован
    образ соответствующей версии; наличие исходников ещё не означает выпуск.
 3. На вкладке **Конфигурация** оставьте HTTPS-адрес FilamentHub, добавьте
@@ -178,7 +178,7 @@ printers. Home Assistant Container users can run the same Edge image as a
 separate Docker container; HACS is not the installation path for this app.
 
 1. Open **Settings → Apps → Install app → menu → Repositories**.
-2. Add `https://github.com/WeLizard/FilamentHub`, then open **FilamentHub Edge**
+2. Add `https://github.com/WeLizard/filamenthub-edge-home-assistant`, then open **FilamentHub Edge**
    in the store and select **Install**. The matching public image must have been
    released; a repository checkout is not a published release.
 3. Open **Configuration**, keep the HTTPS FilamentHub address, and add the
@@ -356,7 +356,7 @@ spool state is viewed in FilamentHub; app settings and logs are managed here.
 Container 用户可将同一个 Edge 镜像作为独立 Docker 容器运行；本应用不通过 HACS 安装。
 
 1. 打开 **设置 → 应用 → 安装应用 → 菜单 → 存储库**。
-2. 添加 `https://github.com/WeLizard/FilamentHub`，找到 **FilamentHub Edge** 并安装。
+2. 添加 `https://github.com/WeLizard/filamenthub-edge-home-assistant`，找到 **FilamentHub Edge** 并安装。
    对应版本的公开镜像必须已发布；源代码不等于已发布的镜像。
 3. 在 **配置** 中保留 FilamentHub 的 HTTPS 地址，添加打印机连接并保存。
    如果表单无法保存字段，请使用菜单中的 **YAML 编辑器**，随后在信息页启动应用。

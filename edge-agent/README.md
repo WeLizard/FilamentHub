@@ -62,14 +62,14 @@ Moonraker's Python environment.
 ### Home Assistant OS
 
 Use **Settings → Apps → Install app → menu → Repositories** and add
-`https://github.com/WeLizard/FilamentHub`. Then open **FilamentHub Edge** in the
+`https://github.com/WeLizard/filamenthub-edge-home-assistant`. Then open **FilamentHub Edge** in the
 store. This uses the same runtime as Docker, not a HACS integration.
 
-[Open the repository in Home Assistant](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FWeLizard%2FFilamentHub)
+[![Add the repository to my Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FWeLizard%2Ffilamenthub-edge-home-assistant)
 
-The repository files and matching public image must be published first. This
-checkout alone does not make the app installable; do not substitute an unrelated
-image if HA cannot download the stated version. See the
+That store repository holds only the app's store files. An Edge release copies
+them from `edge-agent/home-assistant/` once its image can be pulled, so the store
+never offers a version Home Assistant cannot download. See the
 [HA installation and update guide](home-assistant/filamenthub_edge/DOCS.md) and
 [release checklist](#release-checklist).
 
@@ -313,11 +313,12 @@ shrink a newer topology, and neither reader makes an automatic desired assignmen
 
 ## Release checklist
 
-The repository root `repository.yaml` identifies the HA feed. Supervisor discovers
-the app under `edge-agent/home-assistant/filamenthub_edge/`; there is no second
-runtime or separate application repository. The metadata under
-`edge-agent/home-assistant/repository.yaml` matches the root for standalone package
-exports; tests prevent these copies from drifting.
+Home Assistant reads the app from the separate store repository
+`https://github.com/WeLizard/filamenthub-edge-home-assistant`, so a Home Assistant host never clones this
+whole repository. Its source is `edge-agent/home-assistant/` (`repository.yaml`,
+`README.md` and `filamenthub_edge/`); never edit the store repository by hand.
+This repository has no root `repository.yaml`, so it is not a second feed; a test
+keeps it that way. There is still one runtime and one image.
 
 Before an owner publishes a release:
 
@@ -330,7 +331,10 @@ Before an owner publishes a release:
    It validates both platform images before publishing the versioned multi-arch
    manifest. Make the GHCR package public and verify an unauthenticated pull of
    that exact version; HA users must not need registry credentials.
-4. Publish the matching feed metadata only when its versioned image is available.
+4. The release workflow copies `edge-agent/home-assistant/` to the store repository
+   only after an unauthenticated read of the versioned manifest succeeds. It needs
+   the `EDGE_HA_STORE_DEPLOY_KEY` secret: the private half of a deploy key with
+   write access to the store repository.
    Subsequent releases update the package/runtime/image/app versions together and
    the app's `CHANGELOG.md`. Keep the repository URL and app slug stable.
 5. On the selected HA host, verify store installation, configuration of two

@@ -192,3 +192,58 @@ jobs:
           if platforms != expected:
               raise SystemExit(f"Unexpected Edge manifest platforms: {sorted(platforms)}")
           PY
+
+  publish-home-assistant-store:
+    name: Publish Home Assistant store files
+    needs: [validate, publish-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      STORE_REPOSITORY: WeLizard/filamenthub-edge-home-assistant
+    steps:
+      - name: Require the store deploy key
+        env:
+          DEPLOY_KEY: ${{ secrets.EDGE_HA_STORE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::EDGE_HA_STORE_DEPLOY_KEY is not set; the Home Assistant store was not updated."
+            exit 1
+          fi
+
+      - name: Require an image Home Assistant can pull
+        shell: bash
+        env:
+          EDGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          # Home Assistant hosts pull without registry credentials, so this job
+          # never logs in: a private package must stop the store update.
+          docker manifest inspect "$EDGE_IMAGE:$EDGE_VERSION" > /dev/null
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          path: source
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.STORE_REPOSITORY }}
+          ssh-key: ${{ secrets.EDGE_HA_STORE_DEPLOY_KEY }}
+          path: store
+
+      - name: Copy and push the store files
+        shell: bash
+        env:
+          EDGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          rsync -a --delete --exclude .git source/edge-agent/home-assistant/ store/
+          cd store
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The store already matches FilamentHub Edge $EDGE_VERSION"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "FilamentHub Edge $EDGE_VERSION"
+          git push origin HEAD

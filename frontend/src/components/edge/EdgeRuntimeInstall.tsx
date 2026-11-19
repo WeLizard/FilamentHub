@@ -7,7 +7,7 @@ import { toast } from '../Toast';
 
 /** Follows `edge-agent/pyproject.toml` and the Home Assistant app's `config.yaml`. */
 export const EDGE_RUNTIME_VERSION = '0.1.0';
-const HA_REPOSITORY = 'https://github.com/WeLizard/FilamentHub';
+const HA_REPOSITORY = 'https://github.com/WeLizard/filamenthub-edge-home-assistant';
 const HA_ADD_REPOSITORY = `https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=${encodeURIComponent(HA_REPOSITORY)}`;
 
 const LINUX_INSTALL = `python3 -m venv "$HOME/.local/share/filamenthub-edge/venv"
