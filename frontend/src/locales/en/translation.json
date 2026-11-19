@@ -2311,7 +2311,7 @@
         "start": "Save, start it and enable start on boot. After the first connection the code can be removed."
       },
       "host": "Home Assistant",
-      "hostDetail": "app on HA OS",
+      "hostDetail": "app from the store",
       "photoAlt": "A smart-home hub on a shelf next to a 3D printer"
     },
     "linux": {

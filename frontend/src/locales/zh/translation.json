@@ -2310,7 +2310,7 @@
         "start": "保存并启动，开启开机自启。首次连接后可删除代码。"
       },
       "host": "Home Assistant",
-      "hostDetail": "HA OS 中的应用",
+      "hostDetail": "商店中的应用",
       "photoAlt": "3D 打印机旁架子上的智能家居中枢"
     },
     "linux": {
