@@ -16,8 +16,8 @@
         "rst": 1
       },
       "firmware": {
-        "version": "0.2.0",
-        "source_commit": "72ed5124824cd70a7eba739d025c427ebd6a8d7e",
+        "version": "0.2.1",
+        "source_commit": "b48941d55da0d401f8365c2075d304ab4f5fddf9",
         "flash": {
           "mode": "dio",
           "freq": "80m",
@@ -28,21 +28,21 @@
         "images": [
           {
             "offset": 0,
-            "path": "esp32-c3-devkitm-1/0.2.0/bootloader.bin",
+            "path": "esp32-c3-devkitm-1/0.2.1/bootloader.bin",
             "bytes": 21008,
-            "sha256": "27072060cfdfcc2d406ec0bf9e22a3dcf2ccd26a124b359454169d95b2e8912d"
+            "sha256": "caeefb8f8cc90ebb86fd94786dc75598de5dad49ce69aef3346be7a0f3424f1a"
           },
           {
             "offset": 32768,
-            "path": "esp32-c3-devkitm-1/0.2.0/partitions.bin",
+            "path": "esp32-c3-devkitm-1/0.2.1/partitions.bin",
             "bytes": 3072,
             "sha256": "0eed4c13a8497fea1b6d2be76c080734cb03c35290557c29f112460a9ef0d370"
           },
           {
             "offset": 131072,
-            "path": "esp32-c3-devkitm-1/0.2.0/firmware.bin",
-            "bytes": 1184784,
-            "sha256": "a8db4b776cddc10a50c893c2d0980232a7c0812bd614d8d53d191ad4e0700228"
+            "path": "esp32-c3-devkitm-1/0.2.1/firmware.bin",
+            "bytes": 1184880,
+            "sha256": "ef619669bab507cb87e58de73ad1f8bb5da03a00fae19cc5f13abf0528a7f888"
           }
         ]
       }
