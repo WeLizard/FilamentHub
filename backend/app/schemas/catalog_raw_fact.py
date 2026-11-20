@@ -1,7 +1,7 @@
 """Raw manufacturer fact: one quoted statement from one source page.
 
-Raw facts are collected freely and kept outside the database, in the git-ignored
-``backend/curation_staging/``. The format is deliberately open: property and
+Raw fact candidates are kept outside the database under the local
+``catalog-data/`` root. The format is deliberately open: property and
 material type names are recorded exactly as the source writes them.
 """
 

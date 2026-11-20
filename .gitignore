@@ -218,9 +218,8 @@ orca-plugin/plugin-hub-media/
 # reach the server separately. Poster and captions stay in Git.
 frontend/public/download-media/*.mp4
 
-# Raw catalog intake data and the collector that gathers it for curation.
-backend/curation_staging/
-scripts/curation_pipeline/
+# Local catalog source corpus, historical tools, and research.
+catalog-data/
 
 # Local npm cache and TypeScript incremental build state.
 frontend/.npm-cache/
