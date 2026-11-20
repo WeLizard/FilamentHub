@@ -6,6 +6,7 @@ import {
   composeEdgeBuild,
   EDGE_ENCLOSURE_FILES,
   EDGE_ENCLOSURE_IMAGES,
+  EDGE_ENCLOSURE_INSIDE_IMAGES,
   EDGE_PIN_MAPS,
   EDGE_PRESETS,
   EDGE_RESERVED_PINS,
@@ -92,7 +93,7 @@ describe('Edge builds', () => {
   it('links only enclosure files that are published', () => {
     // Lazy globs list the files without loading them.
     const published = new Set(Object.keys(import.meta.glob('../../../public/edge-kit/*')).map((path) => path.split('/').pop()));
-    const files = [...Object.values(EDGE_ENCLOSURE_FILES).flat().map(({ file }) => file), ...Object.values(EDGE_ENCLOSURE_IMAGES)];
+    const files = [...Object.values(EDGE_ENCLOSURE_FILES).flat().map(({ file }) => file), ...Object.values(EDGE_ENCLOSURE_IMAGES), ...Object.values(EDGE_ENCLOSURE_INSIDE_IMAGES)];
     for (const file of files) expect(published.has(file), file).toBe(true);
   });
 });

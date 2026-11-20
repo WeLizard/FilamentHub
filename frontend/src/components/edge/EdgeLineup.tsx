@@ -1,15 +1,18 @@
+import type { LucideIcon } from 'lucide-react';
+import { Cable, Weight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const FILES = '/edge-kit/';
 const subheading = 'mb-3 text-xl font-semibold text-white';
 
 type LineupStatus = 'prototype' | 'design' | 'concept' | 'planned';
-const DEVICES: { key: string; status: LineupStatus; image?: string }[] = [
+// A device without a modelled case shows its icon in the same box, so every card lines up.
+const DEVICES: { key: string; status: LineupStatus; image?: string; Icon?: LucideIcon }[] = [
   { key: 'tag', status: 'prototype', image: 'kit-front.webp' },
   { key: 'station', status: 'design', image: 'station-s3-front.webp' },
   { key: 'portable', status: 'design', image: 'portable-s3-front.webp' },
-  { key: 'lane', status: 'concept' },
-  { key: 'scales', status: 'planned' },
+  { key: 'lane', status: 'concept', Icon: Cable },
+  { key: 'scales', status: 'planned', Icon: Weight },
 ];
 const STATUS_STYLE: Record<LineupStatus, string> = {
   prototype: 'border-amber-300/40 bg-amber-400/10 text-amber-200',
@@ -29,11 +32,17 @@ export function EdgeLineup() {
       <h3 className="mb-2 text-2xl font-bold text-white">{t('edgeLineup.title')}</h3>
       <p className="mb-6 max-w-3xl text-base leading-7 text-gray-300">{t('edgeLineup.lead')}</p>
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {DEVICES.map(({ key, status, image }) => (
-          <li key={key} className="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            {image && (
-              <img src={FILES + image} alt="" width={1600} height={1000} loading="lazy" className="mb-3 h-auto w-full" />
-            )}
+        {DEVICES.map(({ key, status, image, Icon }) => (
+          <li key={key} className="flex min-w-0 flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-3 aspect-[16/10]">
+              {image ? (
+                <img src={FILES + image} alt="" width={1600} height={1000} loading="lazy" className="h-full w-full object-contain" />
+              ) : Icon && (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-white/15">
+                  <Icon aria-hidden className="h-12 w-12 text-violet-300/50" strokeWidth={1.25} />
+                </div>
+              )}
+            </div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <h4 className="text-lg font-semibold text-white">{t(`edgeLineup.devices.${key}.name`)}</h4>
               <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[status]}`}>

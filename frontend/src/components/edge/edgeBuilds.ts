@@ -397,3 +397,14 @@ export const EDGE_ENCLOSURE_IMAGES: Record<EdgeEnclosureId, string> = {
   stationC3: 'station-c3-front.webp',
   stationS3: 'station-s3-front.webp',
 };
+
+/** The same case seen through, its boards and modules in their places. */
+export const EDGE_ENCLOSURE_INSIDE_IMAGES: Record<EdgeEnclosureId, string> = {
+  tagC3: 'kit-inside.webp',
+  tagS3: 'tag-s3-inside.webp',
+  portableS3: 'portable-s3-inside.webp',
+  portableC3: 'portable-c3-inside.webp',
+  touchS3: 'touch-s3-inside.webp',
+  stationC3: 'station-c3-inside.webp',
+  stationS3: 'station-s3-inside.webp',
+};

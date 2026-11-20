@@ -1,5 +1,5 @@
-import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChevronRight } from 'lucide-react';
 import type { EdgeBuild, EdgeNet, EdgePowerStage, EdgeWire } from './edgeBuilds';
 
 const PANEL = '#17112e';
@@ -166,14 +166,14 @@ export function EdgeBuildWiring({ build }: { build: EdgeBuild }) {
         </svg>
       </div>
 
-      <WireTable build={build} />
+      <WireTable build={build} colors={new Map(pins.map(({ wire, color }) => [`${wire.module}-${wire.modulePin}`, color]))} />
       <figcaption className="mt-3 max-w-3xl text-sm leading-6 text-gray-400">{t('edgeBuilds.wiring.caption')}</figcaption>
     </figure>
   );
 }
 
-/** The same wiring as rows: the only form on a phone, and a checklist on a desk. */
-function WireTable({ build }: { build: EdgeBuild }) {
+/** The same wiring as rows, in the drawing's colours: the only form on a phone, and a checklist on a desk. */
+function WireTable({ build, colors }: { build: EdgeBuild; colors: Map<string, string> }) {
   const { t } = useTranslation();
   return (
     <div className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -183,7 +183,7 @@ function WireTable({ build }: { build: EdgeBuild }) {
           <ul className="space-y-1">
             {build.wires.filter((wire) => wire.module === module.id).map((wire) => (
               <li key={wire.modulePin} className="flex items-center gap-2 font-mono text-xs text-gray-200">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: POWER_COLORS[wire.net] ?? '#4b9be6' }} />
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: colors.get(`${wire.module}-${wire.modulePin}`) }} />
                 {wire.boardPin} → {wire.modulePin}
               </li>
             ))}
@@ -195,19 +195,23 @@ function WireTable({ build }: { build: EdgeBuild }) {
   );
 }
 
-/** Where the board's 5 V comes from, left to right. */
+/**
+ * Where the board's 5 V comes from: down the column on a phone, left to right
+ * from `sm`. Each arrow belongs to the stage after it, so a wrapped row never
+ * leaves an arrow hanging at the end of a line.
+ */
 export function EdgePowerPath({ stages }: { stages: EdgePowerStage[] }) {
   const { t } = useTranslation();
   return (
-    <ol className="flex flex-wrap items-center gap-2 text-sm">
+    <ol className="flex flex-col items-start gap-1 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-3">
       {stages.map((stage, index) => (
-        <Fragment key={stage}>
-          {index > 0 && <li aria-hidden className="text-cyan-300">→</li>}
-          <li className="rounded-lg border border-white/15 bg-white/5 px-3 py-2">
-            <span className="block font-medium text-white">{t(`edgeBuilds.power.${stage}.name`)}</span>
+        <li key={stage} className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+          {index > 0 && <ChevronRight aria-hidden className="ml-4 h-4 w-4 shrink-0 rotate-90 text-cyan-300 sm:ml-0 sm:rotate-0" />}
+          <span className="rounded-lg border border-white/15 bg-white/5 px-3 py-2">
+            <span className="block whitespace-nowrap font-medium text-white">{t(`edgeBuilds.power.${stage}.name`)}</span>
             <span className="block text-xs text-gray-400">{t(`edgeBuilds.power.${stage}.value`)}</span>
-          </li>
-        </Fragment>
+          </span>
+        </li>
       ))}
     </ol>
   );

@@ -6,6 +6,7 @@ import {
   composeEdgeBuild,
   EDGE_ENCLOSURE_FILES,
   EDGE_ENCLOSURE_IMAGES,
+  EDGE_ENCLOSURE_INSIDE_IMAGES,
   EDGE_PRESETS,
   edgeFixOptions,
   edgeOptionProblem,
@@ -53,6 +54,7 @@ function Segment({ active, disabled, title, onClick, children }: {
 export function EdgeBuildConfigurator() {
   const { t } = useTranslation();
   const [options, setOptions] = useState<EdgeBuildOptions>(EDGE_PRESETS[0].options);
+  const [inside, setInside] = useState(false);
   const build = useMemo(() => composeEdgeBuild(options), [options]);
   const preset = edgePresetFor(options);
   const status = preset?.status ?? 'design';
@@ -139,14 +141,25 @@ export function EdgeBuildConfigurator() {
           </p>
         </div>
         {build.enclosure ? (
-          <img
-            src={FILES + EDGE_ENCLOSURE_IMAGES[build.enclosure]}
-            alt={t(`edgeBuilds.enclosures.${build.enclosure}.alt`)}
-            width={1600}
-            height={1000}
-            loading="lazy"
-            className="h-auto w-full"
-          />
+          <figure>
+            {/* Both pictures share one box, so switching the view never moves the page. */}
+            <div className="aspect-[16/10]">
+              <img
+                src={FILES + (inside ? EDGE_ENCLOSURE_INSIDE_IMAGES : EDGE_ENCLOSURE_IMAGES)[build.enclosure]}
+                alt={inside
+                  ? t('edgeBuilds.view.insideAlt', { name: t(`edgeBuilds.presets.${build.enclosure}.name`) })
+                  : t(`edgeBuilds.enclosures.${build.enclosure}.alt`)}
+                width={1600}
+                height={1000}
+                loading="lazy"
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <figcaption className="mt-2 flex justify-center gap-2" role="group" aria-label={t('edgeBuilds.view.label')}>
+              <Segment active={!inside} onClick={() => setInside(false)}>{t('edgeBuilds.view.outside')}</Segment>
+              <Segment active={inside} onClick={() => setInside(true)}>{t('edgeBuilds.view.inside')}</Segment>
+            </figcaption>
+          </figure>
         ) : (
           <p className="rounded-xl border border-dashed border-white/15 p-6 text-sm leading-6 text-gray-400">{t('edgeBuilds.enclosures.none')}</p>
         )}

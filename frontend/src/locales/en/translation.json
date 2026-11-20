@@ -2251,6 +2251,12 @@
         "divider": "Divider between B+ and GND"
       }
     },
+    "view": {
+      "label": "Enclosure view",
+      "outside": "Case",
+      "inside": "Inside",
+      "insideAlt": "{{name}} seen through: boards and modules in their places"
+    },
     "filesTitle": "Enclosure",
     "files": {
       "shell": "Shell, STL",

@@ -33,7 +33,6 @@ from build123d import (
     export_step,
     export_stl,
     extrude,
-    fillet,
     import_svg,
 )
 
@@ -55,6 +54,7 @@ from edge_tag_station import (
     SCREW_CLEAR,
     SCREW_HEAD,
     frame,
+    port_cutter,
     slab,
 )
 
@@ -81,7 +81,8 @@ TP4056 = (28.0, 17.0)
 USB_PLUG = (13.0, 7.0)                      # a USB-C plug with its overmould
 
 WALL, TOP, BASE = 2.0, 1.6, 2.0
-EDGE_RADIUS = 3.0                           # rounded top edges; more would thin the wall below 1.2 mm
+TOP_CHAMFER = 1.4                           # a crisp chamfer round the top; leaves 1.5 mm of wall at the edge
+KEY_CHAMFER = 0.6
 PLINTH, REVEAL = 1.6, 1.2                   # the dark base stands below the shell, set in: a shadow line
 
 # The FilamentHub mark doubles as the antenna target: its outer arc is the ring
@@ -111,7 +112,7 @@ class Case:
         self.h = BASE + inner_h + TOP
         self.ceiling = self.h - TOP
         outer = slab(in_l + 2 * WALL, in_w + 2 * WALL, self.h, corner)
-        outer = fillet(outer.edges().group_by(Axis.Z)[-1], EDGE_RADIUS)
+        outer = chamfer(outer.edges().group_by(Axis.Z)[-1], TOP_CHAMFER)
         outer = chamfer(outer.edges().group_by(Axis.Z)[0], 0.6)  # no elephant's foot on the first layer
         self.shell = outer - slab(in_l, in_w, self.ceiling, corner - WALL)
         self.base = slab(in_l - 0.5, in_w - 0.5, BASE, corner - WALL - 0.25)
@@ -121,9 +122,12 @@ class Case:
         self.marks = []
         self.posts = []
         self.preview_caps = []
-        self.preview_cell = None
-        self.preview_screen = None
         self.view = None
+        self.inside = []                    # where the renderer puts each part: kind, x, y, z in mm
+
+    def part(self, kind, x, y, z, **extra):
+        """Record a part's place for the renderer; z is the reference face named in render_parts.py."""
+        self.inside.append({"kind": kind, "x": x, "y": y, "z": z, **extra})
 
     def add_posts(self, points):
         self.posts += points
@@ -149,20 +153,17 @@ class Case:
             for sx in (-1, 1):
                 for sy in (-1, 1):
                     self.base += Pos(cx + sx * (PN_L / 2 - 3.0), cy + sy * (PN_W / 2 - 3.0), BASE + height / 2) * Cylinder(2.0, height)
-        self.preview_reader = Pos(cx, cy, self.ceiling - PN_T / 2) * Box(PN_L, PN_W, PN_T)
+        self.part("pn5180", cx, cy, self.ceiling)
 
     def oled(self, cx, cy, window=True):
         """The glass lies against the top wall; brackets hold the board's outline."""
         self.shell += frame(cx, cy, OLED_L, OLED_W, OLED_GLASS + OLED_PCB + 0.8, self.ceiling)
         self.screen, self.view = (cx, cy), OLED_VIEW
+        self.part("oled", cx, cy, self.ceiling)
         if window:
             vx, vy = OLED_VIEW
             self.shell -= Pos(cx, cy, self.ceiling + TOP / 2) * Box(vx, vy, TOP + 0.4)
             self.shell -= Pos(cx, cy, self.h) * Box(vx + 3.0, vy + 3.0, 1.0)
-        self.preview_screen = (
-            Pos(cx, cy, self.ceiling - OLED_GLASS - OLED_PCB / 2) * Box(OLED_L, OLED_W, OLED_PCB)
-            + Pos(cx, cy, self.ceiling - OLED_GLASS / 2) * Box(OLED_L - 1.0, OLED_VIEW[1] + 4.0, OLED_GLASS)
-        )
 
     def touch(self, cx, cy):
         """The touch screen's glass against the top wall, touched through the window."""
@@ -172,11 +173,12 @@ class Case:
         self.shell -= Pos(wx, cy, self.ceiling + TOP / 2) * Box(vx, vy, TOP + 0.4)
         self.shell -= Pos(wx, cy, self.h) * Box(vx + 3.0, vy + 3.0, 1.0)
         self.screen, self.view = (wx, cy), TOUCH_VIEW
-        self.preview_screen = Pos(wx, cy, self.ceiling - TOUCH_STACK / 2) * Box(vx + 6.0, vy + 4.0, TOUCH_STACK)
+        self.part("touch", wx, cy, self.ceiling)
 
     def led(self, x, y):
         """A thin skin over a round LED board: the light shows through the print."""
         self.leds.append((x, y))
+        self.part("ws2812", x, y, self.ceiling - 0.6)
         tube = Cylinder(LED_TUBE_R + 1.2, 3.0) - Cylinder(LED_TUBE_R, 3.0)
         self.shell += Pos(x, y, self.ceiling - 1.5) * tube
         self.shell -= Pos(x, y, self.ceiling + (TOP - LED_SKIN) / 2) * Cylinder(2.5, TOP - LED_SKIN)
@@ -191,7 +193,8 @@ class Case:
         for sx in (-1, 1):
             cup -= Pos(x + sx * SWITCH_LEG_PITCH / 2, y, self.ceiling - cup_h / 2) * Box(1.4, 7.0, cup_h + 0.2)
         self.shell += cup
-        self.shell -= Pos(x, y, self.ceiling + TOP / 2) * Box(KEY_HOLE, KEY_HOLE, TOP + 0.4)
+        self.part("switch", x, y, floor_z)
+        self.shell -= Pos(x, y, self.ceiling - 0.2) * port_cutter(KEY_HOLE, KEY_HOLE, TOP + 0.2, KEY_CHAMFER, radius=1.0)
         return Pos(x, y, self.ceiling + 0.3) * keycap()
 
     def board(self, mcu, x_usb_wall, direction):
@@ -201,12 +204,14 @@ class Case:
         self.base += Pos(x0, 0, BASE + S3_SPINE_H / 2) * Box(length - 6.0, 4.0, S3_SPINE_H)
         usb_z = BASE + S3_SPINE_H + pcb + S3_USB_ABOVE_PCB
         slot = S3_USB_SLOT if mcu == "s3" else USB_PLUG  # the S3 has two sockets side by side
-        self.shell -= Pos(x_usb_wall + direction * WALL / 2, 0, usb_z) * Box(WALL + 2.0, *slot)
+        self.part(mcu, x0, 0.0, BASE + S3_SPINE_H, direction=direction)
+        self.port("+x" if direction > 0 else "-x", 0.0, usb_z, *slot)
         return x0
 
     def climate(self, x):
         """Slots in the back wall and two guides that stand the sensor board against them."""
         z = BASE + 9.0
+        self.part("sht40", x, self.in_w / 2 - 1.5, z)
         for i in range(-2, 3):
             self.shell -= Pos(x + 3.2 * i, self.in_w / 2 + WALL / 2, z) * Box(1.4, WALL + 2.0, 9.0)
         for sx in (-1, 1):
@@ -214,6 +219,7 @@ class Case:
 
     def buzzer(self, x, y):
         """Sound holes in the base under the buzzer module."""
+        self.part("buzzer", x, y, BASE)
         for i in (-1, 0, 1):
             for j in (-1, 0, 1):
                 self.base -= Pos(x + 4.0 * i, y + 4.0 * j, (BASE - PLINTH) / 2) * Cylinder(1.0, BASE + PLINTH + 0.2)
@@ -223,13 +229,17 @@ class Case:
             for sy in (-1, 1):
                 self.base -= Pos(sx * dx, sy * dy, -PLINTH + FOOT_DEPTH / 2 - 0.05) * Cylinder(FOOT_D / 2, FOOT_DEPTH + 0.1)
 
-    def side_hole(self, x, wall_sign, z, width, height):
-        """A rectangular opening in a long wall (+1 back, -1 front)."""
-        self.shell -= Pos(x, wall_sign * (self.in_w / 2 + WALL / 2), z) * Box(width, WALL + 2.0, height)
-
-    def end_hole(self, y, wall_sign, z, width, height):
-        """A rectangular opening in an end wall (+1 right, -1 left)."""
-        self.shell -= Pos(wall_sign * (self.in_l / 2 + WALL / 2), y, z) * Box(WALL + 2.0, width, height)
+    def port(self, wall, along, z, width, height):
+        """A flared opening through a wall ("+x", "-x", "+y", "-y"), `along` it at height `z`."""
+        if wall in ("+x", "-x"):
+            sign = 1 if wall == "+x" else -1
+            # Turned onto x, the cutter's x becomes height and its y stays along the wall.
+            cutter = Rot(0, 90 * sign, 0) * port_cutter(height, width, WALL + 1.0)
+            self.shell -= Pos(sign * (self.in_l / 2 - 1.0), along, z) * cutter
+        else:
+            sign = 1 if wall == "+y" else -1
+            cutter = Rot(-90 * sign, 0, 0) * port_cutter(width, height, WALL + 1.0)
+            self.shell -= Pos(along, sign * (self.in_w / 2 - 1.0), z) * cutter
 
 
 def keycap():
@@ -263,12 +273,13 @@ def battery_bay(case, x0, y0):
     """An 18650 holder between two rails on the base."""
     for y in (y0 - 0.6 - FIT, y0 + HOLDER_W + 0.6 + FIT):
         case.base += Pos(x0 + HOLDER_L / 2, y, BASE + 2.0) * Box(HOLDER_L - 10.0, 1.2, 4.0)
-    case.preview_cell = Pos(x0 + HOLDER_L / 2, y0 + HOLDER_W / 2, BASE + HOLDER_H / 2) * Box(HOLDER_L, HOLDER_W, HOLDER_H)
+    case.part("cell", x0 + HOLDER_L / 2, y0 + HOLDER_W / 2, BASE)
 
 
 def charger_port(case, y):
     """The TP4056 lies on the base against the front wall; its USB-C goes through it."""
-    case.end_hole(y, -1, BASE + 1.0 + 1.6 + 1.63, *USB_PLUG)
+    case.port("-x", y, BASE + 1.0 + 1.6 + 1.63, *USB_PLUG)
+    case.part("tp4056", -case.in_l / 2 + TP4056[0] / 2, y, BASE + 1.0)
 
 
 def portable_s3():
@@ -282,7 +293,9 @@ def portable_s3():
     case.board("s3", case.in_l / 2, +1)
     battery_bay(case, -70.0, -25.0)
     charger_port(case, 2.0 + TP4056[1] / 2)
-    case.side_hole(-6.0, +1, BASE + 6.0, 9.5, 4.5)  # power switch
+    case.port("+y", -6.0, BASE + 6.0, 9.5, 4.5)  # power switch
+    case.part("slide", -6.0, case.in_w / 2, BASE + 6.0)
+    case.part("mt3608", -25.0, 15.0, BASE)  # loose modules on foam tape
     case.buzzer(40.0, 20.0)
     case.feet(case.in_l / 2 - 18.0, case.in_w / 2 - 10.0)
     return case
@@ -297,7 +310,9 @@ def portable_c3():
     case.board("c3", case.in_l / 2, +1)
     battery_bay(case, -48.0, -25.0)
     charger_port(case, 2.0 + TP4056[1] / 2)
-    case.side_hole(15.0, +1, BASE + 6.0, 9.5, 4.5)
+    case.port("+y", 15.0, BASE + 6.0, 9.5, 4.5)
+    case.part("slide", 15.0, case.in_w / 2, BASE + 6.0)
+    case.part("mt3608", -8.0, 15.0, BASE)
     case.buzzer(42.0, 19.0)
     case.feet(case.in_l / 2 - 16.0, case.in_w / 2 - 10.0)
     return case
@@ -346,7 +361,9 @@ def station_c3():
     keys_and_leds(case, (16.0, 35.0, 54.0, 73.0))
     case.board("c3", -case.in_l / 2, -1)
     # The printer's 24 V comes in through the back wall to the step-down module.
-    case.shell -= Pos(-40.0, case.in_w / 2 + WALL / 2, BASE + 5.0) * Rot(90, 0, 0) * Cylinder(3.0, WALL + 2.0)
+    case.port("+y", -40.0, BASE + 5.0, 6.0, 6.0)
+    case.part("buck", -30.0, 18.0, BASE)
+    case.part("pcf8574", 10.0, 0.0, BASE)
     clip_bosses(case, (-55.0, 55.0))
     case.buzzer(45.0, 0.0)
     case.feet(case.in_l / 2 - 20.0, case.in_w / 2 - 10.0)
@@ -363,6 +380,7 @@ def station_s3():
     keys_and_leds(case, (31.0, 50.0, 69.0, 88.0))
     case.board("s3", -case.in_l / 2, -1)
     case.climate(-5.0)
+    case.part("pcf8574", 20.0, 0.0, BASE)
     clip_bosses(case, (-70.0, 70.0))
     case.buzzer(60.0, 0.0)
     case.feet(case.in_l / 2 - 20.0, case.in_w / 2 - 10.0)
@@ -432,8 +450,6 @@ if __name__ == "__main__":
         save(case.shell, f"fh-edge-{name}-shell", step=True)
         save(case.base, f"fh-edge-{name}-base", step=True)
         save(case.marks[0], f"fh-edge-{name}-mark")
-        if case.preview_screen is not None:
-            save(case.preview_screen, f"preview-{name}-screen")
         if case.preview_caps:
             save(union(case.preview_caps), f"preview-{name}-caps")
         print(f"{name} outer: {case.in_l + 2 * WALL:.1f} x {case.in_w + 2 * WALL:.1f} x {case.h + PLINTH:.1f} mm")
@@ -441,6 +457,7 @@ if __name__ == "__main__":
         scene[name] = {
             "top": case.h, "ceiling": case.ceiling, "plinth": PLINTH, "length": case.in_l + 2 * WALL,
             "leds": case.leds, "screen": case.screen, "view": case.view,
+            "length_in": case.in_l, "width_in": case.in_w, "inside": case.inside,
         }
     save(keycap(), "fh-edge-keycap")
     save(keycap_plate(), "fh-edge-station-keycaps")

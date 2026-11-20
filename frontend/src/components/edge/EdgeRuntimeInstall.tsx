@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { Check, ChevronDown, Copy, ExternalLink } from 'lucide-react';
 import { EDGE_INSTALL_GUIDE_URL } from '../../utils/edgeFirmware';
 import { toast } from '../Toast';
 
@@ -114,74 +114,123 @@ const MARK_PATHS = [
   "M144.15,289.05c-20.28,0-40.54-4.37-59.39-12.88-23.87-10.78-44.3-27.66-59.09-48.83C9.93,204.81,1.09,177.89.11,149.5-1.98,96.81,26.11,45.75,71.67,19.46,96.19,5.22,123.66-1.42,151.11.25c25.66,1.57,50.71,10.25,72.42,25.12,46.3,31.69,69.71,85.55,61.1,140.6-.41,3.03-.96,6.05-1.5,8.96-1.51,8.22-2.93,15.98-1.07,23.11l.04.14c2.18,9.05,8.87,16.95,17.45,20.6l.12.05c12.35,5.51,28.27,1.4,36.26-9.36l.14-.18c3.3-4.18,5.21-9.8,6.65-14.74,1.24-4.24,5.67-6.68,9.92-5.44,4.24,1.23,6.68,5.67,5.44,9.92-1.86,6.39-4.43,13.77-9.38,20.08-12.49,16.71-36.31,22.88-55.49,14.36-13.29-5.68-23.24-17.44-26.65-31.48-2.72-10.53-.83-20.85.84-29.95.53-2.88,1.03-5.61,1.39-8.29l.03-.18c7.68-48.92-13.13-96.81-54.32-125-40.75-27.88-92.4-29.9-134.81-5.27C39.19,56.68,14.24,102.05,16.1,148.9c1.7,49.34,30.54,92.5,75.25,112.69,45.01,20.32,94.75,13.66,133.04-17.82,3.41-2.8,8.46-2.31,11.26,1.1,2.81,3.41,2.31,8.46-1.1,11.26-21.79,17.91-47.62,28.99-74.7,32.04-5.22.59-10.46.88-15.7.88Z",
 ];
 
-const glyphStroke = {
+const glyph = {
   fill: 'none',
-  stroke: '#e9d5ff',
+  stroke: 'currentColor',
   strokeWidth: 3,
   strokeLinejoin: 'round' as const,
   strokeLinecap: 'round' as const,
 };
 
+function PrinterGlyph() {
+  return (
+    <g {...glyph}>
+      <rect x={-24} y={-22} width={48} height={42} rx={4} />
+      <path d="M-24 -9 H24 M-6 -9 V2 H6 V-9" />
+    </g>
+  );
+}
+
 function HostGlyph({ id }: { id: RuntimeId }) {
-  if (id === 'homeAssistant') return <path d="M-22 4 L0 -18 L22 4 M-15 -3 V20 H15 V-3" {...glyphStroke} />;
+  if (id === 'homeAssistant') return <path d="M-22 4 L0 -18 L22 4 M-15 -3 V20 H15 V-3" {...glyph} />;
   if (id === 'linux') {
     return (
       <g>
-        <rect x={-24} y={-17} width={48} height={36} rx={5} {...glyphStroke} />
-        <path d="M-15 -5 L-7 2 L-15 9 M-3 10 H10" {...glyphStroke} />
+        <rect x={-24} y={-17} width={48} height={36} rx={5} {...glyph} />
+        <path d="M-15 -5 L-7 2 L-15 9 M-3 10 H10" {...glyph} />
       </g>
     );
   }
   return (
     <g>
-      {[-15, 0, 15].map((x) => <rect key={x} x={x - 6} y={2} width={12} height={12} rx={2} {...glyphStroke} />)}
-      {[-7.5, 7.5].map((x) => <rect key={x} x={x - 6} y={-12} width={12} height={12} rx={2} {...glyphStroke} />)}
+      {[-15, 0, 15].map((x) => <rect key={x} x={x - 6} y={2} width={12} height={12} rx={2} {...glyph} />)}
+      {[-7.5, 7.5].map((x) => <rect key={x} x={x - 6} y={-12} width={12} height={12} rx={2} {...glyph} />)}
     </g>
+  );
+}
+
+function MarkGlyph() {
+  return (
+    <g transform="translate(-29 -23) scale(0.16)" fill="currentColor">
+      {MARK_PATHS.map((d) => <path key={d.slice(0, 16)} d={d} />)}
+    </g>
+  );
+}
+
+const NODE_TONE = {
+  printer: 'border-[#4a6d8a] bg-[#1d3a55] text-[#cfe3ea]',
+  host: 'border-2 border-violet-500 bg-[#3b0764] text-violet-100 shadow-[0_0_36px_rgba(124,58,237,0.35)]',
+  cloud: 'border-[#5b4a85] bg-[#1f1636] text-[#cfe3ea]',
+} as const;
+
+/**
+ * One block of the diagram. Every block has the same icon box, so the titles
+ * of all three sit on one line once they stand in a row.
+ */
+function DiagramNode({ tone, icon, title, detail, badge }: {
+  tone: keyof typeof NODE_TONE;
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  badge?: string;
+}) {
+  return (
+    <div className={`flex min-w-0 items-center gap-4 rounded-2xl border px-4 py-3 lg:flex-1 lg:flex-col lg:justify-start lg:gap-2 lg:px-3 lg:py-5 lg:text-center ${NODE_TONE[tone]}`}>
+      <svg viewBox="-30 -30 60 60" aria-hidden className="h-11 w-11 shrink-0 lg:h-12 lg:w-12">{icon}</svg>
+      <div className="min-w-0">
+        <p className="text-base font-bold leading-6 text-white">{title}</p>
+        <p className="text-sm leading-5">{detail}</p>
+        {badge && (
+          <p className="mt-2 inline-block rounded-full bg-violet-600 px-3 py-0.5 text-xs font-bold text-white">{badge}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The link between two blocks with its label right on it: an arrow down while
+ * the blocks are stacked, across once they stand in a row.
+ */
+function DiagramLink({ label, both }: { label: string; both?: boolean }) {
+  const head = 'h-4 w-4 shrink-0 text-violet-400';
+  return (
+    <div className="relative flex shrink-0 justify-center py-1 lg:w-28 lg:flex-col lg:items-stretch lg:justify-center lg:gap-1.5 lg:px-1 lg:py-0">
+      <span className="absolute left-1/2 right-0 top-1/2 ml-6 -translate-y-1/2 text-xs leading-4 text-violet-100/85 lg:static lg:ml-0 lg:translate-y-0 lg:text-center">
+        {label}
+      </span>
+      <span aria-hidden className="flex flex-col items-center lg:flex-row">
+        {both && <ChevronDown className={`${head} -mb-2 rotate-180 lg:-mr-2 lg:mb-0 lg:rotate-90`} />}
+        <span className="block h-7 w-0.5 rounded bg-violet-400 lg:h-0.5 lg:w-auto lg:flex-1" />
+        <ChevronDown className={`${head} -mt-2 lg:-ml-2 lg:mt-0 lg:-rotate-90`} />
+      </span>
+    </div>
   );
 }
 
 /** Where Edge runs: the printer on the local network, Edge on its host, FilamentHub over HTTPS. */
 function RuntimeDiagram({ id }: { id: RuntimeId }) {
   const { t } = useTranslation();
-  const arrow = `edge-arrow-${id}`;
   return (
-    <figure className="max-w-2xl rounded-xl border border-white/10 p-3" style={{ backgroundColor: '#17112e' }}>
-      <svg viewBox="0 0 600 290" role="img" aria-label={t(`edgeRuntime.${id}.imageAlt`)} className="h-auto w-full">
-        <defs>
-          <marker id={arrow} viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 Z" fill="#a78bfa" />
-          </marker>
-        </defs>
-
-        <rect x={16} y={76} width={150} height={132} rx={14} fill="#1d3a55" stroke="#4a6d8a" />
-        <g transform="translate(91 120)" fill="none" stroke="#cfe3ea" strokeWidth={3} strokeLinejoin="round">
-          <rect x={-26} y={-24} width={52} height={46} rx={4} />
-          <path d="M-26 -10 H26 M-6 -10 V2 H6 V-10" />
-        </g>
-        <text x={91} y={176} fontSize={17} fontWeight={700} textAnchor="middle" fill="#fff">{t('edgeRuntime.diagram.printer')}</text>
-        <text x={91} y={194} fontSize={13} textAnchor="middle" fill="#cfe3ea">Klipper · Moonraker</text>
-
-        <rect x={206} y={58} width={188} height={170} rx={16} fill="#3b0764" stroke="#7c3aed" strokeWidth={2} />
-        <g transform="translate(300 104)"><HostGlyph id={id} /></g>
-        <text x={300} y={156} fontSize={17} fontWeight={700} textAnchor="middle" fill="#fff">{t(`edgeRuntime.${id}.host`)}</text>
-        <text x={300} y={176} fontSize={13} textAnchor="middle" fill="#e9d5ff">{t(`edgeRuntime.${id}.hostDetail`)}</text>
-        <rect x={252} y={194} width={96} height={20} rx={10} fill="#7c3aed" />
-        <text x={300} y={208} fontSize={13} fontWeight={700} textAnchor="middle" fill="#fff">FH Edge</text>
-
-        <rect x={434} y={76} width={150} height={132} rx={14} fill="#1f1636" stroke="#5b4a85" />
-        <g transform="translate(481 94) scale(0.16)" fill="#fff">
-          {MARK_PATHS.map((d) => <path key={d.slice(0, 16)} d={d} />)}
-        </g>
-        <text x={509} y={176} fontSize={17} fontWeight={700} textAnchor="middle" fill="#fff">FilamentHub</text>
-        <text x={509} y={194} fontSize={13} textAnchor="middle" fill="#cfe3ea">{t('edgeRuntime.diagram.cloud')}</text>
-
-        <line x1={172} y1={142} x2={200} y2={142} stroke="#a78bfa" strokeWidth={3} markerStart={`url(#${arrow})`} markerEnd={`url(#${arrow})`} />
-        <line x1={186} y1={154} x2={186} y2={246} stroke="#5b4a85" strokeDasharray="3 4" />
-        <text x={186} y={262} fontSize={13} textAnchor="middle" fill="#cfe3ea">{t('edgeRuntime.diagram.local')}</text>
-        <line x1={400} y1={142} x2={428} y2={142} stroke="#a78bfa" strokeWidth={3} markerEnd={`url(#${arrow})`} />
-        <line x1={414} y1={130} x2={414} y2={42} stroke="#5b4a85" strokeDasharray="3 4" />
-        <text x={414} y={30} fontSize={13} textAnchor="middle" fill="#cfe3ea">{t('edgeRuntime.diagram.outbound')}</text>
-      </svg>
+    <figure
+      role="img"
+      aria-label={t(`edgeRuntime.${id}.imageAlt`)}
+      className="max-w-3xl rounded-xl border border-white/10 p-4 md:p-5"
+      style={{ backgroundColor: '#17112e' }}
+    >
+      <div aria-hidden className="flex flex-col lg:flex-row lg:items-stretch">
+        <DiagramNode tone="printer" icon={<PrinterGlyph />} title={t('edgeRuntime.diagram.printer')} detail="Klipper · Moonraker" />
+        <DiagramLink label={t('edgeRuntime.diagram.local')} both />
+        <DiagramNode
+          tone="host"
+          icon={<HostGlyph id={id} />}
+          title={t(`edgeRuntime.${id}.host`)}
+          detail={t(`edgeRuntime.${id}.hostDetail`)}
+          badge="FH Edge"
+        />
+        <DiagramLink label={t('edgeRuntime.diagram.outbound')} />
+        <DiagramNode tone="cloud" icon={<MarkGlyph />} title="FilamentHub" detail={t('edgeRuntime.diagram.cloud')} />
+      </div>
     </figure>
   );
 }
@@ -198,9 +247,10 @@ export function EdgeRuntimeInstall() {
         <ol className="space-y-4">
           <Step index={1} title={t('edgeRuntime.homeAssistant.steps.repository')}>
             <Command value={HA_REPOSITORY} />
-            <a href={HA_ADD_REPOSITORY} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm text-purple-300 underline">
+            <a href={HA_ADD_REPOSITORY} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-purple-300 underline">
               {t('edgeRuntime.homeAssistant.openInHa')}
-              <ExternalLink className="h-3.5 w-3.5" />
+              {/* Inline, so the icon stays after the last word when the link wraps. */}
+              <ExternalLink className="ml-1.5 inline h-3.5 w-3.5 align-[-2px]" />
             </a>
           </Step>
           <Step index={2} title={t('edgeRuntime.homeAssistant.steps.install')} />

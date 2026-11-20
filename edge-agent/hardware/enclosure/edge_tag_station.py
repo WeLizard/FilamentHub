@@ -16,6 +16,7 @@ printing: generic PN5180 modules are sold as 69-70 x 37-39 mm and the position
 of the antenna on them is assumed.
 """
 
+import json
 from pathlib import Path
 
 from build123d import (
@@ -25,10 +26,12 @@ from build123d import (
     Cylinder,
     Pos,
     RectangleRounded,
+    Rot,
     chamfer,
     export_step,
     export_stl,
     extrude,
+    loft,
 )
 
 # --- BOARDS (catalogue values, verify) --------------------------------------
@@ -51,6 +54,7 @@ RIB = 1.2                                   # locating ribs around the boards
 RING_D, RING_W, MARK_DEPTH = 30.0, 1.4, 0.4
 LED_SKIN = 0.4                              # top wall left above the ESP's LED so it shines through
 FOOT_D, FOOT_DEPTH = 8.5, 0.6
+PORT_CHAMFER = 0.8                          # 45-degree flare on the outer edge of an opening
 
 OUT_L, OUT_W = IN_L + 2 * WALL, IN_W + 2 * WALL
 H = BASE + INNER_H + TOP
@@ -69,6 +73,22 @@ ESP_CX, ESP_CY = at(ESP_X0 + FIT + ESP_W / 2, ESP_Y1 - ESP_L / 2)
 PN_X0 = 30.0
 PN_CX, PN_CY = at(PN_X0 + FIT + PN_L / 2, IN_W / 2)
 ANTENNA_X, ANTENNA_Y = at(PN_X0 + FIT + PN_L - PN_ANTENNA_FROM_FAR_END, IN_W / 2)
+
+
+def port_cutter(width, height, depth, chamfer=PORT_CHAMFER, radius=None):
+    """An opening `depth` deep along +z, flared at its outer end (z = depth).
+
+    A stadium unless `radius` is given. The flare guides a plug in and gives the
+    opening a chamfered edge instead of a sharp cut.
+    """
+    r = min(width, height) / 2 - 0.01 if radius is None else radius
+    grow = chamfer + 0.5
+    hole = extrude(RectangleRounded(width, height, r), depth)
+    flare = loft([
+        Pos(0, 0, depth - chamfer) * RectangleRounded(width, height, r),
+        Pos(0, 0, depth + 0.5) * RectangleRounded(width + 2 * grow, height + 2 * grow, r + grow),
+    ])
+    return hole + flare
 
 
 def slab(length, width, height, radius, z0=0.0):
@@ -106,7 +126,7 @@ def build_shell():
 
     # USB-C plug through the back wall, level with the socket.
     usb_z = Z_CEILING - ESP_DROP - ESP_T - USB_C_AXIS_BELOW_PCB
-    shell -= Pos(ESP_CX, IN_W / 2 + WALL / 2, usb_z) * Box(USB_W, WALL + 2.0, USB_H)
+    shell -= Pos(ESP_CX, IN_W / 2 - 1.0, usb_z) * Rot(-90, 0, 0) * port_cutter(USB_W, USB_H, WALL + 1.0)
 
     # A thin spot above the ESP lets its LED show; a ring marks the antenna.
     shell -= Pos(ESP_CX, ESP_CY - 4.0, Z_CEILING + (TOP - LED_SKIN) / 2) * Cylinder(2.5, TOP - LED_SKIN)
@@ -163,6 +183,15 @@ if __name__ == "__main__":
     export_stl(esp, str(out / "preview_esp_board.stl"))
     export_step(shell, str(out / "edge_tag_station_shell.step"))
     export_step(base, str(out / "edge_tag_station_base.step"))
+    # Where the renderer puts the boards (render_parts.py): the reader's top face
+    # against the top wall, the ESP turned with its USB end to the back wall.
+    (out / "kit.json").write_text(json.dumps({
+        "top": H, "ceiling": Z_CEILING,
+        "inside": [
+            {"kind": "pn5180", "x": PN_CX, "y": PN_CY, "z": Z_CEILING},
+            {"kind": "c3_hanging", "x": ESP_CX, "y": ESP_CY, "z": Z_CEILING - ESP_DROP},
+        ],
+    }, indent=2), encoding="utf-8")
     print("outer size: %.1f x %.1f x %.1f mm" % (OUT_L, OUT_W, H))
     print("shell volume: %.1f cm3, base volume: %.1f cm3" % (shell.volume / 1000, base.volume / 1000))
     print("shell is one solid:", len(shell.solids()) == 1, "| base is one solid:", len(base.solids()) == 1)

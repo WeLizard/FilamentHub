@@ -2250,6 +2250,12 @@
         "divider": "B+ 与 GND 之间的分压"
       }
     },
+    "view": {
+      "label": "外壳视图",
+      "outside": "外壳",
+      "inside": "内部",
+      "insideAlt": "{{name}} 透视图：电路板和模块的安装位置"
+    },
     "filesTitle": "外壳",
     "files": {
       "shell": "上壳，STL",

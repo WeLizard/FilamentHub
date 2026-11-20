@@ -16,6 +16,7 @@ const ARROW = {
     line: 'lg:h-px lg:w-8 lg:bg-gradient-to-r',
     head: 'lg:-ml-2 lg:mt-0 lg:rotate-0',
   },
+  down: { row: '', line: '', head: '' },
 } as const;
 
 function Flow({ place, label }: { place: keyof typeof ARROW; label?: string }) {
@@ -42,10 +43,10 @@ export function EdgeMap() {
 
   return (
     <figure className="mb-14 md:mb-20">
-      <div className="grid items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_auto_minmax(0,0.9fr)_auto_minmax(0,0.9fr)]">
+      <div className="grid items-stretch gap-2 lg:grid-cols-[minmax(0,1.6fr)_auto_minmax(0,1fr)]">
         <div className="rounded-2xl border border-dashed border-white/25 p-4 md:p-5">
           <p className="mb-4 text-sm font-medium text-gray-300">{t('edgeSection.map.network')}</p>
-          <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.1fr)]">
             <ul className="space-y-2">
               {PRINTERS.map((printer) => (
                 <li key={printer} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-100">
@@ -70,26 +71,29 @@ export function EdgeMap() {
 
         <Flow place="outer" label={t('edgeSection.map.outbound')} />
 
-        <div className="flex flex-col justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 p-5 shadow-lg shadow-purple-900/40">
-          <p className="text-lg font-semibold text-white">FilamentHub</p>
-          <p className="mt-2 text-sm leading-5 text-purple-100">{t('edgeSection.map.cloud')}</p>
-        </div>
+        {/* The site and what the person sees stack in one column, so the network keeps its width. */}
+        <div className="flex flex-col">
+          <div className="rounded-2xl bg-gradient-to-br from-purple-600 to-purple-800 p-5 shadow-lg shadow-purple-900/40">
+            <p className="text-lg font-semibold text-white">FilamentHub</p>
+            <p className="mt-2 text-sm leading-5 text-purple-100">{t('edgeSection.map.cloud')}</p>
+          </div>
 
-        <Flow place="outer" />
+          <Flow place="down" />
 
-        <div className="flex flex-col justify-center rounded-2xl border border-white/10 bg-white/5 p-5">
-          <p className="mb-3 text-sm font-medium text-gray-300">{t('edgeSection.map.you')}</p>
-          <ul className="space-y-2 text-sm text-gray-100">
-            {outside.map(({ key, Icon }) => (
-              <li key={key} className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-gray-400" />
-                {t(`edgeSection.map.outside.${key}`)}
-              </li>
-            ))}
-          </ul>
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <p className="mb-3 text-sm font-medium text-gray-300">{t('edgeSection.map.you')}</p>
+            <ul className="space-y-2 text-sm text-gray-100">
+              {outside.map(({ key, Icon }) => (
+                <li key={key} className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-gray-400" />
+                  {t(`edgeSection.map.outside.${key}`)}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
-      <figcaption className="mt-3 text-sm text-gray-400">{t('edgeSection.map.caption')}</figcaption>
+      <figcaption className="mt-3 text-sm leading-6 text-gray-400">{t('edgeSection.map.caption')}</figcaption>
     </figure>
   );
 }
