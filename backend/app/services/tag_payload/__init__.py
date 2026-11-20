@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from . import openprinttag, tigertag
+from . import openprinttag, openspool, tigertag
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,17 @@ class DecodedTag:
 
 _DECODERS = {
     openprinttag.FORMAT: openprinttag.decode,
+    openspool.FORMAT: openspool.decode,
     tigertag.FORMAT: tigertag.decode,
+}
+
+# Formats each chip family carries, tried in this order when a reader reports
+# the chip but not the format: NTAG21x (Type 2) and NFC-V (Type 5).
+_FORMATS_BY_CHIP = {
+    "ntag213": (tigertag.FORMAT, openspool.FORMAT),
+    "ntag215": (tigertag.FORMAT, openspool.FORMAT),
+    "ntag216": (tigertag.FORMAT, openspool.FORMAT),
+    "iso15693": (openprinttag.FORMAT,),
 }
 
 
@@ -58,3 +68,17 @@ def decode_tag(tag_format: str | None, contents: bytes, uid: bytes | None = None
     except (ValueError, TypeError, KeyError, IndexError, OverflowError):
         return None
     return DecodedTag(**fields) if fields else None
+
+
+def identify_tag(chip: str | None, contents: bytes, uid: bytes | None = None) -> tuple[str, DecodedTag] | None:
+    """Find which format a tag's contents are in and decode them.
+
+    ``chip`` is what the reader saw (``ntag215``, ``iso15693``); an unknown
+    chip tries every format this server reads.
+    """
+    formats = _FORMATS_BY_CHIP.get((chip or "").strip().lower(), tuple(_DECODERS))
+    for tag_format in formats:
+        decoded = decode_tag(tag_format, contents, uid)
+        if decoded is not None:
+            return tag_format, decoded
+    return None

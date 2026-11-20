@@ -1,5 +1,7 @@
 """Account-owned physical tag bindings for UserSpool identities."""
 
+import base64
+import binascii
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -18,6 +20,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.spool_tag import (
     SpoolTagCreateRequest,
+    SpoolTagIdentifyRequest,
+    SpoolTagIdentifyResponse,
     SpoolTagResolutionResponse,
     SpoolTagResponse,
 )
@@ -28,6 +32,9 @@ from app.services.spool_tag_service import (
     list_spool_tags,
     unlink_spool_tag,
 )
+from app.services.tag_payload import identify_tag
+
+from .spool_compat_external import match_catalog_filament
 
 router = APIRouter(prefix="/spool-tags", tags=["spool-tags"])
 
@@ -61,6 +68,48 @@ async def resolve_spool_tag(
         uid=normalized,
         status="matched" if tag is not None else "unlinked",
         spool_id=tag.spool_id if tag is not None else None,
+    )
+
+
+@router.post("/identify", response_model=SpoolTagIdentifyResponse)
+async def identify_spool_tag(
+    payload: SpoolTagIdentifyRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SpoolTagIdentifyResponse:
+    """Say whose spool a tag marks; for a free tag, what its contents describe.
+
+    Reading the contents is best effort: an unknown format, or memory that does
+    not decode, still answers with the tag as free.
+    """
+    tag = await find_spool_tag(db, user_id=current_user.id, uid=payload.uid)
+    if tag is not None:
+        return SpoolTagIdentifyResponse(uid=payload.uid, status="matched", spool_id=tag.spool_id)
+    found = None
+    if payload.data:
+        try:
+            contents = base64.b64decode(payload.data, validate=True)
+            uid_bytes = bytes.fromhex(payload.uid)
+        except (binascii.Error, ValueError):
+            contents = b""
+            uid_bytes = None
+        if contents:
+            found = identify_tag(payload.chip, contents, uid_bytes)
+    if found is None:
+        return SpoolTagIdentifyResponse(uid=payload.uid, status="unlinked", spool_id=None)
+    tag_format, decoded = found
+    filament = None
+    if decoded.material_class in (None, "FFF"):
+        filament = await match_catalog_filament(
+            db, vendor_name=decoded.vendor_name, material=decoded.material, color_hex=decoded.color_hex,
+        )
+    return SpoolTagIdentifyResponse(
+        uid=payload.uid,
+        status="unlinked",
+        spool_id=None,
+        format=tag_format,
+        decoded=decoded.as_response(),
+        filament_id=filament.id if filament is not None else None,
     )
 
 

@@ -21,13 +21,12 @@ import math
 import uuid
 
 from .cbor import read_item
+from .ndef import TNF_MEDIA_TYPE, records, tlv_message
 
 FORMAT = "openprinttag"
 MIME_TYPE = b"application/vnd.openprinttag"
 
 _CC_MAGIC = {0xE1, 0xE2}
-_TLV_NULL, _TLV_NDEF, _TLV_TERMINATOR = 0x00, 0x03, 0xFE
-_NDEF_MEDIA_TYPE = 0x02
 
 _META_MAIN_OFFSET, _META_AUX_OFFSET = 0, 2
 _INSTANCE_UUID, _GTIN, _MATERIAL_CLASS, _MATERIAL_TYPE = 0, 4, 8, 9
@@ -58,53 +57,17 @@ def _ndef_message(memory: bytes) -> bytes:
         # Some readers hand over the NDEF message itself, without the tag's framing.
         return memory
     # The capability container is 4 bytes, or 8 when its size byte is zero.
-    position = 8 if len(memory) > 2 and memory[2] == 0 else 4
-    while position < len(memory):
-        kind = memory[position]
-        position += 1
-        if kind == _TLV_NULL:
-            continue
-        if kind == _TLV_TERMINATOR:
-            break
-        length = memory[position]
-        position += 1
-        if length == 0xFF:
-            length = int.from_bytes(memory[position : position + 2], "big")
-            position += 2
-        if kind == _TLV_NDEF:
-            return memory[position : position + length]
-        position += length
-    raise ValueError("no NDEF message")
+    return tlv_message(memory, 8 if len(memory) > 2 and memory[2] == 0 else 4)
 
 
 def _record_payload(message: bytes) -> bytes:
     """Return the payload of the OpenPrintTag record of an NDEF message."""
-    position = 0
-    while position < len(message):
-        header = message[position]
-        type_length = message[position + 1]
-        position += 2
-        if header & 0x10:  # short record: one length byte
-            payload_length = message[position]
-            position += 1
-        else:
-            payload_length = int.from_bytes(message[position : position + 4], "big")
-            position += 4
-        id_length = 0
-        if header & 0x08:
-            id_length = message[position]
-            position += 1
-        record_type = message[position : position + type_length]
-        position += type_length + id_length
-        payload = message[position : position + payload_length]
-        position += payload_length
-        # The specification forbids splitting this record into chunks (0x20).
-        if header & 0x07 == _NDEF_MEDIA_TYPE and record_type == MIME_TYPE and not header & 0x20:
-            if len(payload) != payload_length:
+    for record in records(message):
+        # The specification forbids splitting this record into chunks.
+        if record.tnf == TNF_MEDIA_TYPE and record.type == MIME_TYPE and not record.chunked:
+            if not record.complete:
                 raise ValueError("truncated record")
-            return payload
-        if header & 0x40:  # last record of the message
-            break
+            return record.payload
     raise ValueError("no OpenPrintTag record")
 
 

@@ -15,7 +15,7 @@ from app.models.spool_tag import SpoolTag
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool
-from app.services.tag_payload import decode_tag
+from app.services.tag_payload import decode_tag, identify_tag
 from app.services.tag_payload.cbor import CborError, read_item
 
 TAGS = Path(__file__).parent / "fixtures" / "openprinttag"
@@ -224,3 +224,109 @@ def test_tigertag_states_only_what_its_ids_and_fields_support() -> None:
     assert decode_tag("tigertag", _tigertag(magic=bytes.fromhex("6C41A2E1"))) is None
     assert decode_tag("tigertag", bytes(80)) is None
     assert decode_tag("tigertag", _tigertag()[:60]) is None
+
+
+def _ndef_media(mime: bytes, payload: bytes) -> bytes:
+    """One NDEF media record as a TLV block, the way an NTAG21x stores it."""
+    record = bytes([0xD2, len(mime)]) + (
+        bytes([len(payload)]) if len(payload) < 256 else b""
+    ) + mime + payload
+    if len(payload) >= 256:  # a long record: header without the short flag
+        record = bytes([0xC2, len(mime)]) + len(payload).to_bytes(4, "big") + mime + payload
+    tlv = bytes([0x03, len(record)]) if len(record) < 255 else bytes([0x03, 0xFF]) + len(record).to_bytes(2, "big")
+    return tlv + record + bytes([0xFE])
+
+
+def _ntag215_dump(user_pages: bytes) -> bytes:
+    """A full NTAG215 dump: UID, lock bytes, the capability container, user memory."""
+    system = bytes.fromhex("04112288") + bytes.fromhex("33445566") + bytes.fromhex("77480000") + bytes.fromhex("E1103E00")
+    return system + user_pages.ljust(504, b"\x00")
+
+
+OPENSPOOL = (
+    b'{"protocol":"openspool","version":"1.0","type":"petg","color_hex":"#ffaabb",'
+    b'"brand":"Elegoo","min_temp":"230","max_temp":"250","subtype":"Rapid"}'
+)
+
+
+def test_openspool_tag_is_read_from_its_json_record() -> None:
+    expected = {
+        "material_class": "FFF", "material": "PETG", "name": "PETG Rapid", "vendor_name": "Elegoo",
+        "color_hex": "FFAABB", "extruder_temp": 240,
+    }
+    message = _ndef_media(b"application/json", OPENSPOOL)
+    # A full chip dump, the user pages alone and a bare NDEF message read the same.
+    for contents in (_ntag215_dump(message), message, message[2:-1]):
+        decoded = decode_tag("OpenSpool", contents)
+        assert decoded is not None and decoded.as_response() == expected
+
+
+def test_openspool_states_only_what_makes_sense() -> None:
+    document = (
+        b'{"protocol":"openspool","type":"PLA","color_hex":"not a colour","brand":"Generic",'
+        b'"min_temp":900,"max_temp":215}'
+    )
+    decoded = decode_tag("openspool", _ndef_media(b"application/json", document))
+    # The placeholder brand, a broken colour and an impossible temperature are left out.
+    assert decoded is not None
+    assert decoded.as_response() == {"material_class": "FFF", "material": "PLA", "name": "PLA", "extruder_temp": 215}
+    # JSON of another protocol, or a record of another type, is not OpenSpool.
+    assert decode_tag("openspool", _ndef_media(b"application/json", b'{"protocol":"other"}')) is None
+    assert decode_tag("openspool", _ndef_media(b"text/plain", OPENSPOOL)) is None
+    assert decode_tag("openspool", _ndef_media(b"application/json", b"{broken")) is None
+
+
+def test_the_chip_a_reader_saw_picks_the_format() -> None:
+    tigertag_dump = bytes(16) + _tigertag() + bytes(64)
+    assert identify_tag("ntag213", tigertag_dump)[0] == "tigertag"
+    assert identify_tag("ntag215", _ntag215_dump(_ndef_media(b"application/json", OPENSPOOL)))[0] == "openspool"
+    assert identify_tag("iso15693", _tag("01_data.bin"), bytes.fromhex(UID))[0] == "openprinttag"
+    # A chip the reader did not name tries every format.
+    assert identify_tag(None, tigertag_dump)[0] == "tigertag"
+    # A blank tag, or a FilamentHub address alone, describes no filament.
+    address = bytes([0xD1, 0x01, 0x10, 0x55, 0x04]) + b"filamenthub.ru/qr/x"
+    assert identify_tag("ntag215", _ntag215_dump(bytes([0x03, len(address)]) + address + b"\xfe")) is None
+    assert identify_tag("ntag215", _ntag215_dump(b"")) is None
+
+
+@pytest.mark.asyncio
+async def test_identify_answers_with_the_spool_or_with_what_a_free_tag_describes(
+    auth_client: AsyncClient, auth_user: User, db_session: AsyncSession,
+) -> None:
+    brand = Brand(name="Elegoo", slug="elegoo-identify", verified=True, active=True)
+    rapid = Filament(
+        brand=brand, name="Rapid PETG Pink", slug="elegoo-rapid-petg-pink", material_type="PETG",
+        color_hex="#FFAABB", diameter=1.75, active=True,
+    )
+    spool = UserSpool(user_id=auth_user.id, initial_weight_g=1000.0, source="manual")
+    db_session.add_all([brand, rapid, spool])
+    await db_session.commit()
+    data = base64.b64encode(_ntag215_dump(_ndef_media(b"application/json", OPENSPOOL))).decode()
+
+    free = await auth_client.post(
+        "/api/v1/spool-tags/identify", json={"uid": "04:11:22:33:44:55:66", "chip": "ntag215", "data": data},
+    )
+    assert free.status_code == 200
+    assert free.json() == {
+        "uid": "04112233445566", "status": "unlinked", "spool_id": None, "format": "openspool",
+        "decoded": {
+            "material_class": "FFF", "material": "PETG", "name": "PETG Rapid", "vendor_name": "Elegoo",
+            "color_hex": "FFAABB", "extruder_temp": 240,
+        },
+        "filament_id": rapid.id,
+    }
+
+    linked = await auth_client.post(
+        f"/api/v1/spool-tags/{spool.id}", json={"uid": "04112233445566", "technology": "nfc", "format": "ntag215"},
+    )
+    assert linked.status_code == 201
+    matched = await auth_client.post("/api/v1/spool-tags/identify", json={"uid": "04112233445566", "data": data})
+    assert matched.json()["status"] == "matched" and matched.json()["spool_id"] == spool.id
+    assert matched.json()["decoded"] is None
+
+    # Contents that are not base64, or not a known format, still answer: the tag is free.
+    for broken in ("%%%", base64.b64encode(b"\x00" * 64).decode()):
+        answer = await auth_client.post("/api/v1/spool-tags/identify", json={"uid": "0499", "data": broken})
+        assert answer.status_code == 200
+        assert answer.json()["status"] == "unlinked" and answer.json()["format"] is None
+
