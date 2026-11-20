@@ -9658,6 +9658,36 @@
       "other": "Other"
     }
   },
+    "edgeTags": {
+      "title": "FH Edge station",
+      "hint": "Connect a station with a reader over USB: the site reads a tag or writes this spool's address to it. Works in Chrome and Edge on a computer.",
+      "connecting": "The station is restarting and turning on its reader. This takes about 15 seconds.",
+      "connected": "Station connected. Place a tag on the reader.",
+      "readAndLink": "Read and link",
+      "write": "Write spool to tag",
+      "disconnect": "Disconnect station",
+      "alreadyLinked": "This tag is already linked to this spool.",
+      "written": "The spool address is written to the tag and the tag is linked.",
+      "overwriteTitle": "Overwrite the tag?",
+      "overwriteMessage": "The tag already holds another address: {{uri}}. It will be replaced with this spool's address.",
+      "overwriteConfirm": "Overwrite",
+      "readForNewSpool": "Read tag with station",
+      "newSpoolTag": "Tag {{uid}} is read and will be linked to the new spool when you save it.",
+      "tagInUse": "This tag is already linked to a spool in your profile.",
+      "linkAfterCreateFailed": "The spool is saved, but the tag could not be linked: {{reason}}",
+      "batchNotLinked": "The tag was not linked: one tag identifies one spool, and several were saved.",
+      "errors": {
+        "not_configured": "The station is not set up yet. Link it on the FH Edge installation page first.",
+        "lost": "The connection to the station was lost. Check the cable and connect the station again.",
+        "busy": "The station is still running the previous command.",
+        "port_busy": "Another tab or program is using the station's port. Close it and try again.",
+        "connection": "Could not reach the station over USB.",
+        "not_writable": "The station cannot write this tag. Use an NTAG213, NTAG215 or NTAG216.",
+        "origin_mismatch": "The station is linked to another site address, so it will not write this spool's address. Link the station again from this site.",
+        "write_rejected_or_interrupted": "The tag refused the write: it is protected, in an unknown format, was swapped or left the reader. Place the tag again and retry.",
+        "linked_elsewhere": "This tag is linked to another spool. Unlink it there to use it here."
+      }
+    },
   "spoolTags": {
     "action": "RFID/NFC tags",
     "shortAction": "Tags",

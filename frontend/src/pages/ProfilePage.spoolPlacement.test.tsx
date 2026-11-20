@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeEdgeKit } from '../tests/fakeEdgeKit';
 import { currencySymbol } from '../utils/currency';
 
 const apiMocks = vi.hoisted(() => ({
@@ -15,8 +16,20 @@ const apiMocks = vi.hoisted(() => ({
   listFilaments: vi.fn(),
   listPrinters: vi.fn(),
   toastSuccess: vi.fn(),
+  resolveTag: vi.fn(),
+  linkTag: vi.fn(),
+  scanQr: vi.fn(),
   currency: 'RUB',
 }));
+const station = vi.hoisted(() => ({ kit: null as null | ReturnType<typeof import('../tests/fakeEdgeKit').fakeEdgeKit> }));
+
+vi.mock('../utils/edgeTagStation', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../utils/edgeTagStation')>();
+  return {
+    ...original,
+    connectEdgeTagStation: () => original.EdgeTagStation.connect(station.kit!.open),
+  };
+});
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
@@ -51,6 +64,15 @@ vi.mock('../api/client', async (importOriginal) => {
       ...original.filamentsAPI,
       get: apiMocks.getFilament,
       list: apiMocks.listFilaments,
+    },
+    spoolTagsAPI: {
+      ...original.spoolTagsAPI,
+      resolve: apiMocks.resolveTag,
+      link: apiMocks.linkTag,
+    },
+    qrAPI: {
+      ...original.qrAPI,
+      scan: apiMocks.scanQr,
     },
     presetsAPI: {
       ...original.presetsAPI,
@@ -505,3 +527,75 @@ describe('SpoolForm printer placement', () => {
     ]);
   });
 });
+
+describe('SpoolForm with an FH Edge tag station', () => {
+  const UID = '04112233445566';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(navigator, 'serial', { value: {}, configurable: true });
+    apiMocks.listPresets.mockResolvedValue({ items: [] });
+    apiMocks.listFilaments.mockResolvedValue({ items: [] });
+    apiMocks.listCurrencies.mockResolvedValue([]);
+    apiMocks.batchLimit.mockResolvedValue({ limit: 100 });
+    apiMocks.listPrinters.mockResolvedValue([]);
+    apiMocks.getFilament.mockResolvedValue({ id: 91, name: 'Stock PLA', active: true });
+    apiMocks.createSpool.mockResolvedValue({ id: 1270, filament_id: 91, state: 'shelf' });
+    apiMocks.resolveTag.mockImplementation(async (uid: string) => ({ uid, status: 'unlinked', spool_id: null }));
+    apiMocks.linkTag.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'serial');
+    station.kit = null;
+  });
+
+  const renderCreateForm = () => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <SpoolForm mode="create" initialFilamentId={91} initialPlacement="shelf" onSaved={vi.fn()} onCancel={vi.fn()} />
+    </QueryClientProvider>,
+  );
+
+  it('links a tag read on the station to the spool it creates', async () => {
+    station.kit = fakeEdgeKit();
+    renderCreateForm();
+    await screen.findByText('Stock PLA');
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.scanQr' }));
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.readForNewSpool' }));
+    expect(await screen.findByText('edgeTags.newSpoolTag')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.submit' }));
+    await waitFor(() => expect(apiMocks.linkTag).toHaveBeenCalledWith(1270, {
+      uid: UID,
+      technology: 'nfc',
+      format: 'ntag215',
+    }));
+  });
+
+  it('reads the FilamentHub address on a tag like a scanned QR code', async () => {
+    const code = 'FHQ1_04_UExBLTE_U_abcdefghijklmnopqrstuv';
+    station.kit = fakeEdgeKit({ tag: { uid: UID, type: 'ntag213', uri: `https://filamenthub.ru/qr/${code}` } });
+    apiMocks.scanQr.mockResolvedValue({ filament: null });
+    renderCreateForm();
+    await screen.findByText('Stock PLA');
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.scanQr' }));
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.readForNewSpool' }));
+
+    await waitFor(() => expect(apiMocks.scanQr).toHaveBeenCalledWith(code));
+  });
+
+  it('does not take a tag that already marks a spool in the profile', async () => {
+    station.kit = fakeEdgeKit();
+    apiMocks.resolveTag.mockResolvedValue({ uid: UID, status: 'matched', spool_id: 7 });
+    renderCreateForm();
+    await screen.findByText('Stock PLA');
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.scanQr' }));
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.readForNewSpool' }));
+    expect(await screen.findByText('edgeTags.tagInUse')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.submit' }));
+    await waitFor(() => expect(apiMocks.createSpool).toHaveBeenCalled());
+    expect(apiMocks.linkTag).not.toHaveBeenCalled();
+  });
+});
+

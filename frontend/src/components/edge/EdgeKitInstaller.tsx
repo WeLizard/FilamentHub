@@ -185,7 +185,7 @@ export function EdgeKitInstaller({ kit }: { kit: EdgeKit }) {
       if (message.state === 'linked') setLinkedBefore(true);
       if (message.state === 'code_rejected') failLink('code');
       if (message.state === 'removed') setLinkedBefore(false);
-    } else {
+    } else if (message.kind === 'tag' || message.kind === 'failure') {
       window.clearTimeout(answerTimer.current);
       setRead(message.kind === 'tag'
         ? { name: 'tag', type: message.type, uid: message.uid, uri: message.uri }

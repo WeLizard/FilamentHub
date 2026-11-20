@@ -9634,6 +9634,36 @@
       "other": "其他"
     }
   },
+    "edgeTags": {
+      "title": "FH Edge 读写站",
+      "hint": "通过 USB 连接带读卡器的读写站：网站可以读取标签，或将此料卷的地址写入标签。适用于电脑上的 Chrome 和 Edge。",
+      "connecting": "读写站正在重启并开启读卡器，约需 15 秒。",
+      "connected": "读写站已连接。请将标签放在读卡器上。",
+      "readAndLink": "读取并关联",
+      "write": "将料卷写入标签",
+      "disconnect": "断开读写站",
+      "alreadyLinked": "此标签已关联到此料卷。",
+      "written": "料卷地址已写入标签，标签已关联。",
+      "overwriteTitle": "覆盖标签？",
+      "overwriteMessage": "标签上已有其他地址：{{uri}}。它将被替换为此料卷的地址。",
+      "overwriteConfirm": "覆盖",
+      "readForNewSpool": "用读写站读取标签",
+      "newSpoolTag": "已读取标签 {{uid}}，保存后将关联到新料卷。",
+      "tagInUse": "此标签已关联到你资料中的料卷。",
+      "linkAfterCreateFailed": "料卷已保存，但标签关联失败：{{reason}}",
+      "batchNotLinked": "标签未关联：一个标签只对应一个料卷，而此次保存了多个。",
+      "errors": {
+        "not_configured": "读写站尚未设置。请先在 FH Edge 安装页面完成关联。",
+        "lost": "与读写站的连接已断开。请检查数据线并重新连接。",
+        "busy": "读写站仍在执行上一条命令。",
+        "port_busy": "读写站的端口被其他标签页或程序占用。请关闭后重试。",
+        "connection": "无法通过 USB 连接读写站。",
+        "not_writable": "读写站无法写入此标签。请使用 NTAG213、NTAG215 或 NTAG216。",
+        "origin_mismatch": "读写站关联的是另一个网站地址，因此不会写入此料卷的地址。请从本网站重新关联读写站。",
+        "write_rejected_or_interrupted": "标签拒绝写入：可能已加密、格式未知、被更换或已离开读卡器。请重新放置标签后重试。",
+        "linked_elsewhere": "此标签已关联到其他料卷。请先在那里取消关联。"
+      }
+    },
   "spoolTags": {
     "action": "RFID/NFC 标签",
     "shortAction": "标签",

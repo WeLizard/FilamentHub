@@ -214,7 +214,8 @@ export type EdgeDeviceMessage =
   | { kind: 'ready'; nfc: boolean }
   | { kind: 'wifi'; connected: boolean; reason: 'password' | 'not_found' | 'other' | null }
   | { kind: 'node'; state: 'linked' | 'code_rejected' | 'removed' }
-  | { kind: 'tag'; type: string; uid: string; uri: string | null }
+  | { kind: 'tag'; type: string; uid: string; uri: string | null; ndefKnown: boolean }
+  | { kind: 'written' }
   | { kind: 'failure'; error: string };
 
 /** Reads one line from the kit; log lines and anything unrecognised give null. */
@@ -252,7 +253,16 @@ export function parseEdgeDeviceLine(line: string): EdgeDeviceMessage | null {
   }
   if (value.event !== undefined) return null;
   if (value.ok === true && typeof value.uid === 'string' && typeof value.type === 'string') {
-    return { kind: 'tag', type: value.type, uid: value.uid, uri: typeof value.uri === 'string' ? value.uri : null };
+    return {
+      kind: 'tag',
+      type: value.type,
+      uid: value.uid,
+      uri: typeof value.uri === 'string' ? value.uri : null,
+      ndefKnown: value.ndef_known === true,
+    };
+  }
+  if (value.ok === true && value.written === true) {
+    return { kind: 'written' };
   }
   if (value.ok === false && typeof value.error === 'string') {
     return { kind: 'failure', error: value.error };

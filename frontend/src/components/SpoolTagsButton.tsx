@@ -1,15 +1,26 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Radio, Trash2, X } from 'lucide-react';
+import { Loader2, Nfc, PenLine, Radio, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  spoolQrAPI,
   spoolTagsAPI,
   type SpoolTagCreatePayload,
   type SpoolTagTechnology,
   type UserSpool,
 } from '../api/client';
+import { edgeTagStationErrorText, useEdgeTagStation } from '../hooks/useEdgeTagStation';
+import {
+  EdgeTagStationError,
+  isWritableTag,
+  spoolTagUris,
+  writeSpoolUri,
+  type EdgeTagRead,
+  type EdgeTagStation,
+} from '../utils/edgeTagStation';
 import { translateApiError } from '../utils/translateApiError';
+import { ConfirmModal } from './ConfirmModal';
 import { ModalOverlay } from './ModalOverlay';
 import { toast } from './Toast';
 
@@ -66,6 +77,79 @@ export function SpoolTagsButton({
   const pending = link.isPending || unlink.isPending;
   const name = spool.filament?.name ?? t('profilePage.spoolNoFilament');
 
+  const edge = useEdgeTagStation();
+  const [overwrite, setOverwrite] = useState<{ tag: EdgeTagRead; uris: string[] } | null>(null);
+  const stationBusy = pending || edge.status === 'connecting' || edge.status === 'working';
+
+  const close = () => {
+    setOpen(false);
+    setOverwrite(null);
+    void edge.disconnect();
+  };
+
+  const showStationError = (error: unknown) => {
+    const text = edgeTagStationErrorText(t, error);
+    if (text) toast.error(text);
+    else showError(error);
+  };
+
+  // A tag that already belongs to another spool is never taken over silently.
+  const tagOwner = async (uid: string): Promise<'this' | 'free'> => {
+    const resolved = await spoolTagsAPI.resolve(uid);
+    if (resolved.status === 'matched' && resolved.spool_id !== spool.id) {
+      throw new EdgeTagStationError('linked_elsewhere');
+    }
+    return resolved.status === 'matched' ? 'this' : 'free';
+  };
+
+  const linkStationTag = async (tag: EdgeTagRead) => {
+    // Every tag the kit reads is high-frequency: NTAG/ISO14443A or ISO15693.
+    await spoolTagsAPI.link(spool.id, { uid: tag.uid, technology: 'nfc', format: tag.type });
+    await queryClient.invalidateQueries({ queryKey });
+  };
+
+  const readAndLink = () => {
+    edge.run(async (station) => {
+      const tag = await station.read();
+      if (await tagOwner(tag.uid) === 'this') {
+        toast.info(t('edgeTags.alreadyLinked'));
+        return;
+      }
+      await linkStationTag(tag);
+      toast.success(t('spoolTags.linked'));
+    }).catch(showStationError);
+  };
+
+  const finishWrite = async (station: EdgeTagStation, tag: EdgeTagRead, uris: string[]) => {
+    const owner = await tagOwner(tag.uid);
+    if (!tag.uri || !uris.includes(tag.uri)) await writeSpoolUri(station, tag, uris);
+    if (owner === 'free') await linkStationTag(tag);
+    toast.success(t('edgeTags.written'));
+  };
+
+  const writeToTag = () => {
+    edge.run(async (station) => {
+      const tag = await station.read();
+      if (!isWritableTag(tag)) throw new EdgeTagStationError('not_writable');
+      await tagOwner(tag.uid);
+      const identity = await spoolQrAPI.issue(spool.id);
+      const uris = spoolTagUris(identity.target_url, identity.short_code, window.location.origin);
+      if (tag.uri && !uris.includes(tag.uri)) {
+        setOverwrite({ tag, uris });
+        return;
+      }
+      await finishWrite(station, tag, uris);
+    }).catch(showStationError);
+  };
+
+  const confirmOverwrite = () => {
+    const confirmed = overwrite;
+    setOverwrite(null);
+    if (!confirmed) return;
+    // The kit writes only to the UID read before, so a swapped tag is refused.
+    edge.run((station) => finishWrite(station, confirmed.tag, confirmed.uris)).catch(showStationError);
+  };
+
   return (
     <>
       <button
@@ -85,7 +169,7 @@ export function SpoolTagsButton({
       </button>
 
       {open && (
-        <ModalOverlay onClose={() => setOpen(false)}>
+        <ModalOverlay onClose={close}>
           <div className="w-full max-w-lg rounded-2xl border border-white/20 bg-gray-900 p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -96,7 +180,7 @@ export function SpoolTagsButton({
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={close}
                 title={t('common.close')}
                 className="rounded p-1 text-gray-400 transition hover:bg-white/10 hover:text-white"
               >
@@ -174,6 +258,53 @@ export function SpoolTagsButton({
               </button>
             </form>
 
+            {edge.supported && (
+              <div className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Nfc className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">{t('edgeTags.title')}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
+                      {t(edge.status === 'connecting'
+                        ? 'edgeTags.connecting'
+                        : edge.status === 'idle' ? 'edgeTags.hint' : 'edgeTags.connected')}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={readAndLink}
+                    disabled={stationBusy}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
+                  >
+                    {edge.status === 'connecting' || edge.status === 'working'
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Nfc className="h-3.5 w-3.5" />}
+                    {t('edgeTags.readAndLink')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={writeToTag}
+                    disabled={stationBusy}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    {t('edgeTags.write')}
+                  </button>
+                  {edge.status === 'ready' && (
+                    <button
+                      type="button"
+                      onClick={() => void edge.disconnect()}
+                      className="px-1 text-xs text-gray-400 transition hover:text-white"
+                    >
+                      {t('edgeTags.disconnect')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="mt-5 border-t border-white/10 pt-4">
               <h4 className="text-xs font-medium uppercase tracking-wide text-gray-400">
                 {t('spoolTags.linkedTags')}
@@ -213,6 +344,15 @@ export function SpoolTagsButton({
           </div>
         </ModalOverlay>
       )}
+      <ConfirmModal
+        isOpen={overwrite !== null}
+        onClose={() => setOverwrite(null)}
+        onConfirm={confirmOverwrite}
+        title={t('edgeTags.overwriteTitle')}
+        message={t('edgeTags.overwriteMessage', { uri: overwrite?.tag.uri ?? '' })}
+        confirmText={t('edgeTags.overwriteConfirm')}
+        variant="warning"
+      />
     </>
   );
 }
