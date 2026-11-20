@@ -108,35 +108,49 @@ bool fh_nfc_uri_allowed(const char *origin, const char *uri)
     return true;
 }
 
+static void read_blocks(const fh_tag_io *io, fh_tag_info *info)
+{
+    /* NFC-V memory is read block by block until the tag reports its end. */
+    uint8_t block[4];
+    for (unsigned index = 0; index < 256 && info->data_len + 4u <= FH_NTAG_MAX_DATA; index++) {
+        if (!io->read_block(io->context, info->uid, (uint8_t)index, block)) break;
+        memcpy(info->data + info->data_len, block, 4);
+        info->data_len += 4;
+    }
+}
+
 bool fh_tag_read(const fh_tag_io *io, fh_tag_info *info)
 {
     if (!io || !info || !io->select || !io->version || !io->read4) return false;
     memset(info, 0, sizeof(*info));
     if (!io->select(io->context, info->uid, &info->uid_len,
                     &info->type, &info->collision)) return false;
-    if (info->collision || info->type != FH_TAG_ISO14443A || info->uid_len != 7)
+    if (info->collision) return true;
+    if (info->type == FH_TAG_ISO15693) {
+        if (info->uid_len == 8 && io->read_block) read_blocks(io, info);
         return true;
+    }
+    if (info->type != FH_TAG_ISO14443A || info->uid_len != 7) return true;
     uint8_t version[8];
     if (!io->version(io->context, version)) return true;
     info->type = version_type(version);
     tag_geometry tag;
     if (!geometry(info->type, &tag)) return true;
+    /* The whole user memory is reported: some formats (TigerTag) keep their
+     * data there without an NDEF message. */
+    if (!read_data(io, tag.cc_bytes, info->data)) return true;
+    info->data_len = tag.cc_bytes;
     uint8_t cc[16];
     if (!io->read4(io->context, 2, cc) ||
         cc[4] != 0xe1 || cc[5] != 0x10 || cc[6] != tag.cc_size)
         return true;
-    uint8_t *data = malloc(tag.cc_bytes);
-    if (!data) return true;
-    if (read_data(io, tag.cc_bytes, data)) {
-        size_t length_at, value_at, old_end;
-        info->ndef_known = ndef_location(data, tag.cc_bytes,
-                                         info->type == FH_TAG_NTAG213, &length_at,
-                                         &value_at, &old_end);
-        if (info->ndef_known)
-            info->uri_known = decode_uri(data, tag.cc_bytes,
-                                         info->type == FH_TAG_NTAG213, info->uri);
-    }
-    free(data);
+    size_t length_at, value_at, old_end;
+    info->ndef_known = ndef_location(info->data, tag.cc_bytes,
+                                     info->type == FH_TAG_NTAG213, &length_at,
+                                     &value_at, &old_end);
+    if (info->ndef_known)
+        info->uri_known = decode_uri(info->data, tag.cc_bytes,
+                                     info->type == FH_TAG_NTAG213, info->uri);
     return true;
 }
 

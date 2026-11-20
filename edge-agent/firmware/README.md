@@ -289,9 +289,13 @@ layouts, protections, removal and collisions fail closed.
 
 `read` reports the UID and detected ISO14443A or ISO15693 type. For recognized
 NTAG21x tags it reports a known short NDEF URI with uncompressed, `http://`,
-or `https://` prefix coding when present. It does not decode arbitrary NDEF,
-ISO14443B, ten-byte ISO14443A UIDs, protected factory Bambu data, or 125 kHz
-tags. The reader selects four- or seven-byte Type A UIDs, while guarded NTAG
+or `https://` prefix coding when present. Since 0.2.2 it also reports the
+tag's memory as base64 in `data`: the whole NTAG21x user memory from page 4
+(with or without an NDEF message), or ISO15693 four-byte blocks from block 0
+until the tag reports its end, up to 872 bytes. The firmware does not decode
+those contents; the website reads TigerTag, OpenSpool and OpenPrintTag from
+them. It does not read ISO14443B, ten-byte ISO14443A UIDs, MIFARE Classic
+sectors (factory Bambu and Creality tags), or 125 kHz tags. The reader selects four- or seven-byte Type A UIDs, while guarded NTAG
 writing requires seven bytes. A fob's color or
 shape does not establish its RF protocol. It makes no slot assignment.
 

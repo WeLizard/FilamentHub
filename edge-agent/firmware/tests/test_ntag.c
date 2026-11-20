@@ -87,11 +87,54 @@ static void setup(fake_tag *tag, uint8_t storage, uint8_t cc_size,
 
 static fh_tag_io interface(fake_tag *tag)
 {
-    return (fh_tag_io){tag, select_tag, version_tag, read4, write_page};
+    return (fh_tag_io){tag, select_tag, version_tag, read4, write_page, NULL};
+}
+
+/* An NFC-V tag of 80 four-byte blocks (ICODE SLIX2) behind the same select. */
+static bool read_block(void *ctx, const uint8_t uid[8], uint8_t block, uint8_t bytes[4])
+{
+    fake_tag *tag = ctx;
+    assert(memcmp(uid, tag->uid, 7) == 0 && uid[7] == 0x42);
+    if (block >= 80) return false;
+    memcpy(bytes, tag->memory + (size_t)block * 4, 4);
+    return true;
+}
+
+static void test_reads_report_the_whole_memory(void)
+{
+    fake_tag tag;
+    setup(&tag, 0x11, 0x3e, 129, 130);
+    fh_tag_io io = interface(&tag);
+    fh_tag_info info;
+    assert(fh_tag_read(&io, &info));
+    assert(info.type == FH_TAG_NTAG215 && info.data_len == 496);
+    assert(memcmp(info.data, tag.memory + 4 * 4, 496) == 0);
+
+    /* A TigerTag keeps binary data in the user pages with no NDEF message;
+     * a chip without a capability container is reported all the same. */
+    setup(&tag, 0x0f, 0x12, 39, 40);
+    memset(tag.memory + 3 * 4, 0, 4);
+    const uint8_t magic[4] = {0x5b, 0xf5, 0x92, 0x64};
+    memcpy(tag.memory + 4 * 4, magic, 4);
+    assert(fh_tag_read(&io, &info));
+    assert(info.type == FH_TAG_NTAG213 && !info.ndef_known && info.data_len == 144);
+    assert(memcmp(info.data, magic, 4) == 0);
+
+    setup(&tag, 0x11, 0x3e, 129, 130);
+    tag.type = FH_TAG_ISO15693;
+    for (size_t i = 0; i < 320; i++) tag.memory[i] = (uint8_t)i;
+    io.read_block = read_block;
+    assert(fh_tag_read(&io, &info));
+    assert(info.type == FH_TAG_ISO15693 && info.uid_len == 8 && info.data_len == 320);
+    assert(memcmp(info.data, tag.memory, 320) == 0);
+    /* Without block reads an NFC-V tag still reports its UID. */
+    io.read_block = NULL;
+    assert(fh_tag_read(&io, &info) && info.data_len == 0 && info.uid_len == 8);
 }
 
 int main(void)
 {
+    test_reads_report_the_whole_memory();
     const char *origin = "https://filamenthub.ru";
     const char *uri = "https://filamenthub.ru/qr/FHQ1_01_X_U_abcdefghijklmnop";
     assert(fh_nfc_uri_allowed(origin, uri));

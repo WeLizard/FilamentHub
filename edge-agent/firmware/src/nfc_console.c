@@ -7,6 +7,7 @@
 
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
+#include "mbedtls/base64.h"
 #include "freertos/task.h"
 
 #include <stdio.h>
@@ -23,6 +24,8 @@ typedef struct {
 } nfc_context;
 
 static nfc_context bench;
+/* Base64 of the largest memory a read reports, with its terminator. */
+static unsigned char data_base64[((FH_NTAG_MAX_DATA + 2) / 3) * 4 + 1];
 
 static void reply_error(const char *error)
 {
@@ -101,6 +104,11 @@ static void reply_read(const fh_tag_info *info)
     cJSON_AddStringToObject(response, "uid", uid);
     cJSON_AddBoolToObject(response, "ndef_known", info->ndef_known);
     if (info->uri_known) cJSON_AddStringToObject(response, "uri", info->uri);
+    size_t encoded = 0;
+    if (info->data_len &&
+        mbedtls_base64_encode(data_base64, sizeof(data_base64), &encoded,
+                              info->data, info->data_len) == 0)
+        cJSON_AddStringToObject(response, "data", (const char *)data_base64);
     char *serialized = cJSON_PrintUnformatted(response);
     cJSON_Delete(response);
     if (!serialized) { reply_error("memory"); return; }

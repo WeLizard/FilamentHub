@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The largest memory a read reports: NTAG216 user memory, 872 bytes; an
+ * ICODE SLIX2 (NFC-V) holds 320. */
 #define FH_NTAG_MAX_DATA 872
 #define FH_NTAG_MAX_URI 249
 
@@ -24,6 +26,9 @@ typedef struct {
     bool (*version)(void *context, uint8_t version[8]);
     bool (*read4)(void *context, uint8_t first_page, uint8_t bytes[16]);
     bool (*write_page)(void *context, uint8_t page, const uint8_t bytes[4]);
+    /* ISO 15693 READ SINGLE BLOCK of a 4-byte block; optional. */
+    bool (*read_block)(void *context, const uint8_t uid[8], uint8_t block,
+                       uint8_t bytes[4]);
 } fh_tag_io;
 
 typedef struct {
@@ -34,6 +39,10 @@ typedef struct {
     bool ndef_known;
     bool uri_known;
     char uri[FH_NTAG_MAX_URI + 1];
+    /* The tag's memory as read: NTAG user pages from page 4, or NFC-V
+     * blocks from block 0. Formats are decoded by the website. */
+    uint16_t data_len;
+    uint8_t data[FH_NTAG_MAX_DATA];
 } fh_tag_info;
 
 bool fh_tag_read(const fh_tag_io *io, fh_tag_info *info);

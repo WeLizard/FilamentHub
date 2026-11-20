@@ -331,6 +331,25 @@ static bool write_page(void *context, uint8_t page, const uint8_t bytes[4])
     return tag_command(context, request, sizeof(request), ack, 1, true);
 }
 
+static bool read_block(void *context, const uint8_t uid[8], uint8_t block,
+                       uint8_t bytes[4])
+{
+    /* ISO 15693 READ SINGLE BLOCK, addressed, high data rate. The field is
+     * still in ISO 15693 mode from the inventory that found the tag, and the
+     * UID is sent in the byte order the inventory returned it. */
+    uint8_t request[11] = {0x22, 0x20};
+    memcpy(request + 2, uid, 8);
+    request[10] = block;
+    uint8_t response[5];
+    size_t received = 0;
+    frame_result result = frame(context, request, sizeof(request), 0, true, true,
+                                response, sizeof(response), &received, NULL);
+    if (result != FRAME_OK || received != sizeof(response) || (response[0] & 0x01))
+        return false;
+    memcpy(bytes, response + 1, 4);
+    return true;
+}
+
 bool fh_pn5180_open(fh_pn5180 *reader, const fh_nfc_pins *pins)
 {
     if (!reader || !fh_nfc_pins_valid(pins)) return false;
@@ -395,5 +414,5 @@ void fh_pn5180_close(fh_pn5180 *reader)
 
 fh_tag_io fh_pn5180_tag_io(fh_pn5180 *reader)
 {
-    return (fh_tag_io){reader, select_any, get_version, read4, write_page};
+    return (fh_tag_io){reader, select_any, get_version, read4, write_page, read_block};
 }
