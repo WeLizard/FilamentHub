@@ -4,6 +4,8 @@ A single-file plugin for OrcaSlicer's Python plugin system. It opens the real
 FilamentHub React catalog inside OrcaSlicer and synchronizes the user's saved
 presets into OrcaSlicer.
 
+**Explore the full FilamentHub service:** [filamenthub.ru](https://filamenthub.ru) · [filamenthub.club](https://filamenthub.club). Manage your materials, spools, printers and print calculations on the website, and sign in to your FilamentHub account in the plugin to synchronize presets with OrcaSlicer.
+
 **Active testing:** this is an alpha plugin. The upstream plugin API is still
 evolving and updates may be frequent.
 
