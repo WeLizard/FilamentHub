@@ -3,6 +3,7 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropdown } from '../components/Dropdown';
+import { SpoolMaterialPicker } from '../components/SpoolMaterialPicker';
 import { PresetTestedOn } from '../components/PresetTestedOn';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -2579,6 +2580,7 @@ const SPOOL_BATCH_ATTEMPT_KEY = 'spool-batch-create';
 
 interface SpoolFormProps {
   mode: 'create' | 'edit';
+  shelfSpools?: readonly UserSpool[];
   spool?: UserSpool;
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
@@ -2589,8 +2591,11 @@ interface SpoolFormProps {
   onCancel: () => void;
 }
 
+const NO_SHELF_SPOOLS: readonly UserSpool[] = [];
+
 export const SpoolForm: React.FC<SpoolFormProps> = ({
   mode,
+  shelfSpools = NO_SHELF_SPOOLS,
   spool,
   initialFilamentId = null,
   initialSource = 'manual',
@@ -2602,7 +2607,10 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const { user } = useAuth();
   // Nobody photographs a spool with a desktop camera from inside OrcaSlicer, and
   // its embedded browser may not expose the camera at all.
-  const cameraScanAvailable = !isPluginEmbed();
+  const pluginEmbedded = isPluginEmbed();
+  const cameraScanAvailable = !pluginEmbedded;
+  const useCatalogPicker = mode === 'create' && !pluginEmbedded;
+  const [isMaterialFormOpen, setIsMaterialFormOpen] = useState(false);
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [filamentId, setFilamentId] = useState<string>(spool?.filament_id ? String(spool.filament_id) : '');
@@ -2633,7 +2641,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const [qrBusy, setQrBusy] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
   const [qrSuccess, setQrSuccess] = useState<string | null>(null);
-  const [scannedFilament, setScannedFilament] = useState<Filament | null>(null);
+  const [selectedMaterial, setSelectedMaterial] = useState<Filament | null>(null);
   const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCameraBusy, setIsCameraBusy] = useState(false);
@@ -2712,23 +2720,24 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     if (
       mode !== 'create'
       || !initialFilament
+      || filamentId !== ''
       || appliedInitialFilamentRef.current === initialFilament.id
     ) {
       return;
     }
     appliedInitialFilamentRef.current = initialFilament.id;
-    setScannedFilament(initialFilament);
+    setSelectedMaterial(initialFilament);
     setFilamentId(String(initialFilament.id));
     setSource(initialSource);
-    if (initialFilament.spool_weight && initialFilament.spool_weight > 0) {
+    if (!initialWeightEditedRef.current && initialFilament.spool_weight && initialFilament.spool_weight > 0) {
       setInitialWeight(String(initialFilament.spool_weight));
     }
-  }, [initialFilament, initialSource, mode]);
+  }, [filamentId, initialFilament, initialSource, mode]);
 
   const filamentOptions = useMemo(() => {
     const list = [...presetFilaments];
-    if (scannedFilament && !list.some((item) => item.id === scannedFilament.id)) {
-      list.unshift(scannedFilament);
+    if (selectedMaterial && !list.some((item) => item.id === selectedMaterial.id)) {
+      list.unshift(selectedMaterial);
     }
     if (spool?.filament && !list.some((item) => item.id === spool.filament!.id)) {
       list.unshift({
@@ -2762,16 +2771,26 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       });
     }
     return list;
-  }, [presetFilaments, scannedFilament, spool?.filament]);
+  }, [presetFilaments, selectedMaterial, spool?.filament]);
 
   const groupedFilamentOptions = useMemo(
     () => groupFilamentOptionsByBrand(filamentOptions, t('profilePage.spoolAddModal.otherBrand')),
     [filamentOptions, t],
   );
+  const selectedFilament = filamentOptions.find(item => String(item.id) === filamentId);
   const packagingWeights = useMemo(
-    () => singleSpoolWeights(filamentOptions.find(item => String(item.id) === filamentId)?.packagings),
-    [filamentOptions, filamentId],
+    () => singleSpoolWeights(selectedFilament?.packagings),
+    [selectedFilament?.packagings],
   );
+  const selectCatalogMaterial = (item: Filament | null) => {
+    setSelectedMaterial(item);
+    setFilamentId(item ? String(item.id) : '');
+    setSource('manual');
+    setQrSuccess(null);
+    setQrError(null);
+    setErrorText(null);
+    setIsMaterialFormOpen(false);
+  };
 
   useEffect(() => {
     if (!spool) {
@@ -2791,7 +2810,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     setQrInput('');
     setQrError(null);
     setQrSuccess(null);
-    setScannedFilament(null);
+    setSelectedMaterial(null);
     setQrScanResult(null);
     setIsCameraOpen(false);
     setIsCameraBusy(false);
@@ -2963,7 +2982,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       return;
     }
     const filament = qrScanResult.filament;
-    setScannedFilament(filament);
+    setSelectedMaterial(filament);
     setFilamentId(String(filament.id));
     setSource('qr');
     if (filament.spool_weight && filament.spool_weight > 0) {
@@ -2977,6 +2996,10 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (useCatalogPicker && !selectedFilament) {
+      setErrorText(t('profilePage.spoolAddModal.catalogRequired'));
+      return;
+    }
     setErrorText(null);
     const parsedInitialInput = parseDecimalInput(initialWeight);
     const parsedUsedInput = parseDecimalInput(usedWeight || '0');
@@ -3286,6 +3309,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   })();
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
       {qrScanResult && (
         <QrScanResultModal
@@ -3303,7 +3327,9 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
 
       <div>
         <div className="flex items-center justify-between gap-2 mb-1">
-          <label className={`${labelCls} mb-0`}>{t('profilePage.spoolAddModal.filamentLabel')}</label>
+          <span className={`${labelCls} mb-0`}>
+            {t(useCatalogPicker ? 'profilePage.spoolAddModal.catalogLabel' : 'profilePage.spoolAddModal.filamentLabel')}
+          </span>
           <button
             type="button"
             onClick={() => setIsQrPanelOpen((prev) => !prev)}
@@ -3402,19 +3428,31 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           </div>
         )}
 
-        <Dropdown
-          value={filamentId}
-          options={groupedFilamentOptions}
-          onChange={(next) => {
-            setFilamentId(String(next));
-            setScannedFilament(null);
-            setSource('manual');
-          }}
-          placeholder={t('profilePage.spoolAddModal.filamentPlaceholder')}
-          filterable
-        />
-        {filamentOptions.length === 0 && (
-          <p className="mt-1 text-xs text-gray-500">{t('profilePage.spoolAddModal.noPresetFilaments')}</p>
+        {useCatalogPicker ? (
+          <SpoolMaterialPicker
+            selected={selectedFilament}
+            shelfSpools={shelfSpools}
+            presetMaterials={presetFilaments}
+            onSelect={selectCatalogMaterial}
+            onCreate={() => setIsMaterialFormOpen(true)}
+          />
+        ) : (
+          <>
+            <Dropdown
+              value={filamentId}
+              options={groupedFilamentOptions}
+              onChange={(next) => {
+                setFilamentId(String(next));
+                setSelectedMaterial(null);
+                setSource('manual');
+              }}
+              placeholder={t('profilePage.spoolAddModal.filamentPlaceholder')}
+              filterable
+            />
+            {filamentOptions.length === 0 && (
+              <p className="mt-1 text-xs text-gray-500">{t('profilePage.spoolAddModal.noPresetFilaments')}</p>
+            )}
+          </>
         )}
         {qrError && (
           <p className="mt-2 text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{qrError}</p>
@@ -3537,7 +3575,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       )}
 
       <div className="flex gap-2 pt-1">
-        <button type="submit" disabled={saving}
+        <button type="submit" disabled={saving || (useCatalogPicker && !selectedFilament)}
           className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-60">
           {saving ? (
             <Loader2 className="w-4 h-4 animate-spin mx-auto" />
@@ -3549,6 +3587,17 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
         </button>
       </div>
     </form>
+    {isMaterialFormOpen && (
+      <Suspense fallback={null}>
+        <CreatePresetModal
+          isOpen
+          materialOnly
+          onClose={() => setIsMaterialFormOpen(false)}
+          onMaterialCreated={selectCatalogMaterial}
+        />
+      </Suspense>
+    )}
+    </>
   );
 };
 
@@ -3952,6 +4001,7 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
             <div className="w-full max-w-2xl">
               <SpoolForm
                 mode="create"
+                shelfSpools={spools}
                 initialFilamentId={initialFilamentId}
                 initialSource={initialSource}
                 initialPlacement={initialPlacement}

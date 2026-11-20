@@ -1236,15 +1236,17 @@ export const filamentsAPI = {
     material_base?: string;
     printer_id?: number;
     search?: string;
+    search_mode?: 'identity';
     country?: string;
     color_group?: import('../types/api').FilamentColorGroup;
     multicolor?: boolean;
     /** brand: brands with their matching material counts (`brand_groups`) instead of materials;
      *  family/line: materials kept together by family or line, with `group_counts`. */
     group_by?: 'brand' | 'family' | 'line';
-  }, options?: { bypassSharedCache?: boolean }) => {
+  }, options?: { bypassSharedCache?: boolean; signal?: AbortSignal }) => {
     const response = await api.get<FilamentListResponse>('/filaments/', {
       params,
+      signal: options?.signal,
       headers: options?.bypassSharedCache ? { 'Cache-Control': 'no-cache' } : undefined,
     });
     return response.data;

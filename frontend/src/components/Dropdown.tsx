@@ -29,6 +29,8 @@ interface DropdownProps {
   clearable?: boolean;
   filterable?: boolean; // Можно ли фильтровать по введенному тексту
   filterValue?: string; // Значение для фильтрации
+  externallyFiltered?: boolean;
+  selectFirstOnEnter?: boolean;
   onFilterChange?: (value: string) => void; // Callback при изменении фильтра
   renderOption?: (option: DropdownOption) => ReactNode; // Кастомный рендеринг опции
   emptyMessage?: string; // Сообщение когда нет опций
@@ -51,6 +53,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
   clearable = true,
   filterable = false,
   filterValue = '',
+  externallyFiltered = false,
+  selectFirstOnEnter = true,
   onFilterChange,
   renderOption,
   emptyMessage: emptyMessageProp,
@@ -143,7 +147,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
 
   // Фильтруем опции если включена фильтрация
   const filteredOptions = useMemo(() => {
-    if (!filterable || !filter) {
+    if (!filterable || !filter || externallyFiltered) {
       return options;
     }
     const lowered = filter.toLowerCase();
@@ -152,7 +156,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
       String(opt.value).toLowerCase().includes(lowered) ||
       (opt.group?.toLowerCase().includes(lowered) ?? false)
     );
-  }, [filter, filterable, options]);
+  }, [filter, filterable, externallyFiltered, options]);
 
   const selectedOption = options.find(opt => opt.value === value);
   const multiLabel = multiple
@@ -238,7 +242,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                 }
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  if (filteredOptions.length > 0) {
+                  if (selectFirstOnEnter && filteredOptions[0] && !filteredOptions[0].disabled) {
                     handleOptionClick(filteredOptions[0].value);
                   }
                 }

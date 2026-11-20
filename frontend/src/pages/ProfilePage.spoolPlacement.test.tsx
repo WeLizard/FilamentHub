@@ -12,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   updateSpool: vi.fn(),
   listPresets: vi.fn(),
   getFilament: vi.fn(),
+  listFilaments: vi.fn(),
   listPrinters: vi.fn(),
   toastSuccess: vi.fn(),
   currency: 'RUB',
@@ -49,6 +50,7 @@ vi.mock('../api/client', async (importOriginal) => {
     filamentsAPI: {
       ...original.filamentsAPI,
       get: apiMocks.getFilament,
+      list: apiMocks.listFilaments,
     },
     presetsAPI: {
       ...original.presetsAPI,
@@ -100,6 +102,8 @@ describe('SpoolForm printer placement', () => {
     apiMocks.batchLimit.mockResolvedValue({ limit: 100 });
     apiMocks.createBatch.mockResolvedValue({});
     apiMocks.listPresets.mockResolvedValue({ items: [] });
+    apiMocks.listFilaments.mockResolvedValue({ items: [] });
+    apiMocks.getFilament.mockResolvedValue({ id: 91, name: 'Stock PLA', active: true });
     apiMocks.listPrinters.mockResolvedValue([
       {
         id: 948,
@@ -182,6 +186,7 @@ describe('SpoolForm printer placement', () => {
         <QueryClientProvider client={queryClient}>
           <SpoolForm
             mode="create"
+            initialFilamentId={91}
             initialPlacement="printer"
             onSaved={vi.fn()}
             onCancel={vi.fn()}
@@ -192,7 +197,8 @@ describe('SpoolForm printer placement', () => {
 
     const firstRun = renderForm();
 
-    await waitFor(() => expect(apiMocks.listPrinters).toHaveBeenCalled());
+    await screen.findByText('Stock PLA');
+    expect(apiMocks.listPrinters).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', {
       name: 'profilePage.spoolAddModal.submit',
     }));
@@ -215,6 +221,7 @@ describe('SpoolForm printer placement', () => {
     firstRun.unmount();
 
     renderForm();
+    await screen.findByText('Stock PLA');
     fireEvent.click(await screen.findByRole('button', {
       name: 'profilePage.spoolAddModal.submit',
     }));
@@ -332,9 +339,11 @@ describe('SpoolForm printer placement', () => {
       const view = render(
         <QueryClientProvider client={queryClient}>
           <SpoolForm mode={mode} spool={mode === 'edit' ? saved : undefined}
+            initialFilamentId={mode === 'create' ? 91 : undefined}
             initialPlacement="shelf" onSaved={vi.fn()} onCancel={vi.fn()} />
         </QueryClientProvider>,
       );
+      if (mode === 'create') await screen.findByText('Stock PLA');
       if (flow === 'per_spool' || flow === 'total') {
         fireEvent.change(view.container.querySelector('input[max]')!, { target: { value: '3' } });
         fireEvent.click(screen.getByRole('button', {
@@ -400,9 +409,10 @@ describe('SpoolForm printer placement', () => {
   it.each(['', '0', '-0.01'])('keeps empty, zero and negative price constraints (%s)', async (price) => {
     const view = render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <SpoolForm mode="create" initialPlacement="shelf" onSaved={vi.fn()} onCancel={vi.fn()} />
+        <SpoolForm mode="create" initialFilamentId={91} initialPlacement="shelf" onSaved={vi.fn()} onCancel={vi.fn()} />
       </QueryClientProvider>,
     );
+    await screen.findByText('Stock PLA');
     const input = screen.getByPlaceholderText('profilePage.spoolAddModal.pricePlaceholder') as HTMLInputElement;
     fireEvent.change(input, { target: { value: price } });
     expect(input.form!.checkValidity()).toBe(price !== '-0.01');
@@ -418,7 +428,46 @@ describe('SpoolForm printer placement', () => {
     view.unmount();
   });
 
-  it('groups the filament picker under alphabetical brand headings with brandless last', async () => {
+  it('ranks the exact catalog color and diameter above a similar shelf item and requires an explicit choice', async () => {
+    const catalogMaterial = {
+      id: 91, name: 'Stock PLA', color_name: 'Blue', diameter: 1.75, active: true,
+    };
+    const shelfMaterial = { ...catalogMaterial, id: 92, diameter: 2.85 };
+    apiMocks.getFilament.mockResolvedValue(shelfMaterial);
+    apiMocks.listFilaments.mockImplementation(async ({ search }) => ({
+      items: search ? [shelfMaterial, catalogMaterial] : [],
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const shelfSpool = {
+      ...await apiMocks.createSpool(),
+      filament_id: shelfMaterial.id,
+    };
+    apiMocks.createSpool.mockClear();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SpoolForm mode="create" shelfSpools={[shelfSpool]} initialPlacement="shelf"
+          onSaved={vi.fn()} onCancel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const submit = screen.getByRole('button', { name: 'profilePage.spoolAddModal.submit' });
+    const picker = screen.getByRole('textbox', { name: 'profilePage.spoolAddModal.catalogLabel' });
+    expect(submit).toBeDisabled();
+    fireEvent.change(picker, { target: { value: 'Blue 1,750мм' } });
+    const exact = await screen.findByRole('button', { name: /Stock PLA.*1\.75/ });
+    const similar = screen.getByRole('button', { name: /Stock PLA.*2\.85/ });
+    expect(exact.compareDocumentPosition(similar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exact).not.toHaveTextContent('catalogSimilar');
+    expect(similar).toHaveTextContent('catalogSimilar');
+    fireEvent.keyDown(picker, { key: 'Enter' });
+    expect(submit).toBeDisabled();
+    fireEvent.click(exact);
+    fireEvent.click(submit);
+    await waitFor(() => expect(apiMocks.createSpool).toHaveBeenCalledWith(expect.objectContaining({
+      filament_id: 91, source: 'manual',
+    })));
+  });
+
+  it('groups the edit filament picker under alphabetical brand headings with brandless last', async () => {
     const filaments: Record<number, { brand_name: string | null; name: string }> = {
       1: { brand_name: 'Polymaker', name: 'PLA Pro' },
       2: { brand_name: 'eSUN', name: 'PETG' },
@@ -436,7 +485,7 @@ describe('SpoolForm printer placement', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>
-        <SpoolForm mode="create" onSaved={vi.fn()} onCancel={vi.fn()} />
+        <SpoolForm mode="edit" onSaved={vi.fn()} onCancel={vi.fn()} />
       </QueryClientProvider>,
     );
 

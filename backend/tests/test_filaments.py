@@ -29,6 +29,82 @@ async def test_list_filaments_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_identity_search_ranks_exact_matches_before_pagination(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand = Brand(name="Север", slug="north")
+    other_brand = Brand(name="East", slug="east")
+    db_session.add_all([brand, other_brand])
+    await db_session.flush()
+    line = FilamentLine(brand_id=brand.id, name="Prime")
+    db_session.add(line)
+    await db_session.flush()
+
+    exact = Filament(
+        brand_id=brand.id,
+        line_id=line.id,
+        name="Zulu Marine",
+        slug="zulu-marine",
+        material_type="PLA",
+        color_name="Blue (Matte)",
+        color_hex="#aB1234",
+        diameter=1.75,
+    )
+    partial_all = Filament(
+        brand_id=brand.id,
+        line_id=line.id,
+        name="Alpha Marine",
+        slug="alpha-marine",
+        material_type="PLA+",
+        color_name="Blueberry",
+        color_hex="#AB1234",
+        diameter=1.75,
+    )
+    partial_missing = Filament(
+        brand_id=brand.id,
+        line_id=line.id,
+        name="A Marine",
+        slug="a-marine",
+        material_type="PLA",
+        color_name="Yellow",
+        color_hex="#FFFF00",
+        diameter=1.75,
+    )
+    unrelated = Filament(
+        brand_id=other_brand.id,
+        name="Stone",
+        slug="stone",
+        material_type="ABS",
+        diameter=2.85,
+    )
+    db_session.add_all([exact, partial_all, partial_missing, unrelated])
+    await db_session.commit()
+
+    search = "север Prime marine PLA Blue #AB1234 1,75 мм"
+    first_page = await client.get(
+        "/api/v1/filaments/", params={"search_mode": "identity", "search": search, "size": 1}
+    )
+    assert first_page.status_code == 200
+    assert [item["id"] for item in first_page.json()["items"]] == [exact.id]
+    assert first_page.json()["total"] == first_page.json()["pages"] == 3
+
+    all_results = await client.get(
+        "/api/v1/filaments/",
+        params={"search_mode": "identity", "search": search.replace("1,75 мм", "1.75")},
+    )
+    assert all_results.status_code == 200
+    assert [item["id"] for item in all_results.json()["items"]] == [
+        exact.id,
+        partial_all.id,
+        partial_missing.id,
+    ]
+
+    default_search = await client.get("/api/v1/filaments/", params={"search": search})
+    assert default_search.status_code == 200
+    assert default_search.json()["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_brand_view_counts_only_what_the_filters_let_through(
     client: AsyncClient, db_session: AsyncSession
 ):

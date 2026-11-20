@@ -1023,6 +1023,7 @@ export const FilamentDetailPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setCorrectionRequestOpen(true)}
+              aria-label={t('createFilament.requestCommonEdit')}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-4 text-white transition-all hover:bg-white/20"
             >
               <MessageCircle className="h-5 w-5" />

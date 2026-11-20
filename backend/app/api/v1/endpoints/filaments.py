@@ -1,8 +1,11 @@
 """Filament endpoints."""
 
 import logging
+import re
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from functools import reduce
+from operator import add
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -19,6 +22,7 @@ from app.core.errors import (
     ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY,
     ERR_FILAMENT_ALREADY_EXISTS,
     ERR_FILAMENT_HAS_CONTRIBUTIONS,
+    ERR_FILAMENT_IMPORT_TITLE_FOR_CATALOG,
     ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_MERGE_BRAND_MISMATCH,
     ERR_FILAMENT_NOT_FOUND,
@@ -120,6 +124,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/filaments", tags=["filaments"])
 
 MERGE_CANDIDATE_POOL_LIMIT = 500
+
+# PipSpool names physical spools using a wrapper such as
+# "(#1) PLA MATT LAVENDER PURPLE - Polymaker - PipSpool". Such names belong
+# to the person's inventory, not the shared product catalogue.
+PIPSPOOL_SPOOL_TITLE = re.compile(
+    r"^\s*\(#\d+\)\s+.+\s+-\s+.+\s+-\s+PipSpool\s*$",
+    flags=re.IGNORECASE,
+)
+
+
+def _reject_imported_spool_title(name: str) -> None:
+    if PIPSPOOL_SPOOL_TITLE.fullmatch(name):
+        raise_error(400, ERR_FILAMENT_IMPORT_TITLE_FOR_CATALOG)
+
+
+IDENTITY_SEARCH_MAX_TERMS = 8
+IDENTITY_SEARCH_MAX_LENGTH = 256
+IDENTITY_SEPARATOR = r"[\s,;:·/()\[\]{}_-]"
 
 TECHNICAL_DATA_FACT_FIELDS = frozenset(
     {
@@ -469,6 +491,47 @@ def _catalog_search_filter(search: str, country: str | None):
     return or_(*conditions)
 
 
+def _identity_search_terms(search: str) -> list[str]:
+    normalized = re.sub(r"(?<=\d),(?=\d)", ".", search[:IDENTITY_SEARCH_MAX_LENGTH])
+    normalized = re.sub(r"(?<=\d)\s*(?:mm|мм)\b", "", normalized, flags=re.IGNORECASE)
+    terms = (
+        term[1:] if re.fullmatch(r"#[0-9a-f]{1,6}", term) else term
+        for term in re.split(IDENTITY_SEPARATOR, normalized.lower())
+        if term
+    )
+    return list(dict.fromkeys(terms))[:IDENTITY_SEARCH_MAX_TERMS]
+
+
+def _identity_search(terms: list[str]):
+    fields = (
+        Brand.name,
+        Filament.name,
+        FilamentLine.name,
+        Filament.material_type,
+        Filament.color_name,
+        func.replace(Filament.color_hex, "#", ""),
+    )
+    identity = reduce(
+        lambda left, right: left + " " + right, (func.coalesce(field, "") for field in fields)
+    )
+    exact_matches = []
+    partial_matches = []
+    for term in terms:
+        escaped = re.escape(term)
+        exact = identity.regexp_match(f"(?i)(^|{IDENTITY_SEPARATOR}){escaped}($|{IDENTITY_SEPARATOR})")
+        partial = identity.regexp_match(f"(?i){escaped}")
+        if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", term):
+            exact = or_(exact, Filament.diameter == float(term))
+        if re.fullmatch(r"[0-9]+(?:\.[0-9]*)?", term):
+            partial = or_(partial, exact, cast(Filament.diameter, String).regexp_match(f"^{escaped}"))
+        exact_matches.append(exact)
+        partial_matches.append(partial)
+
+    all_terms_exact = case((and_(*exact_matches), 1), else_=0)
+    matched_terms = reduce(add, (case((partial, 1), else_=0) for partial in partial_matches))
+    return or_(*partial_matches), (all_terms_exact.desc(), matched_terms.desc())
+
+
 async def _catalog_brand_page(
     db: AsyncSession, count_query, page: int, size: int, materials_total: int
 ) -> FilamentListResponse:
@@ -595,6 +658,10 @@ async def list_filaments(
         None,
         description="Поиск по материалу, бренду, типу, цвету, составу, эффекту или свойству",
     ),
+    search_mode: Literal["catalog", "identity"] = Query(
+        "catalog",
+        description="identity: поиск по названию, бренду, линейке, типу, цвету и диаметру",
+    ),
     country: str | None = Query(
         None,
         pattern=r"^[A-Za-z]{2}$",
@@ -631,8 +698,6 @@ async def list_filaments(
             Filament.visual_settings["color_type"].as_string().in_(MULTICOLOR_COLOR_TYPES)
         )
     normalized_search = search.strip() if search else None
-    if normalized_search:
-        query = query.outerjoin(Brand).where(_catalog_search_filter(normalized_search, country))
 
     # Count total
     count_query = select(func.count()).select_from(Filament)
@@ -650,10 +715,21 @@ async def list_filaments(
         count_query = count_query.where(
             Filament.visual_settings["color_type"].as_string().in_(MULTICOLOR_COLOR_TYPES)
         )
-    if normalized_search:
-        count_query = count_query.outerjoin(Brand).where(
-            _catalog_search_filter(normalized_search, country)
-        )
+    identity_order = ()
+    if normalized_search and search_mode == "identity":
+        terms = _identity_search_terms(normalized_search)
+        if terms:
+            matches, identity_order = _identity_search(terms)
+            query = query.outerjoin(Brand).outerjoin(
+                FilamentLine, Filament.line_id == FilamentLine.id
+            ).where(matches)
+            count_query = count_query.outerjoin(Brand).outerjoin(
+                FilamentLine, Filament.line_id == FilamentLine.id
+            ).where(matches)
+    elif normalized_search:
+        matches = _catalog_search_filter(normalized_search, country)
+        query = query.outerjoin(Brand).where(matches)
+        count_query = count_query.outerjoin(Brand).where(matches)
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -679,9 +755,11 @@ async def list_filaments(
             )
             .exists()
         )
-        query = query.order_by(*group_order, fits_printer.desc(), Filament.name, Filament.id)
+        query = query.order_by(
+            *group_order, *identity_order, fits_printer.desc(), Filament.name, Filament.id
+        )
     else:
-        query = query.order_by(*group_order, Filament.name, Filament.id)
+        query = query.order_by(*group_order, *identity_order, Filament.name, Filament.id)
     query = query.offset(offset).limit(size)
 
     # Execute
@@ -1105,6 +1183,8 @@ async def create_filament(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
+    _reject_imported_spool_title(data.name)
+
     if data.description:
         is_valid, error_msg = await validate_text_field(
             data.description, db, "filament_description"
@@ -1461,6 +1541,7 @@ async def update_filament(
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "filament_name")
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
+        _reject_imported_spool_title(update_data["name"])
 
     if "description" in update_data:
         is_valid, error_msg = await validate_text_field(

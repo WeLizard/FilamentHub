@@ -279,7 +279,9 @@ describe('PresetSlotsPanel', () => {
     );
 
     expect(['manual', 'legacy', 'happy_hare'].map((provider) => supportsEdgeSetup(provider))).toEqual([true, true, true]);
-    expect(['bambu', 'octoprint', 'unknown'].map((provider) => supportsEdgeSetup(provider))).toEqual([false, false, false]);
+    // Edge reads Bambu Lab printers over their LAN service.
+    expect(supportsEdgeSetup('bambu', 'mmu')).toBe(true);
+    expect(['octoprint', 'unknown'].map((provider) => supportsEdgeSetup(provider))).toEqual([false, false]);
     expect(supportsEdgeSetup('manual', 'multi_tool')).toBe(false);
     expect(supportsEdgeSetup('manual', 'mmu')).toBe(false);
 
