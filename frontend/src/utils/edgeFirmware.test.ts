@@ -101,9 +101,9 @@ describe('compareEdgeLayout', () => {
 describe('kit console', () => {
   it('reads the status lines and ignores the log around them', () => {
     expect(parseEdgeDeviceLine('{"event":"boot","firmware":"0.2.0","configured":true,"provision_window_ms":15000}\r'))
-      .toEqual({ kind: 'boot', firmware: '0.2.0', configured: true, provisionWindowMs: 15000 });
+      .toEqual({ kind: 'boot', firmware: '0.2.0', configured: true, provisionWindowMs: 15000, provisionSkip: false });
     expect(parseEdgeDeviceLine('{"event":"boot","firmware":"0.2.0","configured":false}'))
-      .toEqual({ kind: 'boot', firmware: '0.2.0', configured: false, provisionWindowMs: 0 });
+      .toEqual({ kind: 'boot', firmware: '0.2.0', configured: false, provisionWindowMs: 0, provisionSkip: false });
     expect(parseEdgeDeviceLine('{"event":"provision","ok":false}')).toEqual({ kind: 'provision', ok: false });
     expect(parseEdgeDeviceLine('{"event":"ready","nfc":true}')).toEqual({ kind: 'ready', nfc: true });
     expect(parseEdgeDeviceLine('{"event":"wifi","state":"connected"}'))

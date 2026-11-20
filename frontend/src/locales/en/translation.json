@@ -1983,7 +1983,7 @@
           "steps": {
             "place": "Put the tag on the kit, over the FilamentHub mark.",
             "open": "In your profile, on the “My filaments” tab, press “Tags” on the spool, then “Write spool to tag”.",
-            "connect": "Choose the kit in the browser window. On the first connection it restarts, which takes about 15 seconds. While the window stays open, further tags are written at once."
+            "connect": "Choose the kit in the browser window. On the first connection it restarts, which takes a few seconds (up to 15 with firmware older than 0.2.1). While the window stays open, further tags are written at once."
           },
           "note": "If the tag holds another address, the site asks before replacing it. A tag of another spool is never overwritten."
         },
@@ -9692,7 +9692,7 @@
       "title": "FH Edge station",
       "hint": "Connect a station with a reader over USB: the site reads a tag or writes this spool's address to it. Works in Chrome and Edge on a computer.",
       "guideLink": "How to write and use tags",
-      "connecting": "The station is restarting and turning on its reader. This takes about 15 seconds.",
+      "connecting": "The station restarts and turns on the reader: a few seconds, up to 15 with older firmware.",
       "connected": "Station connected. Place a tag on the reader.",
       "readAndLink": "Read and link",
       "write": "Write spool to tag",

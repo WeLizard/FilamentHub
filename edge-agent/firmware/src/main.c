@@ -24,6 +24,11 @@
 #include <time.h>
 
 #define FH_PROVISION_MAX 8192
+#define FH_PROVISION_WINDOW_MS 15000
+/* Ends the provisioning window of a configured kit early, so a tool that only
+ * reads tags does not wait it out. Credentials are still accepted only in a
+ * window nobody ended. */
+#define FH_PROVISION_SKIP "{\"command\":\"start\"}"
 #define FH_WIFI_CONNECTED BIT0
 #define FH_SESSION_MS 20000ULL
 #define FH_UPLOAD_INTERVAL_MS 15000ULL
@@ -35,6 +40,7 @@ static char provision_line[FH_PROVISION_MAX + 1];
 static EventGroupHandle_t wifi_events;
 static TaskHandle_t runtime_task;
 static volatile bool provision_window_open;
+static bool provision_skippable;
 static uint64_t retry_at[FH_MAX_CONNECTIONS];
 static uint32_t retry_delay[FH_MAX_CONNECTIONS];
 static uint64_t last_upload_at[FH_MAX_CONNECTIONS];
@@ -259,6 +265,10 @@ static void provision_task(void *argument)
         }
         if (!provision_window_open) break;
         provision_line[used] = '\0';
+        if (provision_skippable && !oversized && strcmp(provision_line, FH_PROVISION_SKIP) == 0) {
+            provision_window_open = false;
+            break;
+        }
         if (oversized || !fh_config_parse_line(provision_line, used,
                                                 config.version ? &config : NULL,
                                                 &proposal) ||
@@ -404,18 +414,24 @@ void app_main(void)
     usb_serial_jtag_vfs_use_nonblocking();
     runtime_task = xTaskGetCurrentTaskHandle();
     provision_window_open = true;
+    /* An unconfigured kit keeps its window until it is provisioned. */
+    provision_skippable = configured;
     if (xTaskCreate(provision_task, "fh_provision", 8192, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Serial provisioning task unavailable");
         return;
     }
     status_line("boot", configured
-        ? "\"firmware\":\"" FH_EDGE_VERSION "\",\"configured\":true,\"provision_window_ms\":15000"
+        ? "\"firmware\":\"" FH_EDGE_VERSION "\",\"configured\":true,\"provision_window_ms\":15000,"
+          "\"provision_skip\":true"
         : "\"firmware\":\"" FH_EDGE_VERSION "\",\"configured\":false");
     if (configured) {
         puts("Serial provisioning open for 15 seconds; credentials are never echoed.");
-        vTaskDelay(pdMS_TO_TICKS(15000));
-        provision_window_open = false;
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        /* The provisioning task notifies once, when its window closes: early on
+         * the skip command, or here when the window runs out. */
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(FH_PROVISION_WINDOW_MS)) == 0) {
+            provision_window_open = false;
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        }
     } else {
         puts("No saved configuration. Send one JSON line over serial to provision.");
         while (true) vTaskDelay(pdMS_TO_TICKS(1000));

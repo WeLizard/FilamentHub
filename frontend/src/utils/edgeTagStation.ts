@@ -10,8 +10,10 @@ import type { EdgeDeviceMessage } from './edgeFirmware';
 export const EDGE_WRITABLE_TAG_TYPES = ['ntag213', 'ntag215', 'ntag216'] as const;
 
 // A configured kit keeps its provisioning window open for 15 seconds after a
-// restart before it accepts reader commands.
+// restart before it accepts reader commands; firmware 0.2.1 and later close it
+// at once on START_LINE.
 const READY_TIMEOUT_MS = 30_000;
+const START_LINE = '{"command":"start"}';
 const READ_TIMEOUT_MS = 8_000;
 const WRITE_TIMEOUT_MS = 20_000;
 
@@ -58,8 +60,14 @@ export class EdgeTagStation {
   /** Opens the kit, restarts it and waits until its reader accepts commands. */
   static async connect(open: EdgeConsoleOpener): Promise<EdgeTagStation> {
     const station = new EdgeTagStation();
+    // The boot line may come before the console is handed over.
+    let skipWindow = false;
     const ready = station.expect<void>(READY_TIMEOUT_MS, (message, resolve, reject) => {
       if (message.kind === 'boot' && !message.configured) reject('not_configured');
+      if (message.kind === 'boot' && message.configured && message.provisionSkip) {
+        if (station.console) void station.console.send(START_LINE).catch(() => undefined);
+        else skipWindow = true;
+      }
       if (message.kind === 'ready') {
         if (message.nfc) resolve();
         else reject('reader_disabled');
@@ -75,6 +83,7 @@ export class EdgeTagStation {
       station.rejectPending('connection');
       throw new EdgeTagStationError(error instanceof EdgeDeviceError ? error.code : 'connection');
     }
+    if (skipWindow) void station.console.send(START_LINE).catch(() => undefined);
     try {
       await ready;
     } catch (error) {

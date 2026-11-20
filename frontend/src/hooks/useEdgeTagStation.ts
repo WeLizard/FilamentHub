@@ -36,8 +36,8 @@ export function edgeTagStationErrorText(t: TFunction, error: unknown): string | 
 
 /**
  * A tag station on USB for one screen. The kit restarts on connect and needs
- * about 15 seconds before it reads, so it stays connected until the screen
- * goes away or the person disconnects it.
+ * a few seconds (up to 15 on firmware before 0.2.1) before it reads, so it
+ * stays connected until the screen goes away or the person disconnects it.
  */
 export function useEdgeTagStation() {
   const station = useRef<EdgeTagStation | null>(null);

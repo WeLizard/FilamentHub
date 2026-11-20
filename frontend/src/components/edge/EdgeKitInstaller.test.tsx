@@ -66,7 +66,7 @@ async function connect() {
 
 const say = (message: EdgeDeviceMessage) => act(async () => device.say(message));
 const boot = (configured: boolean) => say({
-  kind: 'boot', firmware: '0.2.0', configured, provisionWindowMs: configured ? 15000 : 0,
+  kind: 'boot', firmware: '0.2.0', configured, provisionWindowMs: configured ? 15000 : 0, provisionSkip: false,
 });
 
 async function submitLink() {

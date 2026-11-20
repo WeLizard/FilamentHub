@@ -1,6 +1,7 @@
 // A stand-in for an Edge kit on USB that answers with the firmware's own JSON
 // lines (edge-agent/firmware/src/nfc_console.c), parsed by the site's parser:
 // boot and ready, read, and the guarded write_uri with its origin check.
+// `firmware: '0.2.1'` keeps the provisioning window open until "start".
 
 import { parseEdgeDeviceLine, type EdgeDeviceMessage } from '../utils/edgeFirmware';
 import type { EdgeConsoleOpener } from '../utils/edgeTagStation';
@@ -16,8 +17,11 @@ export function fakeEdgeKit(options: {
   nfc?: boolean;
   origin?: string;
   tag?: FakeTag | null;
+  firmware?: '0.2.0' | '0.2.1';
 } = {}) {
-  const { configured = true, nfc = true, origin = 'https://filamenthub.ru' } = options;
+  const { configured = true, nfc = true, origin = 'https://filamenthub.ru', firmware = '0.2.0' } = options;
+  const skippable = configured && firmware !== '0.2.0';
+  let windowOpen = configured;
   let tag: FakeTag | null = options.tag === undefined ? { uid: '04112233445566', type: 'ntag215' } : options.tag;
   const sent: string[] = [];
   let emit: (message: EdgeDeviceMessage) => void = () => undefined;
@@ -33,12 +37,25 @@ export function fakeEdgeKit(options: {
   const open: EdgeConsoleOpener = async (onMessage, onLost) => {
     emit = onMessage;
     lose = onLost;
-    say(`{"event":"boot","firmware":"0.2.0","configured":${configured}${configured ? ',"provision_window_ms":15000' : ''}}`);
-    if (configured) say(`{"event":"ready","nfc":${nfc}}`);
+    const window = configured ? `,"provision_window_ms":15000${skippable ? ',"provision_skip":true' : ''}` : '';
+    say(`{"event":"boot","firmware":"${firmware}","configured":${configured}${window}}`);
+    if (configured && !skippable) {
+      windowOpen = false;
+      say(`{"event":"ready","nfc":${nfc}}`);
+    }
     return {
       send: async (line: string) => {
         sent.push(line);
         if (silent) return;
+        if (windowOpen) {
+          if (skippable && line === '{"command":"start"}') {
+            windowOpen = false;
+            say(`{"event":"ready","nfc":${nfc}}`);
+          } else {
+            say('{"event":"provision","ok":false}');
+          }
+          return;
+        }
         const command = JSON.parse(line);
         if (command.command === 'read') {
           if (!tag) say('{"ok":false,"error":"no_tag_or_io_error"}');

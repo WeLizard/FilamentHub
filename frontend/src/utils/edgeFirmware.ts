@@ -209,7 +209,7 @@ export function buildEdgeProvisionLine(kit: EdgeKit, origin: string, link: EdgeK
 }
 
 export type EdgeDeviceMessage =
-  | { kind: 'boot'; firmware: string; configured: boolean; provisionWindowMs: number }
+  | { kind: 'boot'; firmware: string; configured: boolean; provisionWindowMs: number; provisionSkip: boolean }
   | { kind: 'provision'; ok: boolean }
   | { kind: 'ready'; nfc: boolean }
   | { kind: 'wifi'; connected: boolean; reason: 'password' | 'not_found' | 'other' | null }
@@ -235,6 +235,8 @@ export function parseEdgeDeviceLine(line: string): EdgeDeviceMessage | null {
       firmware: value.firmware,
       configured: value.configured,
       provisionWindowMs: typeof value.provision_window_ms === 'number' ? value.provision_window_ms : 0,
+      // 0.2.1 and later close the window at once on {"command":"start"}.
+      provisionSkip: value.provision_skip === true,
     };
   }
   if (value.event === 'provision' && typeof value.ok === 'boolean') {

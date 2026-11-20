@@ -24,6 +24,13 @@ describe('Edge tag station', () => {
     expect(kit.sent).toEqual(['{"command":"read"}']);
   });
 
+  it('ends the provisioning window of newer firmware instead of waiting it out', async () => {
+    const kit = fakeEdgeKit({ firmware: '0.2.1' });
+    const station = await EdgeTagStation.connect(kit.open);
+    await expect(station.read()).resolves.toMatchObject({ uid: UID });
+    expect(kit.sent).toEqual(['{"command":"start"}', '{"command":"read"}']);
+  });
+
   it('explains a kit without settings or without a reader', async () => {
     await expect(EdgeTagStation.connect(fakeEdgeKit({ configured: false }).open))
       .rejects.toMatchObject({ code: 'not_configured' });

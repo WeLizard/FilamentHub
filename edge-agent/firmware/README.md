@@ -82,12 +82,16 @@ prints credentials. Disable local echo in the serial terminal too. On an empty
 device the console waits for configuration. With saved configuration it accepts
 a replacement line during the first 15 seconds after reboot, then starts the
 runtime. Invalid or interrupted input leaves the previous NVS copy intact.
+A tool that only reads or writes tags sends `{"command":"start"}` instead: on a
+configured device it closes the window at once, so the reader is ready within
+a second or two of the restart. An empty device ignores it as a configuration
+line and keeps waiting.
 
 Next to the human-readable messages the firmware prints one JSON line per
 state change, for a tool on the other end of the cable:
 
 ```json
-{"event":"boot","firmware":"0.2.0","configured":true,"provision_window_ms":15000}
+{"event":"boot","firmware":"0.2.1","configured":true,"provision_window_ms":15000,"provision_skip":true}
 {"event":"provision","ok":true}
 {"event":"ready","nfc":true}
 {"event":"wifi","state":"connected"}
@@ -95,7 +99,9 @@ state change, for a tool on the other end of the cable:
 ```
 
 `boot` on an empty device has `configured:false` and no window: it waits for a
-configuration line. `provision` answers a configuration line; after `ok:true`
+configuration line. `provision_skip` (0.2.1 and later) says the window can be
+closed early with `start`; older firmware rejects `start` as a configuration
+line and keeps its window. `provision` answers a configuration line; after `ok:true`
 the device restarts. `ready` means the provisioning window is closed and
 commands are accepted. `wifi` is `connected` or `failed` with a `reason` of
 `password`, `not_found` or `other`. `node` is `linked` once the account has
