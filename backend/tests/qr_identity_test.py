@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs
 
 import pytest
 from fastapi import HTTPException
@@ -228,6 +229,32 @@ async def test_user_qr_is_idempotent_private_and_degrades_to_product_after_rotat
     assert old_scan.json()["filament"]["id"] == filament.id
     assert old_scan.json()["qr_identity"]["resolution"] == "product_only"
     assert old_scan.json()["qr_identity"]["spool_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_spool_address_opened_on_a_phone_reaches_the_page_with_its_code(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    # A phone camera or an NFC tag opens the address without the session, so
+    # the redirect hands the code to the page, which scans it as the owner.
+    filament, spool = await _catalog_spool(db_session, user=auth_user, suffix="PHONE")
+    code = (await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")).json()["short_code"]
+    scans_before = filament.scans_count
+
+    opened = await auth_client.get(f"/api/v1/qr/{code}", follow_redirects=False)
+    assert opened.status_code == 301
+    path, query = opened.headers["location"].split("?")
+    assert "/filaments/" in path
+    assert parse_qs(query) == {"qr": ["true"], "qr_scan": [code]}
+    await db_session.refresh(filament)
+    assert filament.scans_count == scans_before  # The page's scan counts it once.
+
+    owner_scan = await auth_client.post(f"/api/v1/qr/{code}/scan")
+    assert owner_scan.json()["qr_identity"]["spool_id"] == spool.id
+    await db_session.refresh(filament)
+    assert filament.scans_count == scans_before + 1
 
 
 @pytest.mark.asyncio

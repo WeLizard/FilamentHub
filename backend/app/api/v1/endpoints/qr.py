@@ -1,6 +1,7 @@
 """QR code endpoints."""
 
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -52,6 +53,16 @@ async def redirect_qr_scan(
     """
     resolution = await resolve_qr_identity(db, short_code, current_user=current_user)
     filament = resolution.filament
+    material_path = filament_public_path(filament, filament.brand)
+
+    if resolution.mode == "instance":
+        # A spool's own code is opened from a phone camera or an NFC tag, where
+        # the redirect cannot see who is signed in. The page resolves it once
+        # more through the scan endpoint, which knows the owner and counts it.
+        return RedirectResponse(
+            f"{material_path}?{urlencode({'qr': 'true', 'qr_scan': short_code})}",
+            status_code=301,
+        )
 
     # Инкрементируем счетчик
     filament.scans_count += 1
@@ -64,9 +75,7 @@ async def redirect_qr_scan(
     await db.commit()
 
     # Редирект на страницу материала
-    return RedirectResponse(
-        f"{filament_public_path(filament, filament.brand)}?qr=true", status_code=301
-    )
+    return RedirectResponse(f"{material_path}?qr=true", status_code=301)
 
 
 @router.post("/{short_code}/scan")

@@ -51,11 +51,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useCurrencyCatalogue } from '../hooks/useCurrencyCatalogue';
 import { useUserCurrency } from '../hooks/useUserCurrency';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, spoolTagsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, spoolTagsAPI, spoolQrAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { formatNetWeight, singleSpoolWeights } from '../utils/packaging';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import { edgeTagStationErrorText, useEdgeTagStation } from '../hooks/useEdgeTagStation';
-import type { EdgeTagRead } from '../utils/edgeTagStation';
+import { isWritableTag, spoolTagUris, writeSpoolUri, type EdgeTagRead } from '../utils/edgeTagStation';
 import type {
   UserSpool,
   SpoolState,
@@ -2647,6 +2647,8 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
   // A tag read on an Edge station; it is linked to the spool this form creates.
   const [stationTag, setStationTag] = useState<EdgeTagRead | null>(null);
+  // The spool a tag read on the station already marks, offered to open.
+  const [stationTagSpoolId, setStationTagSpoolId] = useState<number | null>(null);
   const edgeStation = useEdgeTagStation();
   const stationBusy = edgeStation.status === 'connecting' || edgeStation.status === 'working';
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -2819,6 +2821,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     setSelectedMaterial(null);
     setQrScanResult(null);
     setStationTag(null);
+    setStationTagSpoolId(null);
     setIsCameraOpen(false);
     setIsCameraBusy(false);
     setIsCameraReady(false);
@@ -2882,11 +2885,13 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const readStationTag = () => {
     setQrError(null);
     setQrSuccess(null);
+    setStationTagSpoolId(null);
     edgeStation.run(async (station) => {
       const tag = await station.read();
       const resolved = await spoolTagsAPI.resolve(tag.uid);
       if (resolved.status === 'matched') {
         setStationTag(null);
+        setStationTagSpoolId(resolved.spool_id);
         setQrError(t('edgeTags.tagInUse'));
         return;
       }
@@ -2899,13 +2904,31 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   };
 
   const linkStationTag = async (spoolId: number) => {
-    if (!stationTag) return;
+    const tag = stationTag;
+    if (!tag) return;
     try {
-      await spoolTagsAPI.link(spoolId, { uid: stationTag.uid, technology: 'nfc', format: stationTag.type });
+      await spoolTagsAPI.link(spoolId, { uid: tag.uid, technology: 'nfc', format: tag.type });
     } catch (error: any) {
       toast.warning(t('edgeTags.linkAfterCreateFailed', {
         reason: translateApiError(t, error?.response?.data?.detail),
-      }));
+      }), undefined, 'spool-tags');
+      return;
+    }
+    // A blank tag gets the new spool's address right away, so a phone opens
+    // the spool from it. A tag with another address is left as it is. Only a
+    // station still connected is used: choosing a port again needs a click.
+    if (!isWritableTag(tag) || tag.uri || edgeStation.status !== 'ready') return;
+    try {
+      await edgeStation.run(async (station) => {
+        const identity = await spoolQrAPI.issue(spoolId);
+        await writeSpoolUri(station, tag, spoolTagUris(identity.target_url, identity.short_code, window.location.origin));
+      });
+      toast.success(t('edgeTags.written'), undefined, 'spool-tags');
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail;
+      toast.warning(t('edgeTags.writeAfterCreateFailed', {
+        reason: edgeTagStationErrorText(t, error) ?? translateApiError(t, detail),
+      }), undefined, 'spool-tags');
     }
   };
 
@@ -3124,7 +3147,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           });
           clearIdempotencyAttempt(SPOOL_BATCH_ATTEMPT_KEY);
           // One tag identifies one spool, never a whole batch.
-          if (stationTag) toast.info(t('edgeTags.batchNotLinked'));
+          if (stationTag) toast.info(t('edgeTags.batchNotLinked'), undefined, 'spool-tags');
           queryClient.invalidateQueries({ queryKey: ['user-spools'] });
           onSaved();
           return;
@@ -3370,39 +3393,39 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           <span className={`${labelCls} mb-0`}>
             {t(useCatalogPicker ? 'profilePage.spoolAddModal.catalogLabel' : 'profilePage.spoolAddModal.filamentLabel')}
           </span>
-          <button
-            type="button"
-            onClick={() => setIsQrPanelOpen((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>{t('profilePage.spoolAddModal.scanQr')}</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {mode === 'create' && edgeStation.supported && (
+              <button
+                type="button"
+                onClick={readStationTag}
+                disabled={qrBusy || stationBusy}
+                className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border border-cyan-400/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20 transition-colors disabled:opacity-60"
+              >
+                {stationBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Nfc className="w-3.5 h-3.5" />}
+                <span>{t('edgeTags.readForNewSpool')}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsQrPanelOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 transition-colors"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>{t('profilePage.spoolAddModal.scanQr')}</span>
+            </button>
+          </div>
         </div>
+
+        {edgeStation.status === 'connecting' && (
+          <p className="mb-2 text-xs text-gray-400">{t('edgeTags.connecting')}</p>
+        )}
+        {stationTag && (
+          <p className="mb-2 text-xs text-cyan-200">{t(isWritableTag(stationTag) && !stationTag.uri ? 'edgeTags.newBlankSpoolTag' : 'edgeTags.newSpoolTag', { uid: stationTag.uid })}</p>
+        )}
 
         {isQrPanelOpen && (
           <div className="mb-3 p-3 bg-white/5 border border-white/10 rounded-lg space-y-2">
             <p className="text-xs text-gray-400">{t('profilePage.spoolAddModal.scanQrHint')}</p>
-
-            {mode === 'create' && edgeStation.supported && (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={readStationTag}
-                  disabled={qrBusy || stationBusy}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-400/20 disabled:opacity-60"
-                >
-                  {stationBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Nfc className="h-3.5 w-3.5" />}
-                  <span>{t('edgeTags.readForNewSpool')}</span>
-                </button>
-                {edgeStation.status === 'connecting' && (
-                  <span className="text-[11px] text-gray-400">{t('edgeTags.connecting')}</span>
-                )}
-              </div>
-            )}
-            {stationTag && (
-              <p className="text-xs text-cyan-200">{t('edgeTags.newSpoolTag', { uid: stationTag.uid })}</p>
-            )}
 
             {/* Мобила: камера — основной способ */}
             {cameraScanAvailable && isTouchDevice && (
@@ -3515,7 +3538,18 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
           </>
         )}
         {qrError && (
-          <p className="mt-2 text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{qrError}</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+            <p>{qrError}</p>
+            {stationTagSpoolId !== null && onOpenSpool && (
+              <button
+                type="button"
+                onClick={() => onOpenSpool(stationTagSpoolId)}
+                className="shrink-0 rounded-md border border-white/20 px-2 py-1 text-gray-100 hover:bg-white/10 transition-colors"
+              >
+                {t('qrScanResult.openOwnSpool')}
+              </button>
+            )}
+          </div>
         )}
         {qrSuccess && (
           <p className="mt-2 text-xs text-green-300 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">{qrSuccess}</p>

@@ -36,7 +36,7 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -85,6 +85,31 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       return null;
     }
   };
+
+  // A spool's own code opened from a phone camera or an NFC tag arrives here
+  // through the server redirect; resolve it like an in-app scan, once the
+  // session is known, so the owner is offered their spool.
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    const searchParams = new URLSearchParams(location.search);
+    const rawCode = searchParams.get('qr_scan');
+    if (rawCode === null) {
+      return;
+    }
+    const code = ownQrShortCode(rawCode);
+    searchParams.delete('qr_scan');
+    const search = searchParams.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
+    if (code) {
+      qrAPI.scan(code).then((res) => {
+        if (res?.filament) {
+          setQrScanResult(res);
+        }
+      }).catch(() => undefined); // The material page underneath is the fallback.
+    }
+  }, [authLoading, location.pathname, location.search, navigate]);
 
   // Закрываем мобильное меню при переходе на другую страницу
   useEffect(() => {

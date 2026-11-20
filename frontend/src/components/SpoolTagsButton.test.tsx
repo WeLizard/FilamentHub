@@ -146,7 +146,7 @@ describe('spool tags on an FH Edge station', () => {
       format: 'ntag215',
     }));
     expect(tagApi.resolve).toHaveBeenCalledWith(UID);
-    expect(toastMock.success).toHaveBeenCalledWith('spoolTags.linked');
+    expect(toastMock.success).toHaveBeenCalledWith('spoolTags.linked', undefined, 'spool-tags');
   });
 
   it('writes the spool address to the tag and links it', async () => {
@@ -154,7 +154,7 @@ describe('spool tags on an FH Edge station', () => {
     await openDialog();
     fireEvent.click(screen.getByRole('button', { name: 'edgeTags.write' }));
 
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('edgeTags.written'));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('edgeTags.written', undefined, 'spool-tags'));
     expect(qrApi.issue).toHaveBeenCalledWith(41);
     expect(station.kit.tag?.uri).toBe(`https://filamenthub.ru/qr/${CODE}`);
     expect(tagApi.link).toHaveBeenCalledWith(41, { uid: UID, technology: 'nfc', format: 'ntag215' });
@@ -179,7 +179,7 @@ describe('spool tags on an FH Edge station', () => {
     await openDialog();
     fireEvent.click(screen.getByRole('button', { name: 'edgeTags.write' }));
 
-    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('edgeTags.errors.linked_elsewhere'));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('edgeTags.errors.linked_elsewhere', undefined, 'spool-tags'));
     expect(station.kit.sent).toEqual(['{"command":"read"}']);
     expect(qrApi.issue).not.toHaveBeenCalled();
     expect(tagApi.link).not.toHaveBeenCalled();
@@ -190,7 +190,7 @@ describe('spool tags on an FH Edge station', () => {
     await openDialog();
     fireEvent.click(screen.getByRole('button', { name: 'edgeTags.write' }));
 
-    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('edgeTags.errors.not_writable'));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('edgeTags.errors.not_writable', undefined, 'spool-tags'));
     expect(station.kit.sent).toEqual(['{"command":"read"}']);
   });
 });

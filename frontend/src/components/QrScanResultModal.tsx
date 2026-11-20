@@ -221,9 +221,12 @@ export function QrScanResultModal({
                 {filament.material_type}
               </span>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {t('qrScanResult.productVariantHint')}
-            </p>
+            {/* A spool's own code names one physical spool, shown just below. */}
+            {ownSpoolId === null && (
+              <p className="mt-2 text-xs text-slate-500">
+                {t('qrScanResult.productVariantHint')}
+              </p>
+            )}
           </div>
           <button
             type="button"

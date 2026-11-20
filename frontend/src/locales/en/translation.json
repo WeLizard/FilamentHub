@@ -1975,6 +1975,36 @@
       },
       "firmwareTitle": "Firmware and linking",
       "firmwareLater": "Installing firmware from the site opens once the kit has passed hardware checks.",
+      "tags": {
+        "title": "Tags on spools",
+        "lead": "The finished kit works as a tag station: it writes the spool's address to an NFC tag and links the tag to the spool in your profile. Connect it to a computer over USB and open the site in Chrome or Edge. NTAG213, NTAG215 and NTAG216 tags work.",
+        "write": {
+          "title": "Write a tag for a spool",
+          "steps": {
+            "place": "Put the tag on the kit, over the FilamentHub mark.",
+            "open": "In your profile, on the “My filaments” tab, press “Tags” on the spool, then “Write spool to tag”.",
+            "connect": "Choose the kit in the browser window. On the first connection it restarts, which takes about 15 seconds. While the window stays open, further tags are written at once."
+          },
+          "note": "If the tag holds another address, the site asks before replacing it. A tag of another spool is never overwritten."
+        },
+        "add": {
+          "title": "Add a spool from a tag",
+          "steps": {
+            "read": "Put the tag on the kit and press “Read tag with station” in the “Add spool” form.",
+            "material": "If the tag holds a FilamentHub address, the material is filled in. Otherwise choose it from the catalogue.",
+            "save": "Save the spool: the tag is linked to it, and a blank tag gets the spool's address right away."
+          }
+        },
+        "use": {
+          "title": "Using the tags",
+          "items": {
+            "phone": "Hold a phone with NFC to the tag and FilamentHub opens. The owner is offered their spool; anyone else sees the material.",
+            "station": "A tag read in the new spool form is recognised: if it already marks a spool in your profile, the site offers to open that spool.",
+            "happyHare": "A Happy Hare printer connected through FH Edge receives the linked tags together with the spools in its gates.",
+            "unlink": "Unlink a tag in the same “Tags” window of the spool."
+          }
+        }
+      },
       "ready": {
         "title": "Want one ready-made?",
         "text": "We do not sell assembled devices yet. If you would rather not build one, tell us — that is how we learn how many are needed.",
@@ -9661,6 +9691,7 @@
     "edgeTags": {
       "title": "FH Edge station",
       "hint": "Connect a station with a reader over USB: the site reads a tag or writes this spool's address to it. Works in Chrome and Edge on a computer.",
+      "guideLink": "How to write and use tags",
       "connecting": "The station is restarting and turning on its reader. This takes about 15 seconds.",
       "connected": "Station connected. Place a tag on the reader.",
       "readAndLink": "Read and link",
@@ -9675,6 +9706,8 @@
       "newSpoolTag": "Tag {{uid}} is read and will be linked to the new spool when you save it.",
       "tagInUse": "This tag is already linked to a spool in your profile.",
       "linkAfterCreateFailed": "The spool is saved, but the tag could not be linked: {{reason}}",
+      "newBlankSpoolTag": "Tag {{uid}} is read: when you save, it is linked to the new spool and the spool's address is written to it.",
+      "writeAfterCreateFailed": "The spool is saved and the tag is linked, but the address was not written to the tag: {{reason}} You can write it in the spool's “Tags” window.",
       "batchNotLinked": "The tag was not linked: one tag identifies one spool, and several were saved.",
       "errors": {
         "not_configured": "The station is not set up yet. Link it on the FH Edge installation page first.",

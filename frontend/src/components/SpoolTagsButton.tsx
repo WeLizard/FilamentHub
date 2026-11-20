@@ -26,6 +26,12 @@ import { toast } from './Toast';
 
 type ApiFailure = { response?: { data?: { detail?: unknown } } };
 
+/** The kit guide's section on writing and using spool tags. */
+const EDGE_TAGS_GUIDE = '/download/edge#edge-kit-tags';
+
+// Every action in the dialog reports, also when it repeats: one channel for all.
+const TOAST_KEY = 'spool-tags';
+
 export function SpoolTagsButton({
   spool,
   compact = false,
@@ -51,7 +57,7 @@ export function SpoolTagsButton({
 
   const showError = (error: unknown) => {
     const detail = (error as ApiFailure)?.response?.data?.detail;
-    toast.error(translateApiError(t, detail, t('spoolTags.error')));
+    toast.error(translateApiError(t, detail, t('spoolTags.error')), undefined, TOAST_KEY);
   };
 
   const link = useMutation({
@@ -60,7 +66,7 @@ export function SpoolTagsButton({
       setUid('');
       setFormat('');
       await queryClient.invalidateQueries({ queryKey });
-      toast.success(t('spoolTags.linked'));
+      toast.success(t('spoolTags.linked'), undefined, TOAST_KEY);
     },
     onError: showError,
   });
@@ -69,7 +75,7 @@ export function SpoolTagsButton({
     mutationFn: (tagUid: string) => spoolTagsAPI.unlink(spool.id, tagUid),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey });
-      toast.success(t('spoolTags.unlinked'));
+      toast.success(t('spoolTags.unlinked'), undefined, TOAST_KEY);
     },
     onError: showError,
   });
@@ -89,7 +95,7 @@ export function SpoolTagsButton({
 
   const showStationError = (error: unknown) => {
     const text = edgeTagStationErrorText(t, error);
-    if (text) toast.error(text);
+    if (text) toast.error(text, undefined, TOAST_KEY);
     else showError(error);
   };
 
@@ -112,11 +118,11 @@ export function SpoolTagsButton({
     edge.run(async (station) => {
       const tag = await station.read();
       if (await tagOwner(tag.uid) === 'this') {
-        toast.info(t('edgeTags.alreadyLinked'));
+        toast.info(t('edgeTags.alreadyLinked'), undefined, TOAST_KEY);
         return;
       }
       await linkStationTag(tag);
-      toast.success(t('spoolTags.linked'));
+      toast.success(t('spoolTags.linked'), undefined, TOAST_KEY);
     }).catch(showStationError);
   };
 
@@ -124,7 +130,7 @@ export function SpoolTagsButton({
     const owner = await tagOwner(tag.uid);
     if (!tag.uri || !uris.includes(tag.uri)) await writeSpoolUri(station, tag, uris);
     if (owner === 'free') await linkStationTag(tag);
-    toast.success(t('edgeTags.written'));
+    toast.success(t('edgeTags.written'), undefined, TOAST_KEY);
   };
 
   const writeToTag = () => {
@@ -187,6 +193,61 @@ export function SpoolTagsButton({
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {edge.supported && (
+              <div className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Nfc className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">{t('edgeTags.title')}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
+                      {t(edge.status === 'connecting'
+                        ? 'edgeTags.connecting'
+                        : edge.status === 'idle' ? 'edgeTags.hint' : 'edgeTags.connected')}
+                    </p>
+                    <a
+                      href={EDGE_TAGS_GUIDE}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-[11px] text-cyan-300 underline hover:text-cyan-200"
+                    >
+                      {t('edgeTags.guideLink')}
+                    </a>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={readAndLink}
+                    disabled={stationBusy}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
+                  >
+                    {edge.status === 'connecting' || edge.status === 'working'
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Nfc className="h-3.5 w-3.5" />}
+                    {t('edgeTags.readAndLink')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={writeToTag}
+                    disabled={stationBusy}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    {t('edgeTags.write')}
+                  </button>
+                  {edge.status === 'ready' && (
+                    <button
+                      type="button"
+                      onClick={() => void edge.disconnect()}
+                      className="px-1 text-xs text-gray-400 transition hover:text-white"
+                    >
+                      {t('edgeTags.disconnect')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <form
               className="mt-4 space-y-3"
@@ -257,53 +318,6 @@ export function SpoolTagsButton({
                 {t('spoolTags.link')}
               </button>
             </form>
-
-            {edge.supported && (
-              <div className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
-                <div className="flex items-start gap-2">
-                  <Nfc className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">{t('edgeTags.title')}</p>
-                    <p className="mt-0.5 text-[11px] text-gray-400">
-                      {t(edge.status === 'connecting'
-                        ? 'edgeTags.connecting'
-                        : edge.status === 'idle' ? 'edgeTags.hint' : 'edgeTags.connected')}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={readAndLink}
-                    disabled={stationBusy}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
-                  >
-                    {edge.status === 'connecting' || edge.status === 'working'
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Nfc className="h-3.5 w-3.5" />}
-                    {t('edgeTags.readAndLink')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={writeToTag}
-                    disabled={stationBusy}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/20 disabled:opacity-50"
-                  >
-                    <PenLine className="h-3.5 w-3.5" />
-                    {t('edgeTags.write')}
-                  </button>
-                  {edge.status === 'ready' && (
-                    <button
-                      type="button"
-                      onClick={() => void edge.disconnect()}
-                      className="px-1 text-xs text-gray-400 transition hover:text-white"
-                    >
-                      {t('edgeTags.disconnect')}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
 
             <div className="mt-5 border-t border-white/10 pt-4">
               <h4 className="text-xs font-medium uppercase tracking-wide text-gray-400">

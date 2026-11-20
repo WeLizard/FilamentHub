@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
@@ -75,6 +75,67 @@ function ReadyMadeRequest() {
           {t('edgeKit.guide.ready.signIn')}
         </Link>
       )}
+    </div>
+  );
+}
+
+const TAG_WRITE_STEPS = ['place', 'open', 'connect'] as const;
+const TAG_ADD_STEPS = ['read', 'material', 'save'] as const;
+const TAG_USES = ['phone', 'station', 'happyHare', 'unlink'] as const;
+
+function GuideSteps({ prefix, steps }: { prefix: string; steps: readonly string[] }) {
+  const { t } = useTranslation();
+  return (
+    <ol className="space-y-2 text-sm leading-6 text-gray-300">
+      {steps.map((step, index) => (
+        <li key={step} className="flex gap-2">
+          <span className="font-semibold text-cyan-300">{index + 1}.</span>
+          <span>{t(`${prefix}.${step}`)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Writing spool tags with the finished kit and what the tags are for. */
+function EdgeKitTagsGuide() {
+  const { t } = useTranslation();
+  const { hash } = useLocation();
+  const section = useRef<HTMLDivElement>(null);
+  // The spool tags dialog links here; the page renders after the browser has
+  // already looked for the anchor.
+  useEffect(() => {
+    if (hash === '#edge-kit-tags') section.current?.scrollIntoView({ block: 'start' });
+  }, [hash]);
+  const card = 'rounded-xl border border-white/10 bg-white/5 p-5';
+  const cardTitle = 'mb-3 text-base font-semibold text-white';
+
+  return (
+    <div id="edge-kit-tags" ref={section} className="mt-10 scroll-mt-24">
+      <h3 className={subheading}>{t('edgeKit.guide.tags.title')}</h3>
+      <p className="mb-5 max-w-3xl text-sm leading-6 text-gray-300">{t('edgeKit.guide.tags.lead')}</p>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className={card}>
+          <h4 className={cardTitle}>{t('edgeKit.guide.tags.write.title')}</h4>
+          <GuideSteps prefix="edgeKit.guide.tags.write.steps" steps={TAG_WRITE_STEPS} />
+          <p className="mt-3 text-sm leading-6 text-gray-400">{t('edgeKit.guide.tags.write.note')}</p>
+        </div>
+        <div className={card}>
+          <h4 className={cardTitle}>{t('edgeKit.guide.tags.add.title')}</h4>
+          <GuideSteps prefix="edgeKit.guide.tags.add.steps" steps={TAG_ADD_STEPS} />
+        </div>
+        <div className={card}>
+          <h4 className={cardTitle}>{t('edgeKit.guide.tags.use.title')}</h4>
+          <ul className="space-y-2 text-sm leading-6 text-gray-300">
+            {TAG_USES.map((use) => (
+              <li key={use} className="flex gap-3">
+                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300" />
+                {t(`edgeKit.guide.tags.use.items.${use}`)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }
@@ -194,6 +255,8 @@ export function EdgeKitGuide({ kit }: { kit: EdgeKit }) {
           <p className="max-w-3xl text-sm leading-6 text-gray-300">{t('edgeKit.guide.firmwareLater')}</p>
         )}
       </div>
+
+      {canInstall && <EdgeKitTagsGuide />}
 
       <div className="mt-10">
         <ReadyMadeRequest />
