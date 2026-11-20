@@ -20,6 +20,8 @@ interface ColorMaterialSectionProps {
   
   /** HEX цвет */
   colorHex: string;
+  /** Placeholder for an intentionally unknown catalogue color. */
+  hexPlaceholder?: string;
   /** Callback при изменении HEX цвета (только в режиме edit) */
   onColorHexChange?: (value: string) => void;
 
@@ -50,6 +52,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
   colorName,
   onColorNameChange,
   colorHex,
+  hexPlaceholder = '#FF0000',
   onColorHexChange,
   ralCode = '',
   onRalCodeChange,
@@ -169,7 +172,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                       }}
                     >
                     <HSLColorPicker
-                      color={colorHex}
+                      color={colorHex || '#FFFFFF'}
                       onChange={(hex) => onColorHexChange?.(hex)}
                       isOpen={isColorPickerOpen}
                       onToggle={setIsColorPickerOpen}
@@ -205,7 +208,7 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                 // Разрешаем свободный ввод - можно писать любой текст
                 onColorHexChange?.(e.target.value);
               }}
-              placeholder="#FF0000"
+              placeholder={hexPlaceholder}
               className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all font-mono text-sm disabled:cursor-not-allowed disabled:opacity-60"
             />
           ) : (

@@ -88,8 +88,7 @@ class PresetUpdate(BaseModel):
     description: str | None = Field(None, max_length=1000)
     is_official: bool | None = None
 
-    # Filament (для активации черновиков/заготовок)
-    filament_id: int | None = Field(None, gt=0, description="ID филамента (для привязки черновика)")
+    filament_id: int | None = Field(None, gt=0, description="ID материала для привязки пресета")
 
     # Filament settings (material scope)
     extruder_temp: float | None = Field(None, ge=0, le=1500)

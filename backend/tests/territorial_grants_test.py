@@ -874,14 +874,10 @@ async def test_the_representative_is_told_where_their_area_ends(
 
 
 @pytest.mark.asyncio
-async def test_only_a_brand_representative_can_request_a_catalogue_correction(
+async def test_catalogue_corrections_go_to_moderators_or_brand_by_role(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """The request mails brand representatives, so it stays inside the brand's team.
-
-    A regional representative who cannot edit shared values asks whoever holds
-    them; an outsider has the public feedback channel instead.
-    """
+    """An ordinary verified user cannot send a request directly to the brand team."""
     brand, filament = await _brand_with_one_filament(db_session)
     await _representative(db_session, brand, "global-correction", None)
     global_user = await db_session.scalar(
@@ -895,12 +891,22 @@ async def test_only_a_brand_representative_can_request_a_catalogue_correction(
     _, outsider = await _outsider(db_session, "correction-outsider")
     await db_session.commit()
 
-    refused = await client.post(
-        f"/api/v1/filaments/{filament.id}/common-edit-request",
+    url = f"/api/v1/filaments/{filament.id}/common-edit-request"
+    empty = await client.post(url, headers=outsider, json={"message": "     "})
+    assert empty.status_code == 422, empty.text
+
+    community = await client.post(
+        url,
         headers=outsider,
         json={"message": "The manufacturer's datasheet lists a different density."},
     )
-    assert refused.status_code == 403, refused.text
+    assert community.status_code == 200, community.text
+    assert community.json()["recipients"] == 1
+    assert set(await db_session.scalars(
+        select(Notification.user_id).where(
+            Notification.title == "filament_common_edit_requested"
+        )
+    )) == {admin.id}
 
     response = await client.post(
         f"/api/v1/filaments/{filament.id}/common-edit-request",
@@ -917,8 +923,7 @@ async def test_only_a_brand_representative_can_request_a_catalogue_correction(
             )
         )
     )
-    assert recipients == {global_user.id}
-    assert admin.id not in recipients
+    assert recipients == {global_user.id, admin.id}
 
 
 @pytest.mark.asyncio

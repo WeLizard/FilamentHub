@@ -100,6 +100,7 @@ import {
 } from './FilamentHandlingEditor';
 import { DensityField } from './DensityField';
 import { toast } from './Toast';
+import { FilamentCorrectionRequestModal } from './FilamentCorrectionRequestModal';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { ACHIEVEMENT_CONFIG } from './Badge';
 import type { AxiosError } from 'axios';
@@ -156,6 +157,9 @@ interface CreatePresetModalProps {
   brandId?: number; // ID бренда для фильтрации материалов в контексте кабинета
   officialContext?: boolean;
   createFromPreset?: boolean;
+  /** Save only the catalogue material, then return it to the caller without creating a preset. */
+  materialOnly?: boolean;
+  onMaterialCreated?: (filament: Filament) => void;
 }
 
 interface DuplicateFilamentSuggestion {
@@ -258,6 +262,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   brandId,
   officialContext = false,
   createFromPreset = false,
+  materialOnly = false,
+  onMaterialCreated,
 }) => {
   const { user } = useAuth();
   const { t, i18n } = useTranslation();
@@ -424,6 +430,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [duplicateFilamentSuggestion, setDuplicateFilamentSuggestion] = useState<DuplicateFilamentSuggestion | null>(null);
   const [selectedFilamentId, setSelectedFilamentId] = useState<number | null>(filamentId || null);
+  const [isRelinkingFilament, setIsRelinkingFilament] = useState(false);
+  const [correctionRequestOpen, setCorrectionRequestOpen] = useState(false);
   
   // Новые поля для создания нового филамента
   const [materialType, setMaterialType] = useState('');
@@ -591,7 +599,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   );
 
   const shouldLoadFilamentsForSelection = Boolean(
-    isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
+    isOpen && (!preset || isDraft || isRelinkingFilament) && (!filamentId || isRelinkingFilament) && !showFilamentForm
   );
 
   // Загружаем филамент для редактирования или для предвыбранного filamentId (создание из карточки материала)
@@ -762,9 +770,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     if (!isOpen) return; // Не выполняем инициализацию если модалка закрыта
 
     const resetCatalogForm = () => {
+      setIsRelinkingFilament(false);
+      setCorrectionRequestOpen(false);
       setSelectedFilamentId(null);
       setSelectedFilament(null);
-      setShowFilamentForm(false);
+      setShowFilamentForm(materialOnly);
       setFilamentSearch('');
       setShowFilamentDropdown(false);
       setMaterialType('');
@@ -772,11 +782,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setSelectedBrandId(brandId || null);
       setFilamentName('');
       setFilamentColorName('');
-      setFilamentColorHex('#FF0000');
+      setFilamentColorHex(materialOnly ? '' : '#FF0000');
       setDraftHasColorEvidence(false);
       setFilamentRalCode('');
       setFilamentVisualColorType('single');
-      setFilamentVisualColors(['#FF0000']);
+      setFilamentVisualColors(materialOnly ? [] : ['#FF0000']);
       setFilamentVisualFinish('matte');
       setFilamentVisualEffects([]);
       setFilamentAdditives([]);
@@ -1118,6 +1128,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setCompatiblePrintsCondition('');
       }
       setSelectedFilamentId(preset.filament_id);
+      setIsRelinkingFilament(false);
       // Инициализируем выбранные принтеры
       const presetPrinters = preset.printers?.map(p => p.id) || [];
       setSelectedPrinterIds(presetPrinters);
@@ -1241,12 +1252,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
       
       setSelectedFilamentId(filamentId || null);
+      setIsRelinkingFilament(false);
       // Сброс выбранных принтеров
       setSelectedPrinterIds([]);
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
-  }, [preset, filamentId, brandId, isDraft, isOpen, officialContext]);
+  }, [preset, filamentId, brandId, isDraft, isOpen, officialContext, materialOnly]);
 
   // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
   useEffect(() => {
@@ -1413,6 +1425,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     const matchedFromDropdown = filamentsData?.items?.find((item) => item.id === filament.id);
     const matchedFromSimilar = uniqueSimilarFilaments.find((item) => item.id === filament.id);
     const fullFilament = matchedFromDropdown || matchedFromSimilar || null;
+
+    if (materialOnly) {
+      void (async () => {
+        try {
+          const selectedFilament = fullFilament || await filamentsAPI.get(filament.id);
+          onMaterialCreated?.(selectedFilament);
+        } catch (err: any) {
+          setError(translateApiError(t, err?.response?.data?.detail, t('presetModal.filamentsLoadError')));
+        }
+      })();
+      return;
+    }
 
     setSelectedFilamentId(filament.id);
     setSelectedFilament(fullFilament);
@@ -1632,7 +1656,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   });
 
   const useExistingFilamentFromSuggestion = (suggestion: DuplicateFilamentSuggestion) => {
-    void presetsAPI.recordDraftEvent('duplicate_prevented').catch(() => undefined);
+    if (!materialOnly) {
+      void presetsAPI.recordDraftEvent('duplicate_prevented').catch(() => undefined);
+    }
     selectExistingFilament({
       id: suggestion.id,
       name: suggestion.name,
@@ -2088,6 +2114,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setError(null);
     setDuplicateFilamentSuggestion(null);
 
+    // Material-only mode must never fall through to a preset create/update path.
+    if (materialOnly && (!showFilamentForm || !onMaterialCreated)) return;
+
     // Если создаем новый филамент, сначала создаем его
     // ВАЖНО: это работает и при создании пресета, и при редактировании черновика
     if (showFilamentForm) {
@@ -2173,8 +2202,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             }
           : undefined;
 
-        const acceptedFilamentColor = !isDraft || draftHasColorEvidence
-          ? filamentColorHex
+        const acceptedFilamentColor = filamentColorHex.trim() && (!isDraft || draftHasColorEvidence)
+          ? filamentColorHex.trim()
           : undefined;
         const newFilament = await createFilamentMutation.mutateAsync({
           brand_id: finalBrandId,
@@ -2211,6 +2240,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           price_display_unit: canOfferOfficial ? filamentPriceUnit : undefined,
           description: filamentDescription.trim() || undefined,
         });
+        if (materialOnly) {
+          const brandName = brandsData?.items.find(brand => brand.id === finalBrandId)?.name
+            ?? ((showBrandForm ? newBrandName : brandSearch).trim() || null);
+          onMaterialCreated?.({ ...newFilament, brand_name: newFilament.brand_name ?? brandName });
+          return;
+        }
         // Валидация обязательных полей пресета
         if (!name.trim()) {
           setError(t('presetModal.errors.enterPresetName'));
@@ -2299,13 +2334,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     // Формируем JSON расширенных параметров из UI полей
     // Определяем цвет филамента для синхронизации с default_filament_colour
-    const filamentColor = preset && editingFilament 
-      ? editingFilament.color_hex 
-      : selectedFilament?.color_hex 
-      ? selectedFilament.color_hex 
-      : showFilamentForm 
-      ? filamentColorHex 
-      : null;
+    const filamentColor = isRelinkingFilament
+      ? null
+      : preset && editingFilament
+        ? editingFilament.color_hex
+        : selectedFilament?.color_hex
+          ? selectedFilament.color_hex
+          : showFilamentForm
+            ? filamentColorHex
+            : null;
     const orcaslicerSettings = buildOrcaslicerSettings(filamentColor);
 
     if (isEditingPreset && preset) {
@@ -2336,6 +2373,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       if (originalRetractionSpeed !== retractionSpeed) updateData.retraction_speed = retractionSpeed;
       
       // Если это черновик и выбран филамент - активируем пресет
+      if (isRelinkingFilament && selectedFilamentId !== preset.filament_id) {
+        updateData.filament_id = selectedFilamentId;
+      }
       if (isDraft && selectedFilamentId) {
         updateData.filament_id = selectedFilamentId;
         updateData.active = true;
@@ -2384,9 +2424,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       : Boolean(selectedBrandId || brandSearch.trim());
   const canSubmitFromFilamentForm =
     hasBrandSelection && filamentName.trim().length > 0 && normalizedMaterialType.length > 0;
-  const canSubmit = name.trim().length > 0 && (showFilamentForm ? canSubmitFromFilamentForm : Boolean(selectedFilamentId));
+  const canSubmit = materialOnly
+    ? Boolean(onMaterialCreated) && showFilamentForm && canSubmitFromFilamentForm
+    : name.trim().length > 0 && (showFilamentForm ? canSubmitFromFilamentForm : Boolean(selectedFilamentId));
   const isSubmitDisabled = isLoading || !canSubmit;
-  const submitBlockReason = !isLoading && isSubmitDisabled
+  const submitBlockReason = !materialOnly && !isLoading && isSubmitDisabled
     ? !name.trim()
       ? t('presetModal.hints.enterPresetNameToContinue')
       : showFilamentForm
@@ -2447,7 +2489,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
-            {officialContext
+            {materialOnly
+              ? t('createFilament.createTitle')
+              : officialContext
               ? (isEditingPreset ? t('presetModal.titleOfficialEdit') : t('presetModal.titleOfficialCreate'))
               : preset
               ? (isDraft ? t('presetModal.titleDraft') : t('presetModal.titleEdit'))
@@ -2633,20 +2677,57 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
           )}
           {/* Отображение филамента при редактировании (только если не черновик) */}
-          {preset && editingFilament && !isDraft && (
+          {preset && editingFilament && !isDraft && !isRelinkingFilament && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.filament')}</label>
               <FilamentSummaryCard filament={editingFilament} />
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRelinkingFilament(true);
+                    setFormDirty(true);
+                    setSelectedFilamentId(null);
+                    setSelectedFilament(null);
+                    setFilamentSearch('');
+                    setShowFilamentDropdown(true);
+                    setShowFilamentForm(false);
+                    setError(null);
+                  }}
+                  className="text-sm text-purple-300 transition hover:text-white"
+                >
+                  {t('presetModal.filamentRelink.action')}
+                </button>
+                {user?.email_verified && (
+                  <button
+                    type="button"
+                    onClick={() => setCorrectionRequestOpen(true)}
+                    className="text-sm text-cyan-300 transition hover:text-white"
+                  >
+                    {t('createFilament.requestCommonEdit')}
+                  </button>
+                )}
+              </div>
+              {!user?.email_verified && (
+                <p className="mt-2 text-xs text-gray-400">
+                  {t('presetModal.filamentRelink.correctionNeedsEmailVerified')}
+                </p>
+              )}
             </div>
           )}
 
-          {/* Material Selection (при создании ИЛИ при редактировании черновика) */}
-          {(!preset || isDraft) && (
+          {/* Material Selection (создание, черновик или явная перепривязка) */}
+          {(!preset || isDraft || isRelinkingFilament) && (
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.filament')} *</label>
               {!showFilamentForm ? (
                 // Выбор существующего филамента
                 <div className="relative" ref={filamentDropdownRef}>
+                  {isRelinkingFilament && (
+                    <p className="mb-2 text-xs text-gray-400">
+                      {t('presetModal.filamentRelink.description')}
+                    </p>
+                  )}
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"
@@ -2729,6 +2810,27 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <FilamentSummaryCard filament={selectedFilament} />
                     </div>
                   )}
+                  {isRelinkingFilament && (
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRelinkingFilament(false);
+                          setSelectedFilamentId(preset?.filament_id ?? null);
+                          setSelectedFilament(editingFilament ?? null);
+                          setFilamentSearch('');
+                          setShowFilamentDropdown(false);
+                          setError(null);
+                        }}
+                        className="text-sm text-gray-300 transition hover:text-white"
+                      >
+                        {t('presetModal.filamentRelink.cancel')}
+                      </button>
+                      {selectedFilamentId && selectedFilamentId !== preset?.filament_id && (
+                        <p className="text-xs text-gray-400">{t('presetModal.filamentRelink.saveHint')}</p>
+                      )}
+                    </div>
+                  )}
                   {!selectedFilamentId && (
                     <p className="mt-2 text-xs text-gray-400">{t('presetModal.hints.createFilamentIfMissing')}</p>
                   )}
@@ -2736,19 +2838,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               ) : (
                 // Форма создания нового материала
                 <div className="space-y-4 p-4 bg-white/5 rounded-xl border border-purple-500/30">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">{t('presetModal.createNewFilament')}</h3>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowFilamentForm(false);
-                        setDuplicateFilamentSuggestion(null);
-                      }}
-                      className="text-gray-400 hover:text-white text-sm"
-                    >
-                      {t('presetModal.cancel')}
-                    </button>
-                  </div>
+                  {!materialOnly && (
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-white">{t('presetModal.createNewFilament')}</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowFilamentForm(false);
+                          setDuplicateFilamentSuggestion(null);
+                        }}
+                        className="text-gray-400 hover:text-white text-sm"
+                      >
+                        {t('presetModal.cancel')}
+                      </button>
+                    </div>
+                  )}
                   
                   {/* Тип материала и Производитель в одной строке */}
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -3014,6 +3118,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     colorName={filamentColorName}
                     onColorNameChange={setFilamentColorName}
                     colorHex={filamentColorHex}
+                    hexPlaceholder={materialOnly ? '#RRGGBB' : undefined}
                     onColorHexChange={(value) => {
                       setFilamentColorHex(value);
                       setDraftHasColorEvidence(true);
@@ -3336,6 +3441,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
           )}
 
+          {!materialOnly && (
+          <>
           {/* Name and Printers */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -5505,6 +5612,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </>)}
           </div>
 
+          </>
+          )}
+
           {/* Actions */}
           <div className="flex flex-col gap-3 pt-4 border-t border-white/10 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-h-[1rem]">
@@ -5533,9 +5643,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   </>
                 ) : (
                   <>
-                    {isDraft ? <Sparkles className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                    {isDraft && !materialOnly ? <Sparkles className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                     <span>
-                      {isDraft
+                      {materialOnly
+                        ? t('createFilament.createTitle')
+                        : isDraft
                         ? t('presetModal.review.publish')
                         : preset
                           ? t('presetModal.save')
@@ -5549,6 +5661,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         </form>
         </div>
       </div>
+      <FilamentCorrectionRequestModal
+        filamentId={preset?.filament_id ?? editingFilament?.id ?? 0}
+        isOpen={correctionRequestOpen && !!preset?.filament_id && !!user?.email_verified}
+        onClose={() => setCorrectionRequestOpen(false)}
+        onSent={() => toast.success(t('createFilament.commonEditRequestSent'), 6000)}
+      />
       <ConfirmModal
         isOpen={showDiscardConfirm}
         onClose={() => setShowDiscardConfirm(false)}

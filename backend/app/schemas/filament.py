@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     AnyHttpUrl,
     BaseModel,
     ConfigDict,
     Field,
+    StringConstraints,
     TypeAdapter,
     field_validator,
     model_validator,
@@ -781,9 +782,9 @@ class FilamentListResponse(BaseModel):
 
 
 class FilamentCommonEditRequest(BaseModel):
-    """A verified user asks the responsible brand organization for a correction."""
+    """A trusted user suggests a correction to a shared material card."""
 
-    message: str = Field(..., min_length=5, max_length=1000)
+    message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=1000)]
 
 
 class FilamentCommonEditRequestResponse(BaseModel):

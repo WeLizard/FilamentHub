@@ -35,6 +35,7 @@ from app.core.errors import (
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
     ERR_PRESET_OWNERSHIP_IMMUTABLE,
+    ERR_PRESET_RELINK_REJECTED,
     ERR_PRESET_VERSION_NOT_FOUND,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
@@ -94,11 +95,12 @@ def _has_import_spool_link(settings: object) -> bool:
             and isinstance(settings.get("import_provider"), str))
 
 
-async def _lock_import_target(db: AsyncSession, filament_id: int) -> None:
-    """Avoid waiting behind a catalog merge while a draft row is locked."""
+async def _lock_catalog_target(db: AsyncSession, filament_id: int) -> bool | None:
+    """Read target activity without waiting behind a merge while a preset is locked."""
     try:
-        await db.scalar(select(Filament.id).where(Filament.id == filament_id)
-                        .with_for_update(nowait=True))
+        return await db.scalar(
+            select(Filament.active).where(Filament.id == filament_id).with_for_update(nowait=True)
+        )
     except DBAPIError as exc:
         await db.rollback()
         if getattr(exc.orig, "sqlstate", None) == "55P03":
@@ -837,13 +839,29 @@ async def update_preset(
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
-    target_settings = update_data.get("orcaslicer_settings", preset.orcaslicer_settings)
-    if target_filament_id is not None and _has_import_spool_link(target_settings):
-        await _lock_import_target(db, target_filament_id)
-        await _link_imported_spools_or_conflict(
-            db, preset, target_filament_id=target_filament_id,
-            settings_override=target_settings,
-        )
+    relinking_published = (
+        preset.active
+        and preset.filament_id is not None
+        and filament is not None
+        and filament.id != preset.filament_id
+    )
+    if relinking_published and filament is not None:
+        if preset.is_official:
+            previous_filament = await db.get(Filament, preset.filament_id)
+            if not await _can_update_preset(db, current_user, preset, previous_filament):
+                raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
+        if not await _lock_catalog_target(db, filament.id):
+            raise_error(404, ERR_FILAMENT_NOT_FOUND)
+
+        # The exporter projects the target card's colour. Remove the old
+        # Orca colour even if the new card has no representative HEX.
+        settings = update_data.get("orcaslicer_settings", preset.orcaslicer_settings)
+        if isinstance(settings, dict):
+            color_keys = {"default_filament_colour", "filament_colour"}
+            if color_keys.intersection(settings):
+                update_data["orcaslicer_settings"] = {
+                    key: value for key, value in settings.items() if key not in color_keys
+                }
 
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь
@@ -873,6 +891,9 @@ async def update_preset(
         )
         # Если пресет был одобрен, а теперь отклонён - меняем статус
         if moderation_status == PresetModerationStatus.REJECTED:
+            if relinking_published:
+                await db.rollback()
+                raise_error(422, ERR_PRESET_RELINK_REJECTED)
             preset.moderation_status = moderation_status
             preset.moderation_reason = _serialize_moderation_reason(moderation_reason)
             preset.active = False
@@ -890,6 +911,9 @@ async def update_preset(
     if published_now:
         from app.services.preset_publication import prepare_published_draft
 
+        if target_filament_id is not None and _has_import_spool_link(preset.orcaslicer_settings):
+            await _lock_catalog_target(db, target_filament_id)
+            await _link_imported_spools_or_conflict(db, preset, target_filament_id=target_filament_id)
         await prepare_published_draft(
             db,
             preset=preset,
@@ -1036,7 +1060,7 @@ async def activate_preset(
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_PRESET_NOT_OWNER)
     if _has_import_spool_link(preset.orcaslicer_settings):
-        await _lock_import_target(db, body.filament_id)
+        await _lock_catalog_target(db, body.filament_id)
     stored_draft_settings = (
         dict(preset.orcaslicer_settings)
         if isinstance(preset.orcaslicer_settings, dict)

@@ -358,10 +358,11 @@ async def test_custom_mapping_rejects_duplicate_column_assignment(auth_client) -
 
 
 @pytest.mark.asyncio
-async def test_resolving_import_draft_links_the_physical_spool(
+async def test_resolving_import_draft_links_the_spool_but_later_preset_relink_does_not(
     auth_client,
     auth_user,
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = (
         HEADERS
@@ -434,3 +435,71 @@ async def test_resolving_import_draft_links_the_physical_spool(
     assert spool.filament_id == filament.id
     assert spool.extra["import_draft_id"] == str(draft_id)
     assert spool.extra["import_resolved_filament_id"] == str(filament.id)
+
+    preset = await db_session.get(Preset, draft_id)
+    assert preset is not None and preset.active
+    # Older active imports can still carry private linking keys in the stored blob.
+    preset.orcaslicer_settings = {
+        **preset.orcaslicer_settings,
+        "import_provider": spool.source,
+        "import_external_ref": spool.extra["import_external_ref"],
+        "filament_colour": ["#FF0000"],
+        "default_filament_colour": ["#FF0000"],
+        "filament_flow_ratio": ["1.04"],
+    }
+    replacement = Filament(
+        brand_id=brand.id,
+        name="Resolved PETG",
+        slug="resolved-brand-resolved-petg-natural",
+        material_type="PETG",
+        color_name="Natural",
+        active=False,
+    )
+    db_session.add(replacement)
+    await db_session.commit()
+    replacement_id = replacement.id
+    original_id = filament.id
+    extra_before = dict(spool.extra)
+
+    unavailable = await auth_client.patch(
+        f"/api/v1/presets/{draft_id}", json={"filament_id": replacement_id},
+    )
+    assert unavailable.status_code == 404, unavailable.text
+
+    replacement.active = True
+    await db_session.commit()
+    relinked = await auth_client.patch(
+        f"/api/v1/presets/{draft_id}", json={"filament_id": replacement_id},
+    )
+    assert relinked.status_code == 200, relinked.text
+    result = relinked.json()
+    assert result["id"] == draft_id
+    assert result["filament_id"] == replacement_id
+    assert result["extruder_temp"] == 242
+    assert result["bed_temp"] == 80
+    assert result["orcaslicer_settings"]["fhub_id"] == draft_id
+    assert result["orcaslicer_settings"]["filament_flow_ratio"] == ["1.04"]
+    assert "filament_colour" not in result["orcaslicer_settings"]
+    assert "default_filament_colour" not in result["orcaslicer_settings"]
+
+    saved = await db_session.scalar(select(UserSavedPreset).where(
+        UserSavedPreset.preset_id == draft_id,
+        UserSavedPreset.user_id == auth_user.id,
+    ))
+    assert saved is not None and saved.sync
+
+    async def reject_relink(*args, **kwargs):
+        return PresetModerationStatus.REJECTED, None
+
+    monkeypatch.setattr("app.api.v1.endpoints.presets.moderate_preset", reject_relink)
+    rejected = await auth_client.patch(
+        f"/api/v1/presets/{draft_id}", json={"filament_id": original_id},
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["detail"]["code"] == "ERR_PRESET_RELINK_REJECTED"
+
+    await db_session.refresh(preset)
+    assert preset.active and preset.filament_id == replacement_id
+    await db_session.refresh(spool)
+    assert spool.filament_id == original_id
+    assert spool.extra == extra_before

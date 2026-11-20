@@ -1315,13 +1315,7 @@ async def request_filament_common_edit(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_verified_user)],
 ) -> FilamentCommonEditRequestResponse:
-    """Send a catalogue correction request to the holders of the shared values.
-
-    The request reaches brand representatives by mail, so it stays with people who
-    already work on this brand: a regional representative who cannot edit shared
-    values asks whoever holds them. The button is shown only to them, and the
-    endpoint enforces the same boundary instead of trusting the interface.
-    """
+    """Route brand-team requests internally and community suggestions to moderation."""
     del request
     filament = await db.get(Filament, filament_id)
     if filament is None:
@@ -1329,12 +1323,13 @@ async def request_filament_common_edit(
     brand = await db.get(Brand, filament.brand_id)
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_represent_brand(db, current_user, filament.brand_id):
-        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+    is_brand_representative = await can_represent_brand(db, current_user, filament.brand_id)
+    if not filament.active and not is_brand_representative:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     from app.services.preset_moderation import validate_text_field
 
-    message = data.message.strip()
+    message = data.message
     is_valid, error_msg = await validate_text_field(
         message,
         db,
@@ -1344,35 +1339,27 @@ async def request_filament_common_edit(
         raise HTTPException(status_code=400, detail=error_msg)
 
     recipient_ids: set[int] = set()
-    if filament.contributed_by_organization_id is not None:
-        recipient_ids = await _active_brand_organization_members(
-            db,
-            filament.brand_id,
-            organization_id=filament.contributed_by_organization_id,
-        )
-    recipient_ids.discard(current_user.id)
+    if is_brand_representative:
+        if filament.contributed_by_organization_id is not None:
+            recipient_ids = await _active_brand_organization_members(
+                db,
+                filament.brand_id,
+                organization_id=filament.contributed_by_organization_id,
+            )
+            recipient_ids.discard(current_user.id)
 
-    if not recipient_ids:
-        recipient_ids = await _active_brand_organization_members(
-            db,
-            filament.brand_id,
-            global_only=True,
-        )
-        recipient_ids.discard(current_user.id)
+        if not recipient_ids:
+            recipient_ids = await _active_brand_organization_members(
+                db, filament.brand_id, global_only=True,
+            )
+            recipient_ids.discard(current_user.id)
 
-    # A community-created record may have no contributor organization and a
-    # brand may not have a global holder yet. In that transition state every
-    # active representative can maintain the shared material layer, so the
-    # request goes to those organizations before falling back to moderation.
-    if not recipient_ids:
-        recipient_ids = await _active_brand_organization_members(
-            db,
-            filament.brand_id,
-        )
-        recipient_ids.discard(current_user.id)
+        # A regional team can receive internal requests when there is no global holder.
+        if not recipient_ids:
+            recipient_ids = await _active_brand_organization_members(db, filament.brand_id)
+            recipient_ids.discard(current_user.id)
 
-    # A platform moderator is the fallback only when no responsible active
-    # organization can receive the request.
+    # Community suggestions go to moderators rather than directly to a brand team.
     if not recipient_ids:
         recipient_ids = set(
             await db.scalars(

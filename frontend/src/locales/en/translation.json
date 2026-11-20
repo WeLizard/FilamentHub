@@ -3154,10 +3154,10 @@
     "commonGapsAllowed": "Completed shared details are protected. You can fill missing technical fields; the market fields below apply only to the selected country.",
     "reportTypo": "Report a mistake",
     "typoSubject": "A mistake in the material “{{name}}”",
-    "requestCommonEdit": "Request a correction",
-    "commonEditRequestTitle": "Request a shared-data change",
-    "commonEditRequestDescription": "The responsible brand organization will receive this request. If none is available, it goes to a FilamentHub moderator. Explain exactly what should change and why.",
-    "commonEditRequestPlaceholder": "For example: the manufacturer changed the recommended nozzle temperature to 205–225 °C. Source…",
+    "requestCommonEdit": "Suggest a correction",
+    "commonEditRequestTitle": "Suggest a material correction",
+    "commonEditRequestDescription": "Explain what should change and why. If you have a manufacturer page or a photo of the label, include a link.",
+    "commonEditRequestPlaceholder": "For example: the label lists the color as black. Source link…",
     "commonEditRequestCancel": "Cancel",
     "commonEditRequestSend": "Send request",
     "commonEditRequestSending": "Sending…",
@@ -3180,6 +3180,17 @@
     "nozzleHardness": "How abrasive the material is. Composites (carbon, glass, glow-in-the-dark) wear a brass nozzle down — hardened steel is needed. HRC is the Rockwell hardness scale: brass below 50, hardened steel 50–60, ruby around 60, tungsten carbide 70 and above."
   },
   "presetModal": {
+    "filamentRelink": {
+      "action": "Change material",
+      "description": "Choose another catalog material. The print settings stay as they are; the color comes from the new material.",
+      "saveHint": "The new material is linked when you save the preset.",
+      "cancel": "Cancel",
+      "save": "Save material link",
+      "correctionNeedsEmailVerified": "Verify your email to suggest a correction.",
+      "searchPlaceholder": "Name, brand, material, or color",
+      "empty": "No matching materials",
+      "saveError": "Could not change the material for this preset."
+    },
     "errors": {
       "createBrand": "Error creating brand",
       "createFilament": "Error creating filament",
@@ -8394,6 +8405,7 @@
     "ERR_USER_NOT_FOUND": "User not found",
     "ERR_BRAND_NOT_FOUND": "Brand not found",
     "ERR_PRESET_NOT_FOUND": "Preset not found",
+    "ERR_PRESET_RELINK_REJECTED": "The preset settings did not pass validation for the selected material. The previous material is still linked.",
     "ERR_PRESET_FILAMENT_REQUIRED": "Link the preset to a filament before publishing it",
     "ERR_FILAMENT_NOT_FOUND": "Filament not found",
     "ERR_FILAMENT_LINE_NOT_FOUND": "Filament line not found",

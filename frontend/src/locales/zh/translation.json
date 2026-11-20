@@ -3148,10 +3148,10 @@
     "commonGapsAllowed": "已填写的通用信息受到保护。您可以补充缺失的技术字段；下方市场字段仅适用于所选国家。",
     "reportTypo": "指出错误",
     "typoSubject": "材料「{{name}}」信息有误",
-    "requestCommonEdit": "请求更正",
-    "commonEditRequestTitle": "请求修改公共数据",
-    "commonEditRequestDescription": "负责该品牌的组织会收到此请求；如果没有可用的组织，请求将发送给 FilamentHub 审核员。请说明需要修改的内容及原因。",
-    "commonEditRequestPlaceholder": "例如：制造商将建议喷嘴温度改为 205–225 °C。来源链接…",
+    "requestCommonEdit": "建议更正",
+    "commonEditRequestTitle": "建议更正耗材信息",
+    "commonEditRequestDescription": "请说明需要更正的内容和原因。如果有厂商页面或标签照片，请提供链接。",
+    "commonEditRequestPlaceholder": "例如：标签标注的颜色为黑色。来源链接…",
     "commonEditRequestCancel": "取消",
     "commonEditRequestSend": "发送请求",
     "commonEditRequestSending": "正在发送…",
@@ -3174,6 +3174,17 @@
     "nozzleHardness": "材料的磨蚀性。复合材料（碳纤、玻纤、夜光）会磨损黄铜喷嘴，需要硬化钢。HRC 为洛氏硬度：黄铜低于 50，硬化钢 50–60，红宝石约 60，碳化钨 70 以上。"
   },
   "presetModal": {
+    "filamentRelink": {
+      "action": "更换耗材",
+      "description": "从目录中选择其他耗材。打印设置保持不变，颜色将取自新耗材。",
+      "saveHint": "保存预设后将关联新耗材。",
+      "cancel": "取消",
+      "save": "保存耗材关联",
+      "correctionNeedsEmailVerified": "请验证邮箱后再提交更正建议。",
+      "searchPlaceholder": "名称、品牌、材质或颜色",
+      "empty": "未找到匹配的耗材",
+      "saveError": "无法更换此预设的耗材。"
+    },
     "errors": {
       "createBrand": "创建品牌出错",
       "createFilament": "创建耗材出错",
@@ -8375,6 +8386,7 @@
     "ERR_USER_NOT_FOUND": "未找到用户",
     "ERR_BRAND_NOT_FOUND": "未找到品牌",
     "ERR_PRESET_NOT_FOUND": "未找到预设",
+    "ERR_PRESET_RELINK_REJECTED": "预设设置未通过所选耗材的验证，原有耗材关联已保留。",
     "ERR_PRESET_FILAMENT_REQUIRED": "发布预设前必须将其关联到耗材",
     "ERR_FILAMENT_NOT_FOUND": "未找到耗材",
     "ERR_FILAMENT_LINE_NOT_FOUND": "未找到耗材系列",
