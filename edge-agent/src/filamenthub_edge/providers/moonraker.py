@@ -1,4 +1,4 @@
-"""Read-only Moonraker and Happy Hare observation provider."""
+"""Moonraker observations with locally opted-in, guarded Happy Hare refresh."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from . import qidi_box
 from .base import ProviderSnapshot
 
 HAPPY_HARE_FIELDS = [
+    "enabled",
     "num_gates",
     "gate_status",
     "gate_material",
@@ -82,6 +83,7 @@ class MoonrakerProvider:
         timeout: float,
         http_client: JsonHttpClient | None = None,
         filamenthub_url: str = "https://filamenthub.ru",
+        auto_refresh: bool = False,
     ) -> None:
         headers = {"X-Api-Key": api_key} if api_key else None
         self.http = http_client or JsonHttpClient(
@@ -91,6 +93,8 @@ class MoonrakerProvider:
             default_headers=headers,
         )
         self.material_provider = material_provider
+        self.auto_refresh = auto_refresh
+        self._refresh_ready = False
         self.filamenthub_url = filamenthub_url
         self._capabilities = ["read", "presence", "consumption"]
         self._identity_checked_at = float("-inf")
@@ -101,7 +105,13 @@ class MoonrakerProvider:
         self._qidi_dict: tuple[dict[int, str], dict[int, str]] | None = None
 
     def capabilities(self) -> list[str]:
-        return list(self._capabilities)
+        result = list(self._capabilities)
+        if self.auto_refresh and self.material_provider == "happy_hare" and self._refresh_ready:
+            result.append("local_command")
+        return result
+
+    def set_refresh_ready(self, ready: bool) -> None:
+        self._refresh_ready = ready
 
     def observe(self) -> ProviderSnapshot:
         objects: dict[str, list[str] | None] = {
@@ -139,6 +149,8 @@ class MoonrakerProvider:
             mmu = status.get("mmu")
             if not isinstance(mmu, dict):
                 raise ProviderUnavailable("Happy Hare object 'mmu' is unavailable")
+            if mmu.get("enabled") is not True or mmu.get("spoolman_support") != "pull":
+                self._refresh_ready = False
             slots = self._happy_hare_slots(mmu)
             topology_complete = True
             tag_read_capable = isinstance(mmu.get("gate_spool_rfid"), list)

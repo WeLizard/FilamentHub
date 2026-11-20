@@ -991,12 +991,16 @@ async def build_printer_bridge_desired_snapshot(
             slots=system.slots,
             snapshots=slots,
         )
+    from app.services.happy_hare_refresh_service import build_happy_hare_refresh_target
+
+    refresh = await build_happy_hare_refresh_target(db, connector, system)
     revision_payload = {
         "physical_printer_id": connector.physical_printer_id,
         "material_system_id": system.id,
         "system_name": system.name,
         "system_kind": system.kind,
         "slots": [slot.model_dump(mode="json") for slot in slots],
+        "happy_hare_refresh": refresh.model_dump(mode="json") if refresh else None,
     }
     revision = hashlib.sha256(
         json.dumps(

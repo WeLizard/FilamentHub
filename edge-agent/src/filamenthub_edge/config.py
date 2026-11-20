@@ -113,6 +113,7 @@ class EdgeConfig:
     enabled: bool = True
     adapter: str = "moonraker"
     node_instance_id: str | None = None
+    auto_refresh: bool = False
     serial_number: str | None = None
     check_code: str | None = field(default=None, repr=False)
     access_code: str | None = field(default=None, repr=False)
@@ -180,6 +181,7 @@ class NodeConfig:
                 "moonraker_api_key",
                 "pairing_code",
                 "sync_interval",
+                "auto_refresh",
                 "printer_url",
                 "serial_number",
                 "check_code",
@@ -237,7 +239,7 @@ class NodeConfig:
                     raise ConfigurationError(
                         "a Flashforge connection requires serial_number and check_code"
                     )
-                if entry.get("moonraker_api_key"):
+                if entry.get("moonraker_api_key") or _as_bool(entry.get("auto_refresh")):
                     raise ConfigurationError("Moonraker options do not apply to Flashforge")
                 if urlsplit(endpoint).port is None:
                     endpoint = f"{endpoint}:8898"
@@ -261,6 +263,7 @@ class NodeConfig:
                     name=_text(entry.get("name", identifier), "connection name", maximum=100)
                     or identifier,
                     enabled=_as_bool(entry.get("enabled"), default=True),
+                    auto_refresh=_as_bool(entry.get("auto_refresh")),
                     adapter=adapter,
                     filamenthub_url=origin,
                     pairing_code=_text(entry.get("pairing_code", ""), "pairing code", maximum=32)

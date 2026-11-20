@@ -34,5 +34,6 @@ schema:
       access_code: password?
       moonraker_api_key: password?
       sync_interval: int(15,3600)?
+      auto_refresh: bool?
   sync_interval: int(15,3600)
   allow_insecure_cloud: bool

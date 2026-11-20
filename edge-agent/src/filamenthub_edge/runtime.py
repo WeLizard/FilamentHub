@@ -7,6 +7,7 @@ import hmac
 import logging
 import re
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from threading import Event
 from typing import Any
@@ -23,6 +24,7 @@ from .errors import (
     StateError,
 )
 from .providers.base import EdgeProvider, ProviderSnapshot
+from .refresh import baseline_matches, refresh_happy_hare
 from .state import (
     MAX_SNAPSHOT_SEQUENCE,
     MAX_USAGE_OUTBOX_BATCHES,
@@ -62,12 +64,15 @@ class EdgeRuntime:
         self.store = store
         self.state = state
         self.stop_event: Event | None = None
+        self._verified_refresh_revision: str | None = None
+        self._verified_refresh_identity: tuple[str, str] | None = None
 
     def run_cycle(self, *, stop_event: Event | None = None) -> None:
         self.stop_event = stop_event
         if self._stopping():
             return
         self._ensure_paired()
+        desired_fresh = False
         cloud_error: EdgeError | None = None
         try:
             self._flush_pending_observation()
@@ -79,17 +84,31 @@ class EdgeRuntime:
             if self._stopping():
                 return
             self._pull_desired_snapshot()
+            desired_fresh = True
         except AuthenticationError:
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
+            if self.config.auto_refresh:
+                self.state.refresh_status = "blocked"
+                self.state.refresh_reason = "cloud_authorization"
+                self.store.save(self.state)
             raise
         except EdgeError as exc:
             # Cloud outages must not stop local usage collection. Cached desired
             # assignments remain authoritative until synchronization recovers.
             cloud_error = exc
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
         if self._stopping():
             return
         try:
             snapshot = self.provider.observe()
         except ProviderUnavailable as provider_error:
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
+            if self.config.auto_refresh:
+                self.state.refresh_status = "blocked"
+                self.state.refresh_reason = "provider_unavailable"
             self._checkpoint_without_provider(reason="disconnect")
             if cloud_error is None and not self._stopping():
                 try:
@@ -103,7 +122,15 @@ class EdgeRuntime:
         if self._stopping():
             return
         observed_at = _now_iso()
-        self._verify_snapshot_identity(snapshot, observed_at=observed_at)
+        try:
+            self._verify_snapshot_identity(snapshot, observed_at=observed_at)
+        except EdgeError:
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
+            raise
+        self._refresh_material_map(snapshot, desired_fresh=desired_fresh)
+        if self.config.auto_refresh and callable(getattr(self.provider, "set_refresh_ready", None)):
+            snapshot = replace(snapshot, capabilities=self.provider.capabilities())
         if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
             raise StateError(
                 "Edge usage outbox is full; local counters were left untouched until "
@@ -135,6 +162,8 @@ class EdgeRuntime:
             except EdgeError as exc:
                 cloud_error = exc
         if cloud_error is not None:
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
             raise cloud_error
 
     def _stopping(self) -> bool:
@@ -170,6 +199,12 @@ class EdgeRuntime:
         self.state.pairing_code_digest = None
         self.state.desired_etag = None
         self.state.desired_snapshot = None
+        self.state.pending_refresh = None
+        self.state.applied_refresh_revision = None
+        self.state.refresh_status = "disabled"
+        self.state.refresh_reason = None
+        self._verified_refresh_revision = None
+        self._verified_refresh_identity = None
         self.state.last_snapshot_sequence = 0
         self.state.last_usage_batch_sequence = 0
         self.state.usage_tracker = None
@@ -207,7 +242,65 @@ class EdgeRuntime:
             "last_snapshot_sequence": self.state.last_snapshot_sequence,
             "last_usage_batch_sequence": self.state.last_usage_batch_sequence,
             "connection_reset_blockers": self.connection_reset_blockers(),
+            "refresh_status": self.state.refresh_status,
+            "refresh_reason": self.state.refresh_reason,
+            "pending_refresh_revision": (self.state.pending_refresh or {}).get("revision"),
+            "applied_refresh_revision": self.state.applied_refresh_revision,
         }
+
+    def _refresh_material_map(self, snapshot: ProviderSnapshot, *, desired_fresh: bool) -> None:
+        if not self.config.auto_refresh:
+            self.state.refresh_status = "disabled"
+            self.state.refresh_reason = None
+            self._verified_refresh_revision = None
+            self._set_refresh_ready(False)
+            return
+        desired = self.state.desired_snapshot or {}
+        target = desired.get("happy_hare_refresh")
+        if isinstance(target, dict):
+            self.state.pending_refresh = target
+        else:
+            self.state.pending_refresh = None
+        result = "blocked:desired_unavailable"
+        if not desired_fresh:
+            result = "blocked:cloud_unavailable"
+        elif isinstance(target, dict):
+            bound = all(
+                desired.get(key) == target.get(key) == getattr(self.state, key)
+                for key in ("physical_printer_id", "material_system_id")
+            )
+            identity = self._identity_evidence(snapshot)
+            if not bound:
+                result = "blocked:binding_mismatch"
+            elif not identity or identity != self.state.confirmed_device_identity:
+                result = "blocked:printer_identity"
+            elif (self._verified_refresh_revision == target.get("revision")
+                  and self._verified_refresh_identity == snapshot.device_identity
+                  and "local_command" in snapshot.capabilities
+                  and baseline_matches(target, snapshot.slots)):
+                result = "applied"
+            elif snapshot.device_identity:
+                result = refresh_happy_hare(self.provider, target, snapshot.device_identity)
+        status, _, reason = result.partition(":")
+        if (status, reason or None) != (self.state.refresh_status, self.state.refresh_reason):
+            logger.info("Happy Hare refresh %s%s", status, ": " + reason if reason else "")
+        self.state.refresh_status = status
+        self.state.refresh_reason = reason or None
+        if status == "applied" and isinstance(target, dict):
+            self.state.applied_refresh_revision = target["revision"]
+            self.state.pending_refresh = None
+            self._verified_refresh_revision = target["revision"]
+            self._verified_refresh_identity = snapshot.device_identity
+        else:
+            self._verified_refresh_revision = None
+            if status == "blocked":
+                self._set_refresh_ready(False)
+        self.store.save(self.state)
+
+    def _set_refresh_ready(self, ready: bool) -> None:
+        setter = getattr(self.provider, "set_refresh_ready", None)
+        if callable(setter):
+            setter(ready)
 
     def _ensure_paired(self) -> None:
         if self.state.bridge_token is not None and not self._new_pairing_code_available():

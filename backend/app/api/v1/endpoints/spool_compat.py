@@ -428,7 +428,7 @@ async def _accept_printer_name_hint(
 
 
 async def _build_location_map(
-    db: AsyncSession, user_id: int
+    db: AsyncSession, user_id: int, *, spool_ids: list[int] | None = None
 ) -> tuple[dict[int, str], dict[int, tuple[str, int, str, Preset | None]]]:
     """Return (location_map, gate_meta_map).
 
@@ -446,6 +446,7 @@ async def _build_location_map(
             PresetGateState.user_id == user_id,
             PresetGateState.spool_id.is_not(None),
             PresetGateState.is_active.is_(True),
+            *([PresetGateState.spool_id.in_(spool_ids)] if spool_ids is not None else []),
         )
         .order_by(PresetGateState.updated_at.desc())
     )
@@ -585,6 +586,18 @@ async def _spool_tare(db: AsyncSession, spool: UserSpool) -> float | None:
     return tare if math.isfinite(tare) and tare >= 0 else None
 
 
+async def project_gate_material(db: AsyncSession, spool: UserSpool, ref, gate_meta_map: dict) -> dict:
+    """Shared native gate-material projection for HTTP inventory and Edge targets."""
+    material = await spool_compat_catalog.project_filament(db, user_id=spool.user_id, ref=ref)
+    if spool.id in gate_meta_map:
+        gate_preset = gate_meta_map[spool.id][3]
+        if gate_preset is not None:
+            material["settings_extruder_temp"], material["settings_bed_temp"] = _preset_temps(gate_preset)
+        elif spool.filament is not None:
+            material["settings_extruder_temp"], material["settings_bed_temp"] = _material_default_temps(spool.filament)
+    return material
+
+
 async def _project_spool(
     db: AsyncSession,
     spool: UserSpool,
@@ -592,19 +605,11 @@ async def _project_spool(
     gate_meta_map: dict | None = None,
     tag_map: dict | None = None,
 ) -> dict:
-    from .spool_compat_catalog import project_filament
-
     payload = _to_spool_payload(spool, location_map, gate_meta_map, tag_map)
     ref = await get_spool_material_context(db, user_id=spool.user_id, spool=spool)
     if ref is None:
         raise ValueError("Spool material reference is missing; run the compatibility migration.")
-    material = await project_filament(db, user_id=spool.user_id, ref=ref)
-    if gate_meta_map and spool.id in gate_meta_map:
-        gate_preset = gate_meta_map[spool.id][3]
-        if gate_preset is not None:
-            material["settings_extruder_temp"], material["settings_bed_temp"] = _preset_temps(gate_preset)
-        elif spool.filament is not None:
-            material["settings_extruder_temp"], material["settings_bed_temp"] = _material_default_temps(spool.filament)
+    material = await project_gate_material(db, spool, ref, gate_meta_map or {})
     payload["filament"] = material
     payload["filament_id"] = ref.wire_id
     payload["spool_weight"] = await _spool_tare(db, spool)

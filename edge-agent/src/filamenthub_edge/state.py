@@ -27,6 +27,10 @@ class EdgeState:
     pairing_code_digest: str | None = None
     desired_etag: str | None = None
     desired_snapshot: dict[str, Any] | None = None
+    pending_refresh: dict[str, Any] | None = None
+    applied_refresh_revision: str | None = None
+    refresh_status: str = "disabled"
+    refresh_reason: str | None = None
     last_snapshot_sequence: int = 0
     pending_observation: dict[str, Any] | None = None
     rejected_observation: dict[str, Any] | None = None
@@ -91,6 +95,20 @@ class StateStore(JsonStateFile):
             raise StateError("Edge pairing digest is invalid")
         if state.desired_snapshot is not None and not isinstance(state.desired_snapshot, dict):
             raise StateError("Cached desired snapshot is invalid")
+        if state.pending_refresh is not None and not isinstance(state.pending_refresh, dict):
+            raise StateError("Pending refresh target is invalid")
+        if state.refresh_status not in {"disabled", "pending", "deferred", "blocked", "applied"}:
+            raise StateError("Refresh status is invalid")
+        if state.refresh_reason is not None and (
+            not isinstance(state.refresh_reason, str) or len(state.refresh_reason) > 100
+        ):
+            raise StateError("Refresh reason is invalid")
+        if state.applied_refresh_revision is not None and (
+            not isinstance(state.applied_refresh_revision, str)
+            or len(state.applied_refresh_revision) != 64
+            or any(c not in "0123456789abcdef" for c in state.applied_refresh_revision)
+        ):
+            raise StateError("Applied refresh revision is invalid")
         if (
             isinstance(state.last_snapshot_sequence, bool)
             or not isinstance(state.last_snapshot_sequence, int)

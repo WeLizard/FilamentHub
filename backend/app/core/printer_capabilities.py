@@ -46,7 +46,7 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
         {"read", "presence", "consumption"}
     ),
     ("happy_hare", "edge_agent"): frozenset(
-        {"read", "presence", "spool_identity", "consumption", "tag_read"}
+        {"read", "presence", "spool_identity", "consumption", "tag_read", "local_command"}
     ),
     ("happy_hare", "orca_plugin_lan"): frozenset(
         {"read", "presence", "spool_identity", "tag_read"}

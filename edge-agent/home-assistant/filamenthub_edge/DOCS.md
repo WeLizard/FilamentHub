@@ -77,7 +77,7 @@ Spoolman в Moonraker: сначала выполните
 создаёт второй поток расхода. Самостоятельный учёт возможен только при
 подтверждённом отсутствии native Spoolman, выключенной поддержке Spoolman в
 Happy Hare и однозначных данных о счётчике и активной назначенной катушке.
-Edge не выполняет команды принтера, не меняет гейты и не записывает NFC/RFID.
+По умолчанию команды принтеру выключены. Запись NFC/RFID не выполняется.
 
 #### Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro
 
@@ -139,6 +139,29 @@ Edge запоминает сертификат, который принтер п
 доступа. Если позже по этому адресу ответит другое устройство, код доступа ему
 не отправляется, а причина попадает в журнал. После замены принтера или его
 платы дайте подключению новый `id`.
+
+### Обновлять назначения без Orca
+
+Для Happy Hare 4.2 в режиме **pull** доступна настройка `auto_refresh: true` у
+подключения. Сначала вручную установите
+[happy_hare_refresh.cfg](https://github.com/WeLizard/FilamentHub/blob/main/edge-agent/src/filamenthub_edge/templates/happy_hare_refresh.cfg)
+в папку конфигурации Klipper, подключите его после Happy Hare через
+`[include happy_hare_refresh.cfg]` и перезапустите Klipper, когда принтер свободен.
+Оба раздела макросов обязательны; имеющиеся пользовательские обёртки
+`MMU_GATE_MAP` требуют предварительной проверки совместимости. Edge не устанавливает
+файл и не перезапускает принтер. Затем включите настройку и перезапустите приложение.
+
+Edge получает последние назначения с обычным интервалом синхронизации и запускает
+только защищённое штатное обновление. Печать, пауза и неизвестное состояние
+откладывают применение, включая поздний ответ Moonraker. Нет связи с сайтом,
+отозвано подключение, чужой ключ катушек, другой hostname/принтер, нет защиты или
+режим не pull — обновление блокируется. Режим подачи автоматически не меняется.
+В журнале и `--status` видны `pending`, `deferred`, `blocked`, `applied` и причина.
+Успех подтверждается чтением карты, а не HTTP-ответом команды. Последние изменения
+переживают перезапуск. Расход и остаток по-прежнему ведёт native Spoolman; изменение
+остатка само по себе не запускает обновление. Начальный вес и зарегистрированные
+метки входят в обновляемые свойства. Проверьте на своём принтере обновление в
+простое, ожидание во время печати/паузы и восстановление после них.
 
 ### Обновление и восстановление
 
@@ -238,15 +261,8 @@ does not block the others. Preserve the app's `/data` volume across restarts.
 
 Choose `happy_hare` for an MMU managed by Happy Hare or `legacy` for a direct
 Klipper feed. The app can report replay-protected filament usage when Moonraker
-provides an unambiguous counter and active desired spool. It remains read-only
-toward printer hardware: it does not change gates, run local commands, or write
-RFID/NFC tags.
-
-Happy Hare inventory and assignments use Moonraker's native Spoolman integration.
-Follow the [printer setup guide](https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation)
-before relying on spool identity. When native Spoolman is configured or unknown,
-Edge does not submit a second usage stream. Empty/unknown observations never
-erase your desired spool assignments.
+provides an unambiguous counter and active desired spool. Printer commands default
+to off; Edge never writes RFID/NFC tags.
 
 #### Flashforge Adventurer 5M / 5M Pro, AD5X, Creator 5 / 5 Pro
 
@@ -318,6 +334,28 @@ before relying on spool identity. When native Spoolman is configured or unknown,
 Edge does not submit a second usage stream. Empty/unknown observations never
 erase your desired spool assignments.
 
+### Update assignments without Orca
+
+For Happy Hare 4.2 in **pull** mode, optionally enable `auto_refresh: true` on a
+connection. First manually copy
+[happy_hare_refresh.cfg](https://github.com/WeLizard/FilamentHub/blob/main/edge-agent/src/filamenthub_edge/templates/happy_hare_refresh.cfg)
+into Klipper's config directory, include it after Happy Hare using
+`[include happy_hare_refresh.cfg]`, and restart Klipper while idle. Both macro
+sections are required. Review existing custom `MMU_GATE_MAP` wrappers for
+compatibility first. Edge never installs the file or restarts printer software.
+Then enable the option and restart the app.
+
+The normal snapshot interval retrieves the latest website assignments. Only the
+fixed guarded native refresh is permitted. Printing, pause and unknown state defer
+application, including a late Moonraker callback. Cloud outage, revoked pairing,
+foreign inventory key, changed hostname/printer, missing guard and non-pull mode
+block updates. Edge never changes the mode. Logs and `--status` show `pending`,
+`deferred`, `blocked`, `applied` and the reason; actual map verification acknowledges
+success. Latest pending changes survive restart. Native Spoolman still owns usage;
+remaining-weight changes alone never trigger refresh. Initial weight and registered
+tag aliases are refreshed. Verify idle updates, print/pause deferral and recovery
+on your own printer before relying on this feature.
+
 ### Update and recovery
 
 Use the app's **Update** action when HA offers a new version; read the changelog
@@ -387,7 +425,7 @@ Spoolman 集成；请先完成
 [打印机设置](https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation)。
 已配置原生 Spoolman，或无法确认其状态时，Edge 不会发送第二份用量。
 只有确认无原生 Spoolman、Happy Hare 的 Spoolman 支持关闭，且计数器与当前分配
-料盘均明确时，才可独立上传用量。Edge 不发送打印机命令、不切换槽位，也不写入 NFC/RFID。
+料盘均明确时，才可独立上传用量。默认不发送打印机命令；不会写入 NFC/RFID。
 
 #### 闪铸 Adventurer 5M / 5M Pro、AD5X、Creator 5 / 5 Pro
 
@@ -427,6 +465,21 @@ Edge 与打印机保持一条连接，上报打印机状态、当前任务，以
 打印机不测量耗材用量。Edge 从打印机读取当前任务的文件，取得切片软件对每种耗材的估算，按层或按打印进度折算，并从分配给任务所用槽位的料盘中扣减，同时标记为估算值。取消的任务只扣减已打印的部分。打印机上找不到与任务对应的文件时，带标签的 Bambu 料盘按打印机上报的余量统计，其他料盘不扣减。Edge 启动之前或连接中断期间打印的部分不扣减。如果 OrcaSlicer 插件也在监视同一台打印机，网站只采用其中一方的上报。
 
 Edge 会记住打印机首次接受访问码时出示的证书。之后如果有其他设备在该地址应答，Edge 不会向它发送访问码，并在日志中说明原因。更换打印机或主板后，请为该连接设置新的 `id`。
+
+### 无需 Orca 更新分配
+
+Happy Hare 4.2 的 **pull** 模式可在连接中启用 `auto_refresh: true`。先手动将
+[happy_hare_refresh.cfg](https://github.com/WeLizard/FilamentHub/blob/main/edge-agent/src/filamenthub_edge/templates/happy_hare_refresh.cfg)
+复制到 Klipper 配置目录，在 Happy Hare 之后添加 `[include happy_hare_refresh.cfg]`，
+并在打印机空闲时重启 Klipper。必须保留两个宏；现有自定义 `MMU_GATE_MAP` 包装需先检查
+兼容性。Edge 不安装配置、不重启打印机。然后启用选项并重启应用。
+
+正常同步间隔获取网站最新分配，只允许固定的受保护原生刷新。打印、暂停或状态未知时延迟
+应用，包含 Moonraker 的异步回调。云端离线、配对撤销、料盘密钥不匹配、hostname/打印机
+变化、保护配置缺失或非 pull 模式都会阻止更新；不会自动切换模式。日志和 `--status` 显示
+`pending`、`deferred`、`blocked`、`applied` 及原因。必须验证实际槽位映射后才确认成功，
+待处理最新分配在重启后保留。原生 Spoolman 继续负责用量，剩余重量变化不触发刷新；
+初始重量和已注册标签属于刷新属性。请在自己的打印机上验证空闲更新、打印/暂停时等待及恢复。
 
 ### 更新与恢复
 

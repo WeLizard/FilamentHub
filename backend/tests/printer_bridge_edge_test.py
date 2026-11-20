@@ -674,6 +674,12 @@ async def test_edge_sync_keeps_desired_assignment_separate_from_observation(
     auth_user: User,
     db_session: AsyncSession,
 ) -> None:
+    from app.models.preset import Preset
+    from app.models.preset_gate_state import PresetGateState
+    from app.models.spool_tag import SpoolTag
+    from app.models.user_printer_device import UserPrinterDevice
+    from app.services.spool_compat_resource_service import create_import_ref
+
     created = await auth_client.post(
         "/api/v1/physical-printers",
         json={"name": "Workshop Voron"},
@@ -705,6 +711,20 @@ async def test_edge_sync_keeps_desired_assignment_separate_from_observation(
     db_session.add(spool)
     await db_session.commit()
     await db_session.refresh(spool)
+
+    material_ref = await create_import_ref(
+        db_session, user_id=auth_user.id, kind="filament",
+        payload={"name": "Imported silk", "material": "PLA-SILK", "color_hex": "DDAABB",
+                 "settings_extruder_temp": 218, "settings_bed_temp": 58},
+        source_namespace="refresh-test", external_id="silk",
+    )
+    spool.compat_filament_ref_id = material_ref.id
+    device = await db_session.get(UserPrinterDevice, printer_id)
+    device.api_key = "refresh-inventory-key"
+    device.printer_hostname = "workshop-voron"
+    db_session.add(SpoolTag(user_id=auth_user.id, spool_id=spool.id, uid="04AABBCC",
+                            technology="nfc", source="manual"))
+    await db_session.commit()
 
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{first_slot['id']}",
@@ -743,12 +763,51 @@ async def test_edge_sync_keeps_desired_assignment_separate_from_observation(
     desired_slot = next(item for item in desired.json()["slots"] if item["index"] == 0)
     assert desired_slot["spool"]["id"] == spool.id
     assert desired_slot["spool"]["remaining_weight_g"] == 875
+    refresh = desired.json()["happy_hare_refresh"]
+    assert refresh["printer_hostname"] == "workshop-voron"
+    assert refresh["physical_printer_id"] == printer_id
+    assert refresh["material_system_id"] == system_id
+    assert refresh["gates"][0] == {
+        "index": 0, "spool_id": spool.id, "name": "Imported silk", "material": "PLA-SILK",
+        "color": "ddaabb", "vendor": "", "temperature": 218, "initial_weight": 1000,
+        "rfids": "04AABBCC",
+    }
+    assert refresh["gates"][1]["spool_id"] == -1
 
     unchanged = await auth_client.get(
         "/api/v1/printer-bridge/snapshot",
         headers={**headers, "If-None-Match": desired.headers["etag"]},
     )
     assert unchanged.status_code == 304
+
+    spool.used_weight_g = 130
+    await db_session.commit()
+    consumed = await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)
+    assert consumed.json()["revision"] != desired.json()["revision"]
+    assert consumed.json()["happy_hare_refresh"]["revision"] == refresh["revision"]
+    preset = Preset(user_id=auth_user.id, name="Gate temperature", extruder_temp=230, bed_temp=65)
+    db_session.add(preset)
+    await db_session.flush()
+    gate = await db_session.scalar(select(PresetGateState).where(
+        PresetGateState.device_id == printer_id, PresetGateState.gate_index == 0,
+    ))
+    gate.preset_id = preset.id
+    await db_session.commit()
+    changed_preset = await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)
+    assert changed_preset.json()["happy_hare_refresh"]["gates"][0]["temperature"] == 230
+    assert changed_preset.json()["happy_hare_refresh"]["revision"] != refresh["revision"]
+    material_ref.latest_payload = {**material_ref.latest_payload, "name": "Imported amber",
+                                   "color_hex": "#FFAABBCC"}
+    spool.initial_weight_g = 1001.4999
+    db_session.add(SpoolTag(user_id=auth_user.id, spool_id=spool.id, uid="02AABBCC",
+                            technology="nfc", source="manual"))
+    await db_session.commit()
+    changed_material = await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)
+    latest_gate = changed_material.json()["happy_hare_refresh"]["gates"][0]
+    assert latest_gate["name"] == "Imported amber"
+    assert latest_gate["color"] == "ffaabbcc"
+    assert latest_gate["initial_weight"] == 1002  # Native payload rounds to 3 dp first.
+    assert latest_gate["rfids"] == "02AABBCC,04AABBCC"
 
     observed = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",

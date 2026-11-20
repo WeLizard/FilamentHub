@@ -6,6 +6,9 @@ configuration:
     name: 打印机
     description: 每台打印机对应一条记录。将打印机添加到同一个 Edge 实例；保存修改后重启应用。
     fields:
+      auto_refresh:
+        name: 更新 Happy Hare 分配
+        description: 默认关闭。需要 pull 模式并手动安装 Klipper 保护配置；打印或暂停期间等待。
       id:
         name: 连接标识
         description: 使用小写字母、数字、连字符和下划线的唯一标识。配对后请勿更改，它对应打印机的持久状态。

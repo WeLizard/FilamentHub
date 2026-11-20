@@ -15,6 +15,9 @@ configuration:
       enabled:
         name: Enabled
         description: Disable to pause only this connection. Enabled by default; queued events are preserved.
+      auto_refresh:
+        name: Refresh Happy Hare assignments
+        description: Disabled by default. Requires pull mode and manual installation of the Klipper guard; changes wait while printing or paused.
       adapter:
         name: Adapter
         description: moonraker for Klipper printers; flashforge for Flashforge Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode; bambu for Bambu Lab printers. Defaults to moonraker.

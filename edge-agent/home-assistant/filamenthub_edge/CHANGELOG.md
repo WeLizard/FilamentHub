@@ -10,4 +10,8 @@
 - Transparent FilamentHub icon and logo, with app introduction, instructions and configuration
   labels in Russian, English and Chinese.
 - Private Supervisor options, unprivileged runtime and graceful shutdown.
-- No inbound port, host networking, Supervisor API access or printer commands.
+- Optional per-printer `auto_refresh` (off by default) updates Happy Hare pull
+  assignments without Orca. Requires manual Klipper guard installation; printing,
+  pause, unknown state and unverified connections block or defer changes.
+- Durable latest target and observed acknowledgement, with refresh status and reasons.
+- No inbound port, host networking or Supervisor API access. No arbitrary cloud commands.

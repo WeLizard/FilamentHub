@@ -135,6 +135,27 @@ class PrinterBridgeDesiredSlotSnapshot(BaseModel):
     preset: PrinterBridgeDesiredPresetSnapshot | None
 
 
+class HappyHareRefreshGate(BaseModel):
+    index: int = Field(ge=0, le=255)
+    spool_id: int
+    name: str
+    material: str
+    color: str
+    vendor: str
+    temperature: int
+    initial_weight: int
+    rfids: str
+
+
+class HappyHareRefreshTarget(BaseModel):
+    revision: str
+    physical_printer_id: int
+    material_system_id: int
+    inventory_key_digest: str
+    printer_hostname: str
+    gates: list[HappyHareRefreshGate]
+
+
 class PrinterBridgeDesiredSnapshotResponse(BaseModel):
     revision: str
     physical_printer_id: int
@@ -142,3 +163,4 @@ class PrinterBridgeDesiredSnapshotResponse(BaseModel):
     system_name: str
     system_kind: str
     slots: list[PrinterBridgeDesiredSlotSnapshot]
+    happy_hare_refresh: HappyHareRefreshTarget | None = None

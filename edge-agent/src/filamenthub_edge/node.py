@@ -69,6 +69,7 @@ def _build_provider(config: EdgeConfig) -> EdgeProvider:
         material_provider=config.material_provider,
         timeout=config.request_timeout,
         filamenthub_url=config.filamenthub_url,
+        auto_refresh=config.auto_refresh,
     )
 
 
@@ -272,6 +273,10 @@ class EdgeNode:
                         "material_system_id": state.material_system_id,
                         "pending_observation": state.pending_observation is not None,
                         "identity_conflict": state.rejected_observation is not None,
+                        "refresh_status": state.refresh_status,
+                        "refresh_reason": state.refresh_reason,
+                        "pending_refresh_revision": (state.pending_refresh or {}).get("revision"),
+                        "applied_refresh_revision": state.applied_refresh_revision,
                         "usage_outbox_batches": len(state.usage_outbox),
                         "usage_tracker_active": bool(
                             state.usage_tracker

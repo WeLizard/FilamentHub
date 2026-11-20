@@ -7,8 +7,9 @@ durable local copy of desired spool and preset assignments.
 
 It never treats provider observations as user-approved assignments. Happy Hare
 and Moonraker's native Spoolman component handle spool inventory, assignments and
-usage. Edge supplies the full gate topology and live observations; it does not
-run G-code or replace the native integration. When native Spoolman is configured
+usage. Edge supplies the full gate topology and live observations. An optional
+local setting can request a guarded native Happy Hare refresh; it never sends
+arbitrary cloud commands. When native Spoolman is configured
 or its status is unknown, Edge does not submit an additional consumption stream.
 Only with native Spoolman confirmed absent and Happy Hare support off can Edge
 send replay-protected usage for an unambiguous active desired spool.
@@ -102,6 +103,7 @@ Create `~/.config/filamenthub-edge/options.json` with permissions `600`:
       "adapter": "moonraker",
       "pairing_code": "FH-XXXXX-XXXXX",
       "material_provider": "happy_hare",
+      "auto_refresh": false,
       "moonraker_url": "http://192.168.1.20:7125",
       "moonraker_api_key": ""
     },
@@ -301,11 +303,61 @@ receive the access code and the log says why. After replacing the printer or its
 mainboard, reset the connection (`--reset-connection`) or give it a new `id`.
 
 In OrcaSlicer, use **Check printer** for a fresh local comparison and explicit
-adopt/apply actions. Without Orca, assignments exchange through native Happy Hare
-Spoolman support. For an explicit refresh, the current documented command is
-`MMU_SPOOLMAN REFRESH=1`, run in the printer console while idle; Edge does not run
-it remotely. Do not switch to `pull` or refresh an unreviewed remote map during
-printing. See the [official command reference](https://moggieuk.github.io/Happy-Hare-Doc/Reference-Commands/#mmu_spoolman).
+adopt/apply actions. Without Orca, the optional refresh below lets website spool,
+gate preset, metadata and registered-tag changes reach Happy Hare automatically.
+
+### Optional Happy Hare automatic refresh
+
+`connections[].auto_refresh` defaults to `false`, including after upgrading.
+Enable it only for a reviewed Happy Hare **pull** setup. Edge never changes push,
+readonly or off to pull. The native Moonraker Spoolman usage writer remains unchanged.
+
+First, while the printer is idle, export the supplied configuration:
+
+```sh
+filamenthub-edge --print-refresh-config > happy_hare_refresh.cfg
+# For a Docker installation:
+docker exec filamenthub-edge python -m filamenthub_edge --print-refresh-config > happy_hare_refresh.cfg
+```
+
+Copy that file to the printer's Klipper config directory, include it **after** the
+Happy Hare configuration (`[include happy_hare_refresh.cfg]`), then restart Klipper
+while idle. This is a manual installation; Edge never edits or restarts printer
+software. Keep both macro sections together. Existing custom `MMU_GATE_MAP` wrappers
+must be reviewed for compatibility before installation. Tested contract: Happy Hare
+4.2.0; missing/older guard or missing gate-map fields blocks automatic refresh.
+
+The fixed `FH_EDGE_REFRESH` macro requests only `MMU_SPOOLMAN REFRESH=1`. Its
+`MMU_GATE_MAP` wrapper checks state again when the asynchronous Spoolman replacement
+arrives. Printing, pause, unknown state or a changed non-pull mode defers that
+replacement. Other forms, including NFC and bypass updates, retain their native
+behavior. This guard also covers native full pull-map replacements while installed.
+
+Set `auto_refresh: true` for that connection and restart Edge. Its existing desired
+snapshot pull runs every 30 seconds by default (minimum 15); no website tab needs
+to remain open. New changes replace the pending target. Cloud outage, revoked
+pairing, foreign inventory key, changed hostname/identity, missing guard and wrong
+mode prevent commands. A cached target alone can never trigger an offline refresh.
+Busy or paused printers retry after they become safe. Failures retain pending state;
+refresh requests are limited to one per minute while awaiting verification.
+
+`--status` and logs report `disabled`, `pending`, `deferred`, `blocked` or `applied`,
+with a reason and pending/applied revision. HTTP success is not acknowledgement:
+Edge verifies the actual gate map, material/name/vendor/color/temperature/initial
+weight and the guard's applied tag-alias callback. A local default temperature
+clamps the expected gate temperature exactly as Happy Hare does. After acknowledgement
+it stops sending refresh requests; restart/reconnect verifies the provider again.
+There is no exactly-once guarantee across independent Edge installations.
+
+Consumption and remaining weight are deliberately excluded from the refresh revision:
+Moonraker/Happy Hare's native usage path owns these changing values. They are fetched
+by native refreshes alongside metadata; Edge does not send a second usage stream.
+Local hardware RFID readings, presence, speed overrides and bypass state are not
+remote assignment targets. Initial spool weight and registered RFID aliases are targets.
+
+Before relying on the feature, test one website reassignment while idle, confirm
+the observed map, then test that changes wait during a print and pause and recover
+afterwards. Local automated checks do not replace this printer acceptance.
 
 Both local readers can be enabled together. They use one physical printer and
 material system. The newest active-source observation wins; delayed data cannot

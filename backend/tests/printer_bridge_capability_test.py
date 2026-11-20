@@ -229,7 +229,7 @@ async def test_generic_bridge_allows_status_and_heartbeat_without_material_capab
         (
             "happy_hare",
             "edge_agent",
-            {"read", "presence", "spool_identity", "consumption", "tag_read"},
+            {"read", "presence", "spool_identity", "consumption", "tag_read", "local_command"},
         ),
     ],
 )
@@ -263,7 +263,7 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
     )
     assert set(connector["capabilities"]) == allowed
     assert allowed <= set(printer["material_systems"][0]["capabilities"])
-    assert not {"local_command", "tag_write"} & set(
+    assert not ({"local_command", "tag_write"} - allowed) & set(
         printer["material_systems"][0]["capabilities"]
     )
 
@@ -278,7 +278,7 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
                 transport=transport,
             ),
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "capabilities": [*allowed, "local_command", "tag_write"],
+            "capabilities": sorted(allowed | {"local_command", "tag_write"}),
             "slot_topology_complete": True,
             "slots": [{"provider_index": 0}],
         },
@@ -292,7 +292,7 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
     )
     assert set(connector["capabilities"]) == allowed
     assert allowed <= set(printer["material_systems"][0]["capabilities"])
-    assert not {"local_command", "tag_write"} & set(
+    assert not ({"local_command", "tag_write"} - allowed) & set(
         printer["material_systems"][0]["capabilities"]
     )
 
@@ -307,7 +307,7 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
                 transport=transport,
             ),
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "capabilities": [*allowed, "local_command", "tag_write", "future_capability"],
+            "capabilities": sorted(allowed | {"local_command", "tag_write", "future_capability"}),
         },
     )
     assert heartbeat.status_code == 200
@@ -319,7 +319,7 @@ async def test_generic_bridge_persists_only_manifest_capabilities(
     )
     assert set(connector["capabilities"]) == allowed
     assert allowed <= set(printer["material_systems"][0]["capabilities"])
-    assert not {"local_command", "tag_write"} & set(
+    assert not ({"local_command", "tag_write"} - allowed) & set(
         printer["material_systems"][0]["capabilities"]
     )
 

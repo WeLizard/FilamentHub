@@ -18,7 +18,9 @@ FilamentHub и сохраняет подключение при перезапу
 и панели управления принтерами в этом приложении пока нет.
 
 Ключи принтеров остаются в HA. Открывать входящие порты или отключать защиту
-не нужно. Команды принтеру и запись NFC/RFID не выполняются.
+не нужно. По умолчанию команды принтеру выключены. Для обновления назначений без
+Orca можно включить `auto_refresh` после ручной установки защиты Klipper и выбора
+режима pull. При печати и паузе изменения ожидают. Запись NFC/RFID не выполняется.
 
 ## English
 
@@ -37,7 +39,9 @@ if the form does not save its fields. See **Documentation** for instructions and
 does not yet provide HA entities or a printer-control dashboard.
 
 Printer credentials stay in HA. No inbound ports or disabled protection are
-needed. The app does not send printer commands or write NFC/RFID tags.
+needed. Printer commands default to off. Optional `auto_refresh` requires manual
+Klipper guard installation and pull mode; changes wait while printing or paused.
+The app does not write NFC/RFID tags.
 
 ## 中文
 
@@ -52,5 +56,6 @@ Edge 上传打印机与槽位状态，接收 FilamentHub 中的料盘分配，�
 操作说明在 **文档** 中，连接状态在 **日志** 中。打印机与料盘在 FilamentHub 网站查看；
 本应用尚不提供 HA 实体或打印机控制面板。
 
-打印机密钥保留在 HA 本地。无需开放入站端口或关闭保护。应用不会发送打印机命令，
-也不会写入 NFC/RFID 标签。
+打印机密钥保留在 HA 本地。无需开放入站端口或关闭保护。默认不发送打印机命令。
+可选 `auto_refresh` 需要手动安装 Klipper 保护配置和 pull 模式；打印或暂停期间等待。
+应用不会写入 NFC/RFID 标签。

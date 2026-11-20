@@ -8,6 +8,7 @@ import logging
 import signal
 from collections.abc import Callable
 from dataclasses import replace
+from importlib.resources import files
 from threading import Event
 
 from .config import NodeConfig
@@ -20,6 +21,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FilamentHub Edge runtime")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="run one synchronization cycle")
+    mode.add_argument("--print-refresh-config", action="store_true",
+                      help="print the Klipper refresh guard for manual installation")
     mode.add_argument(
         "--status",
         action="store_true",
@@ -37,6 +40,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(*, config_loader: Callable[[], NodeConfig] = NodeConfig.load) -> None:
     parser = _parser()
     args = parser.parse_args()
+    if args.print_refresh_config:
+        print(files("filamenthub_edge").joinpath("templates/happy_hare_refresh.cfg").read_text())
+        return
     if args.reset_connection and not args.connection:
         parser.error("--reset-connection requires --connection ID")
     if args.connection and not (args.status or args.reset_connection):
