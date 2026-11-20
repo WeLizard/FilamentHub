@@ -1977,7 +1977,7 @@
       "firmwareLater": "Installing firmware from the site opens once the kit has passed hardware checks.",
       "tags": {
         "title": "Tags on spools",
-        "lead": "The finished kit works as a tag station: it writes the spool's address to an NFC tag and links the tag to the spool in your profile. Connect it to a computer over USB and open the site in Chrome or Edge. NTAG213, NTAG215 and NTAG216 tags work.",
+        "lead": "The finished kit works as a tag station: it writes the spool's address to an NFC tag, links the tag to the spool in your profile and recognises spool tags, your own and factory ones. Connect it to a computer over USB and open the site in Chrome or Edge. Tags can be written on NTAG213, NTAG215 and NTAG216.",
         "write": {
           "title": "Write a tag for a spool",
           "steps": {
@@ -1988,18 +1988,19 @@
           "note": "If the tag holds another address, the site asks before replacing it. A tag of another spool is never overwritten."
         },
         "add": {
-          "title": "Add a spool from a tag",
+          "title": "Read a tag and add a spool",
+          "note": "Factory Bambu Lab and Creality tags are encrypted; the station does not read them yet.",
           "steps": {
-            "read": "Put the tag on the kit and press “Read tag with station” in the “Add spool” form.",
-            "material": "If the tag holds a FilamentHub address, the material is filled in. Otherwise choose it from the catalogue.",
-            "save": "Save the spool: the tag is linked to it, and a blank tag gets the spool's address right away."
+            "read": "Put the tag on the kit and press “Read tag” next to “Add spool” on the “My filaments” tab.",
+            "material": "A tag of your spool opens that spool. Any other tag starts a new spool: the site works out what the tag holds — a FilamentHub address, TigerTag, OpenSpool or OpenPrintTag — and fills in the catalogue material and the weight. If the catalogue has no such material, choose it.",
+            "save": "Save the spool: the tag is linked to it. A blank tag gets the spool's address right away; factory data on a tag is left as it is."
           }
         },
         "use": {
           "title": "Using the tags",
           "items": {
             "phone": "Hold a phone with NFC to the tag and FilamentHub opens. The owner is offered their spool; anyone else sees the material.",
-            "station": "A tag read in the new spool form is recognised: if it already marks a spool in your profile, the site offers to open that spool.",
+            "station": "A tag of your spool read on the station opens that spool, a quick way to find it in your profile.",
             "happyHare": "A Happy Hare printer connected through FH Edge receives the linked tags together with the spools in its gates.",
             "unlink": "Unlink a tag in the same “Tags” window of the spool."
           }
@@ -9701,7 +9702,13 @@
       "written": "The spool address is written to the tag and the tag is linked.",
       "overwriteTitle": "Overwrite the tag?",
       "overwriteMessage": "The tag already holds another address: {{uri}}. It will be replaced with this spool's address.",
+      "overwriteFactoryMessage": "The tag holds factory {{format}} data that printers and apps use to recognise the spool. Writing the FilamentHub address will erase it.",
       "overwriteConfirm": "Overwrite",
+      "readTag": "Read tag",
+      "readTagHint": "Read a tag on the FH Edge station: a tag of your spool opens it, any other tag starts a new spool.",
+      "factoryTag": "{{format}} tag:",
+      "factoryTagMatched": "The catalogue material was filled in from the tag; check it. The tag will be linked to the spool and its data left unchanged.",
+      "factoryTagNoMatch": "The catalogue has no such material; choose it from the list. The tag will be linked to the spool and its data left unchanged.",
       "readForNewSpool": "Read tag with station",
       "newSpoolTag": "Tag {{uid}} is read and will be linked to the new spool when you save it.",
       "tagInUse": "This tag is already linked to a spool in your profile.",

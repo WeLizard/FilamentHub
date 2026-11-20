@@ -54,9 +54,17 @@ import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, spoolTagsAPI, spoolQrAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { formatNetWeight, singleSpoolWeights } from '../utils/packaging';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
-import { edgeTagStationErrorText, useEdgeTagStation } from '../hooks/useEdgeTagStation';
-import { isWritableTag, spoolTagUris, writeSpoolUri, type EdgeTagRead } from '../utils/edgeTagStation';
+import {
+  EdgeTagStationProvider,
+  edgeTagStationErrorText,
+  identifyStationTag,
+  useEdgeTagStation,
+  type StationTagIntake,
+} from '../hooks/useEdgeTagStation';
+import { ReadSpoolTagButton } from '../components/ReadSpoolTagButton';
+import { isWritableTag, spoolTagUris, tagFormatLabel, writeSpoolUri, type EdgeTagRead } from '../utils/edgeTagStation';
 import type {
+  DecodedSpoolTag,
   UserSpool,
   SpoolState,
   PhysicalPrinter,
@@ -2578,6 +2586,15 @@ export function groupFilamentOptionsByBrand(
 
 // Shown until the account's own limit arrives; the server enforces the real one.
 const DEFAULT_SPOOL_BATCH_LIMIT = 20;
+
+/** One line of what a factory tag says: maker, material, colour, nozzle. */
+function stationTagFactsText(decoded: DecodedSpoolTag): string {
+  return [
+    [decoded.vendor_name, decoded.name ?? decoded.material].filter(Boolean).join(' '),
+    decoded.color_hex ? `#${decoded.color_hex}` : null,
+    decoded.extruder_temp ? `${decoded.extruder_temp} °C` : null,
+  ].filter(Boolean).join(' · ');
+}
 const SPOOL_BATCH_ATTEMPT_KEY = 'spool-batch-create';
 
 interface SpoolFormProps {
@@ -2587,6 +2604,8 @@ interface SpoolFormProps {
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
   initialPlacement?: 'ask' | 'shelf' | 'printer';
+  /** A free tag read on the station; the new spool starts from what it says. */
+  initialStationTag?: StationTagIntake | null;
   /** Jump to another owned spool, e.g. from a scanned personal QR. */
   onOpenSpool?: (spoolId: number) => void;
   onSaved: () => void;
@@ -2602,6 +2621,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   initialFilamentId = null,
   initialSource = 'manual',
   initialPlacement = 'ask',
+  initialStationTag = null,
   onOpenSpool,
   onSaved,
   onCancel,
@@ -2649,6 +2669,16 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const [stationTag, setStationTag] = useState<EdgeTagRead | null>(null);
   // The spool a tag read on the station already marks, offered to open.
   const [stationTagSpoolId, setStationTagSpoolId] = useState<number | null>(null);
+  // What a factory or open-format tag (TigerTag, OpenSpool...) says about its filament.
+  const [stationTagFacts, setStationTagFacts] = useState<{
+    format: string;
+    decoded: DecodedSpoolTag;
+    inCatalog: boolean;
+  } | null>(null);
+  const appliedStationTagRef = useRef<StationTagIntake | null>(null);
+  const stationTagSearch = stationTagFacts && !stationTagFacts.inCatalog
+    ? [stationTagFacts.decoded.vendor_name, stationTagFacts.decoded.material].filter(Boolean).join(' ')
+    : '';
   const edgeStation = useEdgeTagStation();
   const stationBusy = edgeStation.status === 'connecting' || edgeStation.status === 'working';
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -2822,6 +2852,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     setQrScanResult(null);
     setStationTag(null);
     setStationTagSpoolId(null);
+    setStationTagFacts(null);
     setIsCameraOpen(false);
     setIsCameraBusy(false);
     setIsCameraReady(false);
@@ -2882,32 +2913,73 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     }
   };
 
-  const readStationTag = () => {
+  // A read tag fills the form: a tag of another spool offers that spool, a
+  // FilamentHub address picks the material like a scanned QR code, and factory
+  // data picks the catalog material it names, with the roll's weights.
+  const applyStationTag = async ({ tag, identity }: StationTagIntake) => {
     setQrError(null);
     setQrSuccess(null);
     setStationTagSpoolId(null);
-    edgeStation.run(async (station) => {
-      const tag = await station.read();
-      const resolved = await spoolTagsAPI.resolve(tag.uid);
-      if (resolved.status === 'matched') {
-        setStationTag(null);
-        setStationTagSpoolId(resolved.spool_id);
-        setQrError(t('edgeTags.tagInUse'));
-        return;
+    setStationTagFacts(null);
+    if (identity.status === 'matched' && identity.spool_id !== null) {
+      setStationTag(null);
+      setStationTagSpoolId(identity.spool_id);
+      setQrError(t('edgeTags.tagInUse'));
+      return;
+    }
+    setStationTag(tag);
+    const decoded = identity.decoded;
+    if (identity.format && decoded) {
+      setStationTagFacts({ format: identity.format, decoded, inCatalog: identity.filament_id != null });
+      if (identity.filament_id != null) {
+        const filament = await filamentsAPI.get(identity.filament_id);
+        setSelectedMaterial(filament);
+        setFilamentId(String(filament.id));
+        setSource('catalog');
+        if (!initialWeightEditedRef.current && filament.spool_weight && filament.spool_weight > 0) {
+          setInitialWeight(String(filament.spool_weight));
+        }
       }
-      setStationTag(tag);
-      // A FilamentHub address on the tag picks the material like a scanned QR code.
-      if (tag.uri && extractQrShortCode(tag.uri)) await resolveQrCode(tag.uri);
-    }).catch((error: any) => {
-      setQrError(edgeTagStationErrorText(t, error) ?? translateApiError(t, error?.response?.data?.detail));
-    });
+      const rollWeight = decoded.initial_weight ?? decoded.weight;
+      if (!initialWeightEditedRef.current && rollWeight && rollWeight > 0) {
+        setInitialWeight(formatDecimalInput(rollWeight));
+      }
+      if (!usedWeightEditedRef.current && decoded.used_weight != null && decoded.used_weight >= 0) {
+        setUsedWeight(formatDecimalInput(decoded.used_weight));
+      }
+      return;
+    }
+    if (tag.uri && extractQrShortCode(tag.uri)) await resolveQrCode(tag.uri);
   };
+
+  const showStationTagError = (error: unknown) => {
+    const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail;
+    setQrError(edgeTagStationErrorText(t, error) ?? translateApiError(t, detail));
+  };
+
+  const readStationTag = () => {
+    setQrError(null);
+    setQrSuccess(null);
+    edgeStation.run(async (station) => applyStationTag(await identifyStationTag(await station.read())))
+      .catch(showStationTagError);
+  };
+
+  useEffect(() => {
+    if (mode !== 'create' || !initialStationTag || appliedStationTagRef.current === initialStationTag) return;
+    appliedStationTagRef.current = initialStationTag;
+    void applyStationTag(initialStationTag).catch(showStationTagError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStationTag, mode]);
 
   const linkStationTag = async (spoolId: number) => {
     const tag = stationTag;
     if (!tag) return;
     try {
-      await spoolTagsAPI.link(spoolId, { uid: tag.uid, technology: 'nfc', format: tag.type });
+      await spoolTagsAPI.link(spoolId, {
+        uid: tag.uid,
+        technology: 'nfc',
+        format: stationTagFacts?.format ?? tag.type,
+      });
     } catch (error: any) {
       toast.warning(t('edgeTags.linkAfterCreateFailed', {
         reason: translateApiError(t, error?.response?.data?.detail),
@@ -2915,9 +2987,10 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
       return;
     }
     // A blank tag gets the new spool's address right away, so a phone opens
-    // the spool from it. A tag with another address is left as it is. Only a
-    // station still connected is used: choosing a port again needs a click.
-    if (!isWritableTag(tag) || tag.uri || edgeStation.status !== 'ready') return;
+    // the spool from it. A tag with another address or with factory data is
+    // left as it is. Only a station still connected is used: choosing a port
+    // again needs a click.
+    if (!isWritableTag(tag) || tag.uri || stationTagFacts || edgeStation.status !== 'ready') return;
     try {
       await edgeStation.run(async (station) => {
         const identity = await spoolQrAPI.issue(spoolId);
@@ -3419,7 +3492,24 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
         {edgeStation.status === 'connecting' && (
           <p className="mb-2 text-xs text-gray-400">{t('edgeTags.connecting')}</p>
         )}
-        {stationTag && (
+        {stationTag && stationTagFacts && (
+          <div className="mb-2 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">
+            <p className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium">{t('edgeTags.factoryTag', { format: tagFormatLabel(stationTagFacts.format) })}</span>
+              {stationTagFacts.decoded.color_hex && (
+                <span
+                  className="inline-block h-3 w-3 rounded-full border border-white/30"
+                  style={{ backgroundColor: `#${stationTagFacts.decoded.color_hex.slice(0, 6)}` }}
+                />
+              )}
+              <span>{stationTagFactsText(stationTagFacts.decoded)}</span>
+            </p>
+            <p className="mt-1 text-cyan-200/80">
+              {t(stationTagFacts.inCatalog ? 'edgeTags.factoryTagMatched' : 'edgeTags.factoryTagNoMatch')}
+            </p>
+          </div>
+        )}
+        {stationTag && !stationTagFacts && (
           <p className="mb-2 text-xs text-cyan-200">{t(isWritableTag(stationTag) && !stationTag.uri ? 'edgeTags.newBlankSpoolTag' : 'edgeTags.newSpoolTag', { uid: stationTag.uid })}</p>
         )}
 
@@ -3513,6 +3603,9 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
 
         {useCatalogPicker ? (
           <SpoolMaterialPicker
+            // A tag whose material the catalog lacks starts the search with what it names.
+            key={stationTagSearch}
+            initialSearch={stationTagSearch}
             selected={selectedFilament}
             shelfSpools={shelfSpools}
             presetMaterials={presetFilaments}
@@ -3865,10 +3958,18 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const stockAlerts = useStockAlertRules(user?.id);
   const [stockAlertTarget, setStockAlertTarget] = useState<StockAlertTarget | null>(null);
 
+  // A free tag read from the toolbar, handed to the add form; every way the
+  // form closes drops it, so the next add form starts clean.
+  const [stationTagIntake, setStationTagIntake] = useState<StationTagIntake | null>(null);
+  const closeAddSpool = () => {
+    setIsAddOpen(false);
+    setStationTagIntake(null);
+  };
+
   const openSpoolForEdit = async (spoolId: number) => {
     try {
       const target = await spoolsAPI.get(spoolId);
-      setIsAddOpen(false);
+      closeAddSpool();
       setUsingSpool(null);
       setEditingSpool(target);
     } catch (error: any) {
@@ -3961,12 +4062,12 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
       spool={spool}
       isBusy={busySpoolId === spool.id}
       onEdit={() => {
-        setIsAddOpen(false);
+        closeAddSpool();
         setUsingSpool(null);
         setEditingSpool(spool);
       }}
       onUse={() => {
-        setIsAddOpen(false);
+        closeAddSpool();
         setEditingSpool(null);
         setUsingSpool(spool);
       }}
@@ -4007,338 +4108,351 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
   ];
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
-          <button
-            type="button"
-            onClick={() => setIsHelpOpen((prev) => !prev)}
-            className={`flex items-center justify-center w-6 h-6 rounded-full border transition-colors ${
-              isHelpOpen
-                ? 'border-purple-500 bg-purple-500/20 text-purple-300'
-                : 'border-white/20 text-gray-400 hover:border-white/40 hover:text-gray-200'
-            }`}
-            title={t('profilePage.spoolHelp.toggle')}
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <ViewModeToggle value={spoolsViewMode} onChange={setSpoolsViewMode} />
-          <SpoolImportButton
-            onImported={() => {
-              queryClient.invalidateQueries({ queryKey: ['user-spools'] });
-              queryClient.invalidateQueries({ queryKey: ['user-presets'] });
-              queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
-              queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
-              onRefetch();
-            }}
-          />
-          <button
-            onClick={() => {
-              setEditingSpool(null);
-              setUsingSpool(null);
-              setIsAddOpen(true);
-            }}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm transition-all shadow-lg shadow-purple-500/25"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('profilePage.spoolsAdd')}</span>
-          </button>
-        </div>
-      </div>
-
-      {isHelpOpen && (
-        <div className="space-y-3 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 text-sm text-gray-300">
-          <div>
-            <p className="font-semibold text-white">{t('profilePage.spoolHelp.title')}</p>
-            <p className="mt-1 text-xs leading-relaxed text-gray-400">
-              {t('profilePage.spoolHelp.description')}
-            </p>
+    <EdgeTagStationProvider>
+      <div className="space-y-4 md:space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.spoolsTitle')}</h3>
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen((prev) => !prev)}
+              className={`flex items-center justify-center w-6 h-6 rounded-full border transition-colors ${
+                isHelpOpen
+                  ? 'border-purple-500 bg-purple-500/20 text-purple-300'
+                  : 'border-white/20 text-gray-400 hover:border-white/40 hover:text-gray-200'
+              }`}
+              title={t('profilePage.spoolHelp.toggle')}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-black/10 p-3">
-              <div className="mb-2 flex items-center gap-2 font-medium text-gray-200">
-                <Plus className="h-4 w-4 text-blue-300" />
-                {t('profilePage.spoolHelp.manualTitle')}
-              </div>
-              <ul className="space-y-1.5 text-xs leading-relaxed text-gray-400">
-                <li>{t('profilePage.spoolHelp.line1')}</li>
-                <li>{t('profilePage.spoolHelp.line2')}</li>
-                <li>{t('profilePage.spoolHelp.line3')}</li>
-                <li>{t('profilePage.spoolHelp.line4')}</li>
-              </ul>
-            </div>
-            <div className="rounded-xl border border-purple-400/20 bg-purple-500/10 p-3">
-              <div className="mb-2 flex items-center gap-2 font-medium text-purple-100">
-                <Upload className="h-4 w-4 text-purple-300" />
-                {t('profilePage.spoolHelp.importTitle')}
-              </div>
-              <ul className="space-y-1.5 text-xs leading-relaxed text-gray-300">
-                <li>{t('profilePage.spoolHelp.importLine1')}</li>
-                <li>{t('profilePage.spoolHelp.importLine2')}</li>
-                <li>{t('profilePage.spoolHelp.importLine3')}</li>
-              </ul>
-              <p className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-purple-200/70">
-                {t('profilePage.spoolHelp.importNote')}
+          <div className="flex items-center gap-2">
+            <ViewModeToggle value={spoolsViewMode} onChange={setSpoolsViewMode} />
+            <SpoolImportButton
+              onImported={() => {
+                queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+                queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+                queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+                queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
+                onRefetch();
+              }}
+            />
+            <ReadSpoolTagButton
+              onSpool={(spoolId) => void openSpoolForEdit(spoolId)}
+              onNewSpool={(intake) => {
+                setEditingSpool(null);
+                setUsingSpool(null);
+                setStationTagIntake(intake);
+                setIsAddOpen(true);
+              }}
+            />
+            <button
+              onClick={() => {
+                setEditingSpool(null);
+                setUsingSpool(null);
+                setStationTagIntake(null);
+                setIsAddOpen(true);
+              }}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm transition-all shadow-lg shadow-purple-500/25"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('profilePage.spoolsAdd')}</span>
+            </button>
+          </div>
+        </div>
+
+        {isHelpOpen && (
+          <div className="space-y-3 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 text-sm text-gray-300">
+            <div>
+              <p className="font-semibold text-white">{t('profilePage.spoolHelp.title')}</p>
+              <p className="mt-1 text-xs leading-relaxed text-gray-400">
+                {t('profilePage.spoolHelp.description')}
               </p>
             </div>
-          </div>
-        </div>
-      )}
-
-
-      <div className="space-y-4 md:space-y-6">
-        {isAddOpen && (
-          <ModalOverlay onClose={() => setIsAddOpen(false)}>
-            <div className="w-full max-w-2xl">
-              <SpoolForm
-                mode="create"
-                shelfSpools={spools}
-                initialFilamentId={initialFilamentId}
-                initialSource={initialSource}
-                initialPlacement={initialPlacement}
-                onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
-                onSaved={() => {
-                  setIsAddOpen(false);
-                  onRefetch();
-                  queryClient.invalidateQueries({ queryKey: ['achievement-overview'] });
-                }}
-                onCancel={() => setIsAddOpen(false)}
-              />
-            </div>
-          </ModalOverlay>
-        )}
-
-        {editingSpool && (
-          <ModalOverlay onClose={() => setEditingSpool(null)}>
-            <div className="w-full max-w-2xl">
-              <SpoolForm
-                mode="edit"
-                spool={editingSpool}
-                onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
-                onSaved={() => {
-                  setEditingSpool(null);
-                  onRefetch();
-                }}
-                onCancel={() => setEditingSpool(null)}
-              />
-            </div>
-          </ModalOverlay>
-        )}
-
-        {usingSpool && (
-          <ModalOverlay onClose={() => setUsingSpool(null)}>
-            <div className="w-full max-w-xl">
-              <UseSpoolForm
-                spool={usingSpool}
-                onSaved={() => {
-                  setUsingSpool(null);
-                  onRefetch();
-                }}
-                onCancel={() => setUsingSpool(null)}
-              />
-            </div>
-          </ModalOverlay>
-        )}
-
-        {actionError && (
-          <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
-        )}
-
-        {(collections.length > 0 || folderFiltered || (feedSummary?.total ?? 0) > 0) && (
-          <SpoolFolderBar collections={collections} selected={folderFilter} onSelect={setFolderFilter} />
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {spoolTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setSpoolTab(tab.key)}
-              className={[
-                'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors',
-                spoolTab === tab.key
-                  ? 'border-purple-400/70 bg-purple-500/20 text-white'
-                  : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
-              ].join(' ')}
-            >
-              <span>{tab.label}</span>
-              <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-black/20 px-1.5 text-xs">
-                {tab.count}
-              </span>
-            </button>
-          ))}
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <StockAlertDefaultControl alerts={stockAlerts} />
-            <button
-              type="button"
-              onClick={() => setSpoolGroupMode(groupedByMaterial ? 'flat' : 'material')}
-              aria-pressed={groupedByMaterial}
-              title={t('profilePage.spoolShelf.groupToggleTitle')}
-              className={[
-                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
-                groupedByMaterial
-                  ? 'border-purple-400/70 bg-purple-500/20 text-white'
-                  : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
-              ].join(' ')}
-            >
-              <Layers className="h-4 w-4" />
-              <span>{t('profilePage.spoolShelf.groupToggle')}</span>
-            </button>
-            {groupedByMaterial && (
-              <div role="group" aria-label={t('profilePage.spoolShelf.groupingLabel')} className="inline-flex overflow-hidden rounded-lg border border-white/15">
-                {SPOOL_GROUPINGS.map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setSpoolGrouping(mode)}
-                    aria-pressed={spoolGrouping === mode}
-                    className={[
-                      'px-2.5 py-1.5 text-sm transition-colors',
-                      spoolGrouping === mode
-                        ? 'bg-purple-500/20 text-white'
-                        : 'bg-white/5 text-gray-300 hover:bg-white/10',
-                    ].join(' ')}
-                  >
-                    {t(`profilePage.spoolShelf.grouping.${mode}`)}
-                  </button>
-                ))}
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                <div className="mb-2 flex items-center gap-2 font-medium text-gray-200">
+                  <Plus className="h-4 w-4 text-blue-300" />
+                  {t('profilePage.spoolHelp.manualTitle')}
+                </div>
+                <ul className="space-y-1.5 text-xs leading-relaxed text-gray-400">
+                  <li>{t('profilePage.spoolHelp.line1')}</li>
+                  <li>{t('profilePage.spoolHelp.line2')}</li>
+                  <li>{t('profilePage.spoolHelp.line3')}</li>
+                  <li>{t('profilePage.spoolHelp.line4')}</li>
+                </ul>
               </div>
-            )}
+              <div className="rounded-xl border border-purple-400/20 bg-purple-500/10 p-3">
+                <div className="mb-2 flex items-center gap-2 font-medium text-purple-100">
+                  <Upload className="h-4 w-4 text-purple-300" />
+                  {t('profilePage.spoolHelp.importTitle')}
+                </div>
+                <ul className="space-y-1.5 text-xs leading-relaxed text-gray-300">
+                  <li>{t('profilePage.spoolHelp.importLine1')}</li>
+                  <li>{t('profilePage.spoolHelp.importLine2')}</li>
+                  <li>{t('profilePage.spoolHelp.importLine3')}</li>
+                </ul>
+                <p className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-purple-200/70">
+                  {t('profilePage.spoolHelp.importNote')}
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
-        {feedQuery.isPending ? (
-          <p className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {t('profilePage.spoolsLoading')}
-          </p>
-        ) : feedQuery.isError && !feedQuery.isFetchNextPageError ? (
-          <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            <p>{t('profilePage.spoolsLoadError')}</p>
-            <button type="button" onClick={() => feedQuery.refetch()} className="mt-2 inline-flex rounded-lg border border-red-300/30 px-3 py-2">
-              {t('profilePage.spoolsRetry')}
-            </button>
-          </div>
-        ) : spoolTab === 'active' ? (
-          <div className="space-y-4 md:space-y-5">
-            <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5">
+
+        <div className="space-y-4 md:space-y-6">
+          {isAddOpen && (
+            <ModalOverlay onClose={() => closeAddSpool()}>
+              <div className="w-full max-w-2xl">
+                <SpoolForm
+                  mode="create"
+                  shelfSpools={spools}
+                  initialFilamentId={initialFilamentId}
+                  initialSource={initialSource}
+                  initialPlacement={initialPlacement}
+                  initialStationTag={stationTagIntake}
+                  onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
+                  onSaved={() => {
+                    closeAddSpool();
+                    onRefetch();
+                    queryClient.invalidateQueries({ queryKey: ['achievement-overview'] });
+                  }}
+                  onCancel={() => closeAddSpool()}
+                />
+              </div>
+            </ModalOverlay>
+          )}
+
+          {editingSpool && (
+            <ModalOverlay onClose={() => setEditingSpool(null)}>
+              <div className="w-full max-w-2xl">
+                <SpoolForm
+                  mode="edit"
+                  spool={editingSpool}
+                  onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
+                  onSaved={() => {
+                    setEditingSpool(null);
+                    onRefetch();
+                  }}
+                  onCancel={() => setEditingSpool(null)}
+                />
+              </div>
+            </ModalOverlay>
+          )}
+
+          {usingSpool && (
+            <ModalOverlay onClose={() => setUsingSpool(null)}>
+              <div className="w-full max-w-xl">
+                <UseSpoolForm
+                  spool={usingSpool}
+                  onSaved={() => {
+                    setUsingSpool(null);
+                    onRefetch();
+                  }}
+                  onCancel={() => setUsingSpool(null)}
+                />
+              </div>
+            </ModalOverlay>
+          )}
+
+          {actionError && (
+            <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{actionError}</p>
+          )}
+
+          {(collections.length > 0 || folderFiltered || (feedSummary?.total ?? 0) > 0) && (
+            <SpoolFolderBar collections={collections} selected={folderFilter} onSelect={setFolderFilter} />
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {spoolTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setSpoolTab(tab.key)}
+                className={[
+                  'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                  spoolTab === tab.key
+                    ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                    : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+                ].join(' ')}
+              >
+                <span>{tab.label}</span>
+                <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-black/20 px-1.5 text-xs">
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <StockAlertDefaultControl alerts={stockAlerts} />
               <button
                 type="button"
-                onClick={() => setSpoolSlotsSection(spoolSlotsSection === 'collapsed' ? 'expanded' : 'collapsed')}
-                aria-expanded={spoolSlotsSection === 'expanded'}
-                className="flex items-center gap-2 text-sm font-semibold text-white"
+                onClick={() => setSpoolGroupMode(groupedByMaterial ? 'flat' : 'material')}
+                aria-pressed={groupedByMaterial}
+                title={t('profilePage.spoolShelf.groupToggleTitle')}
+                className={[
+                  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                  groupedByMaterial
+                    ? 'border-purple-400/70 bg-purple-500/20 text-white'
+                    : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10',
+                ].join(' ')}
               >
-                <span>{t('profilePage.deviceSetup.title')}</span>
-                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${spoolSlotsSection === 'expanded' ? 'rotate-180' : ''}`} />
+                <Layers className="h-4 w-4" />
+                <span>{t('profilePage.spoolShelf.groupToggle')}</span>
               </button>
-              {spoolSlotsSection === 'expanded' && (
-                <div className="mt-3">
-                  <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
+              {groupedByMaterial && (
+                <div role="group" aria-label={t('profilePage.spoolShelf.groupingLabel')} className="inline-flex overflow-hidden rounded-lg border border-white/15">
+                  {SPOOL_GROUPINGS.map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSpoolGrouping(mode)}
+                      aria-pressed={spoolGrouping === mode}
+                      className={[
+                        'px-2.5 py-1.5 text-sm transition-colors',
+                        spoolGrouping === mode
+                          ? 'bg-purple-500/20 text-white'
+                          : 'bg-white/5 text-gray-300 hover:bg-white/10',
+                      ].join(' ')}
+                    >
+                      {t(`profilePage.spoolShelf.grouping.${mode}`)}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="space-y-3">
-              <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
-              {filteredSpools.length === 0 ? (
-                (feedSummary?.total ?? 0) === 0 && showNewcomerGuide && !folderFiltered ? (
-                  <GuidedEmptyState
-                    icon={<Package className="h-5 w-5" />}
-                    eyebrow={t('profilePage.newcomer.spools.eyebrow')}
-                    title={t('profilePage.newcomer.spools.title')}
-                    description={t('profilePage.newcomer.spools.description')}
-                    actionLabel={t('profilePage.spoolsAdd')}
-                    onAction={() => setIsAddOpen(true)}
-                    guideLabel={t('profilePage.newcomer.howTo')}
-                    guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
-                  />
-                ) : (
-                  <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
-                    <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
-                    <p className="text-gray-400 text-sm md:text-base">{t('profilePage.spoolsActiveEmpty')}</p>
+          {feedQuery.isPending ? (
+            <p className="flex items-center gap-2 text-sm text-gray-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('profilePage.spoolsLoading')}
+            </p>
+          ) : feedQuery.isError && !feedQuery.isFetchNextPageError ? (
+            <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              <p>{t('profilePage.spoolsLoadError')}</p>
+              <button type="button" onClick={() => feedQuery.refetch()} className="mt-2 inline-flex rounded-lg border border-red-300/30 px-3 py-2">
+                {t('profilePage.spoolsRetry')}
+              </button>
+            </div>
+          ) : spoolTab === 'active' ? (
+            <div className="space-y-4 md:space-y-5">
+              <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5">
+                <button
+                  type="button"
+                  onClick={() => setSpoolSlotsSection(spoolSlotsSection === 'collapsed' ? 'expanded' : 'collapsed')}
+                  aria-expanded={spoolSlotsSection === 'expanded'}
+                  className="flex items-center gap-2 text-sm font-semibold text-white"
+                >
+                  <span>{t('profilePage.deviceSetup.title')}</span>
+                  <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${spoolSlotsSection === 'expanded' ? 'rotate-180' : ''}`} />
+                </button>
+                {spoolSlotsSection === 'expanded' && (
+                  <div className="mt-3">
+                    <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
                   </div>
-                )
-              ) : (
-                spoolList
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
+                {filteredSpools.length === 0 ? (
+                  (feedSummary?.total ?? 0) === 0 && showNewcomerGuide && !folderFiltered ? (
+                    <GuidedEmptyState
+                      icon={<Package className="h-5 w-5" />}
+                      eyebrow={t('profilePage.newcomer.spools.eyebrow')}
+                      title={t('profilePage.newcomer.spools.title')}
+                      description={t('profilePage.newcomer.spools.description')}
+                      actionLabel={t('profilePage.spoolsAdd')}
+                      onAction={() => setIsAddOpen(true)}
+                      guideLabel={t('profilePage.newcomer.howTo')}
+                      guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
+                    />
+                  ) : (
+                    <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+                      <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+                      <p className="text-gray-400 text-sm md:text-base">{t('profilePage.spoolsActiveEmpty')}</p>
+                    </div>
+                  )
+                ) : (
+                  spoolList
+                )}
+              </div>
+            </div>
+          ) : (feedSummary?.total ?? 0) === 0 && !folderFiltered ? (
+            showNewcomerGuide ? (
+              <GuidedEmptyState
+                icon={<Package className="h-5 w-5" />}
+                eyebrow={t('profilePage.newcomer.spools.eyebrow')}
+                title={t('profilePage.newcomer.spools.title')}
+                description={t('profilePage.newcomer.spools.description')}
+                actionLabel={t('profilePage.spoolsAdd')}
+                onAction={() => setIsAddOpen(true)}
+                guideLabel={t('profilePage.newcomer.howTo')}
+                guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
+              />
+            ) : (
+              <div className="text-center py-12 md:py-16">
+                <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
+                <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+              </div>
+            )
+          ) : filteredSpools.length === 0 ? (
+            <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+              <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+              <p className="text-gray-400 text-sm md:text-base">
+                {t('profilePage.spoolsEmptyInTab', { tab: t(`profilePage.spoolTabs.${spoolTab}`) })}
+              </p>
+            </div>
+          ) : (
+            spoolList
+          )}
+          {!groupedByMaterial && feedQuery.hasNextPage && !(feedQuery.isError && !feedQuery.isFetchNextPageError) && (
+            <div>
+              <button
+                type="button"
+                onClick={() => feedQuery.fetchNextPage()}
+                disabled={feedQuery.isFetchingNextPage}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10 disabled:opacity-60"
+              >
+                {feedQuery.isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
+                {feedQuery.isFetchingNextPage
+                  ? t('profilePage.spoolsLoadingMore')
+                  : t('profilePage.spoolsLoadMore')}
+              </button>
+              {feedQuery.isFetchNextPageError && (
+                <p className="mt-2 text-xs text-amber-200">{t('profilePage.spoolsLoadMoreError')}</p>
               )}
             </div>
-          </div>
-        ) : (feedSummary?.total ?? 0) === 0 && !folderFiltered ? (
-          showNewcomerGuide ? (
-            <GuidedEmptyState
-              icon={<Package className="h-5 w-5" />}
-              eyebrow={t('profilePage.newcomer.spools.eyebrow')}
-              title={t('profilePage.newcomer.spools.title')}
-              description={t('profilePage.newcomer.spools.description')}
-              actionLabel={t('profilePage.spoolsAdd')}
-              onAction={() => setIsAddOpen(true)}
-              guideLabel={t('profilePage.newcomer.howTo')}
-              guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
-            />
-          ) : (
-            <div className="text-center py-12 md:py-16">
-              <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
-              <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
-            </div>
-          )
-        ) : filteredSpools.length === 0 ? (
-          <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
-            <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm md:text-base">
-              {t('profilePage.spoolsEmptyInTab', { tab: t(`profilePage.spoolTabs.${spoolTab}`) })}
-            </p>
-          </div>
-        ) : (
-          spoolList
+          )}
+        </div>
+
+
+        <ConfirmDeleteModal
+          isOpen={deletingSpoolId !== null}
+          onClose={() => setDeletingSpoolId(null)}
+          onConfirm={() => {
+            if (deletingSpoolId !== null) void performDeleteSpool(deletingSpoolId);
+          }}
+          message={t('profilePage.spoolActions.deleteConfirm')}
+        />
+        {folderPickerSpool && (
+          <SpoolFolderPicker
+            spool={folderPickerSpool}
+            collections={collections}
+            userId={user?.id}
+            onClose={() => setFolderPickerSpool(null)}
+          />
         )}
-        {!groupedByMaterial && feedQuery.hasNextPage && !(feedQuery.isError && !feedQuery.isFetchNextPageError) && (
-          <div>
-            <button
-              type="button"
-              onClick={() => feedQuery.fetchNextPage()}
-              disabled={feedQuery.isFetchingNextPage}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10 disabled:opacity-60"
-            >
-              {feedQuery.isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
-              {feedQuery.isFetchingNextPage
-                ? t('profilePage.spoolsLoadingMore')
-                : t('profilePage.spoolsLoadMore')}
-            </button>
-            {feedQuery.isFetchNextPageError && (
-              <p className="mt-2 text-xs text-amber-200">{t('profilePage.spoolsLoadMoreError')}</p>
-            )}
-          </div>
+        {stockAlertTarget && (
+          <StockAlertRuleModal
+            target={stockAlertTarget}
+            alerts={stockAlerts}
+            onClose={() => setStockAlertTarget(null)}
+          />
         )}
       </div>
-
-
-      <ConfirmDeleteModal
-        isOpen={deletingSpoolId !== null}
-        onClose={() => setDeletingSpoolId(null)}
-        onConfirm={() => {
-          if (deletingSpoolId !== null) void performDeleteSpool(deletingSpoolId);
-        }}
-        message={t('profilePage.spoolActions.deleteConfirm')}
-      />
-      {folderPickerSpool && (
-        <SpoolFolderPicker
-          spool={folderPickerSpool}
-          collections={collections}
-          userId={user?.id}
-          onClose={() => setFolderPickerSpool(null)}
-        />
-      )}
-      {stockAlertTarget && (
-        <StockAlertRuleModal
-          target={stockAlertTarget}
-          alerts={stockAlerts}
-          onClose={() => setStockAlertTarget(null)}
-        />
-      )}
-    </div>
+    </EdgeTagStationProvider>
   );
 };
 

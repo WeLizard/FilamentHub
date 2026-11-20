@@ -22,6 +22,8 @@ export interface EdgeTagRead {
   type: string;
   uri: string | null;
   ndefKnown: boolean;
+  /** The tag's memory as base64 (firmware 0.2.2 and later), or null. */
+  data: string | null;
 }
 
 /**
@@ -100,7 +102,13 @@ export class EdgeTagStation {
   read(): Promise<EdgeTagRead> {
     return this.command('{"command":"read"}', READ_TIMEOUT_MS, (message, resolve) => {
       if (message.kind === 'tag') {
-        resolve({ uid: message.uid, type: message.type, uri: message.uri, ndefKnown: message.ndefKnown });
+        resolve({
+          uid: message.uid,
+          type: message.type,
+          uri: message.uri,
+          ndefKnown: message.ndefKnown,
+          data: message.data,
+        });
       }
     });
   }
@@ -182,6 +190,18 @@ export async function connectEdgeTagStation(): Promise<EdgeTagStation | null> {
   const port = await requestEdgePort();
   if (!port) return null;
   return EdgeTagStation.connect((onMessage, onLost) => EdgeConsole.open(port, onMessage, onLost));
+}
+
+// The open and factory formats the site reads from a tag's memory.
+const TAG_FORMAT_LABELS: Record<string, string> = {
+  tigertag: 'TigerTag',
+  openspool: 'OpenSpool',
+  openprinttag: 'OpenPrintTag',
+};
+
+/** A tag format as people know it; unknown codes are shown as they are. */
+export function tagFormatLabel(format: string): string {
+  return TAG_FORMAT_LABELS[format] ?? format;
 }
 
 export function isWritableTag(tag: EdgeTagRead): boolean {

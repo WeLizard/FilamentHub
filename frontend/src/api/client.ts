@@ -4242,6 +4242,31 @@ export interface SpoolTagCreatePayload {
   format?: string | null;
 }
 
+/** Filament facts a factory or open-format tag states; every field is optional. */
+export interface DecodedSpoolTag {
+  material?: string;
+  name?: string;
+  vendor_name?: string;
+  color_hex?: string;
+  diameter?: number;
+  weight?: number;
+  initial_weight?: number;
+  used_weight?: number;
+  extruder_temp?: number;
+  bed_temp?: number;
+}
+
+export interface SpoolTagIdentity {
+  uid: string;
+  status: 'matched' | 'unlinked';
+  spool_id: number | null;
+  /** The format the tag's memory was read as (tigertag, openspool, openprinttag). */
+  format?: string | null;
+  decoded?: DecodedSpoolTag | null;
+  /** The one catalog filament the tag's brand, material and colour name. */
+  filament_id?: number | null;
+}
+
 export interface SpoolCreatePayload {
   filament_id?: number | null;
   initial_weight_g: number;
@@ -4750,6 +4775,16 @@ export const spoolTagsAPI = {
     spool_id: number | null;
   }> => {
     const response = await api.get('/spool-tags/resolve', { params: { uid } });
+    return response.data;
+  },
+
+  /** Whose spool a read tag marks or, for a free tag, what filament its memory describes. */
+  identify: async (tag: { uid: string; chip?: string | null; data?: string | null }): Promise<SpoolTagIdentity> => {
+    const response = await api.post<SpoolTagIdentity>('/spool-tags/identify', {
+      uid: tag.uid,
+      chip: tag.chip ?? null,
+      data: tag.data ?? null,
+    });
     return response.data;
   },
 };

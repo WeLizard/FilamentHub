@@ -1,8 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { TFunction } from 'i18next';
 
+import { spoolTagsAPI, type SpoolTagIdentity } from '../api/client';
 import { isEdgeSerialSupported } from '../utils/edgeDevice';
-import { connectEdgeTagStation, EdgeTagStationError, type EdgeTagStation } from '../utils/edgeTagStation';
+import {
+  connectEdgeTagStation,
+  EdgeTagStationError,
+  type EdgeTagRead,
+  type EdgeTagStation,
+} from '../utils/edgeTagStation';
 import { isPluginEmbed } from '../utils/pluginBridge';
 
 export type EdgeTagStationStatus = 'idle' | 'connecting' | 'ready' | 'working';
@@ -39,7 +55,7 @@ export function edgeTagStationErrorText(t: TFunction, error: unknown): string | 
  * a few seconds (up to 15 on firmware before 0.2.1) before it reads, so it
  * stays connected until the screen goes away or the person disconnects it.
  */
-export function useEdgeTagStation() {
+function useOwnEdgeTagStation() {
   const station = useRef<EdgeTagStation | null>(null);
   const [status, setStatus] = useState<EdgeTagStationStatus>('idle');
   const supported = isEdgeSerialSupported() && !isPluginEmbed();
@@ -90,5 +106,42 @@ export function useEdgeTagStation() {
     }
   }, []);
 
-  return { supported, status, run, disconnect };
+  return useMemo(
+    () => ({ supported, status, run, disconnect, shared: false }),
+    [supported, status, run, disconnect],
+  );
+}
+
+export type EdgeTagStationHandle = ReturnType<typeof useOwnEdgeTagStation>;
+
+const SharedStation = createContext<EdgeTagStationHandle | null>(null);
+
+/**
+ * One station for everything under it. The kit's port opens only once, so
+ * the spools page, its add form and each spool's tag dialog share it instead
+ * of fighting over the port.
+ */
+export function EdgeTagStationProvider({ children }: { children: ReactNode }) {
+  const station = useOwnEdgeTagStation();
+  const value = useMemo(() => ({ ...station, shared: true }), [station]);
+  return createElement(SharedStation.Provider, { value }, children);
+}
+
+/** The shared station under an EdgeTagStationProvider, otherwise one of its own. */
+export function useEdgeTagStation(): EdgeTagStationHandle {
+  const shared = useContext(SharedStation);
+  const own = useOwnEdgeTagStation();
+  return shared ?? own;
+}
+
+/** A tag read on the station, with what the site knows about it. */
+export interface StationTagIntake {
+  tag: EdgeTagRead;
+  identity: SpoolTagIdentity;
+}
+
+/** Whose spool the tag marks or, for a free tag, what its memory describes. */
+export async function identifyStationTag(tag: EdgeTagRead): Promise<StationTagIntake> {
+  const identity = await spoolTagsAPI.identify({ uid: tag.uid, chip: tag.type, data: tag.data });
+  return { tag, identity };
 }

@@ -16,7 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   listFilaments: vi.fn(),
   listPrinters: vi.fn(),
   toastSuccess: vi.fn(),
-  resolveTag: vi.fn(),
+  identifyTag: vi.fn(),
   linkTag: vi.fn(),
   scanQr: vi.fn(),
   issueQr: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock('../api/client', async (importOriginal) => {
     },
     spoolTagsAPI: {
       ...original.spoolTagsAPI,
-      resolve: apiMocks.resolveTag,
+      identify: apiMocks.identifyTag,
       link: apiMocks.linkTag,
     },
     qrAPI: {
@@ -547,7 +547,7 @@ describe('SpoolForm with an FH Edge tag station', () => {
     apiMocks.listPrinters.mockResolvedValue([]);
     apiMocks.getFilament.mockResolvedValue({ id: 91, name: 'Stock PLA', active: true });
     apiMocks.createSpool.mockResolvedValue({ id: 1270, filament_id: 91, state: 'shelf' });
-    apiMocks.resolveTag.mockImplementation(async (uid: string) => ({ uid, status: 'unlinked', spool_id: null }));
+    apiMocks.identifyTag.mockImplementation(async ({ uid }: { uid: string }) => ({ uid, status: 'unlinked', spool_id: null }));
     apiMocks.linkTag.mockResolvedValue({});
     apiMocks.issueQr.mockResolvedValue({ spool_id: 1270, short_code: CODE, target_url: `https://filamenthub.ru/qr/${CODE}` });
   });
@@ -611,9 +611,43 @@ describe('SpoolForm with an FH Edge tag station', () => {
     await waitFor(() => expect(apiMocks.scanQr).toHaveBeenCalledWith(code));
   });
 
+  it('starts a spool from a factory tag and keeps the factory data on it', async () => {
+    station.kit = fakeEdgeKit({ tag: { uid: UID, type: 'ntag213', data: 'W/WSZA==' } });
+    apiMocks.identifyTag.mockResolvedValue({
+      uid: UID,
+      status: 'unlinked',
+      spool_id: null,
+      format: 'tigertag',
+      decoded: { vendor_name: 'Polymaker', material: 'PLA', color_hex: 'FF0000', initial_weight: 750 },
+      filament_id: 92,
+    });
+    apiMocks.getFilament.mockImplementation(async (id: number) => (
+      id === 92 ? { id: 92, name: 'Polymaker PLA Red', active: true } : { id: 91, name: 'Stock PLA', active: true }
+    ));
+    renderCreateForm();
+    await screen.findByText('Stock PLA');
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.readForNewSpool' }));
+
+    expect(await screen.findByText('edgeTags.factoryTagMatched')).toBeInTheDocument();
+    expect(apiMocks.identifyTag).toHaveBeenCalledWith({ uid: UID, chip: 'ntag213', data: 'W/WSZA==' });
+    expect(await screen.findByText('Polymaker PLA Red')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('750')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.spoolAddModal.submit' }));
+    await waitFor(() => expect(apiMocks.linkTag).toHaveBeenCalledWith(1270, {
+      uid: UID,
+      technology: 'nfc',
+      format: 'tigertag',
+    }));
+    expect(apiMocks.createSpool).toHaveBeenCalledWith(expect.objectContaining({ filament_id: 92, initial_weight_g: 750 }));
+    // Factory data that printers read is never written over without asking.
+    expect(apiMocks.issueQr).not.toHaveBeenCalled();
+    expect(station.kit.tag?.data).toBe('W/WSZA==');
+  });
+
   it('does not take a tag that already marks a spool in the profile and offers that spool', async () => {
     station.kit = fakeEdgeKit();
-    apiMocks.resolveTag.mockResolvedValue({ uid: UID, status: 'matched', spool_id: 7 });
+    apiMocks.identifyTag.mockResolvedValue({ uid: UID, status: 'matched', spool_id: 7 });
     const onOpenSpool = vi.fn();
     renderCreateForm(onOpenSpool);
     await screen.findByText('Stock PLA');

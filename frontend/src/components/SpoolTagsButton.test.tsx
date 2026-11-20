@@ -11,7 +11,7 @@ const tagApi = vi.hoisted(() => ({
   list: vi.fn(),
   link: vi.fn(),
   unlink: vi.fn(),
-  resolve: vi.fn(),
+  identify: vi.fn(),
 }));
 const qrApi = vi.hoisted(() => ({ issue: vi.fn() }));
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
@@ -67,7 +67,7 @@ function resetMocks() {
     updated_at: '2026-09-01T00:00:00Z',
   });
   tagApi.unlink.mockReset().mockResolvedValue(undefined);
-  tagApi.resolve.mockReset().mockImplementation(async (uid: string) => ({ uid, status: 'unlinked', spool_id: null }));
+  tagApi.identify.mockReset().mockImplementation(async ({ uid }: { uid: string }) => ({ uid, status: 'unlinked', spool_id: null }));
   qrApi.issue.mockReset().mockResolvedValue({
     spool_id: 41,
     short_code: CODE,
@@ -145,7 +145,7 @@ describe('spool tags on an FH Edge station', () => {
       technology: 'nfc',
       format: 'ntag215',
     }));
-    expect(tagApi.resolve).toHaveBeenCalledWith(UID);
+    expect(tagApi.identify).toHaveBeenCalledWith({ uid: UID, chip: 'ntag215', data: null });
     expect(toastMock.success).toHaveBeenCalledWith('spoolTags.linked', undefined, 'spool-tags');
   });
 
@@ -173,9 +173,31 @@ describe('spool tags on an FH Edge station', () => {
     await waitFor(() => expect(tagApi.link).toHaveBeenCalled());
   });
 
+  it('asks before writing over the factory data on a tag', async () => {
+    station.kit = fakeEdgeKit({ tag: { uid: UID, type: 'ntag213', data: 'W/WSZA==' } });
+    tagApi.identify.mockResolvedValue({ uid: UID, status: 'unlinked', spool_id: null, format: 'tigertag' });
+    await openDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.write' }));
+
+    expect(await screen.findByText('edgeTags.overwriteFactoryMessage')).toBeInTheDocument();
+    expect(station.kit.tag?.uri).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.overwriteConfirm' }));
+    await waitFor(() => expect(station.kit?.tag?.uri).toBe(`https://filamenthub.ru/qr/${CODE}`));
+  });
+
+  it('keeps the format of a factory tag it links', async () => {
+    station.kit = fakeEdgeKit({ tag: { uid: UID, type: 'ntag213', data: 'W/WSZA==' } });
+    tagApi.identify.mockResolvedValue({ uid: UID, status: 'unlinked', spool_id: null, format: 'tigertag' });
+    await openDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'edgeTags.readAndLink' }));
+
+    await waitFor(() => expect(tagApi.link).toHaveBeenCalledWith(41, { uid: UID, technology: 'nfc', format: 'tigertag' }));
+    expect(tagApi.identify).toHaveBeenCalledWith({ uid: UID, chip: 'ntag213', data: 'W/WSZA==' });
+  });
+
   it('leaves a tag of another spool untouched', async () => {
     station.kit = fakeEdgeKit();
-    tagApi.resolve.mockResolvedValue({ uid: UID, status: 'matched', spool_id: 7 });
+    tagApi.identify.mockResolvedValue({ uid: UID, status: 'matched', spool_id: 7 });
     await openDialog();
     fireEvent.click(screen.getByRole('button', { name: 'edgeTags.write' }));
 

@@ -15,6 +15,7 @@ import {
   EdgeTagStationError,
   isWritableTag,
   spoolTagUris,
+  tagFormatLabel,
   writeSpoolUri,
   type EdgeTagRead,
   type EdgeTagStation,
@@ -84,13 +85,15 @@ export function SpoolTagsButton({
   const name = spool.filament?.name ?? t('profilePage.spoolNoFilament');
 
   const edge = useEdgeTagStation();
-  const [overwrite, setOverwrite] = useState<{ tag: EdgeTagRead; uris: string[] } | null>(null);
+  // `factory` names the format of factory data a write would erase.
+  const [overwrite, setOverwrite] = useState<{ tag: EdgeTagRead; uris: string[]; factory: string | null } | null>(null);
   const stationBusy = pending || edge.status === 'connecting' || edge.status === 'working';
 
   const close = () => {
     setOpen(false);
     setOverwrite(null);
-    void edge.disconnect();
+    // A station shared with the page stays connected for its next tag.
+    if (!edge.shared) void edge.disconnect();
   };
 
   const showStationError = (error: unknown) => {
@@ -100,36 +103,38 @@ export function SpoolTagsButton({
   };
 
   // A tag that already belongs to another spool is never taken over silently.
-  const tagOwner = async (uid: string): Promise<'this' | 'free'> => {
-    const resolved = await spoolTagsAPI.resolve(uid);
-    if (resolved.status === 'matched' && resolved.spool_id !== spool.id) {
+  // The answer also names factory data the tag carries (TigerTag, OpenSpool...).
+  const inspectTag = async (tag: EdgeTagRead): Promise<{ owner: 'this' | 'free'; factory: string | null }> => {
+    const identity = await spoolTagsAPI.identify({ uid: tag.uid, chip: tag.type, data: tag.data });
+    if (identity.status === 'matched' && identity.spool_id !== spool.id) {
       throw new EdgeTagStationError('linked_elsewhere');
     }
-    return resolved.status === 'matched' ? 'this' : 'free';
+    return { owner: identity.status === 'matched' ? 'this' : 'free', factory: identity.format ?? null };
   };
 
-  const linkStationTag = async (tag: EdgeTagRead) => {
+  const linkStationTag = async (tag: EdgeTagRead, format: string) => {
     // Every tag the kit reads is high-frequency: NTAG/ISO14443A or ISO15693.
-    await spoolTagsAPI.link(spool.id, { uid: tag.uid, technology: 'nfc', format: tag.type });
+    await spoolTagsAPI.link(spool.id, { uid: tag.uid, technology: 'nfc', format });
     await queryClient.invalidateQueries({ queryKey });
   };
 
   const readAndLink = () => {
     edge.run(async (station) => {
       const tag = await station.read();
-      if (await tagOwner(tag.uid) === 'this') {
+      const { owner, factory } = await inspectTag(tag);
+      if (owner === 'this') {
         toast.info(t('edgeTags.alreadyLinked'), undefined, TOAST_KEY);
         return;
       }
-      await linkStationTag(tag);
+      await linkStationTag(tag, factory ?? tag.type);
       toast.success(t('spoolTags.linked'), undefined, TOAST_KEY);
     }).catch(showStationError);
   };
 
   const finishWrite = async (station: EdgeTagStation, tag: EdgeTagRead, uris: string[]) => {
-    const owner = await tagOwner(tag.uid);
+    const { owner } = await inspectTag(tag);
     if (!tag.uri || !uris.includes(tag.uri)) await writeSpoolUri(station, tag, uris);
-    if (owner === 'free') await linkStationTag(tag);
+    if (owner === 'free') await linkStationTag(tag, tag.type);
     toast.success(t('edgeTags.written'), undefined, TOAST_KEY);
   };
 
@@ -137,11 +142,12 @@ export function SpoolTagsButton({
     edge.run(async (station) => {
       const tag = await station.read();
       if (!isWritableTag(tag)) throw new EdgeTagStationError('not_writable');
-      await tagOwner(tag.uid);
+      const { factory } = await inspectTag(tag);
       const identity = await spoolQrAPI.issue(spool.id);
       const uris = spoolTagUris(identity.target_url, identity.short_code, window.location.origin);
-      if (tag.uri && !uris.includes(tag.uri)) {
-        setOverwrite({ tag, uris });
+      // Another address, or factory data printers read, is replaced only on request.
+      if ((tag.uri && !uris.includes(tag.uri)) || factory) {
+        setOverwrite({ tag, uris, factory });
         return;
       }
       await finishWrite(station, tag, uris);
@@ -363,7 +369,9 @@ export function SpoolTagsButton({
         onClose={() => setOverwrite(null)}
         onConfirm={confirmOverwrite}
         title={t('edgeTags.overwriteTitle')}
-        message={t('edgeTags.overwriteMessage', { uri: overwrite?.tag.uri ?? '' })}
+        message={overwrite?.factory
+          ? t('edgeTags.overwriteFactoryMessage', { format: tagFormatLabel(overwrite.factory) })
+          : t('edgeTags.overwriteMessage', { uri: overwrite?.tag.uri ?? '' })}
         confirmText={t('edgeTags.overwriteConfirm')}
         variant="warning"
       />

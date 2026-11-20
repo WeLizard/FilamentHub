@@ -20,7 +20,7 @@ describe('Edge tag station', () => {
   it('reads the tag on the reader once the kit is ready', async () => {
     const kit = fakeEdgeKit();
     const station = await EdgeTagStation.connect(kit.open);
-    await expect(station.read()).resolves.toEqual({ uid: UID, type: 'ntag215', uri: null, ndefKnown: true });
+    await expect(station.read()).resolves.toEqual({ uid: UID, type: 'ntag215', uri: null, ndefKnown: true, data: null });
     expect(kit.sent).toEqual(['{"command":"read"}']);
   });
 

@@ -123,6 +123,7 @@ function EdgeKitTagsGuide() {
         <div className={card}>
           <h4 className={cardTitle}>{t('edgeKit.guide.tags.add.title')}</h4>
           <GuideSteps prefix="edgeKit.guide.tags.add.steps" steps={TAG_ADD_STEPS} />
+          <p className="mt-3 text-sm leading-6 text-gray-400">{t('edgeKit.guide.tags.add.note')}</p>
         </div>
         <div className={card}>
           <h4 className={cardTitle}>{t('edgeKit.guide.tags.use.title')}</h4>

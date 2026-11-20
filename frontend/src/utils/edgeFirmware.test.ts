@@ -112,9 +112,11 @@ describe('kit console', () => {
       .toEqual({ kind: 'wifi', connected: false, reason: 'password' });
     expect(parseEdgeDeviceLine('{"event":"node","state":"linked"}')).toEqual({ kind: 'node', state: 'linked' });
     expect(parseEdgeDeviceLine('{"ok":true,"type":"ntag215","uid":"04112233445566","ndef_known":false}'))
-      .toEqual({ kind: 'tag', type: 'ntag215', uid: '04112233445566', uri: null, ndefKnown: false });
+      .toEqual({ kind: 'tag', type: 'ntag215', uid: '04112233445566', uri: null, ndefKnown: false, data: null });
     expect(parseEdgeDeviceLine('{"ok":true,"type":"ntag213","uid":"04A1","ndef_known":true,"uri":"https://filamenthub.ru/qr/FHQ1_x"}'))
-      .toEqual({ kind: 'tag', type: 'ntag213', uid: '04A1', uri: 'https://filamenthub.ru/qr/FHQ1_x', ndefKnown: true });
+      .toEqual({ kind: 'tag', type: 'ntag213', uid: '04A1', uri: 'https://filamenthub.ru/qr/FHQ1_x', ndefKnown: true, data: null });
+    expect(parseEdgeDeviceLine('{"ok":true,"type":"ntag215","uid":"04112233445566","ndef_known":false,"data":"W/WSZA=="}'))
+      .toMatchObject({ kind: 'tag', data: 'W/WSZA==' });
     expect(parseEdgeDeviceLine('{"ok":true,"written":true}')).toEqual({ kind: 'written' });
     expect(parseEdgeDeviceLine('{"ok":false,"error":"no_tag_or_io_error"}'))
       .toEqual({ kind: 'failure', error: 'no_tag_or_io_error' });

@@ -14,15 +14,17 @@ interface SpoolMaterialPickerProps {
   presetMaterials: readonly Filament[];
   onSelect: (material: Filament | null) => void;
   onCreate: () => void;
+  /** What to search for first, e.g. the brand and material a tag names. */
+  initialSearch?: string;
 }
 
 const MAX_SHELF_SUGGESTIONS = 8;
 
 export function SpoolMaterialPicker({
-  selected, shelfSpools, presetMaterials, onSelect, onCreate,
+  selected, shelfSpools, presetMaterials, onSelect, onCreate, initialSearch = '',
 }: SpoolMaterialPickerProps) {
   const { t, i18n } = useTranslation();
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialSearch);
   const search = useDebounce(input.trim());
   const shelfIds = useMemo(() => [...new Set(shelfSpools
     .filter(spool => spool.state === 'shelf' || spool.state === 'active')

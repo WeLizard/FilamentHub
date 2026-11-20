@@ -10,6 +10,8 @@ export interface FakeTag {
   uid: string;
   type: string;
   uri?: string;
+  /** The tag's memory as base64, reported by firmware 0.2.2 and later. */
+  data?: string;
 }
 
 export function fakeEdgeKit(options: {
@@ -59,12 +61,13 @@ export function fakeEdgeKit(options: {
         const command = JSON.parse(line);
         if (command.command === 'read') {
           if (!tag) say('{"ok":false,"error":"no_tag_or_io_error"}');
-          else say(JSON.stringify({ ok: true, type: tag.type, uid: tag.uid, ndef_known: true, ...(tag.uri ? { uri: tag.uri } : {}) }));
+          else say(JSON.stringify({ ok: true, type: tag.type, uid: tag.uid, ndef_known: true, ...(tag.uri ? { uri: tag.uri } : {}), ...(tag.data ? { data: tag.data } : {}) }));
         } else if (command.command === 'write_uri') {
           if (!allowed(command.uri)) say('{"ok":false,"error":"invalid_write_request"}');
           else if (!tag || tag.uid !== command.expected_uid) say('{"ok":false,"error":"write_rejected_or_interrupted"}');
           else {
-            tag = { ...tag, uri: command.uri };
+            // The firmware writes one NDEF message over the user memory.
+            tag = { ...tag, uri: command.uri, data: undefined };
             say('{"ok":true,"written":true}');
           }
         }

@@ -214,7 +214,7 @@ export type EdgeDeviceMessage =
   | { kind: 'ready'; nfc: boolean }
   | { kind: 'wifi'; connected: boolean; reason: 'password' | 'not_found' | 'other' | null }
   | { kind: 'node'; state: 'linked' | 'code_rejected' | 'removed' }
-  | { kind: 'tag'; type: string; uid: string; uri: string | null; ndefKnown: boolean }
+  | { kind: 'tag'; type: string; uid: string; uri: string | null; ndefKnown: boolean; data: string | null }
   | { kind: 'written' }
   | { kind: 'failure'; error: string };
 
@@ -261,6 +261,8 @@ export function parseEdgeDeviceLine(line: string): EdgeDeviceMessage | null {
       uid: value.uid,
       uri: typeof value.uri === 'string' ? value.uri : null,
       ndefKnown: value.ndef_known === true,
+      // 0.2.2 and later send the tag's memory as base64 for the site to decode.
+      data: typeof value.data === 'string' && value.data ? value.data : null,
     };
   }
   if (value.ok === true && value.written === true) {
