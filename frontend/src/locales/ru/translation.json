@@ -2504,6 +2504,7 @@
       "fits": "Подходит для Home Assistant OS и Supervised. В Home Assistant Container приложений нет — используйте Docker.",
       "imageAlt": "Схема: принтер, Home Assistant с Edge и FilamentHub",
       "openInHa": "Добавить репозиторий в мой Home Assistant",
+      "comingSoon": "Приложение для Home Assistant готовится к публикации в магазине. Пока поставьте Edge через Docker или на Linux — это та же программа.",
       "steps": {
         "repository": "Настройки → Приложения → Магазин → меню → Репозитории: добавьте адрес",
         "install": "Найдите в магазине FilamentHub Edge и установите.",

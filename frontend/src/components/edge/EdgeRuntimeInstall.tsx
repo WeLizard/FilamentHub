@@ -8,6 +8,8 @@ import { toast } from '../Toast';
 /** Follows `edge-agent/pyproject.toml` and the Home Assistant app's `config.yaml`. */
 export const EDGE_RUNTIME_VERSION = '0.1.0';
 const HA_REPOSITORY = 'https://github.com/WeLizard/filamenthub-edge-home-assistant';
+/** The store repository is still private and the image unpublished; turn on once Home Assistant can install it. */
+const HA_STORE_PUBLISHED = false;
 const HA_ADD_REPOSITORY = `https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=${encodeURIComponent(HA_REPOSITORY)}`;
 
 const LINUX_INSTALL = `python3 -m venv "$HOME/.local/share/filamenthub-edge/venv"
@@ -244,19 +246,25 @@ export function EdgeRuntimeInstall() {
 
       <section id="edge-home-assistant" className={`${card} scroll-mt-24`}>
         <RuntimeHeader id="homeAssistant" />
-        <ol className="space-y-4">
-          <Step index={1} title={t('edgeRuntime.homeAssistant.steps.repository')}>
-            <Command value={HA_REPOSITORY} />
-            <a href={HA_ADD_REPOSITORY} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-purple-300 underline">
-              {t('edgeRuntime.homeAssistant.openInHa')}
-              {/* Inline, so the icon stays after the last word when the link wraps. */}
-              <ExternalLink className="ml-1.5 inline h-3.5 w-3.5 align-[-2px]" />
-            </a>
-          </Step>
-          <Step index={2} title={t('edgeRuntime.homeAssistant.steps.install')} />
-          <Step index={3} title={t('edgeRuntime.homeAssistant.steps.configure')} />
-          <Step index={4} title={t('edgeRuntime.homeAssistant.steps.start')} />
-        </ol>
+        {HA_STORE_PUBLISHED ? (
+          <ol className="space-y-4">
+            <Step index={1} title={t('edgeRuntime.homeAssistant.steps.repository')}>
+              <Command value={HA_REPOSITORY} />
+              <a href={HA_ADD_REPOSITORY} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-purple-300 underline">
+                {t('edgeRuntime.homeAssistant.openInHa')}
+                {/* Inline, so the icon stays after the last word when the link wraps. */}
+                <ExternalLink className="ml-1.5 inline h-3.5 w-3.5 align-[-2px]" />
+              </a>
+            </Step>
+            <Step index={2} title={t('edgeRuntime.homeAssistant.steps.install')} />
+            <Step index={3} title={t('edgeRuntime.homeAssistant.steps.configure')} />
+            <Step index={4} title={t('edgeRuntime.homeAssistant.steps.start')} />
+          </ol>
+        ) : (
+          <p className="max-w-3xl rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-gray-200">
+            {t('edgeRuntime.homeAssistant.comingSoon')}
+          </p>
+        )}
       </section>
 
       <section id="edge-linux" className={`${card} scroll-mt-24`}>

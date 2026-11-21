@@ -2340,6 +2340,7 @@
       "fits": "适用于 Home Assistant OS 和 Supervised。Home Assistant Container 没有应用功能——请使用 Docker。",
       "imageAlt": "示意图：打印机、运行 Edge 的 Home Assistant 与 FilamentHub",
       "openInHa": "将仓库添加到我的 Home Assistant",
+      "comingSoon": "Home Assistant 应用正在准备上架商店。在此之前，请通过 Docker 或在 Linux 上安装 Edge：它们是同一个程序。",
       "steps": {
         "repository": "设置 → 应用 → 商店 → 菜单 → 仓库：添加地址",
         "install": "在商店中找到 FilamentHub Edge 并安装。",
