@@ -63,7 +63,8 @@ function Invoke-PluginReleaseScript {
         $planned = if ($Arguments.ContainsKey('PlannedSiteApiLevel')) { $Arguments.PlannedSiteApiLevel } else { '' }
         $global:events.Add("check:${Id}:planned=$planned")
         if ($spec.status -eq 'FAIL') {
-            Stop-WithFix -Problem "$Id is broken" -Fix "fix $Id"
+            $problem = if ($spec.PSObject.Properties['problem']) { $spec.problem } else { "$Id is broken" }
+            Stop-WithFix -Problem $problem -Fix "fix $Id"
         }
         if ($spec.status -eq 'CURRENT') {
             return [pscustomobject]@{ FilamentHubPluginReleaseResult = $true; Status = 'CURRENT'; Detail = 'nothing new' }
@@ -221,6 +222,17 @@ def test_unfinished_plugin_does_not_block_a_ready_one_and_unselected_ones_are_un
         {"id": "orcaslicer", "status": "ERROR", "fix": "fix orcaslicer"},
         {"id": "octoprint", "status": "DONE", "fix": ""},
     ]
+
+
+def test_a_stop_reason_names_the_plugin_once(tmp_path):
+    result = run_release_with_summary(
+        tmp_path,
+        "orcaslicer",
+        {"orcaslicer": {"status": "FAIL", "problem": "FilamentHub for OrcaSlicer: the package is stale."}},
+        CHECK_ONLY="1",
+    )
+
+    assert result["summary"][0]["detail"] == "the package is stale."
 
 
 def test_site_goes_first_and_every_question_comes_before_any_change(tmp_path):

@@ -957,10 +957,12 @@ function Test-DownloadPageRelease {
 
 function Get-ReleaseCatalogue {
     return @(
-        [pscustomobject]@{ Id = 'site'; Key = '1'; Name = 'Сайт'; DownloadId = $null }
-        [pscustomobject]@{ Id = 'orcaslicer'; Key = '2'; Name = 'FilamentHub для OrcaSlicer'; DownloadId = 'orcaslicer' }
-        [pscustomobject]@{ Id = 'octoprint'; Key = '3'; Name = 'Мост для OctoPrint'; DownloadId = 'octoprint' }
-        [pscustomobject]@{ Id = 'print-farm'; Key = '4'; Name = 'Print Farm'; DownloadId = 'print_farm' }
+        # ScriptName is the name publish-plugin-releases.ps1 puts in front of its
+        # messages; the summary already starts with Name, so it is cut off there.
+        [pscustomobject]@{ Id = 'site'; Key = '1'; Name = 'Сайт'; ScriptName = $null; DownloadId = $null }
+        [pscustomobject]@{ Id = 'orcaslicer'; Key = '2'; Name = 'FilamentHub для OrcaSlicer'; ScriptName = 'FilamentHub for OrcaSlicer'; DownloadId = 'orcaslicer' }
+        [pscustomobject]@{ Id = 'octoprint'; Key = '3'; Name = 'Мост для OctoPrint'; ScriptName = 'FilamentHub Bridge for OctoPrint'; DownloadId = 'octoprint' }
+        [pscustomobject]@{ Id = 'print-farm'; Key = '4'; Name = 'Print Farm'; ScriptName = 'Print Farm'; DownloadId = 'print_farm' }
     )
 }
 
@@ -1009,6 +1011,9 @@ function Set-ReleaseFailure {
     $lines = @("$($ErrorRecord.Exception.Message)" -split "`r?`n" |
         ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $problem = if ($lines.Count) { $lines[0] } else { 'неизвестная ошибка' }
+    if ($State.ScriptName -and $problem.StartsWith("$($State.ScriptName): ")) {
+        $problem = $problem.Substring($State.ScriptName.Length + 2)
+    }
     $fix = @($lines | Where-Object { $_.StartsWith('Исправить:') } | Select-Object -First 1)
     $waiting = $problem.StartsWith($script:WaitingPrefix)
     if (-not $waiting -and (
@@ -1029,9 +1034,10 @@ function Set-ReleaseFailure {
     }
     Set-ReleaseState -State $State -Status $(if ($waiting) { 'WAITING' } else { 'ERROR' }) -Detail $problem `
         -Fix $(if ($fix.Count) { $fix[0].Substring('Исправить:'.Length).Trim() } else { '' })
-    $label = if ($waiting) { 'ожидание' } else { 'СТОП' }
+    # Only the verdict here: the reason and the fix are printed once, in the summary.
+    $label = if ($waiting) { 'ожидание, причина — в итоге ниже' } else { 'СТОП, причина — в итоге ниже' }
     $colour = if ($waiting) { 'Yellow' } else { 'Red' }
-    Write-Host "$($State.Name): $label — $problem" -ForegroundColor $colour
+    Write-Host "  $label" -ForegroundColor $colour
 }
 
 function Show-ReleaseSummary {
@@ -1169,7 +1175,7 @@ function Invoke-Release {
     $states = @(foreach ($entry in $catalogue) {
         if ($entry.Id -in $Items) {
             [pscustomobject]@{
-                Id = $entry.Id; Name = $entry.Name; DownloadId = $entry.DownloadId
+                Id = $entry.Id; Name = $entry.Name; ScriptName = $entry.ScriptName; DownloadId = $entry.DownloadId
                 Status = 'READY'; Detail = ''; Fix = ''; Plan = $null
             }
         }
