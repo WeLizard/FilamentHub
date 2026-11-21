@@ -29,6 +29,11 @@ def _load_orca_plugin():
     fake_orca.ExecutionResult = SimpleNamespace(success=lambda message: message)
     previous = sys.modules.get("orca")
     sys.modules["orca"] = fake_orca
+    # The plugin imports its sibling modules (filamenthub_moonraker, _bambu, ...)
+    # the way Orca loads it: from its own folder.
+    plugin_dir = str(ORCA_PLUGIN.parent)
+    if plugin_dir not in sys.path:
+        sys.path.insert(0, plugin_dir)
     try:
         spec = importlib.util.spec_from_file_location(
             "adapter_lab_orca_plugin", ORCA_PLUGIN

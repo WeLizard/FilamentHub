@@ -5,6 +5,10 @@ description = "Provider-neutral local Edge runtime for FilamentHub"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+# Jinja2 renders the Klipper macro template in tests/test_refresh.py the way Klipper does.
+test = ["pytest", "ruff", "mypy", "PyYAML", "Jinja2"]
+
 [project.scripts]
 filamenthub-edge = "filamenthub_edge.__main__:main"
 

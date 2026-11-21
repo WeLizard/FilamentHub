@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: edge-agent/pyproject.toml
 
       - name: Install test tools
-        run: python -m pip install -e edge-agent pytest ruff mypy PyYAML
+        run: python -m pip install -e "edge-agent[test]"
 
       - name: Verify versions and release tag
         id: version

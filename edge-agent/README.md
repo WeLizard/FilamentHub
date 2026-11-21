@@ -375,7 +375,7 @@ keeps it that way. There is still one runtime and one image.
 Before an owner publishes a release:
 
 1. Run `python edge-agent/scripts/check_versions.py`, the Edge tests, Ruff and mypy.
-   Test tooling includes PyYAML; the runtime itself has no added dependencies.
+   Install the tools with `pip install -e "edge-agent[test]"`; the runtime itself has no dependencies.
 2. Build and run `python edge-agent/scripts/smoke_image.py <image>` for both
    supported architectures. This keeps its isolated synthetic containers/volume
    for inspection; it does not contact printers or FilamentHub.
