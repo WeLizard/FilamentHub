@@ -490,6 +490,12 @@ function Assert-TrustedPublishRepairable {
         $taggedWorkflow = Invoke-Checked git @(
             '-C', $RepositoryPath, 'show', "${Tag}:$WorkflowPath"
         ) -Capture
+        if ($Name -eq 'Print Farm' -and (
+            $Tag -cnotmatch '^print-farm-v\d+\.\d+\.\d+$' -or
+            $taggedWorkflow -cnotmatch 'https://api\.orcaslicer\.com/api/v1/plugin-publish/plugins/[0-9a-f-]+/releases'
+        )) {
+            throw 'Print Farm trusted publishing requires the plugin-specific URL and a print-farm-v tag.'
+        }
         Assert-OrcaCloudPublishWorkflowContent `
             -Workflow $taggedWorkflow -Name "$Name workflow в immutable-теге $Tag"
     } catch {
@@ -1372,7 +1378,7 @@ if ($selected -contains 'print-farm') {
     $published = Get-PublishedComponent `
         -Repository $printFarmRepository `
         -AssetPattern '^printers-(?<version>\d+\.\d+\.\d+)-.*\.whl$' `
-        -TagPatterns @('^v\d+\.\d+\.\d+$', '^printers-v\d+\.\d+\.\d+$')
+        -TagPatterns @('^print-farm-v\d+\.\d+\.\d+$', '^v\d+\.\d+\.\d+$', '^printers-v\d+\.\d+\.\d+$')
     $needed = Test-ComponentNeedsRelease `
         -Name 'Print Farm' -CurrentVersion $version -Published $published `
         -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
@@ -1395,7 +1401,7 @@ if ($selected -contains 'print-farm') {
     }
     $plans += [pscustomobject]@{
         Id = 'print-farm'; Name = 'Print Farm'; Version = $version
-        Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
+        Tag = "print-farm-v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
         RequiredCiWorkflow = $null
         ReleasePaths = @('plugins/print-farm', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml')
