@@ -71,6 +71,23 @@ run_backend() {
     [ -z "$keys" ] && return 0
     expr=$(echo "$keys" | paste -sd '|' - | sed 's/|/ or /g')
 
+    # The dev container carries the project's Python and the system libraries
+    # the application imports (cairo for labels and PDF); a Windows host lacks
+    # them and fails every test that loads the application. It mounts the same
+    # backend/, so the tests run there whenever it is up.
+    container=filamenthub_backend_dev
+    if command -v docker >/dev/null 2>&1 \
+        && [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = "true" ]; then
+        echo "pre-commit: backend-тесты по '$expr' (в контейнере $container)"
+        # Two test modules load scripts from the repository's scripts/, which
+        # the container does not mount; they cannot even be collected there.
+        MSYS_NO_PATHCONV=1 docker exec -w /app "$container" python -m pytest tests/ -q \
+            -p no:cacheprovider --no-cov -k "$expr" \
+            --ignore tests/orca_catalog_source_builder_test.py \
+            --ignore tests/orca_catalog_source_refresh_test.py || failed="$failed backend"
+        return 0
+    fi
+
     echo "pre-commit: backend-тесты по '$expr'"
     ( cd "$repo_root/backend" && "$backend_python" -m pytest tests/ -q -p no:cacheprovider \
         --no-cov -k "$expr" ) || failed="$failed backend"
