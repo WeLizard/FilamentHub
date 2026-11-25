@@ -8786,7 +8786,7 @@
     "ERR_EMAIL_MISMATCH": "Email не совпадает",
     "ERR_ACCOUNT_BLOCKED": "Аккаунт заблокирован",
     "ERR_OAUTH_FAILED": "Ошибка авторизации через {{provider}}",
-    "ERR_OAUTH_INVALID_STATE": "Недействительный параметр state",
+    "ERR_OAUTH_INVALID_STATE": "Ссылка для входа уже использована или устарела. Войдите ещё раз.",
     "ERR_OAUTH_EMAIL_MISSING": "Аккаунт {{provider}} не содержит email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Провайдер {{provider}} не настроен",
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "Провайдер {{provider}} недоступен в этом контуре входа",

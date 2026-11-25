@@ -8593,7 +8593,7 @@
     "ERR_EMAIL_MISMATCH": "Email does not match",
     "ERR_ACCOUNT_BLOCKED": "Account is blocked",
     "ERR_OAUTH_FAILED": "Authentication via {{provider}} failed",
-    "ERR_OAUTH_INVALID_STATE": "Invalid state parameter",
+    "ERR_OAUTH_INVALID_STATE": "This sign-in link was already used or has expired. Sign in again.",
     "ERR_OAUTH_EMAIL_MISSING": "{{provider}} account has no email",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "Provider {{provider}} is not configured",
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "Provider {{provider}} is not available on this sign-in surface",

@@ -18,13 +18,16 @@ export function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const { provider } = useParams<{ provider: string }>();
   const navigate = useNavigate();
-  const { loginWithToken, user } = useAuth();
+  const { loginWithToken, user, isLoading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [pendingTokens, setPendingTokens] = useState<{
     accessToken: string;
     refreshToken: string | null;
   } | null>(null);
   const [pluginCompleted, setPluginCompleted] = useState(false);
+  // The address no longer carries a usable answer from the provider: it was
+  // used already (a reload, the back button, the browser's history).
+  const [spent, setSpent] = useState(false);
   const calledRef = useRef(false);
   const completedRef = useRef(false);
 
@@ -51,9 +54,14 @@ export function OAuthCallbackPage() {
     }
 
     if (!code || !state || !provider) {
-      setError(t('oauthCallback.missing_params'));
+      setSpent(true);
       return;
     }
+
+    // The code works once. Without it in the address a reload of this page,
+    // where a new account stays while accepting the terms, does not send it
+    // again and fail.
+    window.history.replaceState(window.history.state, '', window.location.pathname);
 
     (async () => {
       try {
@@ -73,6 +81,10 @@ export function OAuthCallbackPage() {
           ).finally(clearPluginOAuthHandoff);
         }
         const detail = err?.response?.data?.detail;
+        if (!handoff && detail?.code === 'ERR_OAUTH_INVALID_STATE') {
+          setSpent(true);
+          return;
+        }
         const fallback = t('oauthCallback.error_fallback', { provider: provider ?? '' });
         setError(translateApiError(t, detail, fallback));
       }
@@ -80,9 +92,16 @@ export function OAuthCallbackPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // A spent address is an error only for someone who is not signed in.
+    if (spent && !authLoading && !user) {
+      setError(translateApiError(t, { code: 'ERR_OAUTH_INVALID_STATE' }, t('oauthCallback.missing_params')));
+    }
+  }, [authLoading, spent, t, user]);
+
+  useEffect(() => {
     if (
       completedRef.current
-      || !pendingTokens
+      || (!pendingTokens && !spent)
       || !user
     ) {
       return;
@@ -91,7 +110,7 @@ export function OAuthCallbackPage() {
     // The server binds the authenticated account to the waiting plugin without
     // exposing either account token to this browser URL or to Redis. The plugin
     // receives a fresh account session from its one-shot polling request.
-    const handoff = readPluginOAuthHandoff();
+    const handoff = pendingTokens ? readPluginOAuthHandoff() : null;
     if (handoff) {
       completedRef.current = true;
       const state = searchParams.get('state') || '';
@@ -115,7 +134,7 @@ export function OAuthCallbackPage() {
     }
     completedRef.current = true;
     navigate(consumeAuthReturnTo() ?? '/', { replace: true });
-  }, [navigate, pendingTokens, searchParams, t, user]);
+  }, [navigate, pendingTokens, searchParams, spent, t, user]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">

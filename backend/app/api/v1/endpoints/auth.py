@@ -2376,7 +2376,15 @@ async def oauth_callback(
     # CSRF check: state must match the one issued to this browser in get_oauth_url
     expected_state = request.cookies.get(_OAUTH_STATE_COOKIE)
     if not expected_state or not secrets.compare_digest(expected_state, data.state):
-        _oauth_logger.warning("OAuth state mismatch: provider=%s", provider)
+        # Which of the two it was tells a lost or expired cookie (another
+        # browser, a repeated request, more than ten minutes at the provider)
+        # from a stale or foreign link.
+        _oauth_logger.warning(
+            "OAuth state mismatch: provider=%s, cookie=%s, signed_in=%s",
+            provider,
+            "different" if expected_state else "absent",
+            "yes" if request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME) else "no",
+        )
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_OAUTH_INVALID_STATE)
     response.delete_cookie(_OAUTH_STATE_COOKIE, **_cookie_common_kwargs())
 

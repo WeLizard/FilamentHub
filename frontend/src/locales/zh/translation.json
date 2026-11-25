@@ -8574,7 +8574,7 @@
     "ERR_EMAIL_MISMATCH": "邮箱不匹配",
     "ERR_ACCOUNT_BLOCKED": "账户已被阻止",
     "ERR_OAUTH_FAILED": "通过 {{provider}} 的身份验证失败",
-    "ERR_OAUTH_INVALID_STATE": "无效的状态参数",
+    "ERR_OAUTH_INVALID_STATE": "此登录链接已使用或已过期，请重新登录。",
     "ERR_OAUTH_EMAIL_MISSING": "{{provider}} 账户没有邮箱",
     "ERR_OAUTH_PROVIDER_NOT_CONFIGURED": "提供商 {{provider}} 未配置",
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "此登录区域不提供 {{provider}}",
