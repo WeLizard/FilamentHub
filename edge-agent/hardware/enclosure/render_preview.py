@@ -1,4 +1,8 @@
-"""Render the pictures of the C3 kit's enclosure used on the site, from the exported STL files.
+"""Render the first revision of the C3 kit's enclosure, from the exported STL files.
+
+The site now shows the second revision: its files and pictures come from
+fh-edge-v2-kit/ (render_site.py and publish_to_site.py there). Do not copy
+this script's pictures over them.
 
     $env:BLENDER_USER_RESOURCES = "F:/Temp/blender-user-isolated"
     blender -b --factory-startup -P render_preview.py

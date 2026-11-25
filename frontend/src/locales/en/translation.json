@@ -1919,7 +1919,7 @@
       "title": "Edge kit",
       "lead": "An ESP32-C3 board and a PN5180 NFC reader in a printed enclosure. It is powered over USB, goes online over Wi-Fi and links to your account.",
       "status": "Today the kit links to an account and shows its connection. Sending read tags to your profile is in development.",
-      "renderAlt": "Edge kit: a flat enclosure with a ring above the reader's antenna",
+      "renderAlt": "Edge kit: a flat enclosure with the FilamentHub mark above the reader's antenna",
       "partsTitle": "What you need",
       "parts": {
         "board": "{{board}} board",
@@ -1928,7 +1928,7 @@
         "wire": "Hook-up wire and a soldering iron",
         "cable": "USB-C cable that carries data",
         "tags": "NTAG213, NTAG215 or NTAG216 tags",
-        "filament": "About 30 g of PLA or PETG for the enclosure"
+        "filament": "About 30 g of PLA or PETG for the enclosure and a little clear filament for the light pipes"
       },
       "wiring": {
         "title": "Wiring",
@@ -1940,28 +1940,60 @@
         "unused": "The reader's GPIO, IRQ, AUX and REQ pads stay unconnected."
       },
       "filesTitle": "Enclosure to print",
-      "filesNote": "Print the shell face down, without supports; the ring can be filled with a second colour. Board sizes vary between sellers: PN5180 modules come as 69–70 × 37–39 mm. Check your board and adjust the sizes in the source if needed.",
-      "files": {
-        "shell": "Shell, STL",
-        "base": "Base, STL",
-        "mark": "Ring for a second colour, STL",
-        "shellStep": "Shell, STEP",
-        "baseStep": "Base, STEP"
+      "downloads": {
+        "lead": "Take the print set: every part already lies the way it is printed. In the slicer, give the FilamentHub mark a second colour and the light pipes a clear filament.",
+        "sets": {
+          "print3mf": "Print set, 3MF",
+          "printStep": "The same as STEP",
+          "all": "All files in one archive, ZIP"
+        },
+        "partsTitle": "Parts one by one",
+        "partsHint": "For a single part, or to change the model. No part needs supports.",
+        "parts": {
+          "shell": {
+            "name": "Shell",
+            "how": "Face down."
+          },
+          "base": {
+            "name": "Base",
+            "how": "Outer side down, pads up."
+          },
+          "mark": {
+            "name": "FilamentHub mark",
+            "how": "A second colour, in register with the shell. Without it the shell keeps an engraving."
+          },
+          "pipePwr": {
+            "name": "Power light pipe",
+            "how": "Clear filament, head down. The long one, next to the USB socket."
+          },
+          "pipeIo8": {
+            "name": "Status light pipe",
+            "how": "Clear filament, head down. The short one."
+          },
+          "coupon": {
+            "name": "USB opening test piece",
+            "how": "Not part of the case: a piece of the wall to try your cable in before printing."
+          }
+        },
+        "notes": {
+          "revision": "This is the second revision of the case: it adds the light pipes, a ledge for the base and an opening sized for the cable. It has not been printed yet.",
+          "sizes": "PN5180 modules come as 69–70 × 37–39 mm depending on the seller. Check your board and adjust the sizes in the source if needed."
+        }
       },
       "filesSource": "Model source",
       "assemblyTitle": "Assembly",
       "steps": {
         "print": {
-          "title": "Print the shell and the base",
-          "text": "0.2 mm layers, no supports. Check that the boards fit their frames."
+          "title": "Print the shell, the base and the light pipes",
+          "text": "0.2 mm layers, no supports. Print the light pipes in a clear filament. Check that the boards fit their places."
         },
         "boards": {
           "title": "Solder the wires and seat the boards",
-          "text": "Connect the boards as in the wiring. The reader lies with its antenna under the ring, the ESP32 with its socket at the opening in the wall."
+          "text": "Connect the boards as in the wiring and push the light pipes in from outside. The reader lies with its antenna under the mark and its components towards the base; the ESP32 with its socket in the wall opening and its components towards the shell."
         },
         "close": {
           "title": "Close the base",
-          "text": "The posts on the base press the boards against the shell. Drive the four screws without overtightening."
+          "text": "The pads on the base support the boards from behind. Drive the four screws without overtightening."
         },
         "connect": {
           "title": "Plug in USB",
@@ -2290,7 +2322,14 @@
       "caps": "Key caps, STL",
       "clip": "2020 extrusion mount, STL",
       "shellStep": "Shell, STEP",
-      "baseStep": "Base, STEP"
+      "baseStep": "Base, STEP",
+      "all": "The whole kit, ZIP",
+      "print3mf": "Print set, 3MF",
+      "printStep": "Print set, STEP",
+      "pipePwr": "Power light pipe, STL",
+      "pipeIo8": "Status light pipe, STL",
+      "coupon": "USB opening test piece, STL",
+      "markStep": "Mark, STEP"
     },
     "enclosures": {
       "none": "Only ready builds have a case: each is made for its exact set of parts. For your own combination, pick the nearest ready build or choose a case yourself; the wiring and parts stay the same.",

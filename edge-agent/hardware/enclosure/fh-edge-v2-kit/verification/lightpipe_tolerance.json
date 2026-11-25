@@ -1,0 +1,160 @@
+[
+  {
+    "pipe": 1,
+    "stem_d": 2,
+    "bottom": 7.315,
+    "results": [
+      {
+        "dx": -0.25,
+        "dy": -0.3,
+        "dz": 0,
+        "closest_component": 72,
+        "clearance": 0.38647308407292513,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": -0.3,
+        "dz": 0.25,
+        "closest_component": 72,
+        "clearance": 0.38647308407292513,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": 0.2,
+        "dz": 0,
+        "closest_component": 72,
+        "clearance": 0.38647308407293224,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": 0.2,
+        "dz": 0.25,
+        "closest_component": 72,
+        "clearance": 0.38647308407293224,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": -0.3,
+        "dz": 0,
+        "closest_component": 59,
+        "clearance": 0.6500000000000101,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": -0.3,
+        "dz": 0.25,
+        "closest_component": 59,
+        "clearance": 0.4000000000000101,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": 0.2,
+        "dz": 0,
+        "closest_component": 59,
+        "clearance": 0.6500000000000101,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": 0.2,
+        "dz": 0.25,
+        "closest_component": 59,
+        "clearance": 0.4000000000000101,
+        "collisions": []
+      }
+    ],
+    "worst": {
+      "dx": -0.25,
+      "dy": -0.3,
+      "dz": 0,
+      "closest_component": 72,
+      "clearance": 0.38647308407292513,
+      "collisions": []
+    }
+  },
+  {
+    "pipe": 2,
+    "stem_d": 2,
+    "bottom": 8.8,
+    "results": [
+      {
+        "dx": -0.25,
+        "dy": -0.3,
+        "dz": 0,
+        "closest_component": 117,
+        "clearance": 1.2799999999999994,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": -0.3,
+        "dz": 0.25,
+        "closest_component": 117,
+        "clearance": 1.0299999999999994,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": 0.2,
+        "dz": 0,
+        "closest_component": 117,
+        "clearance": 1.284967502440443,
+        "collisions": []
+      },
+      {
+        "dx": -0.25,
+        "dy": 0.2,
+        "dz": 0.25,
+        "closest_component": 117,
+        "clearance": 1.0361667251596287,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": -0.3,
+        "dz": 0,
+        "closest_component": 117,
+        "clearance": 1.1004878314552726,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": -0.3,
+        "dz": 0.25,
+        "closest_component": 117,
+        "clearance": 0.9313442846461066,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": 0.2,
+        "dz": 0,
+        "closest_component": 117,
+        "clearance": 1.283790909209867,
+        "collisions": []
+      },
+      {
+        "dx": 0.25,
+        "dy": 0.2,
+        "dz": 0.25,
+        "closest_component": 117,
+        "clearance": 1.034707252593649,
+        "collisions": []
+      }
+    ],
+    "worst": {
+      "dx": 0.25,
+      "dy": -0.3,
+      "dz": 0.25,
+      "closest_component": 117,
+      "clearance": 0.9313442846461066,
+      "collisions": []
+    }
+  }
+]

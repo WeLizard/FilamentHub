@@ -1,4 +1,8 @@
-"""Printable enclosure for the Edge NFC kit: ESP32-C3 SuperMini + PN5180 reader.
+"""First revision of the C3 kit's case. The case published on the site is the
+second revision in fh-edge-v2-kit/, rebuilt from this one's STEP files (kept
+there as source/original-*.step).
+
+Printable enclosure for the Edge NFC kit: ESP32-C3 SuperMini + PN5180 reader.
 
 A low bar that lies on the desk. The reader's antenna sits directly under the
 top face, below the ring mark; the USB-C socket faces the back. Two printed

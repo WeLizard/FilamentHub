@@ -1,0 +1,50 @@
+[
+  {
+    "dx": -0.25,
+    "dy": -0.3,
+    "dz": 0,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": -0.25,
+    "dy": -0.3,
+    "dz": 0.25,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": -0.25,
+    "dy": 0.2,
+    "dz": 0,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": -0.25,
+    "dy": 0.2,
+    "dz": 0.25,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": 0.25,
+    "dy": -0.3,
+    "dz": 0,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": 0.25,
+    "dy": -0.3,
+    "dz": 0.25,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": 0.25,
+    "dy": 0.2,
+    "dz": 0,
+    "overlap_volume_mm3": 0
+  },
+  {
+    "dx": 0.25,
+    "dy": 0.2,
+    "dz": 0.25,
+    "overlap_volume_mm3": 0
+  }
+]

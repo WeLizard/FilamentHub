@@ -1,0 +1,188 @@
+{
+  "brep": {
+    "shell": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 18231.919456507792
+    },
+    "base": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 10359.78888008924
+    },
+    "ESP": {
+      "valid": true,
+      "solids": 126,
+      "volume_mm3": 621.2308811456498
+    },
+    "PN_envelope": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 4367.999999999999
+    },
+    "pipe1": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 26.430218994650943
+    },
+    "pipe2": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 21.7649539040701
+    }
+  },
+  "interference_volume_mm3": {
+    "shell/base": 0,
+    "shell/ESP": 0,
+    "base/ESP": 0,
+    "shell/PN_PCB": 0,
+    "base/PN_PCB": 0,
+    "ESP/PN_PCB": 0,
+    "shell/pn_logic": 0,
+    "base/pn_logic": 0,
+    "ESP/pn_logic": 0,
+    "shell/pn_header": 0,
+    "base/pn_header": 0,
+    "ESP/pn_header": 0,
+    "shell/pn_back_solder": 0,
+    "base/pn_back_solder": 0,
+    "ESP/pn_back_solder": 0,
+    "shell/pipe1": 0,
+    "base/pipe1": 0,
+    "ESP/pipe1": 0,
+    "shell/pipe2": 0,
+    "base/pipe2": 0,
+    "ESP/pipe2": 0,
+    "shell/fh-edge-kit-mark": 0
+  },
+  "stl": {
+    "fh-edge-kit-base.stl": {
+      "triangles": 8892,
+      "vertices": 4440,
+      "connected_components": 1,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 10359.811069817419,
+      "bounds_mm": [
+        [
+          -55.75,
+          -22.75,
+          0.0
+        ],
+        [
+          55.75,
+          22.75,
+          11.0
+        ]
+      ]
+    },
+    "fh-edge-kit-lightpipe-IO8.stl": {
+      "triangles": 1004,
+      "vertices": 504,
+      "connected_components": 1,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 21.755934833246204,
+      "bounds_mm": [
+        [
+          -1.4,
+          -1.39956,
+          0.0
+        ],
+        [
+          1.4,
+          1.39956,
+          6.4
+        ]
+      ]
+    },
+    "fh-edge-kit-lightpipe-PWR.stl": {
+      "triangles": 1004,
+      "vertices": 504,
+      "connected_components": 1,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 26.4192670591506,
+      "bounds_mm": [
+        [
+          -1.4,
+          -1.39956,
+          0.0
+        ],
+        [
+          1.4,
+          1.39956,
+          7.885
+        ]
+      ]
+    },
+    "fh-edge-kit-mark.stl": {
+      "triangles": 7084,
+      "vertices": 3548,
+      "connected_components": 4,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 137.36563202126644,
+      "bounds_mm": [
+        [
+          8.47113,
+          -15.07503,
+          0.0
+        ],
+        [
+          45.80443,
+          15.03438,
+          0.4
+        ]
+      ]
+    },
+    "fh-edge-kit-shell.stl": {
+      "triangles": 18642,
+      "vertices": 9309,
+      "connected_components": 1,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 18230.733800264963,
+      "bounds_mm": [
+        [
+          -58.0,
+          -25.0,
+          -0.0
+        ],
+        [
+          58.0,
+          25.0,
+          15.2
+        ]
+      ]
+    },
+    "test\\USB-fit-coupon.stl": {
+      "triangles": 1576,
+      "vertices": 788,
+      "connected_components": 1,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "inconsistent_directed_edges": 0,
+      "signed_volume_mm3": 445.88865933306823,
+      "bounds_mm": [
+        [
+          -12.0,
+          -6.0,
+          0.0
+        ],
+        [
+          12.0,
+          6.0,
+          2.0
+        ]
+      ]
+    }
+  },
+  "scope": "CAD-only; PN5180 is an assumed envelope. Physical fit, cable boot and optical/RF performance not tested.",
+  "pass": true
+}

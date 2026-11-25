@@ -1,0 +1,81 @@
+{
+  "esp_x": -37.6,
+  "esp_usb_edge_y": 22.8,
+  "esp_back_z": 5.0,
+  "pcb_side_clearance": 0.25,
+  "flange_width": 1.8,
+  "flange_z": 2.0,
+  "flange_thickness": 1.6,
+  "pn_x": 9.4,
+  "pn_length": 70.0,
+  "pn_width": 39.0,
+  "pn_thickness_assumed": 1.6,
+  "pn_component_face_z": 11.0,
+  "pn_header_height_budget": 8.5,
+  "pcb_axial_play": 0.25,
+  "usb_through_w": 10.0,
+  "usb_through_h": 4.3,
+  "usb_through_r": 1.65,
+  "usb_boot_w": 12.2,
+  "usb_boot_h": 6.8,
+  "usb_boot_depth": 1.2,
+  "usb_outer_chamfer": 0.35,
+  "lightpipe_d": 2.0,
+  "lightpipe_bore": 2.3,
+  "lightpipe_tip_z_PWR": 7.315,
+  "lightpipe_tip_z_IO8": 8.8,
+  "esp_translation": [
+    -46.18241431966811,
+    22.5782646527624,
+    -2.47507407973381
+  ],
+  "led_centres": [
+    [
+      -43.706473084072854,
+      17.63488923719442,
+      6.665
+    ],
+    [
+      -32.97814713651351,
+      11.5990457430343,
+      6.665
+    ]
+  ],
+  "usb_z": 7.775,
+  "esp_board_bbox": [
+    -46.601,
+    -28.599,
+    -0.2,
+    22.8,
+    5.0,
+    6.07
+  ],
+  "pn_hole_locations": "Not used; actual hole pattern is not corner rectangle",
+  "pn_component_model": "Envelope only; thickness and connector height require physical confirmation",
+  "esp_press_centres_and_sizes": [
+    [
+      -45.1024,
+      22.3283,
+      1.0,
+      0.8
+    ],
+    [
+      -30.1024,
+      22.3283,
+      1.0,
+      0.8
+    ],
+    [
+      -45.3824,
+      0.7783,
+      1.2,
+      1.2
+    ],
+    [
+      -29.8324,
+      0.7783,
+      1.2,
+      1.2
+    ]
+  ]
+}

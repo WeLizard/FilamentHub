@@ -372,14 +372,34 @@ const STATION_EXTRAS: EdgeEnclosureFile[] = [
   { key: 'clip', file: 'fh-edge-station-clip-2020.stl' },
 ];
 
+/**
+ * The C3 kit's case (edge-agent/hardware/enclosure/fh-edge-v2-kit). A person
+ * who just wants to print takes a set; the parts are there for one part or CAD.
+ */
+export const EDGE_KIT_SETS = [
+  { key: 'print3mf', file: 'fh-edge-kit-print.3mf' },
+  { key: 'printStep', file: 'fh-edge-kit-print.step' },
+  { key: 'all', file: 'fh-edge-kit.zip' },
+] as const;
+
+export const EDGE_KIT_PARTS: readonly { key: string; stl: string; step?: string }[] = [
+  { key: 'shell', stl: 'fh-edge-kit-shell.stl', step: 'fh-edge-kit-shell.step' },
+  { key: 'base', stl: 'fh-edge-kit-base.stl', step: 'fh-edge-kit-base.step' },
+  { key: 'mark', stl: 'fh-edge-kit-mark.stl', step: 'fh-edge-kit-mark.step' },
+  { key: 'pipePwr', stl: 'fh-edge-kit-lightpipe-pwr.stl' },
+  { key: 'pipeIo8', stl: 'fh-edge-kit-lightpipe-io8.stl' },
+  { key: 'coupon', stl: 'fh-edge-kit-usb-coupon.stl' },
+];
+
+/** The same files as one list, for the configurator's plain row of downloads. */
+export const EDGE_KIT_FILES: EdgeEnclosureFile[] = [
+  ...EDGE_KIT_SETS.map(({ key, file }) => ({ key, file })),
+  ...EDGE_KIT_PARTS.map(({ key, stl }) => ({ key, file: stl })),
+  ...EDGE_KIT_PARTS.flatMap(({ key, step }) => (step ? [{ key: `${key}Step`, file: step }] : [])),
+];
+
 export const EDGE_ENCLOSURE_FILES: Record<EdgeEnclosureId, EdgeEnclosureFile[]> = {
-  tagC3: [
-    { key: 'shell', file: 'fh-edge-kit-shell.stl' },
-    { key: 'base', file: 'fh-edge-kit-base.stl' },
-    { key: 'mark', file: 'fh-edge-kit-mark.stl' },
-    { key: 'shellStep', file: 'fh-edge-kit-shell.step' },
-    { key: 'baseStep', file: 'fh-edge-kit-base.step' },
-  ],
+  tagC3: EDGE_KIT_FILES,
   tagS3: caseFiles('tag-s3'),
   portableS3: caseFiles('portable-s3', [{ key: 'cap', file: 'fh-edge-keycap.stl' }]),
   portableC3: caseFiles('portable-c3'),

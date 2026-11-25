@@ -12,17 +12,11 @@ import { toast } from '../Toast';
 import { EdgeKitInstaller } from './EdgeKitInstaller';
 import { boardWiringFits, EdgeKitBoardWiring } from './EdgeKitBoardWiring';
 import { EdgeKitWiring } from './EdgeKitWiring';
+import { EDGE_KIT_PARTS, EDGE_KIT_SETS } from './edgeBuilds';
 
 const FILES = '/edge-kit/';
 const ENCLOSURE_SOURCE_URL = 'https://github.com/WeLizard/FilamentHub/tree/main/edge-agent/hardware/enclosure';
 const PARTS = ['board', 'reader', 'screws', 'wire', 'cable', 'tags', 'filament'] as const;
-const DOWNLOADS = [
-  { key: 'shell', file: 'fh-edge-kit-shell.stl' },
-  { key: 'base', file: 'fh-edge-kit-base.stl' },
-  { key: 'mark', file: 'fh-edge-kit-mark.stl' },
-  { key: 'shellStep', file: 'fh-edge-kit-shell.step' },
-  { key: 'baseStep', file: 'fh-edge-kit-base.step' },
-] as const;
 const STEPS = [
   { key: 'print', image: 'step-print.webp' },
   { key: 'boards', image: 'step-boards.webp' },
@@ -185,6 +179,66 @@ export function EdgeKitGuide({ kit }: { kit: EdgeKit }) {
       </div>
 
       <div className="mt-10">
+        <h3 className={subheading}>{t('edgeKit.guide.filesTitle')}</h3>
+        <p className="mb-4 max-w-3xl text-sm leading-6 text-gray-300">{t('edgeKit.guide.downloads.lead')}</p>
+        {/* One obvious choice first: the set that opens in a slicer ready to print. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          {EDGE_KIT_SETS.map(({ key, file }, index) => (
+            <a
+              key={key}
+              href={FILES + file}
+              download
+              className={index === 0
+                ? 'inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-purple-500'
+                : 'inline-flex items-center gap-2 text-sm text-purple-300 underline hover:text-purple-200'}
+            >
+              <Download className="h-4 w-4" />
+              {t(`edgeKit.guide.downloads.sets.${key}`)}
+            </a>
+          ))}
+        </div>
+
+        <h4 className="mb-1 mt-8 text-base font-semibold text-white">{t('edgeKit.guide.downloads.partsTitle')}</h4>
+        <p className="mb-3 max-w-3xl text-sm leading-6 text-gray-400">{t('edgeKit.guide.downloads.partsHint')}</p>
+        <ul className="max-w-3xl divide-y divide-white/10 rounded-xl border border-white/10">
+          {EDGE_KIT_PARTS.map(({ key, stl, step }) => (
+            <li key={key} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white">{t(`edgeKit.guide.downloads.parts.${key}.name`)}</p>
+                <p className="text-sm leading-6 text-gray-400">{t(`edgeKit.guide.downloads.parts.${key}.how`)}</p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                {[['STL', stl], ['STEP', step]].map(([format, file]) => file && (
+                  <a
+                    key={format}
+                    href={FILES + file}
+                    download
+                    aria-label={`${t(`edgeKit.guide.downloads.parts.${key}.name`)}, ${format}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-gray-100 transition-all hover:bg-white/10"
+                  >
+                    <Download className="h-4 w-4 text-cyan-300" />
+                    {format}
+                  </a>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <ul className="mt-4 max-w-3xl space-y-2 text-sm leading-6 text-gray-400">
+          {(['revision', 'sizes'] as const).map((note) => (
+            <li key={note} className="flex gap-3">
+              <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300" />
+              {t(`edgeKit.guide.downloads.notes.${note}`)}
+            </li>
+          ))}
+        </ul>
+        <a href={ENCLOSURE_SOURCE_URL} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm text-purple-300 underline">
+          {t('edgeKit.guide.filesSource')}
+        </a>
+      </div>
+
+      <div className="mt-10">
         <h3 className={subheading}>{t('edgeKit.guide.wiring.title')}</h3>
         {/* The board drawing needs width to be read; a phone gets the plain list. */}
         {boardWiringFits(kit.nfcPins) && (
@@ -196,28 +250,6 @@ export function EdgeKitGuide({ kit }: { kit: EdgeKit }) {
           <EdgeKitWiring pins={kit.nfcPins} />
           <p className="mt-3 max-w-xl text-sm leading-6 text-gray-400">{t('edgeKit.guide.wiring.unused')}</p>
         </div>
-      </div>
-
-      <div className="mt-10">
-        <h3 className={subheading}>{t('edgeKit.guide.filesTitle')}</h3>
-        <p className="mb-4 max-w-3xl text-sm leading-6 text-gray-300">{t('edgeKit.guide.filesNote')}</p>
-        <ul className="flex flex-wrap gap-2">
-          {DOWNLOADS.map(({ key, file }) => (
-            <li key={key}>
-              <a
-                href={FILES + file}
-                download
-                className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-100 transition-all hover:bg-white/10"
-              >
-                <Download className="h-4 w-4 text-cyan-300" />
-                {t(`edgeKit.guide.files.${key}`)}
-              </a>
-            </li>
-          ))}
-        </ul>
-        <a href={ENCLOSURE_SOURCE_URL} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm text-purple-300 underline">
-          {t('edgeKit.guide.filesSource')}
-        </a>
       </div>
 
       <div className="mt-10">

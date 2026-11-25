@@ -1918,7 +1918,7 @@
       "title": "Edge 套件",
       "lead": "ESP32-C3 开发板和 PN5180 NFC 读卡器，装在打印的外壳里。通过 USB 供电，经 Wi-Fi 联网，并绑定到您的账户。",
       "status": "目前套件可以绑定到账户并显示连接状态。将读取到的标签发送到个人资料的功能正在开发中。",
-      "renderAlt": "Edge 套件：扁平外壳，读卡器天线上方有一个圆环",
+      "renderAlt": "Edge 套件：扁平外壳，读卡器天线上方是 FilamentHub 标志",
       "partsTitle": "所需物品",
       "parts": {
         "board": "{{board}} 开发板",
@@ -1927,7 +1927,7 @@
         "wire": "导线和电烙铁",
         "cable": "可传输数据的 USB-C 线",
         "tags": "NTAG213、NTAG215 或 NTAG216 标签",
-        "filament": "外壳约需 30 g PLA 或 PETG"
+        "filament": "外壳约需 30 g PLA 或 PETG，导光柱另需少量透明耗材"
       },
       "wiring": {
         "title": "接线图",
@@ -1939,28 +1939,60 @@
         "unused": "读卡器的 GPIO、IRQ、AUX 和 REQ 焊盘不接。"
       },
       "filesTitle": "可打印的外壳",
-      "filesNote": "上盖正面朝下打印，无需支撑；圆环可用第二种颜色填充。不同卖家的板子尺寸不同：PN5180 模块有 69–70 × 37–39 mm 的差异。请核对您的板子，必要时在源文件中修改尺寸。",
-      "files": {
-        "shell": "上盖，STL",
-        "base": "底板，STL",
-        "mark": "第二种颜色的圆环，STL",
-        "shellStep": "上盖，STEP",
-        "baseStep": "底板，STEP"
+      "downloads": {
+        "lead": "请使用打印套件：所有零件都已按打印姿态摆好。在切片软件中为 FilamentHub 标志指定第二种颜色，为导光柱选择透明耗材。",
+        "sets": {
+          "print3mf": "打印套件，3MF",
+          "printStep": "同一套件，STEP",
+          "all": "全部文件压缩包，ZIP"
+        },
+        "partsTitle": "单个零件",
+        "partsHint": "只需要某个零件或想修改模型时使用。所有零件都无需支撑。",
+        "parts": {
+          "shell": {
+            "name": "上盖",
+            "how": "正面朝下。"
+          },
+          "base": {
+            "name": "底板",
+            "how": "外侧朝下，支撑垫朝上。"
+          },
+          "mark": {
+            "name": "FilamentHub 标志",
+            "how": "第二种颜色，与上盖对位。不打印时上盖上保留刻纹。"
+          },
+          "pipePwr": {
+            "name": "电源导光柱",
+            "how": "透明耗材，头部朝下。较长，位于 USB 接口旁。"
+          },
+          "pipeIo8": {
+            "name": "状态导光柱",
+            "how": "透明耗材，头部朝下。较短。"
+          },
+          "coupon": {
+            "name": "USB 开口试件",
+            "how": "不属于外壳：一小段侧壁，用于在打印前试插您的线缆。"
+          }
+        },
+        "notes": {
+          "revision": "这是外壳的第二版：增加了导光柱、底板支撑台和适配线缆的开口。本版尚未实际打印。",
+          "sizes": "不同卖家的 PN5180 模块尺寸为 69–70 × 37–39 mm。请核对您的板子，必要时在源文件中修改尺寸。"
+        }
       },
       "filesSource": "模型源文件",
       "assemblyTitle": "组装",
       "steps": {
         "print": {
-          "title": "打印上盖和底板",
-          "text": "层高 0.2 mm，无需支撑。检查板子能否放入各自的定位框。"
+          "title": "打印上盖、底板和导光柱",
+          "text": "层高 0.2 mm，无需支撑。导光柱用透明耗材打印。检查板子能否放入各自的位置。"
         },
         "boards": {
           "title": "焊接导线并放入板子",
-          "text": "按接线图连接两块板。读卡器的天线位于圆环下方，ESP32 的接口对准侧壁开口。"
+          "text": "按接线图连接两块板，并从外侧插入导光柱。读卡器的天线位于标志下方，元件面朝向底板；ESP32 的接口对准侧壁开口，元件面朝向上盖。"
         },
         "close": {
           "title": "盖上底板",
-          "text": "底板上的支柱把板子压向上盖。拧上四颗螺丝，不要拧得过紧。"
+          "text": "底板上的支撑垫从背面托住板子。拧上四颗螺丝，不要拧得过紧。"
         },
         "connect": {
           "title": "接上 USB",
@@ -2289,7 +2321,14 @@
       "caps": "按键帽，STL",
       "clip": "2020 型材支架，STL",
       "shellStep": "上壳，STEP",
-      "baseStep": "底板，STEP"
+      "baseStep": "底板，STEP",
+      "all": "整套文件，ZIP",
+      "print3mf": "打印套件，3MF",
+      "printStep": "打印套件，STEP",
+      "pipePwr": "电源导光柱，STL",
+      "pipeIo8": "状态导光柱，STL",
+      "coupon": "USB 开口试件，STL",
+      "markStep": "标志，STEP"
     },
     "enclosures": {
       "none": "只有现成方案才有外壳：每个外壳都按其确切零件设计。自定义组合请选择最接近的现成方案，或自行选择外壳；接线和零件不受影响。",

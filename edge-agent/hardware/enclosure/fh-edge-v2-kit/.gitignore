@@ -1,0 +1,11 @@
+# The ESP32-C3 board model was supplied by the owner and is someone else's CAD:
+# it is not published here. Put it at source/Esp32-C3_mini.STEP to rebuild.
+source/Esp32-C3_mini.STEP
+# Everything below is rebuilt from the sources by build_model.py and
+# export_render_assets.py, and most of it carries that board model.
+source/esp-native-cache.brep
+CAD/ESP32-C3-positioned.step
+CAD/FH-Edge-v2-assembly.step
+CAD/*.brep
+render/
+__pycache__/

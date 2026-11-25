@@ -1,0 +1,73 @@
+{
+  "fh-edge-kit-shell.step": {
+    "valid": true,
+    "solids": 1,
+    "bounds_mm": [
+      -58.0,
+      58.0,
+      -25.0,
+      25.0,
+      0.0,
+      15.200000099999999
+    ]
+  },
+  "fh-edge-kit-base.step": {
+    "valid": true,
+    "solids": 1,
+    "bounds_mm": [
+      -55.75,
+      55.75,
+      -22.75,
+      22.75,
+      0.0,
+      11.0000001
+    ]
+  },
+  "fh-edge-kit-mark.step": {
+    "valid": true,
+    "solids": 4,
+    "bounds_mm": [
+      8.470928578349756,
+      45.80447886561161,
+      -15.0343751,
+      15.075253303791785,
+      14.799999900000001,
+      15.200000099999999
+    ]
+  },
+  "FH-Edge-v2-PRINT.step": {
+    "valid": true,
+    "solids": 8,
+    "bounds_mm": [
+      -58.0,
+      58.0,
+      -35.4,
+      80.75,
+      -1.0000000355271367e-07,
+      15.200000000000001
+    ],
+    "mark_solids": 4,
+    "mark_bottom_z_mm": -1.0000000177699468e-07,
+    "mark_top_z_mm": 0.4000001000000007,
+    "mark_overlap_with_shell_mm3": 0.0,
+    "other_parts": 3,
+    "other_parts_bottom_z_mm": [
+      0.0,
+      -0.0,
+      -0.0
+    ],
+    "other_parts_overlap_with_shell_mm3": 0.0
+  },
+  "FH-Edge-v2-assembly.step": {
+    "valid": true,
+    "solids": 138,
+    "bounds_mm": [
+      -58.0,
+      58.0,
+      -25.0,
+      25.0,
+      0.0,
+      15.200000099999999
+    ]
+  }
+}

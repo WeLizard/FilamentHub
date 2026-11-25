@@ -396,31 +396,80 @@ def esp32_c3_supermini(parent, m):
     return g
 
 
+def arc(g, mat, cx, cy, radius, start, end, width, z, segments=20):
+    """A flat arc of silk-screen, `start`..`end` in degrees from +x, lying at height z."""
+    mesh = bpy.data.meshes.new("arc")
+    bm = bmesh.new()
+    inner, outer = [], []
+    for step in range(segments + 1):
+        angle = math.radians(start + (end - start) * step / segments)
+        for ring, r in ((inner, radius - width / 2), (outer, radius + width / 2)):
+            ring.append(bm.verts.new((cx + r * math.cos(angle), cy + r * math.sin(angle), z)))
+    for step in range(segments):
+        bm.faces.new((inner[step], outer[step], outer[step + 1], inner[step + 1]))
+    bm.to_mesh(mesh)
+    bm.free()
+    return _link("arc", mesh, mat, g, 0.0)
+
+
+PN5180_PINS = ("+5V", "+3.3V", "RST", "NSS", "MOSI", "MISO", "SCK", "BUSY", "GND", "GPIO", "IRQ", "AUX", "REQ")
+
+
 def pn5180(parent, m):
-    """PN5180 module, 70 x 39 mm: header at -x, the antenna loop centred 21 mm from +x."""
+    """PN5180-NFC module R1.1, 70 x 39 mm, drawn from the board itself.
+
+    The wire pads are at -x and the antenna is centred 21.5 mm from +x. The
+    component side carries the wave mark over the antenna, the chip with its
+    passives and the labelled pads; wires are soldered to the pads, there is no
+    pin header. Positions are read off a photograph of the board: `at(u, v)`
+    takes millimetres from the board's left edge and from its antenna end.
+    """
     g = group(parent, "PN5180")
     L, W, T = 70.0, 39.0, 1.6
     box(g, m["pcb_reader"], (L, W, T), (0, 0, 0), bevel=0.25)
-    ax = L / 2 - 21.0
-    for face_z, flip in ((T, False), (0.0, True)):
-        z = face_z if not flip else -0.035
-        for turn in range(4):
-            rect_loop(g, m["trace_reader"], ax, 0.0, 38.0 - turn * 2.6, 33.0 - turn * 2.6, 0.9, z)
-    holes(g, m, [(sx * (L / 2 - 3.0), sy * (W / 2 - 3.0)) for sx in (-1, 1) for sy in (-1, 1)], T, radius=1.7)
-    # The chip, its crystal, the EMC filter and the matching network.
-    ic(g, m, (6.0, 6.0, 0.9), -17.0, 5.0, T, text="PN5180")
-    box(g, m["steel"], (5.0, 3.2, 1.1), (-24.0, -6.5, T), bevel=0.3)
-    for y in (-4.0, 4.0):
-        box(g, m["plastic"], (2.5, 2.0, 1.6), (-8.5, y, T), bevel=0.2)
-    for i, (x, y) in enumerate(((-11.5, -9.5), (-9.0, -9.5), (-6.5, -9.5), (-11.5, 10.5), (-9.0, 10.5), (-6.5, 10.5),
-                                (-21.0, 12.0), (-14.0, -4.0), (-25.0, 3.0), (-13.0, 12.5))):
-        smd(g, m, x, y, T, "cap" if i % 3 else "res", turn=bool(i % 2))
-    ic(g, m, (3.0, 1.6, 1.1), -27.0, -12.5, T)
-    header_row(g, m, 13, -L / 2 + 1.8, 0.0, T, along="y", down=False, length=6.0, strip=True)
-    label(g, m["silk"], "PN5180-NFC", (-17.0, -15.0, T + 0.01), 1.6)
-    # The back carries the loop and the name only: in a case it is the side you look at.
-    label(g, m["silk"], "PN5180", (ax, 0.0, -0.01), 3.0, rot=(math.pi, 0, 0))
-    label(g, m["silk"], "NFC R1.1", (ax, -4.5, -0.01), 1.6, rot=(math.pi, 0, 0))
+
+    def at(u, v):
+        return L / 2 - v, W / 2 - u
+
+    ax, ay = at(19.5, 21.5)
+    # The antenna is a trace round the top of the board, on both faces.
+    for z in (T, -0.035):
+        for turn in range(2):
+            rect_loop(g, m["trace_reader"], L / 2 - 20.0, 0.0, 36.0 - turn * 2.0, 35.0 - turn * 2.0, 0.7, z)
+    # The wave mark: a dot, a small ring and five arcs to each side.
+    cyl(g, m["silk"], 0.55, 0.03, (ax, ay, T), segments=16)
+    arc(g, m["silk"], ax, ay, 1.7, 0.0, 360.0, 0.3, T + 0.02, segments=32)
+    for index in range(5):
+        radius = 4.2 + index * 3.1
+        spread = 38.0 + index * 4.0
+        for middle in (90.0, -90.0):
+            arc(g, m["silk"], ax, ay, radius, middle - spread, middle + spread, 0.42, T + 0.02)
+    # Four mounting holes: two inside the antenna, two at the edges below it.
+    for face in (T, -0.06):
+        holes(g, m, [at(6.8, 7.1), at(32.2, 7.1), at(3.2, 44.3), at(35.8, 44.3)], face, radius=1.9)
+    # The chip, its crystal and the passives around them.
+    cx, cy = at(22.8, 56.3)
+    ic(g, m, (6.0, 6.0, 0.85), cx, cy, T, text="PN5180")
+    box(g, m["steel"], (2.5, 3.2, 0.7), (*at(22.6, 63.0), T), bevel=0.2)
+    grid = (
+        [(u, v) for v in (46.3, 48.6) for u in (12.6, 14.9, 17.2, 19.5, 21.8, 24.1, 26.4, 28.7)]
+        + [(u, v) for u in (3.6, 6.1) for v in (51.4, 53.7, 56.0, 58.3, 60.6)]
+        + [(u, v) for u in (9.4, 12.0, 14.6) for v in (51.8, 54.1, 56.4, 58.7, 61.0)]
+        + [(29.6, 52.4), (32.2, 52.4), (29.6, 55.6), (32.2, 58.8), (29.6, 61.4), (18.0, 51.6), (26.6, 62.2)]
+    )
+    for index, (u, v) in enumerate(grid):
+        smd(g, m, *at(u, v), T, "res" if index % 3 == 0 else "cap", turn=index % 2 == 0)
+    # Thirteen labelled pads for the wires.
+    pad_x = L / 2 - 66.6
+    for index, name in enumerate(PN5180_PINS):
+        y = (6 - index) * 2.54
+        for face in (T, -0.06):
+            cyl(g, m["gold"], 0.95, 0.06, (pad_x, y, face), segments=20)
+            cyl(g, m["plastic"], 0.45, 0.08, (pad_x, y, face), segments=14)
+        label(g, m["silk"], name, (pad_x + 2.3, y, T + 0.01), 0.72, rot=(0, 0, -math.pi / 2))
+    label(g, m["silk"], "PN5180-NFC", (*at(35.3, 55.5), T + 0.01), 2.1)
+    label(g, m["silk"], "R1.1-170710", (*at(37.3, 58.5), T + 0.01), 0.8)
+    label(g, m["silk"], "179", (*at(33.0, 46.8), T + 0.01), 1.5)
     return g
 
 

@@ -1,0 +1,30 @@
+{
+  "expected_ledge_volume": 853.3258329694539,
+  "missing_ledge_volume": 0,
+  "base_removed_-0.02": {
+    "shell": 0,
+    "ESP": 0,
+    "PN": 0
+  },
+  "base_removed_-0.5": {
+    "shell": 0,
+    "ESP": 0,
+    "PN": 0
+  },
+  "base_removed_-1.1": {
+    "shell": 0,
+    "ESP": 0,
+    "PN": 0
+  },
+  "base_removed_-3.0": {
+    "shell": 0,
+    "ESP": 0,
+    "PN": 0
+  },
+  "base_removed_-10.0": {
+    "shell": 0,
+    "ESP": 0,
+    "PN": 0
+  },
+  "scope": "Independent checks of the unchanged bearing ring Z2..3.6 and straight base removal; see current lightpipe_tolerance.json for final optics."
+}
