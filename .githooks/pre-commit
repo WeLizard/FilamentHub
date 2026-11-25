@@ -79,12 +79,18 @@ run_backend() {
     if command -v docker >/dev/null 2>&1 \
         && [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = "true" ]; then
         echo "pre-commit: backend-тесты по '$expr' (в контейнере $container)"
-        # Two test modules load scripts from the repository's scripts/, which
-        # the container does not mount; they cannot even be collected there.
+        echo "pre-commit: тесты, читающие scripts/, frontend/ и edge-agent/, в контейнере пропущены — их проверяет CI"
+        # The container mounts only backend/. These tests read files from the
+        # repository's scripts/, frontend/ or edge-agent/, so there they fail
+        # whatever the code; CI runs them with the whole repository.
         MSYS_NO_PATHCONV=1 docker exec -w /app "$container" python -m pytest tests/ -q \
             -p no:cacheprovider --no-cov -k "$expr" \
             --ignore tests/orca_catalog_source_builder_test.py \
-            --ignore tests/orca_catalog_source_refresh_test.py || failed="$failed backend"
+            --ignore tests/orca_catalog_source_refresh_test.py \
+            --ignore tests/orca_preset_schema_test.py \
+            --ignore tests/qidi_box_edge_contract_test.py \
+            --deselect tests/label_renderer_test.py::test_label_mark_matches_canonical_public_asset \
+            || failed="$failed backend"
         return 0
     fi
 
