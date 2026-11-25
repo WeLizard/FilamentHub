@@ -383,3 +383,61 @@ $plan = @(Get-SiteReleasePlan)
     assert result_data["plan"]["AlreadyDeployed"] is False
     assert result_data["plan"]["PluginApiLevel"] == 3
     assert result_data["hostOutput"] == ["server dry-run passed"]
+
+
+def test_release_menu_keeps_the_two_repositories_apart(tmp_path):
+    # FilamentHub's own items and the plugins of the second repository are released from
+    # different places. A plugin added later must land under its repository, not between
+    # the items of the other one, and the numbers the owner types must stay as they are.
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is required")
+    runner = tmp_path / "groups.ps1"
+    runner.write_text(
+        RUNNER.split("$global:events =", 1)[0]
+        + r"""
+$global:lines = [System.Collections.Generic.List[string]]::new()
+function Write-Host { param([Parameter(Position = 0)]$Object = '', $ForegroundColor) $global:lines.Add([string]$Object) }
+function Read-Host { param($Prompt) return '0' }
+[void]@(Read-ReleaseSelection)
+$catalogue = @(Get-ReleaseCatalogue)
+$states = @(foreach ($entry in $catalogue) {
+    [pscustomobject]@{ Name = $entry.Name; Repository = $entry.Repository; Status = 'READY'; Detail = 'x'; Fix = '' }
+})
+$menu = @($global:lines)
+$global:lines.Clear()
+Show-ReleaseSummary -States $states -Title 'both'
+$both = @($global:lines)
+$global:lines.Clear()
+Show-ReleaseSummary -States @($states | Where-Object Repository -eq 'FilamentHub') -Title 'one'
+@{
+    menu = $menu; both = $both; one = @($global:lines)
+    entries = @($catalogue | ForEach-Object { @{ id = $_.Id; key = $_.Key; repository = $_.Repository } })
+    titles = @($catalogue | ForEach-Object Repository | Select-Object -Unique | ForEach-Object { Get-ReleaseRepositoryTitle $_ })
+} | ConvertTo-Json -Compress -Depth 4
+""",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(runner)],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+        env={**os.environ, "CONSOLE_SCRIPT": str(ROOT / "scripts/deploy-server.ps1")},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    shown = json.loads(result.stdout.strip().splitlines()[-1])
+
+    entries = shown["entries"]
+    assert [(entry["key"], entry["id"]) for entry in entries] == [
+        ("1", "site"), ("2", "orcaslicer"), ("3", "octoprint"), ("4", "print-farm"),
+    ]
+    repositories = [entry["repository"] for entry in entries]
+    assert repositories == ["FilamentHub"] * 3 + ["orca-plugins"]
+    # One heading per repository, each above its own items.
+    menu = [line.strip() for line in shown["menu"] if line.strip()]
+    first, second = shown["titles"]
+    assert menu.index(first) < menu.index("1. Сайт") < menu.index("3. Мост для OctoPrint") \
+        < menu.index(second) < menu.index("4. Print Farm")
+    assert menu.count(first) == menu.count(second) == 1
+    # The summary names the repositories only when the choice spans both.
+    assert first in [line.strip() for line in shown["both"]] and second in [line.strip() for line in shown["both"]]
+    assert not [line for line in shown["one"] if "репозиторий" in line]

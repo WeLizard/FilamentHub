@@ -1416,7 +1416,13 @@ if ($selected -contains 'print-farm') {
 
 Write-Host ''
 Write-Host 'План независимых релизов:' -ForegroundColor Cyan
+$shownRepository = $null
 foreach ($plan in $plans) {
+    # Plans of one repository stand together; the heading says which repository they release from.
+    if ($plan.Repository -ne $shownRepository) {
+        $shownRepository = $plan.Repository
+        Write-Host "  Репозиторий $shownRepository" -ForegroundColor DarkGray
+    }
     $publishedText = if ($plan.Published) {
         "$($plan.Published.Tag), версия $($plan.Published.Version)"
     } else {
@@ -1435,7 +1441,7 @@ foreach ($plan in $plans) {
     } else {
         'пропустить'
     }
-    Write-Host "  $($plan.Name): исходник $($plan.Version); опубликован $publishedText; $action"
+    Write-Host "    $($plan.Name): исходник $($plan.Version); опубликован $publishedText; $action"
 }
 if ($CheckVersions) {
     Write-Host 'Проверка версий завершена. Это не проверка сборки или готовности к публикации.'

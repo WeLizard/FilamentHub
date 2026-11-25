@@ -766,12 +766,16 @@ function Publish-PluginCommits {
     Write-Host 'Сначала будет обновлено состояние origin/main, затем ты выберешь готовый коммит.' -ForegroundColor DarkGray
     Write-Host 'Коммиты с изменениями вне плагинов и их релизных файлов будут заблокированы.' -ForegroundColor DarkGray
     Write-Host 'Релиз, тег и production этим действием не создаются.' -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host (Get-ReleaseRepositoryTitle 'FilamentHub') -ForegroundColor Cyan
     Publish-RepositoryCommits -Directory $repositoryRoot -Title 'FilamentHub и OctoPrint Bridge' -AllowedPaths @(
         'orca-plugin/', 'octoprint-plugin/', 'scripts/render_plugin_release_notes.py',
         '.github/workflows/release-filamenthub.yml', '.github/workflows/release-octoprint.yml',
         '.github/workflows/publish-orcacloud.yml'
     )
 
+    Write-Host ''
+    Write-Host (Get-ReleaseRepositoryTitle 'orca-plugins') -ForegroundColor Cyan
     $printFarmCandidate = Join-Path (Split-Path $repositoryRoot -Parent) 'orca-plugins'
     if (Test-Path -LiteralPath (Join-Path $printFarmCandidate '.git')) {
         Publish-RepositoryCommits -Directory $printFarmCandidate -Title 'Print Farm' -AllowedPaths @(
@@ -853,7 +857,7 @@ function Show-PluginReleases {
     if ($releases.Count -eq 0) {
         Write-Host 'GitHub Releases не найдены.' -ForegroundColor Yellow
     } else {
-        Write-Host 'WeLizard/FilamentHub' -ForegroundColor Cyan
+        Write-Host "$(Get-ReleaseRepositoryTitle 'FilamentHub'): $repository" -ForegroundColor Cyan
         $releases |
             Select-Object tagName, name, isDraft, isPrerelease, publishedAt, @{
                 Name = 'url'
@@ -867,7 +871,8 @@ function Show-PluginReleases {
         'release', 'list', '--repo', $printFarmRepository, '--limit', '20',
         '--json', 'tagName,name,isDraft,isPrerelease,publishedAt'
     ) -Capture
-    Write-Host 'WeLizard/orca-plugins (Print Farm)' -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host "$(Get-ReleaseRepositoryTitle 'orca-plugins'): $printFarmRepository" -ForegroundColor Cyan
     @($printFarmJson | ConvertFrom-Json) |
         Select-Object tagName, name, isDraft, isPrerelease, publishedAt, @{
             Name = 'url'
@@ -959,11 +964,24 @@ function Get-ReleaseCatalogue {
     return @(
         # ScriptName is the name publish-plugin-releases.ps1 puts in front of its
         # messages; the summary already starts with Name, so it is cut off there.
-        [pscustomobject]@{ Id = 'site'; Key = '1'; Name = 'Сайт'; ScriptName = $null; DownloadId = $null }
-        [pscustomobject]@{ Id = 'orcaslicer'; Key = '2'; Name = 'FilamentHub для OrcaSlicer'; ScriptName = 'FilamentHub for OrcaSlicer'; DownloadId = 'orcaslicer' }
-        [pscustomobject]@{ Id = 'octoprint'; Key = '3'; Name = 'Мост для OctoPrint'; ScriptName = 'FilamentHub Bridge for OctoPrint'; DownloadId = 'octoprint' }
-        [pscustomobject]@{ Id = 'print-farm'; Key = '4'; Name = 'Print Farm'; ScriptName = 'Print Farm'; DownloadId = 'print_farm' }
+        # Repository is where the item lives. The menus and the summaries keep the two
+        # repositories apart, and a plugin added later goes under its own; entries of one
+        # repository stand together.
+        [pscustomobject]@{ Id = 'site'; Key = '1'; Name = 'Сайт'; ScriptName = $null; DownloadId = $null; Repository = 'FilamentHub' }
+        [pscustomobject]@{ Id = 'orcaslicer'; Key = '2'; Name = 'FilamentHub для OrcaSlicer'; ScriptName = 'FilamentHub for OrcaSlicer'; DownloadId = 'orcaslicer'; Repository = 'FilamentHub' }
+        [pscustomobject]@{ Id = 'octoprint'; Key = '3'; Name = 'Мост для OctoPrint'; ScriptName = 'FilamentHub Bridge for OctoPrint'; DownloadId = 'octoprint'; Repository = 'FilamentHub' }
+        [pscustomobject]@{ Id = 'print-farm'; Key = '4'; Name = 'Print Farm'; ScriptName = 'Print Farm'; DownloadId = 'print_farm'; Repository = 'orca-plugins' }
     )
+}
+
+function Get-ReleaseRepositoryTitle {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    switch ($Repository) {
+        'FilamentHub' { return 'FilamentHub: сайт и его плагины (репозиторий FilamentHub)' }
+        'orca-plugins' { return 'Отдельные плагины (репозиторий orca-plugins)' }
+        default { return $Repository }
+    }
 }
 
 function Read-ReleaseSelection {
@@ -971,8 +989,13 @@ function Read-ReleaseSelection {
     while ($true) {
         Write-Host ''
         Write-Host 'Что выпускаем?' -ForegroundColor Cyan
+        $shownRepository = $null
         foreach ($entry in $catalogue) {
-            Write-Host "  $($entry.Key). $($entry.Name)"
+            if ($entry.Repository -ne $shownRepository) {
+                $shownRepository = $entry.Repository
+                Write-Host "  $(Get-ReleaseRepositoryTitle $shownRepository)" -ForegroundColor DarkGray
+            }
+            Write-Host "    $($entry.Key). $($entry.Name)"
         }
         Write-Host '  0. Отмена'
         Write-Host '  Можно несколько через запятую, например: 2 или 1,2' -ForegroundColor DarkGray
@@ -1048,7 +1071,15 @@ function Show-ReleaseSummary {
 
     Write-Host ''
     Write-Host $Title -ForegroundColor Cyan
+    $repositories = @($States | ForEach-Object Repository | Select-Object -Unique)
+    # Under a repository heading the lines step in, as in the menu.
+    $indent = if ($repositories.Count -gt 1) { '    ' } else { '  ' }
+    $shownRepository = $null
     foreach ($state in $States) {
+        if ($repositories.Count -gt 1 -and $state.Repository -ne $shownRepository) {
+            $shownRepository = $state.Repository
+            Write-Host "  $(Get-ReleaseRepositoryTitle $shownRepository)" -ForegroundColor DarkGray
+        }
         $label, $colour = switch ($state.Status) {
             'READY' { 'можно выпускать', 'Green' }
             'CURRENT' { 'уже актуально', 'DarkGray' }
@@ -1061,9 +1092,9 @@ function Show-ReleaseSummary {
         if ($state.Status -eq 'WAITING' -and $detail.StartsWith($script:WaitingPrefix)) {
             $detail = $detail.Substring($script:WaitingPrefix.Length).Trim()
         }
-        Write-Host "  $($state.Name): $label — $detail" -ForegroundColor $colour
+        Write-Host "$indent$($state.Name): $label — $detail" -ForegroundColor $colour
         if ($state.Fix) {
-            Write-Host "      Исправить: $($state.Fix)" -ForegroundColor Yellow
+            Write-Host "$indent    Исправить: $($state.Fix)" -ForegroundColor Yellow
         }
     }
 }
@@ -1176,6 +1207,7 @@ function Invoke-Release {
         if ($entry.Id -in $Items) {
             [pscustomobject]@{
                 Id = $entry.Id; Name = $entry.Name; ScriptName = $entry.ScriptName; DownloadId = $entry.DownloadId
+                Repository = $entry.Repository
                 Status = 'READY'; Detail = ''; Fix = ''; Plan = $null
             }
         }
@@ -1553,7 +1585,9 @@ function Show-PluginMenu {
     while ($true) {
         Write-Host ''
         Write-Host 'Плагины и их релизы' -ForegroundColor Cyan
-        Write-Host '  FilamentHub, OctoPrint Bridge и Print Farm выпускаются независимо.' -ForegroundColor DarkGray
+        Write-Host '  Каждый плагин выпускается независимо.' -ForegroundColor DarkGray
+        Write-Host '  Репозиторий FilamentHub: FilamentHub для OrcaSlicer, мост для OctoPrint.' -ForegroundColor DarkGray
+        Write-Host '  Репозиторий orca-plugins: Print Farm.' -ForegroundColor DarkGray
         Write-Host '  1. Показать независимые GitHub Releases плагинов'
         Write-Host '  2. Скачать с сайта и проверить все три пакета'
         Write-Host '  3. Проверить все три плагина на странице Download'
