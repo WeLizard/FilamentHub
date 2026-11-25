@@ -937,3 +937,57 @@ async def test_account_deletion_removes_private_wiki_work_and_anonymizes_publish
     published_revision = await db_session.get(WikiRevision, public_revision_id)
     assert published_revision is not None
     assert published_revision.created_by_id is None
+
+
+async def test_article_editions_are_named_in_page_data_and_sitemap(
+    client,
+    auth_user,
+    db_session,
+):
+    """Only real translations become alternates; an untranslated article has none."""
+    await _seed_wiki(db_session)
+    for language, slug, key in (
+        ("ru", "pervye-shagi", "first-steps"),
+        ("en", "first-steps", "first-steps"),
+        ("ru", "tolko-russkaya", "russian-only"),
+    ):
+        await sync_article(
+            db_session,
+            Path(f"{slug}.md"),
+            "Text",
+            {
+                "title": slug,
+                "slug": slug,
+                "content_key": key,
+                "category": "materials",
+                "status": "published",
+                "language": language,
+                "author_id": auth_user.id,
+            },
+        )
+
+    article = await client.get("/api/v1/wiki/articles/pervye-shagi")
+    assert article.status_code == 200, article.text
+    assert [(item["language"], item["slug"]) for item in article.json()["translations"]] == [
+        ("en", "first-steps"),
+        ("ru", "pervye-shagi"),
+    ]
+
+    russian = (await client.get("/sitemap.xml", headers={"host": "filamenthub.ru"})).text
+    world = (await client.get("/sitemap.xml", headers={"host": "filamenthub.club"})).text
+
+    assert "<loc>https://filamenthub.ru/ru/wiki/articles/pervye-shagi</loc>" in russian
+    assert 'hreflang="en" href="https://filamenthub.club/wiki/articles/first-steps"' in russian
+    assert "<loc>https://filamenthub.club/wiki/articles/first-steps</loc>" in world
+    assert 'hreflang="ru" href="https://filamenthub.ru/ru/wiki/articles/pervye-shagi"' in world
+    # No edition exists under another language's slug, and an untranslated
+    # article carries no alternates and no x-default.
+    assert "/wiki/articles/pervye-shagi" not in world.replace(
+        "https://filamenthub.ru/ru/wiki/articles/pervye-shagi", ""
+    )
+    assert "zh/wiki/articles" not in russian + world
+    only_russian = russian.split("<loc>https://filamenthub.ru/ru/wiki/articles/tolko-russkaya</loc>")[1]
+    only_russian = only_russian.split("</url>")[0]
+    assert 'hreflang="ru"' in only_russian
+    assert 'hreflang="x-default"' not in only_russian
+    assert "tolko-russkaya" not in world

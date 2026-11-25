@@ -1,6 +1,5 @@
 """FilamentReview endpoints."""
 
-from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -33,7 +32,7 @@ from app.schemas.filament_review import (
     FilamentReviewResponse,
     FilamentReviewUpdate,
 )
-from app.services.preset_ratings import update_preset_ratings
+from app.services.preset_ratings import filament_rating, update_preset_ratings
 
 router = APIRouter(prefix="/filament-reviews", tags=["filament-reviews"])
 
@@ -262,23 +261,6 @@ async def list_filament_reviews(
     )
 
 
-async def _filament_rating(
-    filament_id: int, reviews: Sequence[FilamentReview], db: AsyncSession
-) -> tuple[float | None, float | None]:
-    """A material's rating and success rate: weighted by its presets when they
-    allow it, otherwise the plain mean of its reviews."""
-    from app.services.preset_ratings import calculate_filament_weighted_rating
-
-    weighted_rating, weighted_success_rate = await calculate_filament_weighted_rating(filament_id, db)
-    if weighted_rating is not None:
-        return weighted_rating, weighted_success_rate
-    count = len(reviews)
-    return (
-        sum(review.rating for review in reviews) / count,
-        sum(1 for review in reviews if review.success) / count * 100.0,
-    )
-
-
 @router.get("/brand/{brand_id}/stats", response_model=BrandRatingStats)
 async def get_brand_rating_stats(
     brand_id: int,
@@ -307,7 +289,7 @@ async def get_brand_rating_stats(
     ratings = [
         rating
         for filament_id, reviews in by_filament.items()
-        if (rating := (await _filament_rating(filament_id, reviews, db))[0]) is not None
+        if (rating := (await filament_rating(filament_id, reviews, db))[0]) is not None
     ]
     return BrandRatingStats(
         avg_rating=round(sum(ratings) / len(ratings), 2) if ratings else None,
@@ -347,7 +329,7 @@ async def get_filament_rating_stats(
             rating_distribution={},
         )
 
-    avg_rating, success_rate = await _filament_rating(filament_id, reviews, db)
+    avg_rating, success_rate = await filament_rating(filament_id, reviews, db)
 
     # Распределение рейтингов
     rating_distribution: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}

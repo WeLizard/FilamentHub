@@ -34,6 +34,8 @@ import { WikiContentRenderer } from '../components/wiki/WikiContentRenderer';
 import { WikiGuideJourney } from '../components/wiki/WikiGuideJourney';
 import { withoutLeadingArticleHeading } from '../components/wiki/wikiMarkdown';
 import { useWikiScrollState } from '../components/wiki/useWikiScrollState';
+import { absoluteLocalizedUrl, siteOrigin, type SiteLocale } from '../utils/siteLocale';
+import { organizationReference } from '../utils/structuredData';
 
 export function WikiArticlePage() {
   const { t, i18n } = useTranslation();
@@ -201,35 +203,53 @@ export function WikiArticlePage() {
     );
   }
 
+  // Each edition lives in its own language under its own slug; the page names
+  // only the editions that exist.
+  const articleLocale = article?.language as SiteLocale | undefined;
+  const localizedPaths = article
+    ? Object.fromEntries(
+        (article.translations?.length
+          ? article.translations
+          : [{ language: article.language, slug: article.slug }]
+        ).map((edition) => [edition.language, `/wiki/articles/${edition.slug}`]),
+      ) as Partial<Record<SiteLocale, string>>
+    : undefined;
+
+  // The first picture of the text is the article's picture for previews and
+  // structured data (the server-rendered page picks the same one).
+  const articleImagePath = article?.content.match(/^\s*!\[[^\]]*\]\(((?:https:\/\/|\/)[^)\s]+)/m)?.[1];
+  const articleImage = articleImagePath && articleLocale
+    ? (articleImagePath.startsWith('/') ? `${siteOrigin(articleLocale)}${articleImagePath}` : articleImagePath)
+    : undefined;
+
   // JSON-LD structured data для поисковиков
-  const jsonLd = article
-    ? {
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: article.title,
-        description: article.summary,
-        image: `https://filamenthub.ru/logo.svg`,
-        datePublished: article.created_at,
-        dateModified: article.updated_at,
-        author: {
-          '@type': 'Organization',
-          name: article.author || 'FilamentHub',
-        },
-        publisher: {
-          '@type': 'Organization',
-          name: 'FilamentHub',
-          logo: {
-            '@type': 'ImageObject',
-            url: 'https://filamenthub.ru/logo.svg',
-          },
-        },
-        mainEntityOfPage: {
-          '@type': 'WebPage',
-          '@id': `https://filamenthub.ru/wiki/articles/${article.slug}`,
-        },
-        articleSection: article.category_name || 'Wiki',
-        keywords: article.tags?.join(', ') || '',
-      }
+  const jsonLd = article && articleLocale
+    ? (() => {
+        const pageUrl = absoluteLocalizedUrl(`/wiki/articles/${article.slug}`, articleLocale);
+        const home = absoluteLocalizedUrl('/', articleLocale);
+        const organization = organizationReference();
+        return {
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          '@id': `${pageUrl}#article`,
+          headline: article.title,
+          description: article.summary,
+          inLanguage: articleLocale,
+          url: pageUrl,
+          image: articleImage ? [articleImage] : undefined,
+          datePublished: article.created_at,
+          dateModified: article.updated_at,
+          // A named author is a person; unsigned editorial texts belong to the project.
+          author: article.author
+            ? { '@type': 'Person', name: article.author }
+            : organization,
+          publisher: organization,
+          mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
+          isPartOf: { '@type': 'WebSite', '@id': `${home}#website` },
+          articleSection: article.category_name || 'Wiki',
+          keywords: article.tags?.join(', ') || undefined,
+        };
+      })()
     : undefined;
 
   if (article.space_key === 'guides') {
@@ -247,7 +267,10 @@ export function WikiArticlePage() {
           section={article.category_name || undefined}
           tags={article.tags || undefined}
           jsonLd={jsonLd}
+          image={articleImage}
           allowAI={true}
+          localizedPaths={localizedPaths}
+          contentLocale={articleLocale}
         />
         <WikiGuideJourney
           article={article}
@@ -302,7 +325,10 @@ export function WikiArticlePage() {
           section={article.category_name || undefined}
           tags={article.tags || undefined}
           jsonLd={jsonLd}
+          image={articleImage}
           allowAI={true}
+          localizedPaths={localizedPaths}
+          contentLocale={articleLocale}
         />
       )}
       {/* Main Layout: Content + Sidebar TOC */}

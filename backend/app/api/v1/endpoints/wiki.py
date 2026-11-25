@@ -494,6 +494,25 @@ async def get_article(
     )
     category_name = category_result.scalar_one_or_none()
 
+    # The language editions of the material, so the page can name its real
+    # translations (hreflang) instead of guessing that every language exists.
+    editions_result = await db.execute(
+        select(WikiArticle.language, WikiArticle.slug)
+        .where(
+            WikiArticle.content_key == article.content_key,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
+        .order_by(WikiArticle.language)
+    )
+    translations = [
+        WikiArticleTranslationResponse(
+            content_key=article.content_key,
+            language=language,
+            slug=edition_slug,
+        )
+        for language, edition_slug in editions_result.all()
+    ]
+
     article_dict = {
         "id": article.id,
         "category_id": article.category_id,
@@ -513,6 +532,7 @@ async def get_article(
         "created_at": article.created_at,
         "updated_at": article.updated_at,
         "category_name": category_name,
+        "translations": translations,
     }
 
     return WikiArticleResponse(**article_dict)

@@ -64,12 +64,15 @@ export function WikiCategoryPage() {
     );
   }
 
+  // The same translated name the wiki index shows for this category.
+  const categoryName = t(`wikiAuthoring.categories.${category.slug}`, { defaultValue: category.name });
+
   return (
     <>
       {category && (
         <SEOHead
-          title={`${category.name} - ${t('wikiCategoryPage.seoSuffix')}`}
-          description={category.description || t('wikiCategoryPage.seoDescription', { name: category.name.toLowerCase() })}
+          title={`${categoryName} - ${t('wikiCategoryPage.seoSuffix')}`}
+          description={category.description || t('wikiCategoryPage.seoDescription', { name: categoryName.toLowerCase() })}
           url={`/wiki/${category.slug}`}
           type="website"
           allowAI={true}
@@ -92,7 +95,7 @@ export function WikiCategoryPage() {
             <WikiCategoryIcon name={category.icon} className="w-8 h-8 md:w-10 md:h-10 text-white" />
           </div>
           <div className="flex-1">
-            <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">{category.name}</h1>
+            <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">{categoryName}</h1>
             <p className="text-base md:text-lg text-gray-300 mb-3">{category.description}</p>
             <div className="text-sm text-gray-400">
               {category.articles_count} {t('wikiPage.articles')}

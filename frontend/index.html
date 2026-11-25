@@ -2,16 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Search engines take raster icons only (Google: ICO, PNG and others, not SVG);
+         browsers prefer the adaptive SVG. -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" href="/icons/filamenthub-192.png" sizes="192x192" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=5" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/embed-startup.css" />
+    <meta name="theme-color" content="#7c3aed" />
 
+    <!-- Webmaster verification -->
+    <meta name="yandex-verification" content="a36e9671900c9269" />
+    <meta name="google-site-verification" content="l6p83QQrU9uFHwz4avxFYlU6UYD0mqEZi5PDDEBny7s" />
+
+    <!-- fh:page-head: everything that depends on the page. The build cuts it
+         out of the shell parts that the server-rendered catalogue and wiki
+         pages include (scripts/generate-localized-seo.mjs); keep these tags
+         between the two markers. -->
     <!-- x-default crawler fallback; production also emits en/ru/zh static variants. -->
     <meta data-seo-base="true" data-seo-field="description" name="description" content="Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems." />
     <meta data-seo-base="true" data-seo-field="keywords" name="keywords" content="3D printing filaments, filament catalog, slicer presets, spool management, OrcaSlicer, OctoPrint, PLA, PETG, ABS, TPU" />
     <meta data-seo-base="true" name="author" content="FilamentHub" />
-    <meta name="theme-color" content="#7c3aed" />
 
     <!-- Open Graph base -->
     <meta data-seo-base="true" data-seo-field="title" property="og:title" content="3D Printing Filaments and Presets | FilamentHub" />
@@ -34,14 +46,8 @@
     <meta data-seo-base="true" data-seo-field="image" name="twitter:image" content="https://filamenthub.club/email/hero.jpg" />
     <meta data-seo-base="true" data-seo-field="imageAlt" name="twitter:image:alt" content="FilamentHub — 3D printing filaments and presets" />
 
-    <!-- Webmaster verification -->
-    <meta name="yandex-verification" content="a36e9671900c9269" />
-    <meta name="google-site-verification" content="l6p83QQrU9uFHwz4avxFYlU6UYD0mqEZi5PDDEBny7s" />
-
     <!-- Search engines and AI -->
     <meta data-seo-base="true" name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <meta data-seo-base="true" name="googlebot" content="index, follow" />
-    <meta data-seo-base="true" name="bingbot" content="index, follow" />
 
     <link data-seo-base="true" rel="canonical" href="https://filamenthub.club/" />
     <link data-seo-hreflang="x-default" rel="alternate" hreflang="x-default" href="https://filamenthub.club/" />
@@ -49,20 +55,36 @@
     <link data-seo-hreflang="ru" rel="alternate" hreflang="ru" href="https://filamenthub.ru/ru/" />
     <link data-seo-hreflang="zh" rel="alternate" hreflang="zh" href="https://filamenthub.club/zh/" />
 
+    <title data-seo-field="title">3D Printing Filaments and Presets | FilamentHub</title>
+    <!-- /fh:page-head -->
+
     <script data-seo-base-jsonld="website" type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        "@id": "https://filamenthub.ru/#website",
-        "url": "https://filamenthub.ru/",
+        "@id": "https://filamenthub.club/#website",
+        "url": "https://filamenthub.club/",
         "name": "FilamentHub",
         "alternateName": ["Filament Hub", "ФиламентХаб", "Филамент Хаб"],
         "description": "Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems.",
-        "inLanguage": "en"
+        "inLanguage": "en",
+        "publisher": { "@id": "https://filamenthub.club/#organization" }
       }
     </script>
-
-    <title data-seo-field="title">3D Printing Filaments and Presets | FilamentHub</title>
+    <!-- One organisation for every language; pages refer to it by @id
+         (src/utils/structuredData.ts). -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "@id": "https://filamenthub.club/#organization",
+        "name": "FilamentHub",
+        "alternateName": ["Filament Hub", "ФиламентХаб"],
+        "url": "https://filamenthub.club/",
+        "logo": "https://filamenthub.club/icons/filamenthub-512.png",
+        "sameAs": ["https://github.com/WeLizard/FilamentHub"]
+      }
+    </script>
   </head>
   <body>
     <section id="fh-startup" role="status" aria-live="polite" data-nosnippet hidden>

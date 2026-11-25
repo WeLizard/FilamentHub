@@ -46,6 +46,7 @@ from app.api.v1.endpoints import (
     printer_profiles,
     printer_requests,
     printers,
+    public_pages,
     qr,
     saved_presets,
     spool_collections,
@@ -67,6 +68,7 @@ api_router.include_router(auth.router)
 api_router.include_router(achievements.router)
 api_router.include_router(currencies.router)
 api_router.include_router(catalog_urls.router)
+api_router.include_router(public_pages.router)
 api_router.include_router(brands.router)
 api_router.include_router(brand_invites.router)
 api_router.include_router(brand_invites.admin_router)

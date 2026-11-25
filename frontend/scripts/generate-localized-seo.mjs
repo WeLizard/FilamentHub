@@ -6,6 +6,7 @@ import {
   buildPublicPages,
   createTranslator,
   renderPageBody,
+  renderSiteNavigation,
 } from './public-pages.mjs';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -164,6 +165,48 @@ const localeHrefPrefix = (variant) => (
   variant === 'x-default' || variant === defaultLocale ? '' : `/${variant}`
 );
 
+function sliceBetween(html, start, end, what) {
+  const from = html.indexOf(start);
+  const to = html.indexOf(end, from + start.length);
+  if (from < 0 || to < 0) {
+    throw new Error(`Shell marker was not found in built index: ${what}`);
+  }
+  return [html.slice(0, from), html.slice(from + start.length, to), html.slice(to + end.length)];
+}
+
+// dist/_shell/<variant>/ holds the shell around a page that the backend
+// renders (catalogue and wiki): the site-wide <head> without the page block,
+// the <body> before and after #root, and the site navigation. nginx puts them
+// into the backend's page with SSI, so the hashed application scripts stay
+// owned by this build.
+async function writeShellParts(localizedHtml, variant, t) {
+  const [, headInner] = sliceBetween(localizedHtml, '<head>', '</head>', 'head');
+  const [beforeBlock, , afterBlock] = sliceBetween(
+    headInner,
+    '<!-- fh:page-head',
+    '<!-- /fh:page-head -->',
+    'page head block',
+  );
+  const [, bodyInner] = sliceBetween(localizedHtml, '<body>', '</body>', 'body');
+  const [bodyStart, , bodyEnd] = sliceBetween(bodyInner, '<div id="root">', '</div>', 'application root');
+  const prefix = localeHrefPrefix(variant);
+  const localizeHref = (href) => (href === '/' ? `${prefix}/` : `${prefix}${href}`);
+  const directory = path.join(frontendRoot, 'dist', '_shell', variant);
+  await mkdir(directory, { recursive: true });
+  const parts = {
+    'head.html': `${beforeBlock.trimEnd()}\n${afterBlock.trimStart()}`,
+    'body-start.html': bodyStart,
+    'body-end.html': bodyEnd,
+    'nav.html': renderSiteNavigation(t, localizeHref),
+  };
+  for (const [name, content] of Object.entries(parts)) {
+    if (content.includes('__FH_')) {
+      throw new Error(`Shell part ${variant}/${name} still holds a route placeholder`);
+    }
+    await writeFile(path.join(directory, name), content, 'utf8');
+  }
+}
+
 const readJson = async (...segments) => JSON.parse(
   await readFile(path.join(frontendRoot, 'src', ...segments), 'utf8'),
 );
@@ -178,9 +221,11 @@ for (const locale of Object.keys(localeConfig)) {
   const localized = localizeIndex(baseHtml, locale, translation);
   await writeFile(path.join(frontendRoot, 'dist', `index.${locale}.html`), localized, 'utf8');
   await writePublicPages(baseHtml, locale, translation, pages, locale);
+  await writeShellParts(localized, locale, t);
   if (locale === defaultLocale) {
     const adaptiveDefault = localizeIndex(baseHtml, locale, translation, 'x-default');
     await writeFile(path.join(frontendRoot, 'dist', 'index.x-default.html'), adaptiveDefault, 'utf8');
     await writePublicPages(baseHtml, locale, translation, pages, 'x-default');
+    await writeShellParts(adaptiveDefault, 'x-default', t);
   }
 }

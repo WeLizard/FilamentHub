@@ -514,6 +514,12 @@ export const FilamentDetailPage: React.FC = () => {
 
   const brandWebsiteUrl = externalUrl(brandData?.website);
 
+  const filamentSeoDescription = t('filamentDetailPage.seoDescription', {
+    materialType: filament.material_type,
+    name: filamentVariantName,
+    brand: brandData?.name || '',
+  });
+
   // JSON-LD structured data для филамента
   const jsonLd = filament && brandData
     ? {
@@ -523,13 +529,14 @@ export const FilamentDetailPage: React.FC = () => {
             '@type': 'Product',
             name: filamentVariantName,
             url: canonicalFilamentUrl,
-            description: `${filament.material_type} filament ${filamentVariantName} by ${brandData.name}`,
+            description: filamentSeoDescription,
             brand: {
               '@type': 'Brand',
               name: brandData.name,
             },
             category: `3D Printing Filament - ${filament.material_type}`,
-            offers: filament.price_per_kg == null ? undefined : {
+            // A brand that hides its prices hides them from search engines too.
+            offers: filament.price_hidden || filament.price_per_kg == null ? undefined : {
               '@type': 'Offer',
               price: filament.price_per_kg.toString(),
               priceCurrency: filament.currency || brandData.currency || 'RUB',
@@ -542,7 +549,7 @@ export const FilamentDetailPage: React.FC = () => {
                 '@type': 'ListItem',
                 position: 1,
                 name: 'FilamentHub',
-                item: 'https://filamenthub.ru/',
+                item: absoluteLocalizedUrl('/', activeLocale),
               },
               {
                 '@type': 'ListItem',
@@ -567,7 +574,7 @@ export const FilamentDetailPage: React.FC = () => {
       {filament && (
         <SEOHead
           title={`${filamentVariantName} - ${brandData?.name || 'FilamentHub'}`}
-          description={t('filamentDetailPage.seoDescription', { materialType: filament.material_type, name: filamentVariantName, brand: brandData?.name || '' })}
+          description={filamentSeoDescription}
           keywords={t('filamentDetailPage.seoKeywords', { name: filamentVariantName, materialType: filament.material_type, brand: brandData?.name || '' })}
           url={canonicalFilamentPath}
           type="product"

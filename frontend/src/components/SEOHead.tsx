@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   SITE_LOCALES,
+  type SiteLocale,
   absoluteLocalizedUrl,
   absoluteSiteUrl,
   getPathLocale,
@@ -30,6 +31,15 @@ interface SEOHeadProps {
   additionalMeta?: Array<{ name: string; content: string }>;
   /** Для AI агентов - разрешить индексацию */
   allowAI?: boolean;
+  /**
+   * The page's address in each language it exists in, without a language
+   * prefix. Leave it out when every language has the page under `url`; give
+   * it when only some do (a wiki article and its translations), so hreflang
+   * names real pages only.
+   */
+  localizedPaths?: Partial<Record<SiteLocale, string>>;
+  /** Language of the page content when it does not follow the interface. */
+  contentLocale?: SiteLocale;
 }
 
 const DEFAULT_IMAGE = '/email/hero.jpg';
@@ -56,11 +66,15 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   jsonLd,
   additionalMeta = [],
   allowAI = true,
+  localizedPaths,
+  contentLocale,
 }) => {
   const { t, i18n } = useTranslation();
   const fullTitle = title ? `${title} | FilamentHub` : t('seo.defaultTitle');
   const fullDescription = description || t('seo.defaultDescription');
-  const activeLocale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
+  const activeLocale = contentLocale
+    ?? normalizeSiteLocale(i18n.resolvedLanguage || i18n.language)
+    ?? 'en';
   const ogLocale = OG_LOCALES[activeLocale];
   const ogLocaleAlternates = useMemo(
     () => SITE_LOCALES
@@ -75,16 +89,27 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   const requestedPage = url || window.location.pathname;
   const basePagePath = withoutLocalePrefix(requestedPage);
   const pathLocale = getPathLocale(window.location.pathname);
-  const fullUrl = pathLocale
-    ? absoluteLocalizedUrl(basePagePath, pathLocale)
-    : absoluteSiteUrl(basePagePath);
-  const alternateUrls = useMemo(
-    () => [
-      { locale: 'x-default', href: absoluteSiteUrl(basePagePath) },
-      ...SITE_LOCALES.map((locale) => ({ locale, href: absoluteLocalizedUrl(basePagePath, locale) })),
-    ],
-    [basePagePath],
-  );
+  let fullUrl: string;
+  if (contentLocale) {
+    fullUrl = absoluteLocalizedUrl(localizedPaths?.[contentLocale] ?? basePagePath, contentLocale);
+  } else if (pathLocale) {
+    fullUrl = absoluteLocalizedUrl(basePagePath, pathLocale);
+  } else {
+    fullUrl = absoluteSiteUrl(basePagePath);
+  }
+  // A stable key, so a caller passing a fresh object each render does not
+  // rewrite the head on every render.
+  const localizedPathsKey = localizedPaths ? JSON.stringify(localizedPaths) : '';
+  const alternateUrls = useMemo(() => {
+    const paths: Partial<Record<SiteLocale, string>> = localizedPathsKey
+      ? JSON.parse(localizedPathsKey)
+      : Object.fromEntries(SITE_LOCALES.map((locale) => [locale, basePagePath]));
+    const present = SITE_LOCALES.filter((locale) => paths[locale] !== undefined);
+    return [
+      ...(paths.en !== undefined ? [{ locale: 'x-default', href: absoluteSiteUrl(paths.en) }] : []),
+      ...present.map((locale) => ({ locale, href: absoluteLocalizedUrl(paths[locale] as string, locale) })),
+    ];
+  }, [basePagePath, localizedPathsKey]);
 
   useEffect(() => {
     delete document.documentElement.dataset.seoReady;
@@ -185,9 +210,6 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     // Для AI агентов и поисковых роботов
     if (allowAI) {
       addMeta('robots', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1');
-      // Разрешаем AI индексацию (Google AI, ChatGPT, и т.д.)
-      addMeta('googlebot', 'index, follow');
-      addMeta('bingbot', 'index, follow');
     } else {
       addMeta('robots', 'noindex, nofollow');
     }
@@ -209,6 +231,14 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       canonical.setAttribute('data-seo', 'true');
       document.head.appendChild(canonical);
     }
+
+    // Static hreflang slots of languages this page does not exist in leave the
+    // head while the page is shown and come back for the next page.
+    const wanted = new Set(alternateUrls.map(({ locale }) => locale));
+    const detachedAlternates = Array.from(
+      document.head.querySelectorAll<HTMLLinkElement>('link[rel="alternate"][data-seo-hreflang]'),
+    ).filter((link) => !wanted.has(link.dataset.seoHreflang ?? ''));
+    detachedAlternates.forEach((link) => link.remove());
 
     alternateUrls.forEach(({ locale, href }) => {
       const existing = document.head.querySelector<HTMLLinkElement>(
@@ -233,6 +263,14 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     // Дополнительные meta теги
     additionalMeta.forEach(({ name, content }) => {
       addMeta(name, content);
+    });
+
+    // Structured data the server rendered for this address stays while the
+    // page adds none of its own; it leaves on the first page change.
+    document.querySelectorAll<HTMLScriptElement>('script[data-seo-server="true"]').forEach((script) => {
+      if (jsonLd || script.dataset.seoPath !== window.location.pathname) {
+        script.remove();
+      }
     });
 
     // JSON-LD structured data
@@ -291,6 +329,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       if (jsonLdScript) {
         jsonLdScript.remove();
       }
+      detachedAlternates.forEach((link) => document.head.appendChild(link));
     };
   }, [
     fullTitle,

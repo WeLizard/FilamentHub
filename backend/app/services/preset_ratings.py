@@ -1,5 +1,7 @@
 """Сервис для обновления рейтингов пресетов на основе отзывов."""
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,3 +99,17 @@ async def calculate_filament_weighted_rating(filament_id: int, db: AsyncSession)
 
     return round(avg_rating, 2), round(avg_success_rate, 1)
 
+
+async def filament_rating(
+    filament_id: int, reviews: Sequence[FilamentReview], db: AsyncSession
+) -> tuple[float | None, float | None]:
+    """A material's rating and success rate: weighted by its presets when they
+    allow it, otherwise the plain mean of its reviews."""
+    weighted_rating, weighted_success_rate = await calculate_filament_weighted_rating(filament_id, db)
+    if weighted_rating is not None:
+        return weighted_rating, weighted_success_rate
+    count = len(reviews)
+    return (
+        sum(review.rating for review in reviews) / count,
+        sum(1 for review in reviews if review.success) / count * 100.0,
+    )

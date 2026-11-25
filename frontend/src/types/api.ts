@@ -2626,6 +2626,8 @@ export interface WikiArticleSummary {
 export interface WikiArticle extends WikiArticleSummary {
   content: string;
   category_name: string | null;
+  /** Published editions of this article, this one included. */
+  translations?: WikiArticleTranslation[];
 }
 
 export interface WikiArticleListResponse {

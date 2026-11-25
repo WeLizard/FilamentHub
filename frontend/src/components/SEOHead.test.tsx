@@ -58,6 +58,46 @@ describe('SEOHead locale metadata', () => {
     });
   });
 
+  it('names only the languages a page exists in and restores the slots afterwards', async () => {
+    const { unmount } = render(
+      <SEOHead
+        title="Только по-русски"
+        url="/wiki/articles/tolko-russkaya"
+        localizedPaths={{ ru: '/wiki/articles/tolko-russkaya' }}
+        contentLocale="ru"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href)
+        .toBe('https://filamenthub.ru/ru/wiki/articles/tolko-russkaya');
+    });
+    const alternates = () => Object.fromEntries(
+      Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="alternate"][hreflang]'))
+        .map((link) => [link.hreflang, link.href]),
+    );
+    expect(alternates()).toEqual({ ru: 'https://filamenthub.ru/ru/wiki/articles/tolko-russkaya' });
+
+    unmount();
+    expect(Object.keys(alternates()).sort()).toEqual(['en', 'ru', 'x-default', 'zh']);
+  });
+
+  it('keeps server structured data for its own page only', async () => {
+    const serverScript = () => document.head.querySelector('script[data-seo-server="true"]');
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/ld+json" data-seo-server="true" data-seo-path="/ru/download">{}</script>',
+    );
+
+    const { unmount } = render(<SEOHead title="Плагины" url="/download" />);
+    await waitFor(() => expect(document.title).toBe('Плагины | FilamentHub'));
+    expect(serverScript()).not.toBeNull();
+    unmount();
+
+    render(<SEOHead title="Плагины" url="/download" jsonLd={{ '@type': 'WebPage' }} />);
+    await waitFor(() => expect(serverScript()).toBeNull());
+  });
+
   it('keeps Open Graph locale and social preview metadata consistent', async () => {
     render(<SEOHead title="Плагины" description="Скачать плагины" url="/download" />);
 

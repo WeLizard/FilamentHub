@@ -1,0 +1,71 @@
+{
+  "en": {
+    "layout.nav_catalog": "Catalog",
+    "catalogPage.tableMaterial": "Material",
+    "filamentDetailPage.seoDescription": "{{materialType}} filament {{name}} by {{brand}}. Print settings, slicer presets, user reviews.",
+    "filamentDetailPage.seoKeywords": "{{name}}, {{materialType}}, {{brand}}, 3D printing, filament, print settings",
+    "filamentDetailPage.brand": "Brand",
+    "filamentDetailPage.color": "Color",
+    "brandDetailPage.seoDescription": "{{name}} - {{count}} filament types for 3D printing. Presets, ratings and reviews on FilamentHub.",
+    "brandDetailPage.allMaterials": "All materials",
+    "wikiPage.seoTitle": "3D Printing Wiki",
+    "wikiPage.seoDescription": "Knowledge base about 3D printing: materials, settings, troubleshooting. Guides for beginners and professionals.",
+    "wikiPage.seoKeywords": "3D printing, Wiki, guides, materials, print settings, troubleshooting, PLA, PETG, ABS",
+    "wikiPage.categories": "Categories",
+    "wikiCategoryPage.seoSuffix": "3D Printing Wiki",
+    "wikiCategoryPage.seoDescription": "Articles about {{name}} in FilamentHub knowledge base",
+    "wikiAuthoring.categories": {
+      "advanced": "Advanced techniques",
+      "beginners": "For beginners",
+      "materials": "Materials",
+      "troubleshooting": "Troubleshooting",
+      "software": "Software"
+    }
+  },
+  "ru": {
+    "layout.nav_catalog": "Каталог",
+    "catalogPage.tableMaterial": "Материал",
+    "filamentDetailPage.seoDescription": "{{materialType}} филамент {{name}} от {{brand}}. Настройки печати, пресеты для слайсеров, отзывы пользователей.",
+    "filamentDetailPage.seoKeywords": "{{name}}, {{materialType}}, {{brand}}, 3D печать, филамент, настройки печати",
+    "filamentDetailPage.brand": "Бренд",
+    "filamentDetailPage.color": "Цвет",
+    "brandDetailPage.seoDescription": "{{name}} - {{count}} видов пластика для 3D-печати. Пресеты, рейтинги и отзывы на FilamentHub.",
+    "brandDetailPage.allMaterials": "Все материалы",
+    "wikiPage.seoTitle": "Вики по 3D-печати",
+    "wikiPage.seoDescription": "База знаний о 3D-печати: материалы, настройки, решение проблем. Гайды для новичков и профессионалов.",
+    "wikiPage.seoKeywords": "3D печать, Wiki, гайды, материалы, настройки печати, решение проблем, PLA, PETG, ABS",
+    "wikiPage.categories": "Категории",
+    "wikiCategoryPage.seoSuffix": "Wiki по 3D-печати",
+    "wikiCategoryPage.seoDescription": "Статьи о {{name}} в базе знаний FilamentHub",
+    "wikiAuthoring.categories": {
+      "advanced": "Продвинутые техники",
+      "beginners": "Для начинающих",
+      "materials": "Материалы",
+      "troubleshooting": "Решение проблем",
+      "software": "Программы"
+    }
+  },
+  "zh": {
+    "layout.nav_catalog": "目录",
+    "catalogPage.tableMaterial": "材料",
+    "filamentDetailPage.seoDescription": "{{materialType}}耗材{{name}}由{{brand}}出品。打印设置、切片机预设、用户评价。",
+    "filamentDetailPage.seoKeywords": "{{name}}, {{materialType}}, {{brand}}, 3D 打印, 耗材, 打印设置",
+    "filamentDetailPage.brand": "品牌",
+    "filamentDetailPage.color": "颜色",
+    "brandDetailPage.seoDescription": "{{name}} — {{count}} 种 3D 打印耗材。FilamentHub 上的预设、评分和评价。",
+    "brandDetailPage.allMaterials": "所有材料",
+    "wikiPage.seoTitle": "3D 打印知识库",
+    "wikiPage.seoDescription": "关于 3D 打印的知识库：材料、设置、问题排解。适合初学者和专业人士的指南。",
+    "wikiPage.seoKeywords": "3D 打印, 知识库, 指南, 材料, 打印设置, 问题排解, PLA, PETG, ABS",
+    "wikiPage.categories": "分类",
+    "wikiCategoryPage.seoSuffix": "3D 打印知识库",
+    "wikiCategoryPage.seoDescription": "FilamentHub 知识库中关于 {{name}} 的文章",
+    "wikiAuthoring.categories": {
+      "advanced": "高级技巧",
+      "beginners": "新手入门",
+      "materials": "材料",
+      "troubleshooting": "故障排除",
+      "software": "软件"
+    }
+  }
+}

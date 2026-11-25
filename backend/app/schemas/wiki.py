@@ -141,21 +141,25 @@ class WikiArticleSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class WikiArticleResponse(WikiArticleSummary):
-    """Full schema for WikiArticle response."""
-
-    content: str
-    category_name: str | None = Field(default=None, description="Category name for convenience")
-
-    model_config = {"from_attributes": True}
-
-
 class WikiArticleTranslationResponse(BaseModel):
     """Route of another language edition of the same material."""
 
     content_key: str
     language: str
     slug: str
+
+
+class WikiArticleResponse(WikiArticleSummary):
+    """Full schema for WikiArticle response."""
+
+    content: str
+    category_name: str | None = Field(default=None, description="Category name for convenience")
+    translations: list[WikiArticleTranslationResponse] = Field(
+        default_factory=list,
+        description="Published editions of this material in every language, this one included",
+    )
+
+    model_config = {"from_attributes": True}
 
 
 class WikiGuideProgressUpdate(BaseModel):
