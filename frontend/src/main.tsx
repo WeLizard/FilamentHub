@@ -12,9 +12,11 @@ import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
 import { isPluginEmbed, stripOrcaHostTheme } from './utils/pluginBridge';
 import { initializePluginAppearance } from './utils/pluginAppearance';
 import { getLocaleBasename } from './utils/siteLocale';
+import { installStaleBuildReload } from './utils/staleBuildReload';
 
 async function startApp(): Promise<void> {
   try {
+    installStaleBuildReload();
     clearLegacyLocalAuthStateIfNeeded();
     stripOrcaHostTheme();
     initializePluginAppearance(isPluginEmbed());
