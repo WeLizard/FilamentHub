@@ -62,6 +62,13 @@ class PresetVersionDiffUnmapped(BaseModel):
     new: str | None = None
 
 
+class PresetVersionDiffMaterial(BaseModel):
+    """The material the two versions were saved for, when it changed."""
+
+    old: str | None = None
+    new: str | None = None
+
+
 class PresetVersionDiffResponse(BaseModel):
     """Human-readable diff between two versions."""
 
@@ -69,6 +76,7 @@ class PresetVersionDiffResponse(BaseModel):
     to_version: int
     changes: list[PresetVersionDiffChange]
     unmapped_changes: list[PresetVersionDiffUnmapped]
+    material: PresetVersionDiffMaterial | None = None
 
 
 class PresetVersionLabelUpdate(BaseModel):

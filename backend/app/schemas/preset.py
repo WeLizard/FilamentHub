@@ -138,6 +138,14 @@ class PresetActivateRequest(BaseModel):
     filament_id: int = Field(..., gt=0, description="ID филамента для привязки")
 
 
+class PresetColorCopyRequest(BaseModel):
+    """Make a private draft of a preset for another colour of its material."""
+
+    filament_id: int = Field(
+        ..., gt=0, description="Another colour of the source preset's material"
+    )
+
+
 class PresetResponse(PresetBase):
     """Schema for Preset response."""
 

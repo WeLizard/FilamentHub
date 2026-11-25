@@ -6254,6 +6254,33 @@
     "materialsSearchEmptyHint": "请修改搜索词或清除搜索。",
     "loadMoreMaterials": "显示更多"
   },
+  "presetColorCopy": {
+    "publish": "发布副本",
+    "published": "副本已发布，将在下次同步时出现在你的切片软件中。",
+    "editorTitle": "预设副本",
+    "action": "复制到其他颜色",
+    "title": "复制到其他颜色",
+    "description": "“{{name}}”的设置将复制到所选颜色的新私人草稿中。此预设保持不变。",
+    "currentColor": "当前：{{color}}",
+    "searchPlaceholder": "查找颜色",
+    "loading": "正在加载颜色…",
+    "empty": "目录中没有该耗材的其他颜色。",
+    "noMatch": "没有匹配的颜色。",
+    "loadError": "无法加载颜色。",
+    "unsavedChanges": "未保存的修改不会被复制：副本使用已保存的设置。",
+    "create": "创建副本",
+    "cancel": "取消",
+    "created": "副本已创建。请检查设置，准备好后再发布。",
+    "existing": "该副本已存在，正在打开。",
+    "draftTitle": "私人副本",
+    "draftDescription": "只有你能看到它，发布后才会同步到你的切片软件。颜色取自耗材，其他设置来自源预设。",
+    "variantLocked": "这是同一耗材的另一种颜色。已发布的预设保持原有颜色，请为其他颜色创建副本。",
+    "colorFromMaterial": "颜色由耗材决定。如需其他颜色，请复制此预设。"
+  },
+  "presetOrigin": {
+    "basedOn": "基于预设“{{name}}”",
+    "basedOnUnavailable": "基于另一个预设"
+  },
   "viewPreset": {
     "yes": "是",
     "no": "否",
@@ -7496,7 +7523,8 @@
       "isCurrent": "这是当前版本。",
       "comparing": "从 v{{from}} 到 v{{to}} 的更改",
       "noChanges": "无差异。",
-      "technicalFields": "技术字段 ({{count}})"
+      "technicalFields": "技术字段 ({{count}})",
+      "material": "耗材"
     },
     "source": {
       "web_edit": "网页编辑",
@@ -8465,6 +8493,8 @@
     "ERR_BRAND_NOT_FOUND": "未找到品牌",
     "ERR_PRESET_NOT_FOUND": "未找到预设",
     "ERR_PRESET_RELINK_REJECTED": "预设设置未通过所选耗材的验证，原有耗材关联已保留。",
+    "ERR_PRESET_COLOR_LOCKED": "此预设已发布或已被使用，因此保持原有颜色。如需其他颜色，请创建副本。",
+    "ERR_PRESET_COPY_NOT_VARIANT": "只能为同一耗材的其他颜色创建副本。",
     "ERR_FILAMENT_IMPORT_TITLE_FOR_CATALOG": "这是 PipSpool 料卷的名称。请选择已有耗材或输入标签上的名称。",
     "ERR_PRESET_FILAMENT_REQUIRED": "发布预设前必须将其关联到耗材",
     "ERR_FILAMENT_NOT_FOUND": "未找到耗材",

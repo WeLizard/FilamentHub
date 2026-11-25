@@ -439,6 +439,55 @@ describe('CreatePresetModal bed temperature per plate', () => {
     expect(payload).not.toHaveProperty('bed_temp');
   });
 
+  it('keeps the print settings when a published preset moves to another material', async () => {
+    const source = plateSettings();
+    const original = structuredClone(source);
+    renderEditor(source);
+    fireEvent.click(await screen.findByRole('button', { name: 'presetModal.filamentRelink.action' }));
+    // The vendor card recommends another bed range and the type is PETG.
+    fireEvent.click(await screen.findByRole('button', { name: /Vendor/ }));
+
+    const payload = await saveEdit();
+
+    expect(payload.filament_id).toBe(78);
+    expect(payload.orcaslicer_settings ?? original).toEqual(original);
+    for (const key of ['extruder_temp', 'bed_temp', 'flow_rate', 'fan_speed', 'retraction_length', 'retraction_speed']) {
+      expect(payload).not.toHaveProperty(key);
+    }
+  });
+
+  it('saves a preset that leaves retraction, flow and fan to the slicer without writing form defaults', async () => {
+    // Orca takes these from the printer or the parent profile when the
+    // preset is silent; a default written on save would override them.
+    // The temperature and the material colour reach the slicer from the
+    // preset and the material, so an untouched save does not store them.
+    const source = { future_filament_option: ['kept'] };
+    const original = structuredClone(source);
+    getFilamentMock.mockResolvedValue({
+      id: 77, name: 'PLA', material_type: 'PLA', brand_id: 7, diameter: 1.75, color_hex: '#BB1F11',
+    });
+    renderModal({
+      preset: {
+        ...preset(5, 'Sparse PLA'),
+        active: true,
+        filament_id: 77,
+        flow_rate: null,
+        fan_speed: null,
+        retraction_length: null,
+        retraction_speed: null,
+        orcaslicer_settings: source,
+      },
+    });
+    await screen.findByLabelText(TEXTURED_OTHER);
+
+    const payload = await saveEdit();
+
+    expect(payload.orcaslicer_settings ?? original).toEqual(original);
+    for (const key of ['flow_rate', 'fan_speed', 'retraction_length', 'retraction_speed']) {
+      expect(payload).not.toHaveProperty(key);
+    }
+  });
+
   it('changes only the edited plate when a single cell is edited', async () => {
     const source = plateSettings();
     const original = structuredClone(source);
@@ -700,6 +749,36 @@ describe('CreatePresetModal bed temperature per plate', () => {
 
       expect(screen.getByText('Force cooling for overhangs and bridges').closest('.hidden')).toBeNull();
       expect(screen.getByText('Ironing fan speed').closest('.hidden')).not.toBeNull();
+    });
+
+    it('writes an edited retraction and still leaves the other slicer defaults alone', async () => {
+      const schema = await loadFilamentPresetSchema();
+      renderModal({
+        preset: {
+          ...preset(5, 'Sparse PLA'),
+          active: true,
+          filament_id: 77,
+          flow_rate: null,
+          fan_speed: null,
+          retraction_length: null,
+          retraction_speed: null,
+          orcaslicer_settings: { nozzle_temperature: ['210'] },
+        },
+      });
+      chooseMode('expert');
+      await openTab('override');
+
+      const field = screen
+        .getByText(schema.options.filament_retraction_length.label ?? '')
+        .parentElement?.querySelector('input');
+      expect(field).toBeTruthy();
+      fireEvent.change(field as HTMLInputElement, { target: { value: '0.8' } });
+      const payload = await saveEdit();
+
+      expect(payload.orcaslicer_settings).toEqual({
+        nozzle_temperature: ['210'],
+        filament_retraction_length: ['0.8'],
+      });
     });
 
     it.each([

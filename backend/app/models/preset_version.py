@@ -72,6 +72,15 @@ class PresetVersion(Base):
     # the parent Preset — NOT a global sequence. See preset_version_service.
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    # The material these settings were saved for. Replacing a preset's
+    # material makes a new version; whoever stays on an earlier one keeps
+    # its material. NULL only for drafts that have no material yet.
+    filament_id: Mapped[int | None] = mapped_column(
+        ForeignKey("filaments.id", ondelete="SET NULL", name="fk_pv_filament"),
+        nullable=True,
+        index=True,
+    )
+
     # Full snapshot of the preset state at save time.
     snapshot_orcaslicer_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     snapshot_structured: Mapped[dict] = mapped_column(JSON, nullable=False)

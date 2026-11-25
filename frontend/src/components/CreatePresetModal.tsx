@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Save, Loader2, Check, Plus, CheckCircle, Sparkles } from 'lucide-react';
+import { X, Save, Loader2, Check, Plus, CheckCircle, Sparkles, Palette } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { achievementsAPI, presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -101,6 +101,15 @@ import {
 import { DensityField } from './DensityField';
 import { toast } from './Toast';
 import { FilamentCorrectionRequestModal } from './FilamentCorrectionRequestModal';
+import { PresetColorCopyDialog } from './PresetColorCopyDialog';
+import { PresetOrigin } from './PresetOrigin';
+import {
+  canCopyForColor,
+  colorLabel,
+  colorVariantsQueryKey,
+  isColorCopyDraft,
+  nameForColor,
+} from '../utils/presetColorCopy';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { ACHIEVEMENT_CONFIG } from './Badge';
 import type { AxiosError } from 'axios';
@@ -267,7 +276,7 @@ export function readSimilarBrands(detail: unknown): SimilarBrands | null {
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   isOpen,
   onClose,
-  preset,
+  preset: requestedPreset,
   filamentId,
   brandId,
   officialContext = false,
@@ -279,6 +288,22 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const { user } = useAuth();
   const { t, i18n } = useTranslation();
 
+  // "Copy for another colour" swaps the edited preset for the new draft.
+  const [colorCopy, setColorCopy] = useState<{ from: Preset | null | undefined; copy: Preset } | null>(null);
+  const [showColorCopy, setShowColorCopy] = useState(false);
+  // Closing ends the switch, so the next opening starts from what the caller passes.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) {
+      setColorCopy(null);
+      setShowColorCopy(false);
+    }
+  }
+  const preset = isOpen && colorCopy && colorCopy.from === requestedPreset
+    ? colorCopy.copy
+    : requestedPreset;
+
   // Определяем, является ли пресет черновиком (заготовкой)
   // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @fh в имени
   const isEditingPreset = Boolean(preset && !createFromPreset);
@@ -287,6 +312,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     && preset
     && (!preset.filament_id || (!preset.active && !preset.name?.includes('@fh')))
   );
+  // A copy made here is reviewed already; the slicer-import review does not apply.
+  const isCopyDraft = isDraft && isColorCopyDraft(preset);
+  const canOfferColorCopy = isEditingPreset
+    && !isDraft
+    && !officialContext
+    && !materialOnly
+    && canCopyForColor(preset, user?.id);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isOfficial, setIsOfficial] = useState(false);
@@ -623,20 +655,29 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const { data: draftAnalysis, isLoading: draftAnalysisLoading } = useQuery({
     queryKey: ['preset-draft-analysis', preset?.id],
     queryFn: () => presetsAPI.getDraftAnalysis(preset!.id),
-    enabled: isOpen && isDraft && !!preset?.id,
+    enabled: isOpen && isDraft && !isCopyDraft && !!preset?.id,
   });
+  const { data: relinkColorVariants } = useQuery({
+    queryKey: colorVariantsQueryKey(preset?.filament_id),
+    queryFn: () => filamentsAPI.colorVariants(preset!.filament_id!),
+    enabled: isOpen && isRelinkingFilament && !!preset?.filament_id,
+    staleTime: 60_000,
+  });
+  const relinkPicksColorVariant = isRelinkingFilament
+    && !!selectedFilamentId
+    && !!relinkColorVariants?.some((variant) => variant.id === selectedFilamentId);
   const trackedReviewOpenRef = useRef(false);
   useEffect(() => {
     if (!isOpen) {
       trackedReviewOpenRef.current = false;
       return;
     }
-    if (!isDraft || trackedReviewOpenRef.current) return;
+    if (!isDraft || isCopyDraft || trackedReviewOpenRef.current) return;
     trackedReviewOpenRef.current = true;
     void presetsAPI.recordDraftEvent('review_opened').catch(() => {
       // Product metrics must never interrupt review or publication.
     });
-  }, [isDraft, isOpen]);
+  }, [isDraft, isCopyDraft, isOpen]);
   const officialTargetBrandId = brandId
     ?? selectedFilament?.brand_id
     ?? selectedBrandId
@@ -1280,6 +1321,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
+    setFormDirty(false);
   }, [preset, filamentId, brandId, isDraft, isOpen, officialContext, materialOnly, materialDraft]);
 
   // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
@@ -1460,6 +1502,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       return;
     }
 
+    // A draft that moves to another colour takes the colour into its name,
+    // the way a copy is named when it is made.
+    const previousFilament = selectedFilament ?? editingFilament ?? null;
+    if (isDraft && previousFilament && previousFilament.id !== filament.id) {
+      setName((current) => nameForColor(current, previousFilament, filament));
+    }
     setSelectedFilamentId(filament.id);
     setSelectedFilament(fullFilament);
     setDuplicateFilamentSuggestion(null);
@@ -1467,7 +1515,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setShowFilamentDropdown(false);
     setShowFilamentForm(false);
     setError(null);
-    if (!isDraft) {
+    // Material defaults start a new preset. An existing one keeps its print
+    // settings when it moves to another material.
+    if (!preset) {
       applyDefaultsByMaterialType(filament.material_type);
       applyRecommendedTempsFromFilament(fullFilament);
     }
@@ -1796,7 +1846,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         toast.success(
           updatedPreset.moderation_status === 'pending'
             ? t('presetModal.draftSentForReview')
-            : t('presetModal.draftPublishedBenefit'),
+            : isCopyDraft
+              ? t('presetColorCopy.published')
+              : t('presetModal.draftPublishedBenefit'),
           8000,
         );
       }
@@ -1870,11 +1922,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // === ВКЛАДКА "ПРОФИЛЬ ПРУТКА" ===
     
     // Температуры
-    if (
-      !preset
-      || preset.extruder_temp !== extruderTemp
-      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'nozzle_temperature')
-    ) {
+    // The slicer gets the main temperature from the preset itself; the raw
+    // value is stored when it was there already or the person changed it.
+    if (!preset || preset.extruder_temp !== extruderTemp) {
       addParam('nozzle_temperature', extruderTemp);
     }
     addParam('nozzle_temperature_range_low', tempRangeLow);
@@ -1897,11 +1947,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addBoolParam('activate_chamber_temp_control', enableChamberControl);
 
     // Свойства филамента
-    if (
-      !preset
-      || originalFlowRate !== flowRate
-      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_flow_ratio')
-    ) {
+    // Flow, fan and retraction fall back to form defaults when the preset is
+    // silent, and Orca then takes them from the printer or the parent profile.
+    // An existing preset gets them only when the person changed the field.
+    if (!preset || originalFlowRate !== flowRate) {
       addParam('filament_flow_ratio', formatOrcaFlowRatio(flowRate));
     }
     addParam('filament_max_volumetric_speed', volumetricSpeed);
@@ -1913,7 +1962,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // При создании нового филамента - синхронизируется с filamentColorHex
     // При редактировании/выборе существующего - используется цвет филамента если defaultFilamentColour не задан
     const finalColor = defaultFilamentColour || filamentColorHex;
-    if (finalColor && finalColor.trim() !== '' && finalColor !== '#000000') {
+    // The material's own colour reaches the slicer from the material, so a
+    // saved preset that never stored a colour does not start storing it.
+    const materialColourOnly = Boolean(preset)
+      && !Object.prototype.hasOwnProperty.call(sourceSettings, 'default_filament_colour')
+      && finalColor?.trim().toLowerCase() === filamentColorHex?.trim().toLowerCase();
+    if (finalColor && finalColor.trim() !== '' && finalColor !== '#000000' && !materialColourOnly) {
       addParam('default_filament_colour', finalColor);
     }
     addParam('filament_adhesiveness_category', filamentAdhesivenessCategory);
@@ -1922,18 +1976,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('filament_printable', filamentPrintable);
 
     // Ретракт
-    if (
-      !preset
-      || originalRetractionLength !== retractionLength
-      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_retraction_length')
-    ) {
+    if (!preset || originalRetractionLength !== retractionLength) {
       addParam('filament_retraction_length', retractionLength);
     }
-    if (
-      !preset
-      || originalRetractionSpeed !== retractionSpeed
-      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_retraction_speed')
-    ) {
+    if (!preset || originalRetractionSpeed !== retractionSpeed) {
       addParam('filament_retraction_speed', retractionSpeed);
     }
     addParam('filament_deretraction_speed', deretractionSpeed);
@@ -1969,10 +2015,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     
     // Обдув модели
     const hasRawFanMinSpeed = Object.prototype.hasOwnProperty.call(sourceSettings, 'fan_min_speed');
-    addParam(
-      'fan_min_speed',
-      fanMinSpeed !== '' || hasRawFanMinSpeed ? fanMinSpeed : fanSpeed,
-    );
+    if (fanMinSpeed !== '' || hasRawFanMinSpeed) {
+      addParam('fan_min_speed', fanMinSpeed);
+    } else if (!preset || originalFanSpeed !== fanSpeed) {
+      addParam('fan_min_speed', fanSpeed);
+    }
     const preserveOutOfRangeFanMax = fanMaxSpeed === ''
       && originalFanMaxSpeed != null
       && originalFanMaxSpeed > 100;
@@ -2354,6 +2401,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       return;
     }
 
+    if (relinkPicksColorVariant) {
+      setError(t('presetColorCopy.variantLocked'));
+      return;
+    }
+
     // Формируем JSON расширенных параметров из UI полей
     // Определяем цвет филамента для синхронизации с default_filament_colour
     const filamentColor = isRelinkingFilament
@@ -2427,6 +2479,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   };
 
   const cardFilament: Filament | null = selectedFilament ?? editingFilament ?? null;
+  // A draft or a relink may pick another material; its colour replaces the stored one.
+  const pickedOtherFilament = !!selectedFilament && selectedFilament.id !== editingFilament?.id;
+  const colourFilament = pickedOtherFilament ? selectedFilament : editingFilament ?? null;
+  const shownFilamentColour = pickedOtherFilament
+    ? selectedFilament?.color_hex ?? ''
+    : defaultFilamentColour || editingFilament?.color_hex || '';
   const cardDiameter = cardFilament?.diameter ?? (showFilamentForm ? filamentDiameter : null);
   const cardDensity = cardFilament?.density ?? (showFilamentForm && filamentDensity !== '' ? filamentDensity : null);
   const cardNozzleHrc = cardFilament?.required_nozzle_hrc ?? (showFilamentForm ? filamentNozzleHrc : null);
@@ -2516,7 +2574,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               : officialContext
               ? (isEditingPreset ? t('presetModal.titleOfficialEdit') : t('presetModal.titleOfficialCreate'))
               : preset
-              ? (isDraft ? t('presetModal.titleDraft') : t('presetModal.titleEdit'))
+              ? (isCopyDraft
+                ? t('presetColorCopy.editorTitle')
+                : isDraft ? t('presetModal.titleDraft') : t('presetModal.titleEdit'))
               : t('presetModal.titleCreate')
             }
           </h2>
@@ -2558,7 +2618,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-          {isDraft && (
+          {isCopyDraft && (
+            <div className="rounded-xl border border-purple-400/25 bg-purple-500/10 p-4">
+              <div className="flex items-start gap-3">
+                <Palette className="mt-0.5 h-5 w-5 shrink-0 text-purple-200" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white">{t('presetColorCopy.draftTitle')}</p>
+                  <p className="mt-1 text-sm leading-5 text-gray-300">
+                    {t('presetColorCopy.draftDescription')}
+                  </p>
+                  <PresetOrigin sourceId={preset?.derived_from_preset_id} className="mt-2" />
+                </div>
+              </div>
+            </div>
+          )}
+          {isDraft && !isCopyDraft && (
             <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/10 p-4">
               <div className="flex items-start gap-3">
                 {draftAnalysisLoading ? (
@@ -2703,7 +2777,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.filament')}</label>
               <FilamentSummaryCard filament={editingFilament} />
+              <PresetOrigin sourceId={preset.derived_from_preset_id} className="mt-2" />
               <div className="mt-3 flex flex-wrap items-center gap-3">
+                {canOfferColorCopy && (
+                  <button
+                    type="button"
+                    onClick={() => setShowColorCopy(true)}
+                    className="flex items-center gap-1.5 text-sm text-purple-200 transition hover:text-white"
+                  >
+                    <Palette className="h-4 w-4" />
+                    {t('presetColorCopy.action')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -2848,8 +2933,23 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       >
                         {t('presetModal.filamentRelink.cancel')}
                       </button>
-                      {selectedFilamentId && selectedFilamentId !== preset?.filament_id && (
+                      {selectedFilamentId && selectedFilamentId !== preset?.filament_id && !relinkPicksColorVariant && (
                         <p className="text-xs text-gray-400">{t('presetModal.filamentRelink.saveHint')}</p>
+                      )}
+                    </div>
+                  )}
+                  {relinkPicksColorVariant && (
+                    <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-400/10 px-3 py-2">
+                      <p className="text-xs text-amber-100">{t('presetColorCopy.variantLocked')}</p>
+                      {canOfferColorCopy && (
+                        <button
+                          type="button"
+                          onClick={() => setShowColorCopy(true)}
+                          className="mt-2 flex items-center gap-1.5 text-sm text-purple-200 transition hover:text-white"
+                        >
+                          <Palette className="h-4 w-4" />
+                          {t('presetColorCopy.action')}
+                        </button>
                       )}
                     </div>
                   )}
@@ -3826,26 +3926,39 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
 
                     {/* Цвет по умолчанию - показываем только если редактируем существующий пресет и есть цвет в филаменте */}
-                    {preset && editingFilament && editingFilament.color_hex && (
+                    {preset && colourFilament && colourFilament.color_hex && (
                       <div>
                         <label className="block text-gray-300 mb-1 text-sm">{orcaText('default_filament_colour').label}</label>
                         <div className="flex items-center space-x-3">
                           <div
                             className="w-10 h-10 rounded-lg border-2 border-white/30 shadow-md flex-shrink-0"
-                            style={{ backgroundColor: defaultFilamentColour || editingFilament.color_hex || '#000000' }}
+                            style={{ backgroundColor: shownFilamentColour || '#000000' }}
                           />
                           <input
                             type="text"
-                            value={defaultFilamentColour || editingFilament.color_hex || ''}
+                            value={shownFilamentColour}
                             readOnly
                             disabled
-                            placeholder={editingFilament.color_hex || '#000000'}
+                            placeholder={colourFilament.color_hex || '#000000'}
                             className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-gray-400 text-sm cursor-not-allowed"
                           />
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
-                          {t('presetModal.usedFromFilament')}: {editingFilament.color_name || t('presetModal.noName')}
+                          {t('presetModal.usedFromFilament')}: {colourFilament.color_name || t('presetModal.noName')}
                         </p>
+                        {canOfferColorCopy && !isRelinkingFilament && (
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <p className="text-xs text-gray-400">{t('presetColorCopy.colorFromMaterial')}</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowColorCopy(true)}
+                              className="flex items-center gap-1.5 text-xs text-purple-200 transition hover:text-white"
+                            >
+                              <Palette className="h-3.5 w-3.5" />
+                              {t('presetColorCopy.action')}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -5669,6 +5782,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <span>
                       {materialOnly
                         ? t('createFilament.createTitle')
+                        : isCopyDraft
+                        ? t('presetColorCopy.publish')
                         : isDraft
                         ? t('presetModal.review.publish')
                         : preset
@@ -5689,6 +5804,19 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         onClose={() => setCorrectionRequestOpen(false)}
         onSent={() => toast.success(t('createFilament.commonEditRequestSent'), 6000)}
       />
+      {showColorCopy && preset && (
+        <PresetColorCopyDialog
+          source={preset}
+          currentColor={editingFilament ? colorLabel(editingFilament) : null}
+          initialSelectedId={relinkPicksColorVariant ? selectedFilamentId : null}
+          hasUnsavedChanges={formDirty}
+          onClose={() => setShowColorCopy(false)}
+          onCopied={(copy) => {
+            setShowColorCopy(false);
+            setColorCopy({ from: requestedPreset, copy });
+          }}
+        />
+      )}
       <ConfirmModal
         isOpen={showDiscardConfirm}
         onClose={() => setShowDiscardConfirm(false)}

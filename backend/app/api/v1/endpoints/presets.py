@@ -31,6 +31,8 @@ from app.core.errors import (
     ERR_OFFICIAL_VERIFIED_ONLY,
     ERR_ONLY_OWN_BRAND_OFFICIAL,
     ERR_PRESET_ALREADY_ACTIVE,
+    ERR_PRESET_COLOR_LOCKED,
+    ERR_PRESET_COPY_NOT_VARIANT,
     ERR_PRESET_FILAMENT_REQUIRED,
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
@@ -58,6 +60,7 @@ from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.preset import (
     OfficialPresetCreate,
     PresetActivateRequest,
+    PresetColorCopyRequest,
     PresetCreate,
     PresetDraftAnalysisResponse,
     PresetDraftMetricRequest,
@@ -166,6 +169,28 @@ async def _require_official_publication_authority(
             raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
         raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
     return organization_id
+
+
+async def _refuse_color_switch(
+    db: AsyncSession, preset: Preset, target: Filament | None
+) -> None:
+    """A preset other people use keeps its colour; the other colour gets a copy."""
+    if target is None:
+        return
+    from app.services.preset_copy import switches_locked_colour
+
+    if await switches_locked_colour(db, preset, target.id):
+        await db.rollback()
+        raise_error(409, ERR_PRESET_COLOR_LOCKED)
+
+
+async def _publish_site_copy(db: AsyncSession, preset: Preset) -> None:
+    """A copy made here is already reviewed: publish it as it is, into its author's slicer."""
+    from app.services.preset_publication import apply_managed_orca_identity, keep_in_synced_library
+
+    apply_managed_orca_identity(preset)
+    if preset.user_id is not None:
+        await keep_in_synced_library(db, user_id=preset.user_id, preset_id=preset.id)
 
 
 async def _finish_created_preset(
@@ -416,11 +441,15 @@ async def get_preset_draft_queue(
     limit: int = Query(100, ge=1, le=200),
 ) -> PresetDraftQueueResponse:
     """Return one compact, batch-computed review queue for the current user."""
+    from app.services.preset_copy import PRESET_SOURCE_COPY
+
     drafts = list(await db.scalars(
         select(Preset)
         .where(
             Preset.user_id == current_user.id,
             Preset.active.is_(False),
+            # A copy made here holds reviewed settings: nothing to recognise.
+            Preset.source.is_distinct_from(PRESET_SOURCE_COPY),
         )
         .order_by(Preset.updated_at.desc(), Preset.id.desc())
         .limit(limit)
@@ -756,6 +785,76 @@ async def create_official_preset(
     )
 
 
+@router.post("/{preset_id}/copies", response_model=PresetResponse, status_code=201)
+async def copy_preset_for_color(
+    preset_id: int,
+    data: PresetColorCopyRequest,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> PresetResponse:
+    """Make a private draft of a preset for another colour of its material.
+
+    The source preset and its versions stay as they are. Asking again for the
+    same colour of the same source version returns the draft already made.
+    """
+    from app.services import preset_version_service
+    from app.services.material_variants import is_color_variant
+    from app.services.preset_copy import build_color_copy, copy_access, find_unpublished_copy
+
+    # One person's repeated clicks are serialized; nobody else waits on them.
+    await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
+
+    source = await db.get(Preset, preset_id)
+    if source is None:
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+    source_filament = await db.get(Filament, source.filament_id) if source.filament_id else None
+    access = await copy_access(db, current_user, source, source_filament)
+    if access is None:
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+    if source_filament is None:
+        raise_error(400, ERR_PRESET_FILAMENT_REQUIRED)
+
+    target = await db.get(Filament, data.filament_id)
+    if target is None or not target.active:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    if not await is_color_variant(db, source_filament, target.id):
+        raise_error(422, ERR_PRESET_COPY_NOT_VARIANT)
+
+    source_version = await preset_version_service.get_latest_version(db, source.id)
+    source_version_id = source_version.id if source_version is not None else None
+    existing = await find_unpublished_copy(
+        db,
+        user_id=current_user.id,
+        source=source,
+        source_version_id=source_version_id,
+        target=target,
+    )
+    if existing is not None:
+        response.status_code = 200
+        return PresetResponse.model_validate(existing)
+
+    copy = await build_color_copy(
+        db,
+        user=current_user,
+        source=source,
+        source_filament=source_filament,
+        source_version_id=source_version_id,
+        target=target,
+        access=access,
+    )
+    created = await _finish_created_preset(
+        db=db,
+        current_user=current_user,
+        preset=copy,
+        printer_ids=[],
+    )
+    logger.info(
+        "Preset %s copied as draft %s for filament %s", source.id, created.id, target.id
+    )
+    return created
+
+
 @router.patch("/{preset_id}", response_model=PresetResponse)
 async def update_preset(
     preset_id: int,
@@ -839,12 +938,14 @@ async def update_preset(
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
-    relinking_published = (
-        preset.active
-        and preset.filament_id is not None
+    await _refuse_color_switch(db, preset, filament)
+
+    changing_filament = (
+        preset.filament_id is not None
         and filament is not None
         and filament.id != preset.filament_id
     )
+    relinking_published = preset.active and changing_filament
     if relinking_published and filament is not None:
         if preset.is_official:
             previous_filament = await db.get(Filament, preset.filament_id)
@@ -853,15 +954,16 @@ async def update_preset(
         if not await _lock_catalog_target(db, filament.id):
             raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
+    if changing_filament:
         # The exporter projects the target card's colour. Remove the old
         # Orca colour even if the new card has no representative HEX.
+        from app.services.preset_copy import COLOUR_KEYS
+
         settings = update_data.get("orcaslicer_settings", preset.orcaslicer_settings)
-        if isinstance(settings, dict):
-            color_keys = {"default_filament_colour", "filament_colour"}
-            if color_keys.intersection(settings):
-                update_data["orcaslicer_settings"] = {
-                    key: value for key, value in settings.items() if key not in color_keys
-                }
+        if isinstance(settings, dict) and COLOUR_KEYS.intersection(settings):
+            update_data["orcaslicer_settings"] = {
+                key: value for key, value in settings.items() if key not in COLOUR_KEYS
+            }
 
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь
@@ -908,7 +1010,12 @@ async def update_preset(
             preset.moderation_reason = None
 
     published_now = bool(was_draft and preset.active and preset.filament_id)
-    if published_now:
+    from app.services.preset_copy import is_site_copy
+
+    published_copy = published_now and is_site_copy(preset)
+    if published_copy:
+        await _publish_site_copy(db, preset)
+    elif published_now:
         from app.services.preset_publication import prepare_published_draft
 
         if target_filament_id is not None and _has_import_spool_link(preset.orcaslicer_settings):
@@ -926,7 +1033,8 @@ async def update_preset(
 
         apply_managed_orca_identity(preset)
 
-    if published_now:
+    if published_now and not published_copy:
+        # The funnel follows imported slicer drafts; a copy made here is not one.
         from app.services.preset_funnel_metrics import record_preset_funnel_event
 
         record_preset_funnel_event(db, "important_field_confirmed")
@@ -1059,6 +1167,7 @@ async def activate_preset(
 
     if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_PRESET_NOT_OWNER)
+    await _refuse_color_switch(db, preset, filament)
     if _has_import_spool_link(preset.orcaslicer_settings):
         await _lock_catalog_target(db, body.filament_id)
     stored_draft_settings = (
@@ -1085,7 +1194,11 @@ async def activate_preset(
         else None
     )
     preset.active = moderation_status != PresetModerationStatus.REJECTED
-    if preset.active:
+    from app.services.preset_copy import is_site_copy
+
+    if preset.active and is_site_copy(preset):
+        await _publish_site_copy(db, preset)
+    elif preset.active:
         from app.services.preset_publication import prepare_published_draft
 
         await prepare_published_draft(
@@ -1172,6 +1285,12 @@ async def export_preset_json(
                     params={"version_id": version_id},
                 )
 
+    # A pinned version keeps the material it was saved for, even after the
+    # preset has moved to another one.
+    from app.services.preset_version_service import version_material
+
+    material = await version_material(db, preset, selected_version)
+
     structured_override = (
         selected_version.snapshot_structured if selected_version is not None else None
     )
@@ -1190,7 +1309,7 @@ async def export_preset_json(
     missing_fields = []
     if not export_name:
         missing_fields.append("name")
-    if not preset.filament.material_type:
+    if not material.material_type:
         missing_fields.append("filament.material_type")
     if export_extruder_temp is None:
         missing_fields.append("nozzle_temperature")
@@ -1244,12 +1363,12 @@ async def export_preset_json(
 
         profile_dict = await preset_to_orcaslicer_json(
             preset,
-            preset.filament,
+            material,
             target_profiles=target_profiles,
             settings_override=settings_override,
             structured_override=structured_override,
             filament_cost_per_kg=await latest_price_per_kg(
-                db, current_user.id, preset.filament.id
+                db, current_user.id, material.id
             ),
         )
     except Exception as e:
@@ -1258,7 +1377,7 @@ async def export_preset_json(
 
     # Возвращаем JSON файл
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
-    brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
+    brand_name = material.brand.name if material.brand else "Generic"
 
     # Формируем имя файла: используем имя пресета (OrcaSlicer поддерживает кириллицу, пробелы, спецсимволы)
     # Примеры из OrcaSlicer: "TEST-2 ABS.json", "ABS @FilamentHub2.json", "ABS HTP.json"
@@ -1269,8 +1388,8 @@ async def export_preset_json(
         filename_parts = []
         if brand_name:
             filename_parts.append(safe_download_stem(brand_name, "Generic"))
-        if preset.filament.material_type:
-            filename_parts.append(safe_download_stem(preset.filament.material_type, "material"))
+        if material.material_type:
+            filename_parts.append(safe_download_stem(material.material_type, "material"))
 
         if filename_parts:
             filename = " ".join(filename_parts) + ".json"

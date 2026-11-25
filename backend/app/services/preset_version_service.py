@@ -149,24 +149,29 @@ async def record_version(
     commit — the caller's transaction owns the commit.
 
     Behaviour:
-      * dedup  — identical content_hash to latest -> return None
-      * squash — same user, both orca_sync, latest unlabeled and within the
-                 squash window -> update latest in place
+      * dedup  — identical content_hash and material to latest -> return None
+      * squash — same user, both orca_sync, same material, latest unlabeled
+                 and within the squash window -> update latest in place
       * else   — create a new version
+
+    A version belongs to one material: a material change is never folded
+    into the previous version, so people pinned to it keep what they had.
     """
     await _lock_preset(db, preset.id)
 
     structured = _snapshot_structured(preset)
     new_hash = _canonical_hash(structured, preset.orcaslicer_settings)
     latest = await get_latest_version(db, preset.id)
+    same_material = latest is not None and latest.filament_id == preset.filament_id
 
     # 1. Dedup — nothing actually changed.
-    if latest is not None and latest.content_hash == new_hash:
+    if latest is not None and same_material and latest.content_hash == new_hash:
         return None
 
     # 2. Squash — fold consecutive orca_sync edits by the same user.
     if (
         latest is not None
+        and same_material
         and source == PresetVersionSource.ORCA_SYNC
         and latest.change_source == PresetVersionSource.ORCA_SYNC
         and latest.created_by_user_id == user_id
@@ -203,6 +208,7 @@ async def record_version(
     version = PresetVersion(
         preset_id=preset.id,
         version_number=next_number,
+        filament_id=preset.filament_id,
         snapshot_orcaslicer_settings=(
             dict(preset.orcaslicer_settings) if preset.orcaslicer_settings else None
         ),
@@ -275,6 +281,30 @@ async def get_version(
     return result.scalar_one_or_none()
 
 
+async def version_material(
+    db: AsyncSession, preset: Preset, version: PresetVersion | None
+):
+    """The material a version was saved for, with its brand loaded.
+
+    Falls back to the preset's current material when the version has none
+    recorded or that material has left the catalogue.
+    """
+    if version is None or version.filament_id in (None, preset.filament_id):
+        return preset.filament
+    from sqlalchemy.orm import selectinload
+
+    from app.models.filament import Filament
+
+    material = (
+        await db.execute(
+            select(Filament)
+            .options(selectinload(Filament.brand))
+            .where(Filament.id == version.filament_id)
+        )
+    ).scalar_one_or_none()
+    return material if material is not None else preset.filament
+
+
 async def set_label(
     db: AsyncSession,
     version: PresetVersion,
@@ -296,11 +326,19 @@ async def restore_version(
 ) -> PresetVersion:
     """Apply a version's snapshot to the preset and record a new version.
 
-    Restores print settings only; metrics, moderation, and ownership are left
-    untouched. Does NOT commit. The caller is responsible for triggering any
-    downstream re-sync.
+    Restores print settings and the material they were saved for; metrics,
+    moderation, and ownership are left untouched. A material that has left
+    the catalogue since stays replaced. Does NOT commit. The caller is
+    responsible for triggering any downstream re-sync.
     """
     await _lock_preset(db, preset.id)
+
+    if version.filament_id is not None and version.filament_id != preset.filament_id:
+        from app.models.filament import Filament
+
+        material = await db.get(Filament, version.filament_id)
+        if material is not None and material.active:
+            preset.filament_id = material.id
 
     # Restore the full orcaslicer_settings blob.
     preset.orcaslicer_settings = (

@@ -1,10 +1,10 @@
 /** Модальное окно для просмотра пресета (только чтение) */
 
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, History } from 'lucide-react';
+import { X, History, Palette } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { filamentsAPI } from '../api/client';
+import { filamentsAPI, presetsAPI } from '../api/client';
 import type { Preset, Filament } from '../types/api';
 import { SETTING_MODES } from '../data/orcaFieldModes';
 import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
@@ -14,7 +14,15 @@ import { FilamentSummaryCard } from './FilamentSummaryCard';
 import { OrcaSchemaSettingsView } from './OrcaSchemaSettingsView';
 import { PresetTestedOn } from './PresetTestedOn';
 import { PresetHistoryModal } from './presetVersions/PresetHistoryModal';
+import { PresetColorCopyDialog } from './PresetColorCopyDialog';
+import { PresetOrigin } from './PresetOrigin';
 import { useAuth } from '../contexts/AuthContext';
+import { canCopyForColor, colorLabel } from '../utils/presetColorCopy';
+
+// The editor is heavy; load it only when a copy is opened from here.
+const CreatePresetModal = lazy(() =>
+  import('./CreatePresetModal').then((module) => ({ default: module.CreatePresetModal })),
+);
 
 interface ViewFieldProps {
   label: string;
@@ -41,11 +49,23 @@ interface ViewPresetModalProps {
 export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
   isOpen,
   onClose,
-  preset,
+  preset: requestedPreset,
 }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
+  // The window opens with the row it was given. A restore in the history can
+  // move the preset to another material, so it is read again after one.
+  const { data: storedPreset } = useQuery<Preset>({
+    queryKey: ['preset', requestedPreset?.id, requestedPreset?.updated_at],
+    queryFn: () => presetsAPI.get(requestedPreset!.id),
+    enabled: isOpen && !!requestedPreset,
+    initialData: requestedPreset ?? undefined,
+    staleTime: Infinity,
+  });
+  const preset = requestedPreset && storedPreset?.id === requestedPreset.id ? storedPreset : requestedPreset;
   const [showHistory, setShowHistory] = useState(false);
+  const [showColorCopy, setShowColorCopy] = useState(false);
+  const [copyToEdit, setCopyToEdit] = useState<Preset | null>(null);
   const [settingMode, setSettingMode] = useStoredUiChoice(
     'presetView.settingMode',
     user?.id,
@@ -73,14 +93,29 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
 
   if (!isOpen || !preset) return null;
 
+  const close = () => {
+    setShowColorCopy(false);
+    setCopyToEdit(null);
+    onClose();
+  };
+
+  // A fresh copy opens in the editor straight away: it is the author's draft.
+  if (copyToEdit) {
+    return (
+      <Suspense fallback={null}>
+        <CreatePresetModal isOpen preset={copyToEdit} onClose={close} />
+      </Suspense>
+    );
+  }
+
   return (
-    <ModalOverlay onClose={onClose} className="!bg-black/60">
+    <ModalOverlay onClose={close} className="!bg-black/60">
       <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">{t('viewPreset.title')}</h2>
           <button
-            onClick={onClose}
+            onClick={close}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-white" />
@@ -97,6 +132,7 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
                 {preset.description && (
                   <p className="text-gray-300">{preset.description}</p>
                 )}
+                <PresetOrigin sourceId={preset.derived_from_preset_id} />
                 <PresetTestedOn printers={preset.printers} />
               </div>
             </div>
@@ -149,14 +185,38 @@ export const ViewPresetModal: React.FC<ViewPresetModalProps> = ({
           ) : (
             <span />
           )}
-          <button
-            onClick={onClose}
-            className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
-          >
-            {t('viewPreset.close')}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {canCopyForColor(preset, user?.id) && (
+              <button
+                type="button"
+                onClick={() => setShowColorCopy(true)}
+                className="flex items-center gap-2 px-4 py-3 text-sm text-purple-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+              >
+                <Palette className="w-4 h-4" />
+                {t('presetColorCopy.action')}
+              </button>
+            )}
+            <button
+              onClick={close}
+              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+            >
+              {t('viewPreset.close')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {showColorCopy && (
+        <PresetColorCopyDialog
+          source={preset}
+          currentColor={editingFilament ? colorLabel(editingFilament) : null}
+          onClose={() => setShowColorCopy(false)}
+          onCopied={(copy) => {
+            setShowColorCopy(false);
+            setCopyToEdit(copy);
+          }}
+        />
+      )}
 
       {showHistory && preset?.id && (
         <PresetHistoryModal

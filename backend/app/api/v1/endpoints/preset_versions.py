@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.core.errors import (
+    ERR_PRESET_COLOR_LOCKED,
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_VERSION_FORBIDDEN,
     ERR_PRESET_VERSION_NOT_FOUND,
@@ -27,6 +28,7 @@ from app.models.preset_version import PresetVersion
 from app.models.user import User
 from app.schemas.preset_version import (
     PresetVersionDetail,
+    PresetVersionDiffMaterial,
     PresetVersionDiffResponse,
     PresetVersionLabelUpdate,
     PresetVersionListItem,
@@ -248,7 +250,35 @@ async def diff_preset_versions(
                 version_b.snapshot_orcaslicer_settings
             ),
         )
+    if version_a.filament_id != version_b.filament_id:
+        diff["material"] = PresetVersionDiffMaterial(
+            old=await _material_label(db, version_a.filament_id),
+            new=await _material_label(db, version_b.filament_id),
+        )
     return PresetVersionDiffResponse(**diff)
+
+
+async def _material_label(db: AsyncSession, filament_id: int | None) -> str | None:
+    """Brand, product and colour of a material, as people pick it in the catalogue."""
+    if filament_id is None:
+        return None
+    from app.models.filament import Filament
+
+    material = (
+        await db.execute(
+            select(Filament)
+            .options(selectinload(Filament.brand))
+            .where(Filament.id == filament_id)
+        )
+    ).scalar_one_or_none()
+    if material is None:
+        return None
+    parts = (
+        material.brand.name if material.brand else None,
+        material.name,
+        material.color_name or material.color_hex,
+    )
+    return " ".join(part.strip() for part in parts if part and part.strip()) or None
 
 
 @router.patch("/{preset_id}/versions/{version_id}", response_model=PresetVersionListItem)
@@ -297,6 +327,14 @@ async def restore_preset_version(
     version = await preset_version_service.get_version(db, preset_id, version_id)
     if version is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_VERSION_NOT_FOUND, params={"version_id": version_id})
+
+    # Restoring brings back the version's material. Another colour of a
+    # preset people use gets a copy instead, as in the editor.
+    if version.filament_id is not None:
+        from app.services.preset_copy import switches_locked_colour
+
+        if await switches_locked_colour(db, preset, version.filament_id):
+            raise_error(status.HTTP_409_CONFLICT, ERR_PRESET_COLOR_LOCKED)
 
     new_version = await preset_version_service.restore_version(
         db, preset, version, user_id=current_user.id

@@ -55,7 +55,7 @@ _PRIVATE_KEY_PARTS = frozenset(
     }
 )
 
-_MANAGED_IDENTITY_KEYS = frozenset(
+MANAGED_IDENTITY_KEYS = frozenset(
     {
         "bundle_id",
         "fhub_draft_id",
@@ -74,7 +74,7 @@ _PUBLIC_ORCA_KEYS = (
 
 def _is_private_import_key(key: str) -> bool:
     normalized = key.strip().casefold()
-    if normalized in _PRIVATE_EXACT_KEYS or normalized in _MANAGED_IDENTITY_KEYS:
+    if normalized in _PRIVATE_EXACT_KEYS or normalized in MANAGED_IDENTITY_KEYS:
         return True
     # Imported scripts and notes may contain workstation paths, account names,
     # private macros or network credentials. They remain in import_evidence but
@@ -126,6 +126,22 @@ def apply_managed_orca_identity(preset: Preset) -> None:
     preset.orcaslicer_settings = settings
 
 
+async def keep_in_synced_library(db: AsyncSession, *, user_id: int, preset_id: int) -> None:
+    """A freshly published preset goes to its author's slicer."""
+    from app.models.user_saved_preset import UserSavedPreset
+
+    saved = await db.scalar(
+        select(UserSavedPreset).where(
+            UserSavedPreset.user_id == user_id,
+            UserSavedPreset.preset_id == preset_id,
+        )
+    )
+    if saved is None:
+        db.add(UserSavedPreset(user_id=user_id, preset_id=preset_id, sync=True))
+    else:
+        saved.sync = True
+
+
 def apply_public_orca_identity(preset: Preset) -> None:
     """Project one reviewed draft and attach only FilamentHub-managed identity."""
     preset.orcaslicer_settings = public_orca_settings(preset.orcaslicer_settings)
@@ -171,19 +187,7 @@ async def prepare_published_draft(
         evidence["promotion_identity"] = promotion_identity
         preset.import_evidence = evidence
     apply_public_orca_identity(preset)
-
-    from app.models.user_saved_preset import UserSavedPreset
-
-    saved = await db.scalar(
-        select(UserSavedPreset).where(
-            UserSavedPreset.user_id == user_id,
-            UserSavedPreset.preset_id == preset.id,
-        )
-    )
-    if saved is None:
-        db.add(UserSavedPreset(user_id=user_id, preset_id=preset.id, sync=True))
-    else:
-        saved.sync = True
+    await keep_in_synced_library(db, user_id=user_id, preset_id=preset.id)
 
     from app.services.preset_funnel_metrics import record_preset_funnel_event
 

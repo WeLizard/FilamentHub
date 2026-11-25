@@ -4871,7 +4871,7 @@ const PresetCard: React.FC<PresetCardProps> = ({
   }
 
   return (
-      <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div className="@container glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
         <div className="flex items-start justify-between mb-4 gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center flex-wrap gap-2 mb-1">
@@ -5004,7 +5004,8 @@ const PresetCard: React.FC<PresetCardProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
+      {/* Columns follow the card's own width: a card in the grid view is narrow even on a wide screen. */}
+      <div className="grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 gap-4 mb-4 text-sm">
         <div className="flex items-start space-x-2 min-w-0">
           <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           <span className="text-gray-300 leading-tight break-words">

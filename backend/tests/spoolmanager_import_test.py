@@ -447,10 +447,12 @@ async def test_resolving_import_draft_links_the_spool_but_later_preset_relink_do
         "default_filament_colour": ["#FF0000"],
         "filament_flow_ratio": ["1.04"],
     }
+    # A relink moves the preset to another material; another colour of the
+    # same material would need a copy instead.
     replacement = Filament(
         brand_id=brand.id,
-        name="Resolved PETG",
-        slug="resolved-brand-resolved-petg-natural",
+        name="Other PETG",
+        slug="resolved-brand-other-petg-natural",
         material_type="PETG",
         color_name="Natural",
         active=False,

@@ -60,6 +60,7 @@ from app.schemas.filament import (
     KNOWN_PROPERTY_CLAIMS,
     CatalogBrandFamily,
     CatalogBrandGroup,
+    FilamentColorVariant,
     FilamentCommonEditRequest,
     FilamentCommonEditRequestResponse,
     FilamentCreate,
@@ -1021,6 +1022,21 @@ async def get_filament(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
     return await _serialize_filament_detail(db, filament, country)
+
+
+@router.get("/{filament_id}/color-variants", response_model=list[FilamentColorVariant])
+async def list_filament_color_variants(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[FilamentColorVariant]:
+    """Other colours of the same material, for a preset copy or a spool choice."""
+    from app.services.material_variants import list_color_variants
+
+    filament = await db.get(Filament, filament_id)
+    if filament is None:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    variants = await list_color_variants(db, filament)
+    return [FilamentColorVariant.model_validate(variant) for variant in variants]
 
 
 @router.get("/{filament_id}/presets")

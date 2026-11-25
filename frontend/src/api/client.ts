@@ -5,6 +5,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
+import type { FilamentColorVariant } from '../types/api';
 import type { CatalogCurationInput, CatalogCurationList, CatalogQuoteCheckReport, CatalogCurationPreview, CatalogCurationProposal, CatalogCurationServiceAccount, CatalogCurationServiceAccountCreated, CatalogCurationServiceAccountList } from '../types/api';
 import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandDuplicatePair, BrandMergePreview, BrandRatingStats, FilamentMergeCandidatesResponse, FilamentDuplicateReviewList, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPackaging, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationFeedResponse, NotificationListResponse, DeletedPresetDecisionFeedResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaSliceReportAccepted, OrcaSliceReportInput, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
@@ -1268,6 +1269,11 @@ export const filamentsAPI = {
     return response.data;
   },
 
+  colorVariants: async (id: number) => {
+    const response = await api.get<FilamentColorVariant[]>(`/filaments/${id}/color-variants`);
+    return response.data;
+  },
+
   getBySlug: async (brandSlug: string, filamentSlug: string, country?: string) => {
     const response = await api.get<Filament>(
       `/filaments/by-slug/${encodeURIComponent(brandSlug)}/${encodeURIComponent(filamentSlug)}`,
@@ -1891,6 +1897,13 @@ export const presetsAPI = {
     return response.data;
   },
 
+  /** A private draft with the same settings for another colour of the material. */
+  copyForColor: async (id: number, filament_id: number) => {
+    const response = await api.post<Preset>(`/presets/${id}/copies`, { filament_id });
+    // 200 means the same copy was asked for before and is returned again.
+    return { preset: response.data, created: response.status === 201 };
+  },
+
   exportOrcaSlicer: async (id: number): Promise<{ data: unknown; contentDisposition?: string }> => {
     const response = await api.get<unknown>(`/presets/${id}/export/orcaslicer.json`, {
       responseType: 'json',
@@ -1998,6 +2011,8 @@ export type PresetVersionDiff = {
   to_version: number;
   changes: PresetVersionDiffChange[];
   unmapped_changes: PresetVersionDiffUnmapped[];
+  /** Present when the two versions were saved for different materials. */
+  material?: { old: string | null; new: string | null } | null;
 };
 
 export const presetVersionsAPI = {

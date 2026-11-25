@@ -6265,6 +6265,33 @@
     "materialsSearchEmptyHint": "Change the query or clear the search.",
     "loadMoreMaterials": "Show more"
   },
+  "presetColorCopy": {
+    "publish": "Publish copy",
+    "published": "The copy is published. It reaches your slicer at the next sync.",
+    "editorTitle": "Preset copy",
+    "action": "Copy for another color",
+    "title": "Copy for another color",
+    "description": "The settings of “{{name}}” go into a new private draft for the color you choose. This preset stays as it is.",
+    "currentColor": "Current: {{color}}",
+    "searchPlaceholder": "Find a color",
+    "loading": "Loading colors…",
+    "empty": "The catalog has no other colors of this material.",
+    "noMatch": "No matching color.",
+    "loadError": "Could not load the colors.",
+    "unsavedChanges": "Unsaved edits are not copied: the copy takes the saved settings.",
+    "create": "Create copy",
+    "cancel": "Cancel",
+    "created": "Copy created. Check the settings and publish it when it is ready.",
+    "existing": "This copy already exists. Opening it.",
+    "draftTitle": "Private copy",
+    "draftDescription": "Only you can see it, and it reaches your slicer after you publish it. The color comes from the material; the other settings come from the source preset.",
+    "variantLocked": "This is another color of the same material. A published preset keeps its color, so make a copy for the other one.",
+    "colorFromMaterial": "The material sets the color. For another color, make a copy of the preset."
+  },
+  "presetOrigin": {
+    "basedOn": "Based on “{{name}}”",
+    "basedOnUnavailable": "Based on another preset"
+  },
   "viewPreset": {
     "yes": "Yes",
     "no": "No",
@@ -7514,7 +7541,8 @@
       "isCurrent": "This is the current version.",
       "comparing": "Changes from v{{from}} to v{{to}}",
       "noChanges": "No differences.",
-      "technicalFields": "Technical fields ({{count}})"
+      "technicalFields": "Technical fields ({{count}})",
+      "material": "Material"
     },
     "source": {
       "web_edit": "Web edit",
@@ -8484,6 +8512,8 @@
     "ERR_BRAND_NOT_FOUND": "Brand not found",
     "ERR_PRESET_NOT_FOUND": "Preset not found",
     "ERR_PRESET_RELINK_REJECTED": "The preset settings did not pass validation for the selected material. The previous material is still linked.",
+    "ERR_PRESET_COLOR_LOCKED": "This preset keeps its color: it is published or already in use. Make a copy for another color.",
+    "ERR_PRESET_COPY_NOT_VARIANT": "A copy can only be made for another color of the same material.",
     "ERR_FILAMENT_IMPORT_TITLE_FOR_CATALOG": "This is a PipSpool spool name. Choose an existing material or enter the name from the label.",
     "ERR_PRESET_FILAMENT_REQUIRED": "Link the preset to a filament before publishing it",
     "ERR_FILAMENT_NOT_FOUND": "Filament not found",

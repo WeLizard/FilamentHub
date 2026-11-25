@@ -105,6 +105,7 @@ FILAMENT_REFERENCES = frozenset(
         "filament_reviews.filament_id",
         "filament_slug_redirects.filament_id",
         "presets.filament_id",
+        "preset_versions.filament_id",
         "print_profile_filaments.filament_id",
         "qr_manufacturer_batch_items.filament_id",
         "qr_manufacturer_instance_states.filament_id",
@@ -462,6 +463,7 @@ async def merge_filaments(
 
     for model in (
         Preset,
+        PresetVersion,
         FilamentReview,
         UserSpool,
         QrUserSpoolBinding,

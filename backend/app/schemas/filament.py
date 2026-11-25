@@ -657,6 +657,17 @@ class FilamentPresetSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FilamentColorVariant(BaseModel):
+    """Another colour of the same catalogue material."""
+
+    id: int
+    name: str
+    color_name: str | None = None
+    color_hex: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class FilamentAdditionalProperty(BaseModel):
     """A reviewed manufacturer fact that has no dedicated catalog field."""
 

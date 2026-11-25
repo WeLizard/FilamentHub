@@ -31,6 +31,7 @@ from app.models import (
     Printer,
 )
 from app.models.preset import PUBLIC_PRESET_STATUSES, PresetModerationStatus
+from app.models.preset_version import PresetVersionSource
 from app.schemas.catalog_import import CatalogImportDraft, CatalogImportPlanRow
 from app.schemas.country_cell import BrandCountryCellBase, FilamentCountryCellBase
 from app.schemas.filament import (
@@ -40,6 +41,7 @@ from app.schemas.filament import (
     main_packaging_values,
 )
 from app.schemas.preset import PresetBase
+from app.services import preset_version_service
 from app.services.brand_slug_service import canonicalize_brand_slug, suggest_brand_slug
 from app.services.catalog_color_groups import classify_color_group
 from app.services.catalog_url_service import choose_filament_slug
@@ -1535,6 +1537,15 @@ async def apply_plan(
                         **link,
                     )
                 )
+        # Imported settings and material reach people who saved the preset as
+        # a new version, like any other edit.
+        await db.flush()
+        await preset_version_service.record_version(
+            db,
+            preset,
+            source=PresetVersionSource.ADMIN,
+            user_id=admin_user_id,
+        )
     await db.flush()
     batch.plan_snapshot = {
         "rows": [

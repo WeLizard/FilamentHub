@@ -128,6 +128,14 @@ export interface FilamentPresetSummary {
   preset_type: 'official' | 'weighted' | 'community';
 }
 
+/** Another colour of the same catalogue material. */
+export interface FilamentColorVariant {
+  id: number;
+  name: string;
+  color_name: string | null;
+  color_hex: string | null;
+}
+
 export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued' | 'coming_soon';
 export type FilamentColorGroup =
   | 'black'
@@ -641,6 +649,7 @@ export interface Preset {
   organization_id?: number | null;
   created_by_user_id?: number | null;
   derived_from_preset_id?: number | null;
+  derived_from_version_id?: number | null;
   printers?: Printer[]; // Tested-on evidence for discovery and recommendations, not hard compatibility.
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
 }

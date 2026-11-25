@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
 import { formatDateTime } from '../../utils/formatDate';
+import { apiErrorDetail } from '../../utils/apiErrorDetail';
 import { translateApiError } from '../../utils/translateApiError';
 import {
   presetVersionsAPI,
@@ -54,7 +55,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
     queryFn: () => presetVersionsAPI.list(presetId, { labeled_only: labeledOnly, limit: 100 }),
   });
 
-  const versions = versionsQuery.data?.items ?? [];
+  const versions = useMemo(() => versionsQuery.data?.items ?? [], [versionsQuery.data]);
   const savedPresetsQuery = useQuery({
     queryKey: ['saved-presets', user?.id],
     queryFn: ({ signal }) => savedPresetsAPI.list(signal),
@@ -95,13 +96,15 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
     onSuccess: () => {
       toast.success(t('presetVersions.restore.success'));
       queryClient.invalidateQueries({ queryKey: ['preset-versions', presetId] });
+      // The restore moves the author's own installation to the new version.
+      queryClient.invalidateQueries({ queryKey: ['saved-presets', user?.id] });
       queryClient.invalidateQueries({ queryKey: ['presets'] });
       queryClient.invalidateQueries({ queryKey: ['preset', presetId] });
       setConfirmRestore(false);
       setSelectedId(null);
     },
-    onError: (err: any) => {
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    onError: (err: unknown) => {
+      toast.error(translateApiError(t, apiErrorDetail(err), t('common.error')));
       setConfirmRestore(false);
     },
   });
@@ -114,8 +117,8 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
       queryClient.invalidateQueries({ queryKey: ['preset-versions', presetId] });
       setEditingLabel(false);
     },
-    onError: (err: any) => {
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    onError: (err: unknown) => {
+      toast.error(translateApiError(t, apiErrorDetail(err), t('common.error')));
     },
   });
 
@@ -134,8 +137,8 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
             }),
       );
     },
-    onError: (err: any) => {
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    onError: (err: unknown) => {
+      toast.error(translateApiError(t, apiErrorDetail(err), t('common.error')));
     },
   });
 
@@ -346,9 +349,24 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                 {diffQuery.data && (
                   <div className="space-y-1.5">
                     {diffQuery.data.changes.length === 0 &&
-                      diffQuery.data.unmapped_changes.length === 0 && (
+                      diffQuery.data.unmapped_changes.length === 0 &&
+                      !diffQuery.data.material && (
                         <div className="text-gray-500 text-sm">{t('presetVersions.diff.noChanges')}</div>
                       )}
+
+                    {diffQuery.data.material && (
+                      <div className="flex min-w-0 flex-wrap items-baseline gap-2 text-sm">
+                        <span className="w-full min-w-0 break-words text-gray-300 md:w-[11.25rem] md:shrink-0">
+                          {t('presetVersions.diff.material')}
+                        </span>
+                        {/* Material names are long: both stay in the value column when they wrap. */}
+                        <span className="min-w-0 flex-1 break-words">
+                          <span className="text-red-400 line-through">{diffQuery.data.material.old ?? '—'}</span>
+                          <span className="text-gray-500"> → </span>
+                          <span className="text-emerald-400">{diffQuery.data.material.new ?? '—'}</span>
+                        </span>
+                      </div>
+                    )}
 
                     {diffQuery.data.changes.map((c) => (
                       <div key={c.key} className="flex min-w-0 flex-wrap items-baseline gap-2 text-sm">
