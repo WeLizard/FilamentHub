@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     catalog_curation,
     catalog_master_import,
     catalog_urls,
+    client_errors,
     country_cells,
     crm,
     currencies,
@@ -122,6 +123,7 @@ api_router.include_router(stock_alerts.router)
 api_router.include_router(subscription.router)
 api_router.include_router(spool_tags.router)
 api_router.include_router(feedback.router)
+api_router.include_router(client_errors.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)
 api_router.include_router(wiki_authoring.router)

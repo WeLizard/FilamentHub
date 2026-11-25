@@ -5672,4 +5672,19 @@ export const printerBridgeAPI = {
   },
 };
 
+export interface ClientErrorReport {
+  message: string;
+  stack: string;
+  component_stack: string;
+  path: string;
+  build: string;
+}
+
+export const clientErrorsAPI = {
+  /** Tell the server that a page failed to render in this browser. */
+  report: async (report: ClientErrorReport): Promise<void> => {
+    await api.post('/client-errors', report);
+  },
+};
+
 export default api;

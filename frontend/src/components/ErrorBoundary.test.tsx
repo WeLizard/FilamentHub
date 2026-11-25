@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ErrorBoundary } from './ErrorBoundary';
 
+const report = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock('../api/client', () => ({ clientErrorsAPI: { report } }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -49,6 +52,10 @@ describe('ErrorBoundary', () => {
       '/ru/',
     );
     expect(consoleError).toHaveBeenCalled();
+    // The cause must leave the browser: the reader sees only this screen.
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'render failed', path: window.location.pathname }),
+    );
   });
 
   it('catches a rejected lazy import', async () => {
