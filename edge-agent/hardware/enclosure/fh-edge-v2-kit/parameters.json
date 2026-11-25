@@ -52,30 +52,52 @@
   ],
   "pn_hole_locations": "Not used; actual hole pattern is not corner rectangle",
   "pn_component_model": "Envelope only; thickness and connector height require physical confirmation",
-  "esp_press_centres_and_sizes": [
+  "screw_centres": [
     [
-      -45.1024,
-      22.3283,
-      1.0,
-      0.8
+      -50.0,
+      -17.0
     ],
     [
-      -30.1024,
-      22.3283,
-      1.0,
-      0.8
+      -50.0,
+      17.0
     ],
     [
-      -45.3824,
-      0.7783,
-      1.2,
-      1.2
+      50.0,
+      -17.0
     ],
     [
-      -29.8324,
-      0.7783,
-      1.2,
-      1.2
+      50.0,
+      17.0
     ]
-  ]
+  ],
+  "esp_stops_x0_x1_y0_y1": {
+    "usb_wall_steps": [
+      [
+        -46.9,
+        -44.65,
+        21.9,
+        23.5
+      ],
+      [
+        -32.4,
+        -28.3,
+        21.9,
+        23.5
+      ]
+    ],
+    "antenna_end_ribs": [
+      [
+        -46.3,
+        -41.2,
+        0.1783,
+        1.3783
+      ],
+      [
+        -34.0,
+        -28.9,
+        0.1783,
+        1.3783
+      ]
+    ]
+  }
 }

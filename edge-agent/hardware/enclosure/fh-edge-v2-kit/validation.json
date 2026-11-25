@@ -3,12 +3,12 @@
     "shell": {
       "valid": true,
       "solids": 1,
-      "volume_mm3": 18231.919456507792
+      "volume_mm3": 18313.947917449917
     },
     "base": {
       "valid": true,
       "solids": 1,
-      "volume_mm3": 10359.78888008924
+      "volume_mm3": 10340.604880089282
     },
     "ESP": {
       "valid": true,
@@ -57,13 +57,13 @@
   },
   "stl": {
     "fh-edge-kit-base.stl": {
-      "triangles": 8892,
-      "vertices": 4440,
+      "triangles": 8876,
+      "vertices": 4432,
       "connected_components": 1,
       "nonmanifold_edges": 0,
       "degenerate_triangles": 0,
       "inconsistent_directed_edges": 0,
-      "signed_volume_mm3": 10359.811069817419,
+      "signed_volume_mm3": 10340.627108546947,
       "bounds_mm": [
         [
           -55.75,
@@ -141,13 +141,13 @@
       ]
     },
     "fh-edge-kit-shell.stl": {
-      "triangles": 18642,
-      "vertices": 9309,
+      "triangles": 19032,
+      "vertices": 9512,
       "connected_components": 1,
       "nonmanifold_edges": 0,
       "degenerate_triangles": 0,
       "inconsistent_directed_edges": 0,
-      "signed_volume_mm3": 18230.733800264963,
+      "signed_volume_mm3": 18312.740427770117,
       "bounds_mm": [
         [
           -58.0,

@@ -50,6 +50,13 @@ MARK_X,MARK_Y=23.4,0.0 # over the reader's antenna
 PRINT_LID_Y=58.0
 PRINT_PIPE_Y=-34.0
 PRINT_PIPES=(('PWR',-6.0),('IO8',6.0))
+# The screws sit on the centre of the corner rounding, so the counterbore, the
+# lid's corner, its pocket and the outside corner are all concentric. The
+# supplied parts had them 1.75 mm further out on both axes.
+CORNER=(50.0,17.0)
+OLD_SCREW=(51.75,18.75)
+BOSS_R=3.15 # 0.25 mm off the ESP's edge: this boss is also its side guide
+CORNERS=[(sx,sy) for sx in (-1,1) for sy in (-1,1)]
 
 def brand_mark(z0,z1):
     """The official mark as solids over the antenna, scaled as a whole, proportions untouched."""
@@ -92,6 +99,17 @@ def main():
     shell=shell.cut(box(-48.5,-27.3,-2.5,22.75,3.8,14.0))
     # Remove every old electronics post; leave the original 2-mm base intact.
     base=base.cut(box(-49,45,-20,20,2.0,13.0))
+    # Move the four screws onto the corner centres: bosses in the shell,
+    # holes and counterbores in the lid.
+    for sx,sy in CORNERS:
+        ox,oy=sx*OLD_SCREW[0],sy*OLD_SCREW[1]
+        x,y=sx*CORNER[0],sy*CORNER[1]
+        shell=shell.cut(cyl(3.3,2.,14.,ox,oy)).fuse(cyl(BOSS_R,2.,14.,x,y)).cut(cyl(1.05,1.9,11.,x,y))
+        base=base.fuse(cyl(2.6,0.,2.,ox,oy))
+    base=base.clean()
+    for sx,sy in CORNERS:
+        x,y=sx*CORNER[0],sy*CORNER[1]
+        base=base.cut(cyl(2.6,-.1,1.2,x,y)).cut(cyl(1.45,1.1,2.1,x,y))
     # Restore the old port from a clean outer wall with the original chamfer.
     outer=rr(116,50,8,0,15.2)
     outer=cq.Workplane(obj=outer).faces('>Z').edges().chamfer(1.2).val()
@@ -127,19 +145,22 @@ def main():
         for y in (5.8,17.0):
             base=base.fuse(rr(2.4,3.4,.35,2.,5.,x,y))
     # Lateral guidance remains below the component face; no snap on the PCB.
-    for x0,x1 in ((-48.05,-46.851),(-28.349,-27.15)):
-        for y0,y1 in ((5.0,9.0),(16.0,20.0)):
-            base=base.fuse(box(x0,x1,y0,y1,2.,6.0))
+    # The shell's screw boss guides the fourth place, by the USB wall.
+    for x0,x1,y0,y1 in ((-48.05,-46.851,5.,9.),(-28.349,-27.15,5.,9.),(-28.349,-27.15,16.,20.)):
+        base=base.fuse(box(x0,x1,y0,y1,2.,6.0))
     for x in (-43.2,-32.0):base=base.fuse(box(x-1.6,x+1.6,-1.7,-.5,2.,6.0))
-    # ESP captured with 0.25-mm axial free play when shell is closed.
-    # Narrow pads are intentionally on bare corner margins, away from pin rows.
-    esp_press=[]
-    press_data=[(-45.1024,22.3283,1.,.8),(-30.1024,22.3283,1.,.8),
-                (-45.3824,.7783,1.2,1.2),(-29.8324,.7783,1.2,1.2)]
-    for x,y,w,h in press_data:
-        q=box(x-w/2,x+w/2,y-h/2,y+h/2,6.32,14.)
-        q=q.fuse(box(x-1.,x+1.,y-1.,y+1.,9.8,14.))
-        esp_press.append(q);shell=shell.fuse(q)
+    # ESP captured with 0.25-mm axial free play when shell is closed. Every
+    # stop is on a bare margin of the board, clear of pin rows and parts.
+    # By the USB wall the board lies on two steps that are part of the wall:
+    # the free-standing 1 x 0.8 mm posts of the first print broke off with
+    # the supports. Each entry is x0, x1, y0, y1 of the face the board meets.
+    usb_steps=[(-46.9,-44.65,21.9,23.5),(-32.4,-28.3,21.9,23.5)]
+    for x0,x1,y0,y1 in usb_steps:shell=shell.fuse(box(x0,x1,y0,y1,6.32,14.))
+    # At the antenna end there is no wall to lean on: two ribs across the
+    # board's end, either side of the antenna, thicker towards the roof.
+    end_ribs=[(-46.3,-41.2,.1783,1.3783),(-34.0,-28.9,.1783,1.3783)]
+    for x0,x1,y0,y1 in end_ribs:
+        shell=shell.fuse(box(x0,x1,y0,y1,6.32,14.)).fuse(box(x0,x1,y0-.4,y1+.4,9.8,14.))
 
     # PN5180 holds by bare PCB edges, never by guessed mounting-hole centres.
     # The antenna-side contacts are clear of the entire populated left zone.
@@ -241,7 +262,8 @@ def main():
                  esp_board_bbox=[-46.601,-28.599,-.2,22.8,5.,6.07],
                  pn_hole_locations='Not used; actual hole pattern is not corner rectangle',
                  pn_component_model='Envelope only; thickness and connector height require physical confirmation',
-                 esp_press_centres_and_sizes=press_data)
+                 screw_centres=[[sx*CORNER[0],sy*CORNER[1]] for sx,sy in CORNERS],
+                 esp_stops_x0_x1_y0_y1=dict(usb_wall_steps=usb_steps,antenna_end_ribs=end_ribs))
     (ROOT/'parameters.json').write_text(json.dumps(pinfo,ensure_ascii=False,indent=2))
     print(json.dumps({'shell_solids':len(shell.Solids()),'shell_valid':shell.isValid(),
                       'mark_solids':len(nfc.Solids()),'mark_bounds':[round(v,3) for v in (

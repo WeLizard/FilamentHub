@@ -29,10 +29,10 @@ import render_studio as studio  # noqa: E402
 from render_studio import MM  # noqa: E402
 
 HEIGHT = 15.2
-POSTS = [(sx * 51.75, sy * 18.75) for sx in (-1, 1) for sy in (-1, 1)]
 PN_TOP = 12.6  # the reader's antenna face, against the top wall's pads
 PN_X = 9.4
 PARAMETERS = json.loads((KIT / "parameters.json").read_text(encoding="utf-8"))
+POSTS = PARAMETERS["screw_centres"]
 
 studio.setup()
 studio.OUT = KIT / "STL"
