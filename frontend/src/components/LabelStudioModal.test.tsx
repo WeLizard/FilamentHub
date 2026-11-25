@@ -208,6 +208,7 @@ describe("LabelStudioModal", () => {
       ),
     );
     expect(mocks.printPdfBlob).toHaveBeenCalledWith(expect.any(Blob));
+    await waitFor(() => expect(save).toBeEnabled());
 
     fireEvent.click(save);
     await waitFor(() =>
