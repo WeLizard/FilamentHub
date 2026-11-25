@@ -1,0 +1,94 @@
+{
+  "boxsInfo": {
+    "materialBoxs": [
+      {
+        "id": 0,
+        "state": 0,
+        "type": 1,
+        "materials": [
+          {
+            "id": 0,
+            "vendor": "Generic",
+            "type": "ABS",
+            "name": "Generic ABS",
+            "rfid": "00001",
+            "color": "#0000000",
+            "minTemp": 190,
+            "maxTemp": 240,
+            "pressure": 0.04,
+            "percent": 100,
+            "state": 1,
+            "selected": 0,
+            "editStatus": 1
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "state": 1,
+        "type": 0,
+        "temp": 27,
+        "humidity": 39,
+        "materials": [
+          {
+            "id": 0,
+            "vendor": "Generic",
+            "type": "PETG",
+            "name": "Generic PETG",
+            "rfid": "00001",
+            "color": "#07a92ac",
+            "minTemp": 190,
+            "maxTemp": 240,
+            "pressure": 0.04,
+            "percent": 64,
+            "state": 1,
+            "selected": 0,
+            "editStatus": 1
+          },
+          {
+            "id": 1,
+            "vendor": "Creality",
+            "type": "PLA",
+            "name": "Hyper PLA",
+            "rfid": "00001",
+            "color": "#0ba552a",
+            "minTemp": 190,
+            "maxTemp": 240,
+            "pressure": 0.04,
+            "percent": 81,
+            "state": 1,
+            "selected": 1,
+            "editStatus": 1
+          },
+          {
+            "id": 2,
+            "vendor": "",
+            "type": "",
+            "name": "",
+            "rfid": "",
+            "color": "",
+            "percent": 0,
+            "state": 0,
+            "selected": 0,
+            "editStatus": 0
+          },
+          {
+            "id": 3,
+            "vendor": "Generic",
+            "type": "PLA",
+            "name": "Generic PLA",
+            "rfid": "00001",
+            "color": "#0ff5722",
+            "minTemp": 190,
+            "maxTemp": 240,
+            "pressure": 0.04,
+            "percent": 100,
+            "state": 1,
+            "selected": 0,
+            "editStatus": 1
+          }
+        ]
+      }
+    ]
+  }
+}

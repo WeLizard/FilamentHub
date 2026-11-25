@@ -589,7 +589,7 @@ def test_stream_reconnect_discards_stale_snapshot_and_preserves_terminal(
             assert not stream["thread"].is_alive()
 
 
-def test_first_post_gap_usage_report_starts_a_new_baseline(
+def test_first_post_gap_sensor_reading_starts_a_new_baseline(
     plugin_module, tmp_path, monkeypatch,
 ):
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(tmp_path / "bambu.json"))
@@ -846,3 +846,112 @@ def test_books_refused_for_their_number_go_on_from_the_servers(books, code):
     assert (refused["sequence"], accepted["sequence"]) == (1, 5)
     # The same events under the server's number: nothing is counted twice.
     assert accepted["events"] == refused["events"]
+
+
+def test_slicer_estimate_resumes_across_a_gap_but_sensor_reading_does_not(plugin_module):
+    """A lost connection in mid-print must not lose the grams printed meanwhile."""
+    estimate = {"weights": {"0": 100}, "sha256": "slice"}
+    state = {}
+    _events(plugin_module, state, _report(mc_percent=10), _desired(),
+            "2026-09-19T10:00:00+00:00", estimate)
+    plugin_module._bambu_keep_gap_safe_baselines(state["tracker"])
+    events = _events(plugin_module, state, _report("FINISH", mc_percent=100), _desired(),
+                     "2026-09-19T12:00:00+00:00", estimate)
+    assert events[0]["items"][0]["used_weight_g"] == pytest.approx(90)
+    assert "skipped" not in events[0]
+
+    sensor = {}
+    _events(plugin_module, sensor, _report(remaining=1000), _desired(),
+            "2026-09-19T10:00:00+00:00")
+    plugin_module._bambu_keep_gap_safe_baselines(sensor["tracker"])
+    events = _events(plugin_module, sensor, _report("FINISH", remaining=900), _desired(),
+                     "2026-09-19T12:00:00+00:00")
+    assert events[0]["items"] == []
+
+
+@pytest.mark.parametrize("desired, estimate, denied, expected", [
+    ({"slots": []}, {"weights": {"0": 20}, "sha256": "s"}, False,
+     [{"reason": "no_spool_assigned"}]),
+    (_desired(index=1), {"weights": {"0": 20}, "sha256": "s"}, False,
+     [{"reason": "slot_without_spool", "slot_index": 0}]),
+    (_desired(index=1), None, False, [{"reason": "print_file_unavailable"}]),
+    (_desired(index=1), None, True, [{"reason": "print_file_access_denied"}]),
+])
+def test_job_that_charged_nothing_says_why(plugin_module, desired, estimate, denied, expected):
+    state = {"file_permission_denied": True} if denied else {}
+    _events(plugin_module, state, _report(mc_percent=10), desired,
+            "2026-09-19T10:00:00+00:00", estimate)
+    events = _events(plugin_module, state, _report("FINISH", mc_percent=100), desired,
+                     "2026-09-19T10:30:00+00:00", estimate)
+    assert events[0]["items"] == []
+    assert events[0]["skipped"] == expected
+
+
+def _kept_slice(plugin_module, tmp_path, monkeypatch, layers=3):
+    """One sliced G-code kept by the plugin: 12 g of filament 0 over `layers` layers."""
+    monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(tmp_path / "slices.json"))
+    monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(tmp_path / "slices"))
+    lines = ["M83"]
+    for layer in range(layers):
+        lines += ["; CHANGE_LAYER", "G1 X%d E1" % (layer + 1)]
+    lines += ["; filament used [g] = 12.00", ""]
+    source = tmp_path / "plate_1.gcode"
+    source.write_text("\n".join(lines), encoding="utf-8")
+    return plugin_module._remember_slice_path(str(source))
+
+
+def test_job_sent_from_orca_is_counted_from_the_kept_slice(plugin_module, tmp_path, monkeypatch):
+    """The printer's file can be unreadable; a job this OrcaSlicer sent still has its weights."""
+    key = _kept_slice(plugin_module, tmp_path, monkeypatch)
+    assert plugin_module.remember_sent_print("Bracket", "01P00A000000001", now=1000.0)
+    config = {"serial": "01P00A000000001"}
+    report = {"subtask_name": "Bracket", "gcode_file": "Bracket.gcode.3mf", "total_layer_num": 3}
+
+    estimate = plugin_module.bambu_estimate_from_sent_print(config, report, now=1600.0)
+    assert estimate["weights"] == {0: pytest.approx(12.0)}
+    assert estimate["layer_source_key"] == key
+    assert estimate["layer_weights"][0][-1] == pytest.approx(12.0)
+
+    # Anything that makes the match uncertain leaves the job uncounted.
+    assert plugin_module.bambu_estimate_from_sent_print(
+        config, {**report, "total_layer_num": 4}, now=1600.0) is None
+    assert plugin_module.bambu_estimate_from_sent_print(
+        config, {**report, "subtask_name": "Other", "gcode_file": "Other.3mf"}, now=1600.0) is None
+    assert plugin_module.bambu_estimate_from_sent_print(
+        {"serial": "01P00A000000002"}, report, now=1600.0) is None
+    assert plugin_module.bambu_estimate_from_sent_print(
+        config, report, now=1000.0 + 4 * 24 * 3600) is None
+
+
+def test_host_print_events_note_the_job_and_never_raise(plugin_module, tmp_path, monkeypatch):
+    _kept_slice(plugin_module, tmp_path, monkeypatch)
+    sent = object()
+    monkeypatch.setattr(plugin_module, "_PRINT_SENT_EVENT", sent)
+    woken = []
+    monkeypatch.setattr(plugin_module, "hurry_usage_watchers", lambda: woken.append(True))
+
+    class Context:
+        name = "Bracket.3mf"
+        device_id = "01P00A000000001"
+
+    plugin_module.note_host_print_event(sent, Context())
+    assert plugin_module._load_sent_prints()[0]["name"] == "Bracket"
+    assert woken == [True]
+
+    monkeypatch.setattr(plugin_module, "hurry_usage_watchers", lambda: 1 / 0)
+    plugin_module.note_host_print_event(object(), Context())
+
+
+def test_job_seen_at_its_start_and_next_at_its_end_is_charged_in_full(plugin_module):
+    """The first reading counts by percent, the last by layers; the rest must not vanish."""
+    estimate = {"weights": {"0": 9}, "layer_weights": {"0": [3, 6, 9]}, "sha256": "slice"}
+    state = {}
+    start = _report(mc_percent=0)
+    start["layer_num"] = 0
+    _events(plugin_module, state, start, _desired(), "2026-09-19T10:00:00+00:00", estimate)
+    finish = _report("FINISH", mc_percent=100)
+    finish["layer_num"] = 3
+    events = _events(plugin_module, state, finish, _desired(),
+                     "2026-09-19T12:00:00+00:00", estimate)
+    assert events[0]["outcome"] == "completed"
+    assert events[0]["items"][0]["used_weight_g"] == pytest.approx(9)

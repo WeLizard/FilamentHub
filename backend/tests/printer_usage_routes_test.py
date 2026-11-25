@@ -7,15 +7,17 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.security import create_access_token
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import PhysicalPrinterConnector
+from app.models.notification import Notification
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.print_job import PrintJob, PrintJobEvent
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.user import User
 from app.models.user_spool import UserSpool
@@ -818,6 +820,7 @@ def test_pre_upgrade_event_and_terminal_receipt_hashes_are_unchanged():
     old["items"][0].pop("usage_started_at")
     old.pop("contract_version")
     old.pop("segment_sequence")
+    old.pop("skipped")
     old.pop("event_type")
     old.pop("reasons")
     old.pop("started_at")
@@ -877,6 +880,7 @@ async def test_pre_upgrade_batch_receipt_replays_without_new_optional_field(
     event_payload = payload["events"][0]
     event_payload.pop("contract_version")
     event_payload.pop("segment_sequence")
+    event_payload.pop("skipped")
     event_payload["items"][0].pop("usage_route_proof")
     event_payload["items"][0].pop("tool_index")
     event_payload["items"][0].pop("evidence")
@@ -911,3 +915,94 @@ async def test_pre_upgrade_batch_receipt_replays_without_new_optional_field(
     assert replay.status_code == 200, replay.text
     assert replay.json()["deduplicated"] is True
     assert list(await db_session.scalars(select(PresetUsageEvent))) == []
+
+
+async def test_uncounted_job_says_why_and_a_silent_running_job_is_marked(
+    route_bridge,
+    auth_client,
+    db_session,
+):
+    """A print that deducted nothing, or stopped reporting, must not look fine.
+
+    Both used to be indistinguishable from a normal job: the first as a
+    finished print with zero grams, the second as a job printing for ever.
+    """
+    bridge = route_bridge
+
+    async def job_for(job_id):
+        job = await db_session.scalar(select(PrintJob).where(PrintJob.title == job_id))
+        response = await auth_client.get(f"/api/v1/print-jobs/{job.id}")
+        assert response.status_code == 200, response.text
+        return job, response.json()
+
+    explained = {
+        "event_id": "explained", "job_id": "explained-job", "outcome": "completed",
+        "skipped": [{"reason": "slot_without_spool", "slot_index": 1}],
+    }
+    assert (await _send(auth_client, bridge, explained, 1)).status_code == 200
+    assert (await job_for("explained-job"))[1]["usage_issues"] == [
+        {"reason": "slot_without_spool", "slot_index": 1}
+    ]
+
+    # A reporter that predates reasons: the server says what it can itself.
+    silent = {"event_id": "unexplained", "job_id": "unexplained-job", "outcome": "completed"}
+    assert (await _send(auth_client, bridge, silent, 2)).status_code == 200
+    assert (await job_for("unexplained-job"))[1]["usage_issues"] == [
+        {"reason": "unknown", "slot_index": None}
+    ]
+
+    snapshot = (await _snapshot(auth_client, bridge)).json()
+    running = _event(
+        bridge.spool_a_id, snapshot["slots"][0]["usage_route_proof"], "running",
+        segment_sequence=1,
+    )
+    running["job_id"] = "running-job"
+    assert (await _send(auth_client, bridge, running, 3)).status_code == 200
+    job, shown = await job_for("running-job")
+    assert shown["status"] == "printing"
+    assert shown["tracking_interrupted"] is False
+
+    long_ago = datetime.now(timezone.utc) - timedelta(hours=3)
+    await db_session.execute(
+        update(PrintJob).where(PrintJob.id == job.id).values(updated_at=long_ago)
+    )
+    await db_session.execute(
+        update(PrintJobEvent)
+        .where(PrintJobEvent.print_job_id == job.id)
+        .values(received_at=long_ago)
+    )
+    await db_session.execute(
+        update(PresetUsageEvent)
+        .where(PresetUsageEvent.print_job_id == job.id)
+        .values(created_at=long_ago)
+    )
+    await db_session.commit()
+    db_session.expire_all()
+    assert (await job_for("running-job"))[1]["tracking_interrupted"] is True
+
+
+async def test_spool_used_up_by_bridge_reports_keeps_its_slot(
+    route_bridge,
+    auth_client,
+    db_session,
+):
+    """An estimate reaching zero must not unbind the spool and end its accounting."""
+    bridge = route_bridge
+    snapshot = (await _snapshot(auth_client, bridge)).json()
+    event = _event(bridge.spool_a_id, snapshot["slots"][0]["usage_route_proof"])
+    event["items"][0]["used_length_mm"] = 10_000_000
+    assert (await _send(auth_client, bridge, event)).status_code == 200
+
+    after = (await _snapshot(auth_client, bridge)).json()
+    assert after["slots"][0]["spool"]["id"] == bridge.spool_a_id
+    notices = list(
+        await db_session.scalars(
+            select(Notification.extra_data).where(Notification.title == "spool_out_by_estimate")
+        )
+    )
+    assert [notice["spool_id"] for notice in notices] == [bridge.spool_a_id]
+
+    # The printer card stops asking for setup once a report has been counted.
+    setup = (await auth_client.get("/api/v1/physical-printers/usage-setup")).json()
+    assert setup["has_spools"] is True
+    assert list(setup["last_usage_at"]) == [str(bridge.printer_id)]

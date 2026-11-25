@@ -25,11 +25,10 @@ from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
 from app.models.preset import Preset
-from app.models.preset_gate_state import PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.print_job import PrintJob, PrintJobStatus
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
-from app.models.user_spool import UserSpool, UserSpoolState
+from app.models.user_spool import UserSpool
 from app.schemas.printer_usage import PrinterUsageEvent
 from app.services.material_contract_service import require_physical_printer
 from app.services.print_job_service import (
@@ -37,12 +36,12 @@ from app.services.print_job_service import (
     ensure_provider_job_event,
 )
 from app.services.printer_usage_route_service import identity_timestamp, resolve_usage_routes
-from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
 from app.services.spool_usage_service import (
     latest_spool_balance_observation,
     record_spool_usage,
     resolve_assigned_preset_id,
 )
+from app.services.stock_alert_service import announce_spool_out_by_estimate
 
 DEFAULT_DENSITY_G_CM3 = 1.24
 DEFAULT_DIAMETER_MM = 1.75
@@ -70,6 +69,12 @@ def usage_payload_data(payload: PrinterUsageEvent) -> dict:
         payload_data.pop("contract_version", None)
     if payload.segment_sequence is None:
         payload_data.pop("segment_sequence", None)
+    if not payload.skipped:
+        # Reports sent before reasons existed keep the hash they were stored with.
+        payload_data.pop("skipped", None)
+    for skip in payload_data.get("skipped", []):
+        if skip.get("slot_index") is None:
+            skip.pop("slot_index", None)
     for item in payload_data["items"]:
         if item.get("usage_route_proof") is None:
             item.pop("usage_route_proof", None)
@@ -134,6 +139,43 @@ def _received_source_time(value: datetime | None, received_at: datetime) -> date
 def _weight_from_length(length_mm: float, density: float, diameter_mm: float) -> float:
     radius = diameter_mm / 2.0
     return max(length_mm * math.pi * radius * radius / 1000.0 * density, 0.0)
+
+
+async def _unexplained_empty_job_issues(
+    db: AsyncSession,
+    *,
+    connector: PhysicalPrinterConnector,
+    print_job_source: str,
+    print_job_source_ref: str,
+) -> list[dict]:
+    """What the server itself can say about a finished job that reported no usage.
+
+    Reporters that predate reasons send an empty terminal event. A job that
+    already counted something in earlier segments needs no explanation.
+    """
+    counted = await db.scalar(
+        select(PresetUsageEvent.id)
+        .join(PrintJob, PrintJob.id == PresetUsageEvent.print_job_id)
+        .where(
+            PrintJob.user_id == connector.user_id,
+            PrintJob.source == print_job_source,
+            PrintJob.source_ref == print_job_source_ref,
+        )
+        .limit(1)
+    )
+    if counted is not None:
+        return []
+    assigned = await db.scalar(
+        select(MaterialSlotAssignment.id)
+        .join(MaterialSlot, MaterialSlot.id == MaterialSlotAssignment.material_slot_id)
+        .where(
+            MaterialSlot.material_system_id == connector.material_system_id,
+            MaterialSlotAssignment.active.is_(True),
+            MaterialSlotAssignment.spool_id.is_not(None),
+        )
+        .limit(1)
+    )
+    return [{"reason": "no_spool_assigned" if assigned is None else "unknown"}]
 
 
 async def process_printer_usage_event(
@@ -308,6 +350,19 @@ async def process_printer_usage_event(
     else:
         segment_started_at = started_at
 
+    details: dict = {"reasons": payload.reasons, "adapter": adapter}
+    if payload.event_type == "terminal":
+        usage_issues = [skip.model_dump(exclude_none=True) for skip in payload.skipped]
+        if not usage_issues and not payload.items:
+            usage_issues = await _unexplained_empty_job_issues(
+                db,
+                connector=connector,
+                print_job_source=print_job_source,
+                print_job_source_ref=print_job_source_ref,
+            )
+        if usage_issues:
+            details["usage_issues"] = usage_issues
+
     print_job, should_record_usage = await ensure_provider_job_event(
         db,
         user_id=connector.user_id,
@@ -327,7 +382,7 @@ async def process_printer_usage_event(
         ],
         occurred_at=occurred_at,
         started_at=started_at,
-        details={"reasons": payload.reasons, "adapter": adapter},
+        details=details,
     )
     if not should_record_usage:
         consumed_weight_g = await confirmed_consumption_for_job(db, print_job.id)
@@ -467,12 +522,8 @@ async def process_printer_usage_event(
                 **({"usage_route": route} if route is not None else {}),
             },
         )
-        if spool.remaining_weight_g <= 0:
-            spool.state = UserSpoolState.empty
-            await clear_spool_gate_assignments(
-                db, spool, source=PresetGateStateSource.provider_report
-            )
-            clear_spool_location_projection(spool)
+        if consumed > 0 and spool.remaining_weight_g <= 0:
+            await announce_spool_out_by_estimate(db, spool)
 
     db.add(
         PrinterBridgeReceipt(

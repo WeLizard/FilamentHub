@@ -335,3 +335,31 @@ class UsageTrackerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UncountedJobTest(unittest.TestCase):
+    """A job that charged nothing must say why, not look like a clean print."""
+
+    def _finish(self, state: EdgeState, active_slot: int) -> dict:
+        capture_usage_events(
+            state,
+            snapshot(state="printing", filament_used=0, print_duration=0, active_slot=active_slot),
+            observed_at="2026-01-01T00:00:00+00:00",
+        )
+        done = snapshot(
+            state="complete", filament_used=90, print_duration=60, active_slot=active_slot
+        )
+        (event,) = capture_usage_events(state, done, observed_at="2026-01-01T00:01:00+00:00")
+        return event
+
+    def test_reason_is_reported_only_when_nothing_was_charged(self) -> None:
+        assigned = {"slots": [{"index": 0, "spool": {"id": 99}, "usage_route_proof": "a"}]}
+        self.assertEqual(
+            self._finish(EdgeState(desired_snapshot={"slots": []}), 0)["skipped"],
+            [{"reason": "no_spool_assigned"}],
+        )
+        self.assertEqual(
+            self._finish(EdgeState(desired_snapshot=assigned), 1)["skipped"],
+            [{"reason": "slot_without_spool", "slot_index": 1}],
+        )
+        self.assertNotIn("skipped", self._finish(EdgeState(desired_snapshot=assigned), 0))

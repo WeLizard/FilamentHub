@@ -526,10 +526,40 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="truncate font-medium text-white">{job.title}</h3>
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusTone[job.status]}`}>
-                            {t(`printJobs.status.${job.status}`)}
-                          </span>
+                          {job.tracking_interrupted ? (
+                            <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-100">
+                              {t('printJobs.trackingInterrupted')}
+                            </span>
+                          ) : (
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusTone[job.status]}`}>
+                              {t(`printJobs.status.${job.status}`)}
+                            </span>
+                          )}
                         </div>
+                        {job.tracking_interrupted && (
+                          <p className="mt-2 text-xs text-amber-200">{t('printJobs.trackingInterruptedHint')}</p>
+                        )}
+                        {(job.usage_issues?.length ?? 0) > 0 && (
+                          <div className="mt-2 text-xs text-amber-200" role="note">
+                            <p className="font-medium">
+                              {t(
+                                job.confirmed_consumption_g + job.estimated_consumption_g > 0
+                                  ? 'printJobs.usageIssues.partial'
+                                  : 'printJobs.usageIssues.nothing',
+                              )}
+                            </p>
+                            <ul className="mt-1 space-y-0.5">
+                              {job.usage_issues!.map((issue) => (
+                                <li key={`${issue.reason}:${issue.slot_index ?? ''}`}>
+                                  {t(`printJobs.usageIssues.reason.${issue.reason}`, {
+                                    slot: issue.slot_index,
+                                    defaultValue: t('printJobs.usageIssues.reason.unknown'),
+                                  })}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
                           <span className="inline-flex items-center gap-1"><CalendarClock className="h-3.5 w-3.5" />{new Date(job.created_at).toLocaleString(i18n.language)}</span>
                           {job.file_name && <span className="inline-flex min-w-0 items-center gap-1"><FileCode2 className="h-3.5 w-3.5" /><span className="max-w-52 truncate">{job.file_name}</span></span>}

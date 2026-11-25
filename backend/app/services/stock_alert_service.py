@@ -28,6 +28,7 @@ REARM_FACTOR = 2.0
 SPOOLS_LINK = "/profile?tab=spools"
 
 TITLE_SPOOL = "low_stock_spool"
+TITLE_SPOOL_OUT = "spool_out_by_estimate"
 TITLE_MATERIAL = "low_stock_material"
 
 
@@ -55,6 +56,26 @@ async def _display_name(db: AsyncSession, spool: UserSpool) -> str:
             return f"{brand} {filament.name}" if brand else filament.name
     extra = spool.extra or {}
     return str(extra.get("display_name") or f"#{spool.id}")
+
+
+async def announce_spool_out_by_estimate(db: AsyncSession, spool: UserSpool) -> None:
+    """Tell the owner that printer reports have used up the spool's recorded stock.
+
+    The spool stays where it is: a printer's figure is an estimate, and only
+    the owner knows whether the spool is really finished. Called once, by the
+    report that takes the recorded remainder to zero.
+    """
+    db.add(
+        Notification(
+            user_id=spool.user_id,
+            type=NotificationType.LOW_STOCK_SPOOL,
+            title=TITLE_SPOOL_OUT,
+            message=TITLE_SPOOL_OUT + "_message",
+            link=SPOOLS_LINK,
+            extra_data={"spool_id": spool.id, "name": await _display_name(db, spool)},
+            read=False,
+        )
+    )
 
 
 async def refresh_stock_alerts(

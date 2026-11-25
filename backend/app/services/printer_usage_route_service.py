@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ERR_MATERIAL_ASSIGNMENT_CONFLICT, raise_error
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
+from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.printer_bridge import PrinterBridgeDesiredSlotSnapshot
 from app.schemas.printer_usage import PrinterUsageItem
 
@@ -193,6 +194,33 @@ async def resolve_usage_routes(
 
 
 USAGE_AUTHORITY_STALE_AFTER = timedelta(minutes=6)
+# Helpers that count Klipper's own extruder figure. Moonraker's Spoolman link
+# reports the same figure when it points at FilamentHub, so only one of the two
+# may deduct a print.
+KLIPPER_HELPER_PROVIDERS = frozenset({"happy_hare", "legacy", "moonraker"})
+# While Moonraker's own link keeps in touch it is the one that deducts. It
+# renews its contact every few minutes for as long as it is configured, so a
+# helper takes over this long after the link was removed, not between prints.
+NATIVE_LINK_DEDUCTS_FOR = timedelta(hours=1)
+
+
+async def _moonraker_link_deducts(db: AsyncSession, connector: PhysicalPrinterConnector) -> bool:
+    """Whether Moonraker's own Spoolman link is the one deducting for this printer."""
+    if connector.provider not in KLIPPER_HELPER_PROVIDERS or connector.transport not in {
+        "orca_plugin_lan",
+        "edge_agent",
+    }:
+        return False
+    seen = await db.scalar(
+        select(UserPrinterDevice.native_last_seen_at).where(
+            UserPrinterDevice.id == connector.physical_printer_id
+        )
+    )
+    if seen is None:
+        return False
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - seen < NATIVE_LINK_DEDUCTS_FOR
 
 
 async def hold_usage_authority(db: AsyncSession, connector: PhysicalPrinterConnector) -> bool:
@@ -201,7 +229,14 @@ async def hold_usage_authority(db: AsyncSession, connector: PhysicalPrinterConne
     The first connector that can report consumption claims its system. Another
     takes over only when the holder is inactive or has been silent for a while,
     so two helpers watching one printer never deduct the same print twice.
+    A Klipper helper never holds it while Moonraker's own Spoolman link is in
+    touch with FilamentHub: that link deducts the same print itself.
     """
+    if await _moonraker_link_deducts(db, connector):
+        if connector.usage_authority:
+            connector.usage_authority = False
+            await db.flush()
+        return False
     if connector.usage_authority:
         return True
     if connector.material_system_id is None:
@@ -230,3 +265,4 @@ async def hold_usage_authority(db: AsyncSession, connector: PhysicalPrinterConne
     connector.usage_authority = True
     await db.flush()
     return True
+

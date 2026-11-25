@@ -136,5 +136,8 @@
   "stockAlertSpool": "库存不足：{name} 仅剩 {remaining} g（提醒阈值 {threshold} g）。",
   "stockAlertMaterial": "库存不足：货架上的 {name} 仅剩 {shelf} g（提醒阈值 {threshold} g）。",
   "stockAlertMaterialUnknown": "库存不足：货架上的 {name} 仅剩 {shelf} g（提醒阈值 {threshold} g）。{count} 卷重量未知的料盘未计入。",
-  "stockAlertOpen": "打开料盘"
+  "stockAlertOpen": "打开料盘",
+  "usageNotDeducted": "FilamentHub：此打印的耗材用量未扣除。原因见 FilamentHub 上该打印机的打印历史。",
+  "usageNotDeductedNoSpool": "FilamentHub：此打印未扣除，因为打印机的槽位未绑定任何料卷。请在 FilamentHub 上绑定料卷。",
+  "usageNotDeductedSlot": "FilamentHub：此打印的部分用量未扣除，因为所用的某个槽位未绑定料卷。"
 }

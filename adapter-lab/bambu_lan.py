@@ -122,7 +122,7 @@ def _apply_stage(payload: object) -> bool:
         return False
     allowed = {"gcode_state", "mc_percent", "remaining_g", "filename",
                "gcode_file", "subtask_name", "task_id", "subtask_id",
-               "ams_mapping"}
+               "ams_mapping", "total_layer_num", "layer_num"}
     if not any(key in payload for key in allowed):
         return False
     mapping = payload.get("ams_mapping")

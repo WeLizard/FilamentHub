@@ -41,6 +41,23 @@ def test_slots_follow_the_orca_reader_rules(plugin_module, monkeypatch):
     assert all(slot["spool_identity_known"] is False for slot in slots)
 
 
+def test_the_slot_the_box_loaded_is_the_one_that_feeds(plugin_module):
+    state = json.loads(_fixture("query.json"))["result"]["status"]
+    variables = state["save_variables"]["variables"]
+
+    # Firmware that records nothing leaves the feed unknown.
+    assert all(
+        "active_feed" not in slot
+        for slot in plugin_module.parse_qidi_box_slots(state, variables, "")
+    )
+    variables["last_load_slot"] = "slot1"
+    assert [
+        slot["active_feed"] for slot in plugin_module.parse_qidi_box_slots(state, variables, "")
+    ] == [False, True, False, False]
+    assert plugin_module.qidi_box_loaded_slot({"last_load_slot": "slot-1"}) == -1
+    assert plugin_module.qidi_box_loaded_slot({"last_load_slot": "slot99"}) is None
+
+
 def test_missing_dictionary_keeps_presence_without_guessing_material(plugin_module, monkeypatch):
     monkeypatch.setattr(plugin_module, "_moonraker_json", _moonraker(dictionary_status=404))
 

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, require_material_topology_report
 from app.core.limiter import adapter_token_key, client_key, limiter
 from app.db.session import get_db
 from app.models.user import User
@@ -17,6 +17,8 @@ from app.schemas.printer_bridge import (
     PrinterBridgeDesiredSnapshotResponse,
     PrinterBridgeHeartbeatRequest,
     PrinterBridgeHeartbeatResponse,
+    PrinterBridgeKlipperLinkRequest,
+    PrinterBridgeKlipperLinkResponse,
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
@@ -31,6 +33,7 @@ from app.services.material_contract_service import (
 )
 from app.services.printer_bridge_service import (
     get_printer_bridge_status,
+    issue_moonraker_usage_bridge,
     issue_printer_bridge_pairing_code,
     pair_printer_bridge,
     record_printer_bridge_heartbeat,
@@ -123,6 +126,36 @@ async def pair(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterBridgePairResponse:
     return await pair_printer_bridge(db, payload)
+
+
+@router.post("/klipper-usage-link", response_model=PrinterBridgeKlipperLinkResponse)
+@limiter.limit("10/minute")
+async def klipper_usage_link(
+    request: Request,
+    payload: PrinterBridgeKlipperLinkRequest,
+    current_user: Annotated[User, Depends(require_material_topology_report)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PrinterBridgeKlipperLinkResponse:
+    """Let one OrcaSlicer installation report the filament a Klipper printer uses.
+
+    A Klipper printer is not paired with a code: the plugin already reaches it
+    through a connection bound to its card, and that binding is what is checked.
+    """
+    token, connector = await issue_moonraker_usage_bridge(
+        db,
+        user_id=current_user.id,
+        physical_printer_id=payload.physical_printer_id,
+        material_system_id=payload.material_system_id,
+        source_instance_id=payload.source_instance_id,
+        plugin_version=payload.plugin_version,
+        capabilities=payload.capabilities,
+    )
+    return PrinterBridgeKlipperLinkResponse(
+        bridge_token=token,
+        physical_printer_id=connector.physical_printer_id,
+        material_system_id=payload.material_system_id,
+        provider=connector.provider,
+    )
 
 
 @router.post("/snapshot", response_model=PrinterBridgeSnapshotResponse)

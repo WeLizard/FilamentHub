@@ -439,6 +439,14 @@ class ContactChannelResponse(BaseModel):
     basis: str
 
 
+class PrinterUsageSetupResponse(BaseModel):
+    """What the account still lacks before its printers deduct filament by themselves."""
+
+    has_spools: bool
+    # Printer id -> when a printer report last reached the spool ledger.
+    last_usage_at: dict[int, datetime]
+
+
 class PhysicalPrinterResponse(BaseModel):
     id: int
     logical_id: str

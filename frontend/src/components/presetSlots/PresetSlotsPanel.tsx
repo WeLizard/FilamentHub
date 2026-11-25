@@ -583,16 +583,25 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   );
 }
 
+/** A new spool wanted for one slot, described by what the printer sees in it. */
+export interface SlotSpoolRequest {
+  search: string;
+  targetKey: string;
+  slotId: number;
+}
+
 interface PresetSlotsPanelProps {
   compact?: boolean;
   spools?: UserSpool[];
   printerProfiles?: Array<{ id: number; name: string }>;
+  onCreateSpoolForSlot?: (request: SlotSpoolRequest) => void;
 }
 
 export function PresetSlotsPanel({
   compact = false,
   spools: externalSpools,
   printerProfiles,
+  onCreateSpoolForSlot,
 }: PresetSlotsPanelProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -799,6 +808,17 @@ export function PresetSlotsPanel({
           spools={spools}
           onClose={() => setModalState((s) => ({ ...s, open: false }))}
           onAssigned={() => setModalState((s) => ({ ...s, open: false }))}
+          onCreateSpool={onCreateSpoolForSlot && ((search) => {
+            const { printer, system, slot } = modalState;
+            setModalState((s) => ({ ...s, open: false }));
+            if (printer && system && slot) {
+              onCreateSpoolForSlot({
+                search,
+                targetKey: `${printer.id}:${system.id}`,
+                slotId: slot.id,
+              });
+            }
+          })}
         />
       )}
     </>

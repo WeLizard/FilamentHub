@@ -169,7 +169,9 @@
       "bambuHint": "连接打印机后会自动检测 AMS 和外置料架。",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。",
       "flashforge": "闪铸（5M、AD5X、Creator 5）",
-      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；OrcaSlicer 打开或 FH Edge 运行时，用量按切片软件的估算统计。"
+      "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；OrcaSlicer 打开或 FH Edge 运行时，用量按切片软件的估算统计。",
+      "creality": "Creality（K1、K2、Ender-3 V3）",
+      "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -191,7 +193,10 @@
       "manualHint": "描述您的设备。无需连接即可分配料卷。这是手动声明，不是传感器读数。",
       "edit": "编辑供料路径和槽位",
       "flashforgeStation": "耗材站，4 个槽位（AD5X、Creator 5）",
-      "flashforgeSingle": "单卷耗材（Adventurer 5M / 5M Pro）"
+      "flashforgeSingle": "单卷耗材（Adventurer 5M / 5M Pro）",
+      "crealityCfs": "CFS，每个单元 4 个料槽（K2、带 CFS 的 K1）",
+      "crealityCfsSlots": "CFS 料槽数",
+      "crealitySingle": "单卷（无 CFS）"
     },
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","host_permission":"OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重新检查。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
@@ -7724,6 +7729,8 @@
       "openResponse": "打开回复"
     },
     "keys": {
+      "spool_out_by_estimate": "料卷按记录已用完",
+      "spool_out_by_estimate_message": "根据打印机上报，料卷“{{name}}”已用完。它仍保留在槽位中，后续用量会继续记入其历史。请称量或更换料卷。",
       "low_stock_spool": "线盘即将用完",
       "low_stock_spool_message": "线盘“{{name}}”即将用完：剩余 {{remaining_g}} 克（提醒阈值 {{threshold_g}} 克）。",
       "low_stock_material": "材料库存不足",
@@ -8864,6 +8871,27 @@
       "untracked": "旧副本或日志已丢失"
     }
   },
+  "printerUsageSetup": {
+    "title": "自动用量记录尚未生效",
+    "step": {
+      "connect": "打印机已与 FilamentHub 通信",
+      "spools": "已添加料卷",
+      "slot": "料卷已绑定到槽位",
+      "print": "首次打印已扣除"
+    },
+    "hint": {
+      "connect": "FilamentHub 从未收到这台打印机的数据。请完成连接。",
+      "connectMoonraker": "Moonraker 从未访问 FilamentHub，因此不会扣除用量。请将连接设置中的 [spoolman] 配置块添加到 moonraker.conf。",
+      "spools": "目前没有可扣除的料卷：请添加打印机中装载的料卷。",
+      "slot": "请将料卷绑定到打印所用的槽位，否则打印不会被扣除。",
+      "print": "开始打印。只要打印机与 FilamentHub 保持通信，用量就会被扣除。",
+      "printOrca": "开始打印并保持 OrcaSlicer 打开：只有它运行时才会统计用量。"
+    },
+    "action": {
+      "spools": "添加料卷",
+      "slot": "打开槽位"
+    }
+  },
   "printJobs": {
     "open": "打印历史",
     "title": "打印 · {{printer}}",
@@ -8885,6 +8913,22 @@
     "confirmedConsumption": "已确认用量：{{value}} 克",
     "estimatedConsumption": "预估用量：{{value}} 克",
     "needsReconciliation": "待核对用量：{{value}} 克。请核对并更新料卷余量。",
+    "trackingInterrupted": "记录已中断",
+    "trackingInterruptedHint": "此打印的上报已停止，因此结果和用量未知。打印机连接恢复后会继续记录。如果打印已结束，请标记结果并称量料卷。",
+    "usageIssues": {
+      "nothing": "此打印的用量未扣除",
+      "partial": "此打印的部分用量未扣除",
+      "reason": {
+        "no_spool_assigned": "打印机的任何槽位都未绑定料卷。请为槽位绑定料卷，下次打印即可扣除。",
+        "slot_without_spool": "打印使用了槽位 {{slot}}，但该槽位未绑定料卷。",
+        "print_file_unavailable": "无法从打印机读取打印文件，因此重量未知。",
+        "print_file_access_denied": "无法访问打印机上的打印文件。请在 OrcaSlicer 中允许插件访问打印机。",
+        "slot_mapping_missing": "打印机未上报打印使用了哪些槽位。",
+        "tag_mismatch": "槽位 {{slot}} 中的料卷与 FilamentHub 中绑定的不一致。",
+        "active_slot_unknown": "无法确定打印使用了哪个槽位。",
+        "unknown": "打印机上报了打印，但没有用量数据。"
+      }
+    },
     "usageSegments": {
       "title": "按阶段记录的用量",
       "sequence": "阶段 {{count}}",
@@ -9125,6 +9169,8 @@
       "label": "已分配",
       "notAssigned": "未分配线轴",
       "empty": "空闲",
+      "outByEstimate": "按记录已用完",
+      "outByEstimateHint": "根据打印机上报，料卷已用完。请称量或更换：后续用量会记入料卷历史，但余量不再减少。",
       "unknownSpool": "未知料盘"
     },
     "route": {
@@ -9182,6 +9228,7 @@
       "searchPreset": "搜索预设...",
       "noPresets": "未找到预设",
       "noPresetsForFilament": "您的库中没有该耗材的预设",
+      "createObservedSpool": "打印机在槽位 {{slot}} 中检测到 {{material}}。添加该料卷并绑定到此槽位",
       "presetsForFilament": "{{filament}} 的预设",
       "showAllPresets": "显示全部",
       "backToFilamentPresets": "← {{filament}} 的预设",
@@ -9196,7 +9243,8 @@
       "direct": "直接供料",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
-      "flashforge": "闪铸局域网"
+      "flashforge": "闪铸局域网",
+      "creality": "Creality 局域网"
     },
     "edge": {
       "title": "FH Edge",
@@ -9331,6 +9379,29 @@
         "pairing": "无法将打印机关联到 FilamentHub。请重试。",
         "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
         "invalid": "打印机返回了意外的响应。请检查固件和局域网模式。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+      }
+    },
+    "creality": {
+      "title": "通过 OrcaSlicer 连接 Creality",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址。请在那里选择 CrealityPrint 主机类型并填写地址；打印机不需要密码。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台 Creality 打印机，请选择这一台：",
+      "onDemand": "请在 OrcaSlicer 中打开 FilamentHub 标签页：标签页打开期间，插件会跟踪打印，并按打印机自己统计的耗材长度扣减。OrcaSlicer 关闭时不会统计打印。",
+      "localOnly": "打印机地址保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向它发送任何指令。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有 Creality 打印机。请打开 OrcaSlicer 中打印机的连接设置，选择 CrealityPrint 主机类型并填写地址。",
+        "credentials": "OrcaSlicer 的连接中没有这台打印机。请检查连接设置中的地址，然后重新连接打印机。",
+        "unreachable": "打印机在 OrcaSlicer 中的地址上没有响应。请确认它已开机并处于同一网络。",
+        "permission": "OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重试。",
+        "identity": "打印机没有报告其硬件地址，因此无法可靠地与其他打印机区分。请更新打印机固件后重试。",
+        "linked": "这台打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub，请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机的响应不符合预期。请确认它运行的是 Creality 原厂固件。",
         "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
         "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
       }

@@ -26,6 +26,7 @@ import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { translateApiError } from '../utils/translateApiError';
 import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { PrintJobHistoryModal } from './PrintJobHistoryModal';
+import { PrinterUsageSetup } from './PrinterUsageSetup';
 import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
 import { PrinterRecoveryModal } from './PrinterRecoveryModal';
@@ -124,6 +125,11 @@ export function MyPrintersList({
   const { data: bindings } = useQuery({
     queryKey: ['printer-bindings'],
     queryFn: ({ signal }) => physicalPrintersAPI.listBindings(signal),
+  });
+  const { data: usageSetup } = useQuery({
+    queryKey: ['printer-usage-setup', currentUserId],
+    queryFn: ({ signal }) => physicalPrintersAPI.usageSetup(signal),
+    staleTime: 60_000,
   });
 
   const knownProfileIds = useMemo(
@@ -445,6 +451,14 @@ export function MyPrintersList({
                       </div>
                     ))}
                   </div>
+                )}
+
+                {usageSetup && (
+                  <PrinterUsageSetup
+                    printer={printer}
+                    setup={usageSetup}
+                    onOpenConnection={() => setSetupPrinter(printer)}
+                  />
                 )}
 
                 {live && (

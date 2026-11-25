@@ -2,8 +2,15 @@
 
 Both material systems are read through Moonraker's printer objects. This file
 says what to ask for and what the answer means: gate arrays of a Happy Hare
-unit, slot variables and the filament dictionary of a QIDI Box, and the shape
-of a Moonraker address. Nothing here sends a request.
+unit, slot variables and the filament dictionary of a QIDI Box, the length of
+filament a job has used so far, and the shape of a Moonraker address. Nothing
+here sends a request.
+
+Klipper counts the filament its extruder moves (``print_stats.filament_used``).
+The plugin charges it to the spool in the slot that is feeding, unless
+Moonraker's own Spoolman link points at FilamentHub: that link reports the same
+print itself, and counting it here as well would deduct it twice. A link to
+some other Spoolman tells FilamentHub nothing, so the plugin counts.
 
 This file holds definitions only: no I/O, no module state and no reference
 to the plugin. ``build_package.py`` merges it into the single installable
@@ -282,6 +289,23 @@ def _qidi_int(value, default):
         return default
 
 
+def qidi_box_loaded_slot(variables):
+    """The Box slot whose filament is loaded into the extruder.
+
+    The Box's own macros keep it in ``last_load_slot``: ``"slotN"``, or
+    ``"slot-1"`` when nothing is loaded (qidi-community/Plus4-Wiki,
+    ``customisable_qidibox_firmware/box_macros.cfg``). Returns the slot index,
+    -1 when nothing is loaded and None when the printer does not say.
+    """
+    value = variables.get("last_load_slot") if isinstance(variables, dict) else None
+    if value == "slot-1":
+        return -1
+    match = re.fullmatch(r"slot(\d{1,2})", value) if isinstance(value, str) else None
+    if match is None or int(match.group(1)) >= _QIDI_MAX_SLOTS:
+        return None
+    return int(match.group(1))
+
+
 def qidi_box_query():
     """What one read of a QIDI Box asks Moonraker for."""
     query = {"save_variables": ["variables"]}
@@ -306,6 +330,7 @@ def parse_qidi_box_slots(state, variables, dictionary_text):
         max(0, _qidi_int(variables.get("box_count"), 1)) * _QIDI_SLOTS_PER_BOX,
         _QIDI_MAX_SLOTS,
     )
+    loaded = qidi_box_loaded_slot(variables)
     slots = []
     for index in range(slot_count):
         stepper = state.get("%s%d" % (_QIDI_STEPPER_PREFIX, index))
@@ -323,6 +348,8 @@ def parse_qidi_box_slots(state, variables, dictionary_text):
             "present": present,
             "spool_identity_known": False,
         }
+        if loaded is not None:
+            slot["active_feed"] = index == loaded
         if present:
             name = filaments.get(_qidi_int(variables.get("filament_slot%d" % index), 1))
             if name:
@@ -333,3 +360,153 @@ def parse_qidi_box_slots(state, variables, dictionary_text):
                 slot["color_hex"] = color[:6]
         slots.append(slot)
     return slots
+
+
+# Filament usage through Moonraker. ``happy_hare`` is a printer with that MMU;
+# ``legacy`` is any other Klipper printer.
+MOONRAKER_USAGE_PROVIDERS = ("happy_hare", "legacy")
+# The slot index FilamentHub gives the Happy Hare bypass.
+MOONRAKER_BYPASS_PROVIDER_INDEX = 1023
+_MOONRAKER_USAGE_STATES = frozenset(
+    {"standby", "printing", "paused", "complete", "cancelled", "error"}
+)
+_MOONRAKER_MAX_JOB_LENGTH_MM = 10_000_000.0
+
+
+def moonraker_usage_query(provider):
+    """What one usage reading asks Moonraker for."""
+    objects = {
+        "print_stats": ["state", "filename", "filament_used", "print_duration"],
+    }
+    if provider == "happy_hare":
+        objects["mmu"] = list(HAPPY_HARE_STATUS_OBJECTS["mmu"]) + ["num_toolchanges"]
+    else:
+        # Where a QIDI Box says which of its slots is loaded; absent elsewhere.
+        objects["save_variables"] = ["variables"]
+    return objects
+
+
+def moonraker_feed_mark(status_map):
+    """Happy Hare's count of tool changes in this print, or None when it gives none.
+
+    Two readings can show the same gate with a switch to another gate and back
+    between them. The count tells such a stretch from one fed by a single spool.
+    """
+    mmu = status_map.get("mmu") if isinstance(status_map, dict) else None
+    count = mmu.get("num_toolchanges") if isinstance(mmu, dict) else None
+    return count if type(count) is int and count >= 0 else None
+
+
+def moonraker_usage(status_map):
+    """The job's filament so far, as the usage books read it, or None."""
+    stats = status_map.get("print_stats") if isinstance(status_map, dict) else None
+    if not isinstance(stats, dict):
+        return None
+    state = str(stats.get("state") or "").strip().lower()
+    used = stats.get("filament_used")
+    if (
+        state not in _MOONRAKER_USAGE_STATES
+        or isinstance(used, bool)
+        or not isinstance(used, (int, float))
+        or not 0 <= used <= _MOONRAKER_MAX_JOB_LENGTH_MM
+    ):
+        return None
+    usage = {"state": state, "filament_used_mm": float(used)}
+    name = stats.get("filename")
+    if isinstance(name, str) and name.strip():
+        usage["file_name"] = name.strip()[:300]
+    duration = stats.get("print_duration")
+    if (
+        isinstance(duration, (int, float))
+        and not isinstance(duration, bool)
+        and 0 <= duration <= 31_536_000
+    ):
+        usage["duration_s"] = float(duration)
+    return usage
+
+
+def moonraker_spoolman_server(server_config):
+    """The address in Moonraker's ``[spoolman]`` section, as ``/server/config`` gives it.
+
+    Returns ``{"server": address}``; the address is None when there is no such
+    section. Returns None when the answer cannot be read.
+    """
+    config = server_config.get("config") if isinstance(server_config, dict) else None
+    if not isinstance(config, dict):
+        return None
+    if "spoolman" not in config:
+        return {"server": None}
+    spoolman = config["spoolman"]
+    server = spoolman.get("server") if isinstance(spoolman, dict) else None
+    return {"server": server} if isinstance(server, str) else None
+
+
+def moonraker_reports_usage_itself(spoolman, own_hosts):
+    """Whether Moonraker's own Spoolman link reports this printer's prints to FilamentHub.
+
+    ``spoolman`` is what ``moonraker_spoolman_server`` returned and ``own_hosts``
+    the host names FilamentHub answers on. An answer that cannot be read counts
+    as yes: deducting nothing is recoverable, deducting twice is not.
+    """
+    if not isinstance(spoolman, dict):
+        return True
+    server = spoolman.get("server")
+    if server is None:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(server if "://" in server else "http://" + server)
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return True
+    # The path also gives FilamentHub away behind a proxy under another name.
+    return not host or host in own_hosts or "/spool_compat/" in parsed.path
+
+
+def moonraker_loaded_slot(status_map):
+    """The slot a printer without Happy Hare says is loaded, or None when it says nothing."""
+    saved = status_map.get("save_variables") if isinstance(status_map, dict) else None
+    return qidi_box_loaded_slot(saved.get("variables") if isinstance(saved, dict) else None)
+
+
+def moonraker_feed_slots(happy_hare, desired, loaded_slot=None):
+    """Which slot is feeding, in the shape the usage books read.
+
+    Happy Hare names the selected gate, and a QIDI Box the slot it loaded
+    (``loaded_slot``). Another Klipper printer names nothing: with one slot on
+    the site there is nothing to choose, and with several the slot is unknown,
+    so nothing is charged.
+    """
+    if happy_hare is not None:
+        loaded = happy_hare.get("filament_loaded") is True
+        slots = [
+            {
+                "provider_index": gate,
+                "active_feed": loaded and happy_hare.get("selected_gate") == gate,
+            }
+            for gate in range(happy_hare["gate_count"])
+        ]
+        bypass = happy_hare.get("bypass")
+        if isinstance(bypass, dict):
+            slots.append({
+                "provider_index": MOONRAKER_BYPASS_PROVIDER_INDEX,
+                "active_feed": loaded and bypass.get("selected") is True,
+            })
+        return slots
+    known = [
+        slot for slot in (desired.get("slots") if isinstance(desired, dict) else None) or []
+        if isinstance(slot, dict) and type(slot.get("index")) is int
+    ]
+    if len(known) <= 1:
+        return []
+    return [
+        {
+            "provider_index": slot["index"],
+            "active_feed": None if loaded_slot is None else slot["index"] == loaded_slot,
+        }
+        for slot in known
+    ]
+
+
+def moonraker_usage_capabilities(reports_itself):
+    """What the plugin's usage link can do for this printer right now."""
+    return ["read"] if reports_itself else ["read", "consumption"]

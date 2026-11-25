@@ -1,4 +1,5 @@
 import { bambuAdapter } from './bambu';
+import { crealityAdapter } from './creality';
 import { directFeedAdapter } from './direct';
 import { flashforgeAdapter } from './flashforge';
 import { happyHareAdapter } from './happyHare';
@@ -13,6 +14,7 @@ export const FEED_ADAPTERS: FeedAdapter[] = [
   happyHareAdapter,
   octoprintAdapter,
   flashforgeAdapter,
+  crealityAdapter,
 ];
 
 export function feedAdapterFor(provider: string): FeedAdapter {

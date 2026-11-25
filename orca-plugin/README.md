@@ -247,8 +247,11 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 The installable plugin is one file, because OrcaSlicer installs a local plugin
 from a single `.py` or a wheel with one entry module. Provider adapters are
 still developed as separate source files next to `filamenthub_plugin.py`:
-`filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_moonraker.py`
-(Happy Hare and QIDI Box through Moonraker's printer objects),
+`filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_creality.py`
+(Creality's status channel and CFS slots), `filamenthub_moonraker.py`
+(Happy Hare, QIDI Box and filament usage through Moonraker's printer objects),
+`filamenthub_usage_books.py` (charging a printer's running filament counter to
+spools, shared by Flashforge and Klipper),
 `filamenthub_bambu.py` (reading a Bambu status report) and
 `filamenthub_bambu_trust.py` (Bambu Lab's issuing certificates). The plugin
 imports them inside a marked block:
@@ -296,7 +299,7 @@ host, storage or the worker stays in `filamenthub_plugin.py`.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.10"
+# version = "0.3.0"
 # network = ["filamenthub.ru", "filamenthub.club"]
 # ///
 ```

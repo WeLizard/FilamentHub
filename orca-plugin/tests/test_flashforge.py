@@ -281,11 +281,9 @@ def test_usage_books_match_the_print_scenario_shared_with_edge(plugin_module):
     for step, expected in zip(scenario["steps"], scenario["expected"], strict=True):
         detail = _detail_with(step["detail"])
         slots, _complete = plugin_module.flashforge_slots(detail)
-        events = plugin_module.capture_flashforge_usage(
-            books,
-            plugin_module.flashforge_usage(detail),
-            plugin_module.flashforge_usage_route(slots, scenario["desired"]),
-            step["at"],
+        route, issue = plugin_module.counter_usage_route(slots, scenario["desired"])
+        events = plugin_module.capture_counter_usage(
+            books, plugin_module.flashforge_usage(detail), route, step["at"], issue, "flashforge"
         )
         for event in events:
             event.pop("job_id")
@@ -305,8 +303,8 @@ def watched(bridge, monkeypatch):
     calls.reading = {"status": "ready"}
     calls.failure = None
     monkeypatch.setitem(plugin._FLASHFORGE_CONNECTIONS, "items", [_connection()])
-    monkeypatch.setattr(plugin, "FLASHFORGE_USAGE_RETRY_SECONDS", 0.0)
-    monkeypatch.setattr(plugin, "FLASHFORGE_SNAPSHOT_MIN_SECONDS", 0.0)
+    monkeypatch.setattr(plugin, "USAGE_WATCH_RETRY_SECONDS", 0.0)
+    monkeypatch.setattr(plugin, "USAGE_WATCH_SNAPSHOT_MIN_SECONDS", 0.0)
 
     def read(connection):
         calls.reads.append(connection)
@@ -336,7 +334,7 @@ def watched(bridge, monkeypatch):
 def test_a_watched_print_is_charged_once_even_when_the_answer_is_lost(watched):
     plugin, calls = watched.plugin, watched.calls
     watched.at("printing", 0.10)
-    assert watched.runtime.watch_once() == plugin.FLASHFORGE_WATCH_PRINTING_SECONDS
+    assert watched.runtime.watch_once() == plugin.USAGE_WATCH_PRINTING_SECONDS
     watched.at("printing", 0.50)
     watched.runtime.watch_once()
     assert watched.batches() == []
@@ -344,7 +342,7 @@ def test_a_watched_print_is_charged_once_even_when_the_answer_is_lost(watched):
     # The job ends, and the site's answer to the batch never arrives.
     calls.post_status = 0
     watched.at("completed", 0.99)
-    assert watched.runtime.watch_once() == plugin.FLASHFORGE_WATCH_IDLE_SECONDS
+    assert watched.runtime.watch_once() == plugin.USAGE_WATCH_IDLE_SECONDS
     (lost,) = watched.batches()
     (event,) = lost["events"]
     (item,) = event["items"]

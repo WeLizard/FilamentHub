@@ -1695,6 +1695,13 @@ export interface PrintJob {
   materials: PrintJobMaterial[];
   events: PrintJobEvent[];
   usage_segments: PrintJobUsageSegment[];
+  usage_issues?: PrintJobUsageIssue[];
+  tracking_interrupted?: boolean;
+}
+
+export interface PrintJobUsageIssue {
+  reason: string;
+  slot_index: number | null;
 }
 
 export interface PrintJobListResponse {

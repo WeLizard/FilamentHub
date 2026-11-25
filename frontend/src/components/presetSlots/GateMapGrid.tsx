@@ -310,6 +310,15 @@ export function GateMapGrid({
               />
             </div>
 
+            {spool != null && spool.remaining_weight_g <= 0 && (
+              <span
+                className="max-w-full truncate text-[10px] leading-tight text-amber-200 @max-[5rem]:hidden"
+                title={t('presetSlots.assignment.outByEstimateHint')}
+              >
+                {t('presetSlots.assignment.outByEstimate')}
+              </span>
+            )}
+
             {!hasContent && (isUnidentified || !displayMaterial) && (
               <span className="text-[10px] leading-tight text-gray-400 @max-[5rem]:hidden">
                 {t(isUnidentified

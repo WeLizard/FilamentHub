@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.schemas.print_job import (
     PrintJobMaterialResponse,
     PrintJobResponse,
     PrintJobTransitionCreate,
+    PrintJobUsageIssueResponse,
     PrintJobUsageSegmentItemResponse,
     PrintJobUsageSegmentResponse,
 )
@@ -42,6 +43,12 @@ TERMINAL_STATUSES = {
     PrintJobStatus.completed,
     PrintJobStatus.cancelled,
     PrintJobStatus.failed,
+}
+# A running job is reported every few minutes while its reporter is watching;
+# a paused one sends nothing until it resumes, so it is given a day.
+TRACKING_SILENCE = {
+    PrintJobStatus.printing: timedelta(hours=2),
+    PrintJobStatus.paused: timedelta(hours=24),
 }
 ALLOWED_TRANSITIONS: dict[PrintJobStatus, set[PrintJobStatus]] = {
     PrintJobStatus.prepared: {
@@ -141,6 +148,25 @@ def _estimated_duration_from_calculation(
         return sum(numeric) if numeric else None
     value = parsed.get("print_time_seconds")
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def _tracking_interrupted(job: PrintJob) -> bool:
+    """A printer-reported job that is still open but has gone silent.
+
+    Nothing is changed in the job: when its reporter returns, the next report
+    continues it and this stops being true. A user's own job is theirs to move.
+    """
+    silence = TRACKING_SILENCE.get(job.status)
+    if silence is None or job.source == "manual":
+        return False
+    heard = [job.updated_at, *(event.received_at for event in job.events)]
+    heard += [usage.created_at for usage in job.usage_events]
+    last = max(
+        value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        for value in heard
+        if value is not None
+    )
+    return _now() - last > silence
 
 
 def _response(job: PrintJob) -> PrintJobResponse:
@@ -278,6 +304,18 @@ def _response(job: PrintJob) -> PrintJobResponse:
             for event in job.events
         ],
         usage_segments=usage_segments,
+        usage_issues=[
+            PrintJobUsageIssueResponse(
+                reason=str(issue["reason"]),
+                slot_index=(
+                    issue.get("slot_index") if isinstance(issue.get("slot_index"), int) else None
+                ),
+            )
+            for event in job.events
+            for issue in (event.details or {}).get("usage_issues") or []
+            if isinstance(issue, dict) and issue.get("reason")
+        ],
+        tracking_interrupted=_tracking_interrupted(job),
     )
 
 

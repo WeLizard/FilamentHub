@@ -4984,6 +4984,11 @@ export interface PrinterSuggestion {
   same_model_printer_ids: number[];
 }
 
+export interface PrinterUsageSetup {
+  has_spools: boolean;
+  last_usage_at: Record<number, string>;
+}
+
 export interface PhysicalPrinter {
   id: number;
   logical_id: string;
@@ -5284,6 +5289,9 @@ export interface MaterialSystemUpdate {
 }
 
 export const physicalPrintersAPI = {
+  usageSetup: async (signal?: AbortSignal): Promise<PrinterUsageSetup> => (
+    await api.get<PrinterUsageSetup>('/physical-printers/usage-setup', { signal })
+  ).data,
   revokeConnector: async (printerId: number, connectorId: number): Promise<PhysicalPrinter> => (
     await api.delete<PhysicalPrinter>(`/physical-printers/${printerId}/connectors/${connectorId}`)
   ).data,

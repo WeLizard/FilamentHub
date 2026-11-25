@@ -29,6 +29,17 @@ class PrinterUsageItem(BaseModel):
         return self
 
 
+class PrinterUsageSkip(BaseModel):
+    """Why a job, or one of its slots, could not be counted by the reporter."""
+
+    # Reporters newer than the server may name a reason it has no text for;
+    # the reason is shown generically then, and the report is still accepted.
+    reason: str = Field(pattern=r"^[a-z][a-z0-9_]{0,47}$")
+    slot_index: int | None = Field(default=None, ge=0, le=1023)
+
+    model_config = {"extra": "forbid"}
+
+
 class PrinterUsageEvent(BaseModel):
     contract_version: Literal[1, 2] = 1
     event_id: str = Field(min_length=1, max_length=128)
@@ -54,6 +65,7 @@ class PrinterUsageEvent(BaseModel):
     observed_at: datetime | None = None
     duration_s: float | None = Field(default=None, ge=0)
     items: list[PrinterUsageItem] = Field(default_factory=list, max_length=256)
+    skipped: list[PrinterUsageSkip] = Field(default_factory=list, max_length=32)
 
     model_config = {"str_strip_whitespace": True, "extra": "forbid"}
 

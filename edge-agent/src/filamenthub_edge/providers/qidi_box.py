@@ -5,6 +5,11 @@ Behaviour is pinned to OrcaSlicer's QidiPrinterAgent
 for slot variables and presence, 218-330 for the filament dictionary,
 390-412 for type normalisation). The variable names and the dictionary file
 are undocumented firmware details; this module only reads them.
+
+Which slot is loaded into the extruder comes from ``last_load_slot``, kept by
+the Box's own macros (qidi-community/Plus4-Wiki,
+``customisable_qidibox_firmware/box_macros.cfg``): ``"slotN"``, or
+``"slot-1"`` when nothing is loaded.
 """
 
 from __future__ import annotations
@@ -89,6 +94,17 @@ def _integer(value: Any, default: int) -> int:
         return default
 
 
+def loaded_slot(variables: dict[str, Any]) -> int | None:
+    """The slot loaded into the extruder; -1 for none, None when the Box does not say."""
+    value = variables.get("last_load_slot")
+    if value == "slot-1":
+        return -1
+    match = re.fullmatch(r"slot(\d{1,2})", value) if isinstance(value, str) else None
+    if match is None or int(match.group(1)) >= MAX_SLOTS:
+        return None
+    return int(match.group(1))
+
+
 def build_slots(
     status: dict[str, Any],
     colors: dict[int, str],
@@ -100,6 +116,7 @@ def build_slots(
         raise ValueError("QIDI Box save_variables are unavailable")
     box_count = max(0, _integer(variables.get("box_count"), 1))
     slot_count = min(box_count * SLOTS_PER_BOX, MAX_SLOTS)
+    loaded = loaded_slot(variables)
     slots: list[dict[str, Any]] = []
     for index in range(slot_count):
         stepper = status.get(f"{BOX_STEPPER_PREFIX}{index}")
@@ -115,6 +132,9 @@ def build_slots(
             "present": present,
             "spool_identity_known": False,
         }
+        if loaded is not None:
+            # The one fact that lets a print be charged to a spool.
+            slot["active_feed"] = index == loaded
         if present:
             name = filaments.get(_integer(variables.get(f"filament_slot{index}"), 1))
             if name:

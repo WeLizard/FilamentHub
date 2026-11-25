@@ -1203,24 +1203,30 @@ export function requestBambuMaterialAction(
   });
 }
 
-export interface FlashforgeBridgeResult {
+/** What the plugin answers about a printer it reads over the local network. */
+export interface LanBridgeResult {
   ok: boolean;
   /** Outcome reported by the plugin; the page turns it into wording. */
   code: string;
-  /** Flashforge printers OrcaSlicer knows about, when the person must pick one. */
+  /** Printers of this kind OrcaSlicer knows about, when the person must pick one. */
   candidates?: Array<{ connectionRef: string; label: string }>;
 }
+export type FlashforgeBridgeResult = LanBridgeResult;
 
-function requestFlashforgeBridge(
-  type: 'configure-flashforge' | 'flashforge-refresh' | 'flashforge-assign',
-  resultType: 'flashforge-setup-result' | 'flashforge-refresh-result' | 'flashforge-assign-result',
+type LanBridgeProvider = 'flashforge' | 'creality';
+
+function requestLanBridge(
+  provider: LanBridgeProvider,
+  operation: 'setup' | 'refresh' | 'assign',
   payload: Record<string, unknown>,
-  capability: 'flashforge-lan-bridge' | 'flashforge-material-write' = 'flashforge-lan-bridge',
-): Promise<FlashforgeBridgeResult> {
+  capability: string = `${provider}-lan-bridge`,
+): Promise<LanBridgeResult> {
   if (!isPluginEmbed() || !activePluginCapabilities.has(capability)) {
-    return Promise.reject(new Error('flashforge bridge unavailable'));
+    return Promise.reject(new Error(`${provider} bridge unavailable`));
   }
-  const requestId = pluginRequestId('flashforge');
+  const type = operation === 'setup' ? `configure-${provider}` : `${provider}-${operation}`;
+  const resultType = `${provider}-${operation}-result`;
+  const requestId = pluginRequestId(provider);
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       window.removeEventListener('message', onMessage);
@@ -1234,7 +1240,7 @@ function requestFlashforgeBridge(
       cleanup();
       const result = data.result;
       if (typeof result?.ok !== 'boolean' || typeof result.code !== 'string') {
-        reject(new Error('invalid flashforge result'));
+        reject(new Error(`invalid ${provider} result`));
         return;
       }
       const candidates = Array.isArray(result.candidates)
@@ -1248,7 +1254,7 @@ function requestFlashforgeBridge(
     // The first request to a printer can wait for OrcaSlicer's permission prompt.
     const timer = window.setTimeout(() => {
       cleanup();
-      reject(new Error('flashforge bridge timeout'));
+      reject(new Error(`${provider} bridge timeout`));
     }, 60_000);
     window.addEventListener('message', onMessage);
     postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type, requestId, ...payload });
@@ -1266,8 +1272,8 @@ export function configureFlashforgeBridgeInPlugin(
   materialSystemId: number,
   pairingCode: string,
   connectionRef?: string,
-): Promise<FlashforgeBridgeResult> {
-  return requestFlashforgeBridge('configure-flashforge', 'flashforge-setup-result', {
+): Promise<LanBridgeResult> {
+  return requestLanBridge('flashforge', 'setup', {
     physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
   });
 }
@@ -1276,10 +1282,8 @@ export function configureFlashforgeBridgeInPlugin(
 export function requestFlashforgeObservationRefresh(
   physicalPrinterId: number,
   materialSystemId: number,
-): Promise<FlashforgeBridgeResult> {
-  return requestFlashforgeBridge('flashforge-refresh', 'flashforge-refresh-result', {
-    physicalPrinterId, materialSystemId,
-  });
+): Promise<LanBridgeResult> {
+  return requestLanBridge('flashforge', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
 /**
@@ -1291,10 +1295,35 @@ export function requestFlashforgeSlotAssignment(
   physicalPrinterId: number,
   materialSystemId: number,
   commit: MaterialAssignmentCommit,
-): Promise<FlashforgeBridgeResult> {
-  return requestFlashforgeBridge('flashforge-assign', 'flashforge-assign-result', {
+): Promise<LanBridgeResult> {
+  return requestLanBridge('flashforge', 'assign', {
     physicalPrinterId, materialSystemId, commit,
   }, 'flashforge-material-write');
+}
+
+/**
+ * Link a Creality printer through the plugin. The page sends FilamentHub IDs,
+ * the one-time pairing code and an optional opaque local reference; the
+ * printer's address is read by the plugin from its connection settings in
+ * OrcaSlicer and never reaches the page.
+ */
+export function configureCrealityBridgeInPlugin(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  pairingCode: string,
+  connectionRef?: string,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('creality', 'setup', {
+    physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
+  });
+}
+
+/** Ask the plugin to read a linked Creality printer once and report it. */
+export function requestCrealityObservationRefresh(
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('creality', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
 export interface HappyHareAssignmentChange {
@@ -1307,7 +1336,7 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
-  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge';
+  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality';
   printerModel?: string;
   source?: 'network' | 'profile' | 'saved';
 }

@@ -1,0 +1,90 @@
+{
+  "boxsInfo": {
+    "materialBoxs": [
+      {
+        "id": 0,
+        "state": 0,
+        "type": 1,
+        "materials": []
+      },
+      {
+        "id": 1,
+        "state": 1,
+        "type": 0,
+        "materials": [
+          {
+            "id": 0,
+            "state": 2,
+            "vendor": "Creality",
+            "type": "PLA",
+            "name": "Hyper PLA",
+            "color": "#0ffffff"
+          },
+          {
+            "id": 1,
+            "state": 1,
+            "vendor": "Creality",
+            "type": "PLA",
+            "name": "Hyper PLA",
+            "color": "#0101010"
+          },
+          {
+            "id": 2,
+            "state": 0,
+            "vendor": "",
+            "type": "",
+            "name": "",
+            "color": ""
+          },
+          {
+            "id": 3,
+            "state": 2,
+            "vendor": "Creality",
+            "type": "PETG",
+            "name": "CR-PETG",
+            "color": "#0ffffff"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "state": 1,
+        "type": 0,
+        "materials": [
+          {
+            "id": 0,
+            "state": 2,
+            "vendor": "Creality",
+            "type": "PLA",
+            "name": "Hyper PLA",
+            "color": "#0ffffff"
+          },
+          {
+            "id": 1,
+            "state": 0,
+            "vendor": "",
+            "type": "",
+            "name": "",
+            "color": ""
+          },
+          {
+            "id": 2,
+            "state": 0,
+            "vendor": "",
+            "type": "",
+            "name": "",
+            "color": ""
+          },
+          {
+            "id": 3,
+            "state": 0,
+            "vendor": "",
+            "type": "",
+            "name": "",
+            "color": ""
+          }
+        ]
+      }
+    ]
+  }
+}

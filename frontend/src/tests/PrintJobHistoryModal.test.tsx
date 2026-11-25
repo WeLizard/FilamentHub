@@ -111,6 +111,24 @@ beforeEach(() => {
 });
 
 describe('PrintJobHistoryModal usage segments', () => {
+  it('says why nothing was deducted and marks a job whose reports stopped', async () => {
+    apiMocks.listJobs.mockResolvedValue({
+      items: [
+        { ...job, confirmed_consumption_g: 0, estimated_consumption_g: 0, usage_segments: [],
+          usage_issues: [{ reason: 'slot_without_spool', slot_index: 1 }] },
+        { ...job, id: 42, logical_id: 'job-42', status: 'printing', tracking_interrupted: true },
+      ],
+      total: 2,
+    });
+    await renderModal();
+    expect(await screen.findByText('printJobs.usageIssues.nothing')).toBeInTheDocument();
+    expect(
+      screen.getByText('printJobs.usageIssues.reason.slot_without_spool:slot=1'),
+    ).toBeInTheDocument();
+    // A silent job must not go on claiming that it is printing.
+    expect(screen.getByText('printJobs.trackingInterrupted')).toBeInTheDocument();
+    expect(screen.queryByText('printJobs.status.printing')).not.toBeInTheDocument();
+  });
   it('shows unresolved reports separately from confirmed consumption', async () => {
     apiMocks.listJobs.mockResolvedValue({
       items: [{ ...job, confirmed_consumption_g: 0, unreconciled_consumption_g: 5,

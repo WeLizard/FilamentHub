@@ -383,8 +383,14 @@ def _bambu_progress(report):
     return min(max(percent / 100, 0), 1) if percent is not None else None
 
 
-def _bambu_usage_counters(report, routes, estimate):
-    """Return comparable per-slot estimates with a source and physical identity."""
+def _bambu_usage_counters(report, routes, estimate, issues=None):
+    """Return comparable per-slot estimates with a source and physical identity.
+
+    ``issues`` collects why a part of the job cannot be counted, so a print
+    that charged nothing can say so instead of looking like a silent success.
+    """
+    if issues is None:
+        issues = []
     feed = parse_bambu_feed(report) or {}
     slots = {item["index"]: item for item in feed.get("slots") or []}
     progress = _bambu_progress(report)
@@ -394,6 +400,10 @@ def _bambu_usage_counters(report, routes, estimate):
     finished = str(report.get("gcode_state") or "").upper() == "FINISH"
     mapping = report.get("ams_mapping")
     totals = {}
+    if not routes:
+        issues.append({"reason": "no_spool_assigned"})
+    elif not weights:
+        issues.append({"reason": "print_file_unavailable"})
     if weights and (progress is not None or current_layer is not None):
         for logical, weight in weights.items():
             logical = int(logical)
@@ -407,6 +417,11 @@ def _bambu_usage_counters(report, routes, estimate):
                         index = feed["active_index"]
             elif len(weights) == 1:
                 index = feed.get("active_index")
+            if routes and _finite_positive(weight) is not None:
+                if not isinstance(index, int) or index < 0:
+                    issues.append({"reason": "slot_mapping_missing"})
+                elif index not in routes:
+                    issues.append({"reason": "slot_without_spool", "slot_index": index})
             if index in routes:
                 curve = layer_weights.get(str(logical), layer_weights.get(logical))
                 layer_point = None
@@ -459,6 +474,35 @@ def _bambu_usage_counters(report, routes, estimate):
     return result
 
 
+def _bambu_keep_gap_safe_baselines(tracker):
+    """After an interval nobody watched, keep the baselines that cannot count twice.
+
+    A slicer figure is a position in the job's own file: the same file, spool
+    route and tag later in the job are further along one curve, so the missed
+    interval is charged once when observation returns. A remaining-weight
+    reading is a sensor value anything may have changed meanwhile, so it
+    starts from a new baseline.
+    """
+    tracker["previous"] = {
+        index: point for index, point in (tracker.get("previous") or {}).items()
+        if isinstance(point, dict)
+        and point.get("source") in {"slicer_progress", "slicer_gcode"}
+    }
+
+
+def _bambu_skipped_usage(tracker):
+    """Why this job, or some of its slots, went uncounted; empty when all was counted."""
+    charged = set(tracker.get("charged") or [])
+    result = []
+    for issue in tracker.get("issues") or []:
+        slot = issue.get("slot_index")
+        if slot in charged or (slot is None and charged):
+            continue
+        if issue not in result:
+            result.append(issue)
+    return result[:16]
+
+
 def capture_bambu_usage(state, report, desired, estimate, observed_at):
     """Persistable deltas start at the observed spool binding, including late binds."""
     status = str(report.get("gcode_state") or "").upper()
@@ -489,6 +533,9 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             "items": list(pending.values()),
             **({"outcome": outcome} if outcome is not None else {}),
         })
+        skipped = _bambu_skipped_usage(current) if outcome is not None else []
+        if skipped:
+            events[-1]["skipped"] = skipped
         current["pending"] = {}
         current["segment_sequence"] += 1
         current["last_emit"] = observed_at
@@ -517,7 +564,12 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
     elif tracker.get("ams_mapping") is not None:
         report = {**report, "ams_mapping": tracker["ams_mapping"]}
     routes = _bambu_usage_routes(desired)
-    counters = _bambu_usage_counters(report, routes, estimate)
+    issues = []
+    counters = _bambu_usage_counters(report, routes, estimate, issues)
+    if state.get("file_permission_denied"):
+        for issue in issues:
+            if issue["reason"] == "print_file_unavailable":
+                issue["reason"] = "print_file_access_denied"
     previous = tracker["previous"]
     proofs = {route["usage_route_proof"] for route in routes.values()}
     tag_bindings = {
@@ -536,6 +588,7 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             if bound != identity:
                 # A replacement physical tag cannot inherit the old desired
                 # spool merely because it occupies the same printer slot.
+                issues.append({"reason": "tag_mismatch", "slot_index": index})
                 continue
         point = {**counter, "route": route, "observed_at": observed_at}
         before = previous.get(str(index))
@@ -562,14 +615,20 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
         if same_slicer_job and before["source"] != point["source"]:
             raw = float(counter["counter"])
             total = float(point["scale"][1])
-            remaps[str(index)] = {
-                "source": point["source"],
-                "scale": point["scale"],
-                "raw_start": raw,
-                "adjusted_start": float(before["counter"]),
-                "total": total,
-            }
-            point["counter"] = float(before["counter"])
+            if raw >= total:
+                # Both ways of counting end at the job's total. Nothing is left
+                # to spread over later readings, so what remains is charged now
+                # instead of being lost with the last observation of the job.
+                point["source"] = before["source"]
+            else:
+                remaps[str(index)] = {
+                    "source": point["source"],
+                    "scale": point["scale"],
+                    "raw_start": raw,
+                    "adjusted_start": float(before["counter"]),
+                    "total": total,
+                }
+                point["counter"] = float(before["counter"])
         elif before is not None and (
             before.get("route") != route
             or before.get("identity") != point.get("identity")
@@ -605,6 +664,9 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             }
             tracker["pending"][pending_key] = pending
         pending["used_weight_g"] += delta
+        if index not in tracker.setdefault("charged", []):
+            tracker["charged"].append(index)
+    tracker["issues"] = issues
     tracker["previous"] = current
     tracker["progress"] = progress
     elapsed = (datetime.datetime.fromisoformat(observed_at)

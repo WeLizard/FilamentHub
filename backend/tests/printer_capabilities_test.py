@@ -60,8 +60,9 @@ def test_known_adapter_is_bounded_by_its_manifest() -> None:
         (
             "happy_hare",
             "orca_plugin_lan",
-            ["presence", "read", "spool_identity", "tag_read"],
+            ["consumption", "presence", "read", "spool_identity", "tag_read"],
         ),
+        ("legacy", "orca_plugin_lan", ["consumption", "presence", "read"]),
         (
             "happy_hare",
             "spoolman_compat",

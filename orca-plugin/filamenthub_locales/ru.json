@@ -137,5 +137,8 @@
   "stockAlertSpool": "Заканчивается: у «{name}» осталось {remaining} г (порог {threshold} г).",
   "stockAlertMaterial": "Заканчивается: «{name}» на полке — {shelf} г (порог {threshold} г).",
   "stockAlertMaterialUnknown": "Заканчивается: «{name}» на полке — {shelf} г (порог {threshold} г). Катушки с неизвестным весом ({count}) не учтены.",
-  "stockAlertOpen": "Открыть катушки"
+  "stockAlertOpen": "Открыть катушки",
+  "usageNotDeducted": "FilamentHub: расход этой печати не списан. Причина указана в истории печати принтера на FilamentHub.",
+  "usageNotDeductedNoSpool": "FilamentHub: печать не списана, потому что к слотам принтера не привязана ни одна катушка. Привяжите катушку на FilamentHub.",
+  "usageNotDeductedSlot": "FilamentHub: часть этой печати не списана, потому что к одному из использованных слотов не привязана катушка."
 }

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.2.10"
+# version = "0.3.0"
 #
 # # Informational metadata; runtime grants are declared with
 # # orca.request_permissions() during capability registration.
@@ -52,6 +52,9 @@ Runtime surface used (confirmed against the current upstream plugin API):
                                                               and the Speed Dial
                                                               "FilamentHub Sync" action
   * on_lifecycle_event + orca.LifecycleEvent.PresetSaved   — sync after a preset save
+  * orca.LifecycleEvent.PrintJobStarted / PrintJobFinished /
+    UploadFinished / PrintStateChanged / DeviceOnline       — note a sent print, hurry
+                                                              the usage watchers
   * capability on_load/on_cancelled/on_unload hooks         — runtime lifecycle
   * orca.host.ui.create_window(...)                         — fallback UI/local dialogs
   * orca.host.plugin.storage()                              — private state
@@ -517,6 +520,21 @@ def post_window(window, payload):
 _PRESET_SAVED_EVENT = getattr(
     getattr(orca, "LifecycleEvent", None), "PresetSaved", None
 )
+# The host says when it sends a print and when a printer in its device list
+# changes state. Hosts without these members leave the sets empty, and the
+# plugin goes on by its own timers.
+_PRINT_SENT_EVENT = getattr(
+    getattr(orca, "LifecycleEvent", None), "PrintJobStarted", None
+)
+_PRINTER_ACTIVITY_EVENTS = frozenset(
+    event for event in (
+        getattr(getattr(orca, "LifecycleEvent", None), name, None)
+        for name in (
+            "PrintJobStarted", "PrintJobFinished", "UploadFinished",
+            "PrintStateChanged", "DeviceOnline",
+        )
+    ) if event is not None
+)
 
 # Triggers whose result is reported through the host's native notification
 # area instead of (or in addition to) the page.
@@ -655,7 +673,7 @@ def push_native_notification(level_name, text, hyper_text=None, on_click=None):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.2.10"
+PLUGIN_VERSION = "0.3.0"
 PLUGIN_CAPABILITIES = (
     "printer-bundle-install",
     "printer-bundle-result-v1",
@@ -664,6 +682,7 @@ PLUGIN_CAPABILITIES = (
     "bambu-lan-bridge",
     "flashforge-lan-bridge",
     "flashforge-material-write",
+    "creality-lan-bridge",
     "profile-sync",
     "profile-sync-scopes-v1",
     "bambu-material-write",
@@ -1091,6 +1110,11 @@ DATA_DIR = resolve_data_dir()
 # Active user's preset folder under {data_dir}/user/<folder>/, derived from a
 # user preset's file path via preset_bundle — the audit blocks OrcaSlicer.conf.
 _user_preset_folder = None
+# How the folder is known: "preset" when a saved user preset names it now,
+# "host" when the host confirmed it by listing a bundle placed there.
+_user_preset_folder_source = None
+USER_FOLDER_CANDIDATE_LIMIT = 8
+_USER_FOLDER_CHECK_PREFIX = "filamenthub-folder-check-"
 
 
 def _preset_folder_from_file(preset_file):
@@ -1104,7 +1128,7 @@ def _preset_folder_from_file(preset_file):
 
 def refresh_user_preset_folder():
     """Resolve and cache the folder. UI thread only (reads preset_bundle)."""
-    global _user_preset_folder
+    global _user_preset_folder, _user_preset_folder_source
     try:
         bundle = orca.host.preset_bundle()
         for collection in (bundle.filaments, bundle.printers, bundle.prints):
@@ -1114,9 +1138,14 @@ def refresh_user_preset_folder():
                     folder = _preset_folder_from_file(preset.file)
                     if folder:
                         _user_preset_folder = folder
+                        _user_preset_folder_source = "preset"
                         return folder
     except Exception:
         pass
+    if _user_preset_folder_source == "preset":
+        # No saved preset names the folder any more (another account, or the
+        # presets were deleted): what was read earlier is only a first guess.
+        _user_preset_folder_source = None
     return _user_preset_folder
 
 
@@ -1135,6 +1164,152 @@ def resolve_user_preset_folder():
 
 BUNDLE_ID = "filamenthub"
 BUNDLE_NAME = "FilamentHub"
+
+
+def _host_local_bundle_ids():
+    """Local bundles of the host's active user folder, or None when it cannot say."""
+    bundles = getattr(
+        getattr(getattr(orca, "host", None), "preset", None), "bundles", None
+    )
+    list_ids = getattr(bundles, "list_ids", None)
+    if not callable(list_ids):
+        return None
+    try:
+        return set(list_ids())
+    except Exception as exc:
+        fh_log("local bundle listing failed: %s" % type(exc).__name__)
+        return None
+
+
+def _user_folders():
+    root = os.path.join(DATA_DIR, "user")
+    try:
+        return [
+            name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))
+        ]
+    except OSError:
+        return []
+
+
+def _user_folder_candidates():
+    """Folders the host may be loading from: the current guess, then the most recently used."""
+    root = os.path.join(DATA_DIR, "user")
+
+    def modified(name):
+        try:
+            return os.path.getmtime(os.path.join(root, name))
+        except OSError:
+            return 0.0
+
+    current = resolve_user_preset_folder()
+    others = sorted(
+        (name for name in _user_folders() if name != current), key=modified, reverse=True
+    )
+    return ([current] + others)[:USER_FOLDER_CANDIDATE_LIMIT]
+
+
+def _remove_folder_check(metadata_path, created_directories=()):
+    """Take a folder check away again, with the folders made only for it."""
+    check_dir = os.path.dirname(metadata_path)
+    with side_effect_transaction():
+        for remove, path in (
+            (os.remove, metadata_path),
+            (os.rmdir, check_dir),
+            *((os.rmdir, path) for path in created_directories),
+        ):
+            try:
+                remove(path)
+            except OSError:
+                pass
+
+
+def _host_loads_bundles_from(folder):
+    """Whether ``folder`` is the host's active user folder.
+
+    The host lists the local bundles of its active folder only, including ones
+    added after it started. An empty bundle placed in ``folder`` for a moment
+    is in that list exactly when the folder is the active one.
+    """
+    user_dir = os.path.join(DATA_DIR, "user", folder)
+    local_dir = os.path.join(user_dir, "_local")
+    check_id = _USER_FOLDER_CHECK_PREFIX + secrets.token_hex(4)
+    metadata_path = os.path.join(local_dir, check_id, "bundle_metadata.json")
+    created = [path for path in (local_dir, user_dir) if not os.path.isdir(path)]
+    try:
+        write_json_atomic(
+            metadata_path,
+            {
+                "id": check_id,
+                "name": BUNDLE_NAME,
+                "version": "1.0.0",
+                "description": "FilamentHub folder check",
+                "author": "FilamentHub",
+            },
+        )
+        listed = _host_local_bundle_ids()
+        return listed is not None and check_id in listed
+    except OSError:
+        return False
+    finally:
+        _remove_folder_check(metadata_path, created)
+
+
+def confirm_user_preset_folder():
+    """Make sure the managed bundle goes where OrcaSlicer loads bundles from.
+
+    A saved user preset names the active folder. A person with stock profiles
+    only gives nothing to read it from, and once signed in to an account in
+    OrcaSlicer the folder is no longer "default": presets written there are
+    never loaded, however often the sync succeeds. The host is then asked
+    which of the existing user folders is the active one.
+
+    Call it before the bundle is written. From a worker thread the host call
+    waits for the UI thread.
+    """
+    global _user_preset_folder, _user_preset_folder_source
+    if _user_preset_folder_source == "preset":
+        return _user_preset_folder
+
+    def confirm():
+        if _host_local_bundle_ids() is None:
+            # A host that cannot list bundles: the guess is all there is.
+            return None
+        # A check left behind by a run that was cut short.
+        for folder in _user_folders():
+            local_dir = os.path.join(DATA_DIR, "user", folder, "_local")
+            try:
+                stale = [
+                    name for name in os.listdir(local_dir)
+                    if name.startswith(_USER_FOLDER_CHECK_PREFIX)
+                ]
+            except OSError:
+                continue
+            for name in stale:
+                _remove_folder_check(os.path.join(local_dir, name, "bundle_metadata.json"))
+        for folder in _user_folder_candidates():
+            if _host_loads_bundles_from(folder):
+                return folder
+        return ""
+
+    worker = globals().get("BACKGROUND_WORKER")
+    run_if_current = getattr(worker, "run_if_current", None)
+    try:
+        if callable(run_if_current):
+            found = run_if_current(confirm)
+        else:
+            ensure_worker_generation_active()
+            found = confirm()
+    except PluginLifecycleStopped:
+        return resolve_user_preset_folder()
+    if found:
+        if found != resolve_user_preset_folder():
+            # The folder's name is an account identifier and stays out of the log.
+            fh_log("managed bundle folder corrected: the host loads from another user folder")
+        _user_preset_folder = found
+        _user_preset_folder_source = "host"
+    elif found == "":
+        fh_log("the host loads local bundles from none of the known user folders")
+    return resolve_user_preset_folder()
 
 
 def user_bundle_dir():
@@ -1197,7 +1372,10 @@ def reload_managed_local_bundle_if_available():
         getattr(getattr(orca, "host", None), "preset", None), "bundles", None
     )
     reload_bundle = getattr(bundles, "reload_local", None)
-    folder_source = "inferred" if _user_preset_folder else "default"
+    folder_source = (
+        "host" if _user_preset_folder_source == "host"
+        else "inferred" if _user_preset_folder else "default"
+    )
     if not callable(reload_bundle):
         fh_log("managed local bundle reload API unavailable (folder_source=%s)" % folder_source)
         return False
@@ -1310,7 +1488,7 @@ def configure_plugin_storage():
     """
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
-    global FLASHFORGE_CONFIG_FILE
+    global FLASHFORGE_CONFIG_FILE, MOONRAKER_USAGE_CONFIG_FILE, CREALITY_CONFIG_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
@@ -1384,6 +1562,8 @@ def configure_plugin_storage():
     BAMBU_CONFIG_FILE = os.path.join(target_root, ".fh_bambu.json")
     BAMBU_REVOKE_FILE = os.path.join(target_root, ".fh_bambu_revoke.json")
     FLASHFORGE_CONFIG_FILE = os.path.join(target_root, ".fh_flashforge.json")
+    CREALITY_CONFIG_FILE = os.path.join(target_root, ".fh_creality.json")
+    MOONRAKER_USAGE_CONFIG_FILE = os.path.join(target_root, ".fh_moonraker_usage.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
@@ -1497,6 +1677,8 @@ AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
 FLASHFORGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_flashforge.json")
+CREALITY_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_creality.json")
+MOONRAKER_USAGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_moonraker_usage.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 WORKSTATION_KEY_FILE = os.path.join(PLUGIN_DIR, ".fh_workstation_key.json")
 STOCK_ALERT_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_stock_alerts.json")
@@ -2966,6 +3148,7 @@ def _install_printer_bundle_transaction(
 ):
     profile_ids = printer_bundle_profile_ids(bundle)
     prepared = prepare_printer_bundle_install(bundle)
+    confirm_user_preset_folder()
     ensure_bundle_metadata()
     counts = {"machine": 0, "process": 0}
     os.makedirs(user_bundle_dir(), mode=0o700, exist_ok=True)
@@ -5508,12 +5691,23 @@ def probe_printer_setup(context, connection, origin):
 # fh-bundle: filamenthub_moonraker
 from filamenthub_moonraker import (
     HAPPY_HARE_STATUS_OBJECTS,
+    MOONRAKER_BYPASS_PROVIDER_INDEX,
+    MOONRAKER_USAGE_PROVIDERS,
     _QIDI_DICT_PATH,
     _moonraker_base_url,
     _physical_tag_uid,
     _qidi_box_present,
+    moonraker_feed_mark,
+    moonraker_feed_slots,
+    moonraker_loaded_slot,
+    moonraker_reports_usage_itself,
+    moonraker_spoolman_server,
+    moonraker_usage,
+    moonraker_usage_capabilities,
+    moonraker_usage_query,
     parse_happy_hare_status,
     parse_qidi_box_slots,
+    qidi_box_loaded_slot,
     qidi_box_query,
     qidi_box_variables,
 )
@@ -5567,6 +5761,14 @@ def _moonraker_json(connection, path, payload=None, timeout=None, raw_text=False
     return status, decoded if isinstance(decoded, dict) else {}, ""
 
 
+def _own_site_urls():
+    """The addresses FilamentHub answers on for the account in use."""
+    own_sites = {SITE_URL}
+    if account_origin() == PROD_SITE_URL:
+        own_sites.update(PROD_SITE_URLS.values())
+    return own_sites
+
+
 def _happy_hare_inventory_digest(connection):
     status, body, _error = _moonraker_json(connection, "/server/config")
     result = body.get("result") if status == 200 and isinstance(body, dict) else None
@@ -5579,9 +5781,7 @@ def _happy_hare_inventory_digest(connection):
         parsed = urllib.parse.urlsplit(server)
     except ValueError:
         return None
-    own_sites = {SITE_URL}
-    if account_origin() == PROD_SITE_URL:
-        own_sites.update(PROD_SITE_URLS.values())
+    own_sites = _own_site_urls()
     if not any(
         (parsed.scheme, parsed.netloc) == (site.scheme, site.netloc)
         for site in map(urllib.parse.urlsplit, own_sites)
@@ -5867,7 +6067,19 @@ def resolve_happy_hare_connection(
     )
     if device is None:
         return None, None, None, "not_found"
+    connection, error = _bound_local_connection(device, local_connections)
+    if connection is None:
+        return None, None, device, error
+    try:
+        snapshot = (reader or read_happy_hare_snapshot)(connection)
+    except (RuntimeError, ValueError) as exc:
+        fh_log("Happy Hare read failed for bound connection: %s" % exc)
+        return None, None, device, "unreachable"
+    return connection, snapshot, device, None
 
+
+def _bound_local_connection(device, local_connections):
+    """The one local connection bound to a printer card: ``(connection, error)``."""
     local_by_ref = {}
     duplicate_refs = set()
     for connection in local_connections or []:
@@ -5881,7 +6093,7 @@ def resolve_happy_hare_connection(
     exact = []
     connection_refs = device.get("connection_refs")
     if not isinstance(connection_refs, list):
-        return None, None, device, "server"
+        return None, "server"
     for connection_ref in connection_refs:
         if not isinstance(connection_ref, str):
             continue
@@ -5900,16 +6112,10 @@ def resolve_happy_hare_connection(
             continue
         unique_exact[(endpoint, item.get("api_key") or "")] = item
     if len(unique_exact) == 1:
-        connection = next(iter(unique_exact.values()))
-        try:
-            snapshot = (reader or read_happy_hare_snapshot)(connection)
-        except (RuntimeError, ValueError) as exc:
-            fh_log("Happy Hare read failed for bound connection: %s" % exc)
-            return None, None, device, "unreachable"
-        return connection, snapshot, device, None
+        return next(iter(unique_exact.values())), None
     if len(unique_exact) > 1:
-        return None, None, device, "ambiguous_connection"
-    return None, None, device, "connection_not_found"
+        return None, "ambiguous_connection"
+    return None, "connection_not_found"
 
 
 def _desired_happy_hare_spools(physical_printer, material_system_id):
@@ -6074,6 +6280,12 @@ def sync_happy_hare_topologies(token, local_connections):
     inventory, inventory_error = _happy_hare_server_inventory(token)
     if inventory_error or inventory is None:
         return 0, len(local_connections)
+    try:
+        link_moonraker_usage(token, inventory, local_connections)
+    except PluginLifecycleStopped:
+        raise
+    except Exception as exc:
+        fh_log("Moonraker usage link failed: %s" % type(exc).__name__)
     synced = failed = 0
     for device in inventory["printers"]:
         physical_printer_id = device.get("id")
@@ -9559,8 +9771,14 @@ def _bambu_progress(report):
     return min(max(percent / 100, 0), 1) if percent is not None else None
 
 
-def _bambu_usage_counters(report, routes, estimate):
-    """Return comparable per-slot estimates with a source and physical identity."""
+def _bambu_usage_counters(report, routes, estimate, issues=None):
+    """Return comparable per-slot estimates with a source and physical identity.
+
+    ``issues`` collects why a part of the job cannot be counted, so a print
+    that charged nothing can say so instead of looking like a silent success.
+    """
+    if issues is None:
+        issues = []
     feed = parse_bambu_feed(report) or {}
     slots = {item["index"]: item for item in feed.get("slots") or []}
     progress = _bambu_progress(report)
@@ -9570,6 +9788,10 @@ def _bambu_usage_counters(report, routes, estimate):
     finished = str(report.get("gcode_state") or "").upper() == "FINISH"
     mapping = report.get("ams_mapping")
     totals = {}
+    if not routes:
+        issues.append({"reason": "no_spool_assigned"})
+    elif not weights:
+        issues.append({"reason": "print_file_unavailable"})
     if weights and (progress is not None or current_layer is not None):
         for logical, weight in weights.items():
             logical = int(logical)
@@ -9583,6 +9805,11 @@ def _bambu_usage_counters(report, routes, estimate):
                         index = feed["active_index"]
             elif len(weights) == 1:
                 index = feed.get("active_index")
+            if routes and _finite_positive(weight) is not None:
+                if not isinstance(index, int) or index < 0:
+                    issues.append({"reason": "slot_mapping_missing"})
+                elif index not in routes:
+                    issues.append({"reason": "slot_without_spool", "slot_index": index})
             if index in routes:
                 curve = layer_weights.get(str(logical), layer_weights.get(logical))
                 layer_point = None
@@ -9635,6 +9862,35 @@ def _bambu_usage_counters(report, routes, estimate):
     return result
 
 
+def _bambu_keep_gap_safe_baselines(tracker):
+    """After an interval nobody watched, keep the baselines that cannot count twice.
+
+    A slicer figure is a position in the job's own file: the same file, spool
+    route and tag later in the job are further along one curve, so the missed
+    interval is charged once when observation returns. A remaining-weight
+    reading is a sensor value anything may have changed meanwhile, so it
+    starts from a new baseline.
+    """
+    tracker["previous"] = {
+        index: point for index, point in (tracker.get("previous") or {}).items()
+        if isinstance(point, dict)
+        and point.get("source") in {"slicer_progress", "slicer_gcode"}
+    }
+
+
+def _bambu_skipped_usage(tracker):
+    """Why this job, or some of its slots, went uncounted; empty when all was counted."""
+    charged = set(tracker.get("charged") or [])
+    result = []
+    for issue in tracker.get("issues") or []:
+        slot = issue.get("slot_index")
+        if slot in charged or (slot is None and charged):
+            continue
+        if issue not in result:
+            result.append(issue)
+    return result[:16]
+
+
 def capture_bambu_usage(state, report, desired, estimate, observed_at):
     """Persistable deltas start at the observed spool binding, including late binds."""
     status = str(report.get("gcode_state") or "").upper()
@@ -9665,6 +9921,9 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             "items": list(pending.values()),
             **({"outcome": outcome} if outcome is not None else {}),
         })
+        skipped = _bambu_skipped_usage(current) if outcome is not None else []
+        if skipped:
+            events[-1]["skipped"] = skipped
         current["pending"] = {}
         current["segment_sequence"] += 1
         current["last_emit"] = observed_at
@@ -9693,7 +9952,12 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
     elif tracker.get("ams_mapping") is not None:
         report = {**report, "ams_mapping": tracker["ams_mapping"]}
     routes = _bambu_usage_routes(desired)
-    counters = _bambu_usage_counters(report, routes, estimate)
+    issues = []
+    counters = _bambu_usage_counters(report, routes, estimate, issues)
+    if state.get("file_permission_denied"):
+        for issue in issues:
+            if issue["reason"] == "print_file_unavailable":
+                issue["reason"] = "print_file_access_denied"
     previous = tracker["previous"]
     proofs = {route["usage_route_proof"] for route in routes.values()}
     tag_bindings = {
@@ -9712,6 +9976,7 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             if bound != identity:
                 # A replacement physical tag cannot inherit the old desired
                 # spool merely because it occupies the same printer slot.
+                issues.append({"reason": "tag_mismatch", "slot_index": index})
                 continue
         point = {**counter, "route": route, "observed_at": observed_at}
         before = previous.get(str(index))
@@ -9738,14 +10003,20 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
         if same_slicer_job and before["source"] != point["source"]:
             raw = float(counter["counter"])
             total = float(point["scale"][1])
-            remaps[str(index)] = {
-                "source": point["source"],
-                "scale": point["scale"],
-                "raw_start": raw,
-                "adjusted_start": float(before["counter"]),
-                "total": total,
-            }
-            point["counter"] = float(before["counter"])
+            if raw >= total:
+                # Both ways of counting end at the job's total. Nothing is left
+                # to spread over later readings, so what remains is charged now
+                # instead of being lost with the last observation of the job.
+                point["source"] = before["source"]
+            else:
+                remaps[str(index)] = {
+                    "source": point["source"],
+                    "scale": point["scale"],
+                    "raw_start": raw,
+                    "adjusted_start": float(before["counter"]),
+                    "total": total,
+                }
+                point["counter"] = float(before["counter"])
         elif before is not None and (
             before.get("route") != route
             or before.get("identity") != point.get("identity")
@@ -9781,6 +10052,9 @@ def capture_bambu_usage(state, report, desired, estimate, observed_at):
             }
             tracker["pending"][pending_key] = pending
         pending["used_weight_g"] += delta
+        if index not in tracker.setdefault("charged", []):
+            tracker["charged"].append(index)
+    tracker["issues"] = issues
     tracker["previous"] = current
     tracker["progress"] = progress
     elapsed = (datetime.datetime.fromisoformat(observed_at)
@@ -10026,7 +10300,7 @@ class BambuBridgeRuntime:
         # A failed disk write must not advance the in-memory accounting baseline.
         state = json.loads(json.dumps(state))
         if report.get("_fh_observation_gap") and state.get("tracker") is not None:
-            state["tracker"]["previous"] = {}
+            _bambu_keep_gap_safe_baselines(state["tracker"])
         key = _bambu_job_key(report)
         tracker = state.get("tracker")
         if not state.get("outbox") and not state["events"]:
@@ -10063,6 +10337,10 @@ class BambuBridgeRuntime:
                     self._log_usage_issue(log_binding, "printer artifact", detail)
                 else:
                     self._usage_log_at.pop((log_binding, "printer artifact"), None)
+            if state["estimate"] is None:
+                # A job sent from this OrcaSlicer is still known from the slice
+                # the plugin kept, whatever became of the printer's own file.
+                state["estimate"] = bambu_estimate_from_sent_print(config, report)
         if (state.get("estimate") is not None
                 and not state["estimate"].get("layer_weights")
                 and time.time() >= state.get("layer_curve_retry_at", 0)):
@@ -10072,14 +10350,16 @@ class BambuBridgeRuntime:
             )
         status, body = http_get_bridge_json("/printer-bridge/snapshot", config["bridge_token"])
         observation_accepted = False
+        captured = []
         if status == 200:
             desired = json.loads(body.decode("utf-8"))
             if not isinstance(desired, dict):
                 raise ValueError("Invalid Bambu desired snapshot")
             if len(state["events"]) < 512:
-                state["events"].extend(capture_bambu_usage(
+                captured = capture_bambu_usage(
                     state, report, desired, state.get("estimate"), observed_at
-                ))
+                )
+                state["events"].extend(captured)
                 observation_accepted = True
             else:
                 fh_log("Bambu usage queue is full; draining before resuming observations")
@@ -10103,6 +10383,9 @@ class BambuBridgeRuntime:
         if not self._write_usage_journal(log_binding, path, state):
             return False
         self._usage_states[binding] = state
+        # Only once the books hold the job's end: a repeated observation after
+        # a failed write must not repeat the notice.
+        notify_uncounted_prints(captured)
         pending = state.get("outbox")
         if pending is None or time.monotonic() < self._usage_retry_at.get(binding, 0):
             return observation_accepted
@@ -10914,6 +11197,10 @@ def resume_deferred_background_threads():
                 STOCK_ALERT_RUNTIME.start()
                 if _load_flashforge_bindings():
                     FLASHFORGE_WATCH_RUNTIME.start()
+                if _load_moonraker_usage_links():
+                    MOONRAKER_WATCH_RUNTIME.start()
+                if _load_creality_bindings():
+                    CREALITY_WATCH_RUNTIME.start()
             except Exception as exc:
                 fh_log("deferred background start failed: %s" % type(exc).__name__)
 
@@ -10939,6 +11226,10 @@ def start_plugin_runtime(storage_initialized=False):
         STOCK_ALERT_RUNTIME.start()
         if _load_flashforge_bindings():
             FLASHFORGE_WATCH_RUNTIME.start()
+        if _load_moonraker_usage_links():
+            MOONRAKER_WATCH_RUNTIME.start()
+        if _load_creality_bindings():
+            CREALITY_WATCH_RUNTIME.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)
@@ -10961,6 +11252,8 @@ def stop_plugin_runtime():
     BAMBU_BRIDGE_RUNTIME.stop()
     STOCK_ALERT_RUNTIME.stop()
     FLASHFORGE_WATCH_RUNTIME.stop()
+    MOONRAKER_WATCH_RUNTIME.stop()
+    CREALITY_WATCH_RUNTIME.stop()
     return True
 
 
@@ -10990,8 +11283,6 @@ from filamenthub_flashforge import (
     FLASHFORGE_PROVIDER,
     FLASHFORGE_SINGLE_SPOOL_PIDS,
     FLASHFORGE_STATION_PIDS,
-    FLASHFORGE_USAGE_CHECKPOINT_S,
-    capture_flashforge_usage,
     flashforge_can_set_slots,
     flashforge_capabilities,
     flashforge_check_code,
@@ -11010,8 +11301,6 @@ from filamenthub_flashforge import (
     flashforge_slot_settings,
     flashforge_slots,
     flashforge_usage,
-    flashforge_usage_route,
-    flush_flashforge_usage,
 )
 # fh-bundle-end
 
@@ -11215,7 +11504,7 @@ def build_flashforge_bridge_snapshot(binding, source_instance_id, detail):
     }
 
 
-def _flashforge_report_code(status, body):
+def _bridge_report_code(status, body):
     """Name FilamentHub's answer to a report in the terms the page explains."""
     if status == 200:
         return "ok"
@@ -11274,7 +11563,7 @@ def observe_flashforge_binding(binding, connections, source_instance_id):
         binding["bridge_token"],
         build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
     )
-    code = _flashforge_report_code(status, body)
+    code = _bridge_report_code(status, body)
     if code == "unpaired":
         _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
     return code
@@ -11389,7 +11678,7 @@ def configure_flashforge_bridge(
         bridge_token,
         build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
     )
-    code = _flashforge_report_code(status, body)
+    code = _bridge_report_code(status, body)
     if code == "linked":
         # FilamentHub will never accept this printer for this card: undo the link.
         _forget_flashforge_binding(physical_printer_id, bridge_token)
@@ -11562,7 +11851,7 @@ def assign_flashforge_slot(
         binding["bridge_token"],
         build_flashforge_bridge_snapshot(binding, source_instance_id, detail),
     )
-    report = _flashforge_report_code(status, body)
+    report = _bridge_report_code(status, body)
     if report == "unpaired":
         _forget_flashforge_binding(physical_printer_id, binding["bridge_token"])
     # The slot is set either way; the site just has not been told yet.
@@ -11610,7 +11899,7 @@ def handle_flashforge_message(catalog, msg):
                 result = {"ok": False, "code": "invalid"}
             catalog._deliver("flashforge-setup-result", requestId=request_id, result=result)
             if result.get("ok"):
-                wake_flashforge_watch()
+                _wake_usage_watch(FLASHFORGE_WATCH_RUNTIME)
     elif msg_type == "flashforge-assign":
         commit = msg.get("commit")
         if not _valid_immediate_material_commit(commit):
@@ -11646,7 +11935,7 @@ def handle_flashforge_message(catalog, msg):
                 result={"ok": code == "ok", "code": code},
             )
             if code == "ok":
-                wake_flashforge_watch()
+                _wake_usage_watch(FLASHFORGE_WATCH_RUNTIME)
 
     if BACKGROUND_WORKER.submit(job) is False:
         catalog._deliver(
@@ -11674,28 +11963,40 @@ def refresh_flashforge_bindings_after_sync():
 
 
 # --------------------------------------------------------------------------- #
-# Following a Flashforge print while OrcaSlicer is open
+# Following a print while OrcaSlicer is open
 # --------------------------------------------------------------------------- #
-# The printer measures no filament: a job's usage is the slicer's estimate
-# followed by the print progress, and following means reading the printer again
-# and again while it prints. One bounded thread does that for every linked
+# A Flashforge printer measures no filament: a job's usage is the slicer's
+# estimate followed by the print progress. Klipper counts what its extruder
+# moved. Either way following means reading the printer again and again while
+# it prints. One bounded thread per kind of printer does that for every linked
 # printer. It asks FilamentHub for the current assignments only while a job is
-# being counted, reports a printer only when what it says has changed, and an
-# idle printer costs the site nothing.
-FLASHFORGE_WATCH_PRINTING_SECONDS = 30.0
-FLASHFORGE_WATCH_IDLE_SECONDS = 120.0
-FLASHFORGE_WATCH_FIRST_RANGE = (10.0, 60.0)
-FLASHFORGE_WATCH_JITTER_RATIO = 0.2
-FLASHFORGE_SNAPSHOT_MIN_SECONDS = 60.0
-FLASHFORGE_USAGE_RETRY_SECONDS = 60.0
+# being counted, and an idle printer costs the site nothing.
+# fh-bundle: filamenthub_usage_books
+from filamenthub_usage_books import (
+    COUNTER_USAGE_CHECKPOINT_S,
+    capture_counter_usage,
+    counter_usage_route,
+    flush_counter_usage,
+)
+# fh-bundle-end
+
+USAGE_WATCH_PRINTING_SECONDS = 30.0
+USAGE_WATCH_IDLE_SECONDS = 120.0
+USAGE_WATCH_FIRST_RANGE = (10.0, 60.0)
+USAGE_WATCH_JITTER_RATIO = 0.2
+USAGE_WATCH_RETRY_SECONDS = 60.0
+# After this long without a reading of a job the stretch in between is charged
+# to nobody: another helper may have taken the printer over and counted it.
+USAGE_WATCH_GAP_SECONDS = 300.0
 # A printer OrcaSlicer has not allowed is left alone until the person acts:
 # every attempt would be another permission question.
-FLASHFORGE_PERMISSION_BACKOFF_SECONDS = 1800.0
-FLASHFORGE_USAGE_QUEUE_LIMIT = 512
-FLASHFORGE_USAGE_BATCH_EVENTS = 32
-FLASHFORGE_USAGE_JOURNAL_BYTES = 2 * 1024 * 1024
-_FLASHFORGE_QUIET_STATES = frozenset({"idle", "finished", "failed", "unknown"})
-_FLASHFORGE_TEMPERATURES = (
+USAGE_WATCH_PERMISSION_BACKOFF_SECONDS = 1800.0
+USAGE_WATCH_QUEUE_LIMIT = 512
+USAGE_WATCH_BATCH_EVENTS = 32
+USAGE_WATCH_JOURNAL_BYTES = 2 * 1024 * 1024
+USAGE_WATCH_SNAPSHOT_MIN_SECONDS = 60.0
+_BRIDGE_QUIET_STATES = frozenset({"idle", "finished", "failed", "unknown"})
+_BRIDGE_TEMPERATURES = (
     "nozzle_temperature", "nozzle_target_temperature", "bed_temperature",
     "bed_target_temperature", "chamber_temperature",
 )
@@ -11719,7 +12020,7 @@ def refresh_flashforge_connections():
             FLASHFORGE_WATCH_RUNTIME.start()
 
 
-def _flashforge_usage_journal(binding, source_instance_id):
+def _usage_journal(config_file, folder, binding, source_instance_id):
     """Where one link's usage books are kept.
 
     The bridge token is not part of the name: linking the same printer again
@@ -11728,15 +12029,13 @@ def _flashforge_usage_journal(binding, source_instance_id):
     name = hashlib.sha256(json.dumps([
         binding["physical_printer_id"], binding["material_system_id"], source_instance_id,
     ]).encode("utf-8")).hexdigest()
-    return os.path.join(
-        os.path.dirname(FLASHFORGE_CONFIG_FILE), "flashforge_usage", name + ".json"
-    )
+    return os.path.join(os.path.dirname(config_file), folder, name + ".json")
 
 
-def _load_flashforge_usage_books(path):
+def _load_usage_books(path):
     try:
         with open(path, "r", encoding="utf-8") as handle:
-            books = json.loads(handle.read(FLASHFORGE_USAGE_JOURNAL_BYTES + 1))
+            books = json.loads(handle.read(USAGE_WATCH_JOURNAL_BYTES + 1))
     except FileNotFoundError:
         return {"version": 1, "next_sequence": 1, "tracker": None, "events": [], "outbox": None}
     except (OSError, ValueError):
@@ -11754,7 +12053,7 @@ def _load_flashforge_usage_books(path):
     return None
 
 
-def _flashforge_report_digest(snapshot):
+def _bridge_report_digest(snapshot):
     """What a report says, apart from when it was read.
 
     The temperatures of a printer that is not printing drift all day and tell
@@ -11762,20 +12061,22 @@ def _flashforge_report_digest(snapshot):
     """
     payload = {key: value for key, value in snapshot.items() if key != "observed_at"}
     printer = payload.get("printer") or {}
-    if printer.get("state") in _FLASHFORGE_QUIET_STATES:
+    if printer.get("state") in _BRIDGE_QUIET_STATES:
         payload["printer"] = {
-            key: value for key, value in printer.items() if key not in _FLASHFORGE_TEMPERATURES
+            key: value for key, value in printer.items() if key not in _BRIDGE_TEMPERATURES
         }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
 
 
-class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
-    """One bounded daemon follows the prints of every linked Flashforge printer."""
+class _UsageWatchRuntime(_BoundedDaemonRuntime):
+    """One bounded daemon follows the prints of every linked printer of one kind.
 
-    thread_name = "filamenthub-flashforge-watch"
-    label = "Flashforge watch"
+    A subclass reads its printers in ``watch_once`` and says where a link's
+    books are kept, which provider it reports as and how a link the site no
+    longer accepts is dropped. The books, the queue and the upload are here.
+    """
 
     def __init__(self):
         super().__init__()
@@ -11786,7 +12087,7 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
         self._logged = {}
 
     def wake(self):
-        """The person just used a Flashforge card: look now, and ask again if refused."""
+        """The person just used this printer's card: look now, and ask again if refused."""
         with self._lock:
             self._blocked_until.clear()
         self.start()
@@ -11795,7 +12096,7 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
     def _run_loop(self):
         # Many plugin instances can start at once after a slicer update; their
         # first automatic reads are spread out. A person's action interrupts it.
-        self._wake.wait(random.uniform(*FLASHFORGE_WATCH_FIRST_RANGE))
+        self._wake.wait(random.uniform(*USAGE_WATCH_FIRST_RANGE))
         self._wake.clear()
         while not self._stop.is_set():
             try:
@@ -11806,11 +12107,11 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
                 if self._stop.is_set():
                     break
                 self._log("watch", type(exc).__name__)
-                delay = FLASHFORGE_WATCH_IDLE_SECONDS
+                delay = USAGE_WATCH_IDLE_SECONDS
             if delay is None or self._stop.is_set():
                 # Nothing is linked: the thread ends until a printer is.
                 break
-            spread = delay * FLASHFORGE_WATCH_JITTER_RATIO
+            spread = delay * USAGE_WATCH_JITTER_RATIO
             self._wake.wait(random.uniform(delay - spread, delay + spread))
             self._wake.clear()
         self._retire_current_thread()
@@ -11819,108 +12120,71 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
         if self._logged.get(subject) != detail:
             self._logged[subject] = detail
             if detail is not None:
-                fh_log("Flashforge %s: %s" % (subject, detail))
+                fh_log("%s %s: %s" % (self.label, subject, detail))
 
-    def watch_once(self):
-        """Read every linked printer once; return the wait before the next round."""
-        bindings = _load_flashforge_bindings()
-        if not bindings:
-            return None
-        with _FLASHFORGE_CONNECTIONS_LOCK:
-            connections = _FLASHFORGE_CONNECTIONS["items"]
-        if connections is None:
-            # Not copied from OrcaSlicer yet in this session.
-            return FLASHFORGE_WATCH_IDLE_SECONDS
-        source_instance_id = plugin_source_instance_id()
-        printing = False
-        for binding in bindings:
-            if self._stop.is_set():
-                break
-            if self._watch(binding, connections, source_instance_id):
-                printing = True
-        return FLASHFORGE_WATCH_PRINTING_SECONDS if printing else FLASHFORGE_WATCH_IDLE_SECONDS
-
-    def _watch(self, binding, connections, source_instance_id):
-        """Follow one printer; return whether it is in the middle of a job."""
-        key = (binding["physical_printer_id"], binding["material_system_id"])
-        now = time.monotonic()
+    def _blocked(self, key, now):
         with self._lock:
-            if now < self._blocked_until.get(key, 0.0):
-                return False
-        connection = next(
-            (
-                item for item in connections
-                if item["serial"] == binding["serial"] and item["check_code"]
-            ),
-            None,
-        )
-        if connection is None:
-            return False
-        path = _flashforge_usage_journal(binding, source_instance_id)
+            return now < self._blocked_until.get(key, 0.0)
+
+    def _block(self, key, now):
+        with self._lock:
+            self._blocked_until[key] = now + USAGE_WATCH_PERMISSION_BACKOFF_SECONDS
+
+    def _open_books(self, path, observed_at):
+        """A private copy of one link's books, or None when they cannot be read."""
         books = self._books.get(path)
         if books is None:
-            books = _load_flashforge_usage_books(path)
+            books = _load_usage_books(path)
             if books is None:
                 # Books that cannot be read are not replaced by empty ones: the
                 # numbered sequence they hold is what keeps a batch from being
                 # counted twice.
                 self._log("usage books", "unreadable")
-                return False
+                return None
         # A failed write must not advance the books kept in memory.
         books = json.loads(json.dumps(books))
-        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        detail, failure = read_flashforge_detail(connection)
-        if self._stop.is_set():
-            return False
-        if detail is None:
-            if failure == "permission":
-                with self._lock:
-                    self._blocked_until[key] = now + FLASHFORGE_PERMISSION_BACKOFF_SECONDS
-            # What is already charged to a spool is handed over now; the
-            # stretch nobody reads is charged to nobody when readings resume.
-            if len(books["events"]) < FLASHFORGE_USAGE_QUEUE_LIMIT:
-                books["events"].extend(flush_flashforge_usage(books, observed_at, "disconnect"))
-            capture_flashforge_usage(books, None, None, observed_at)
-            self._settle(binding, source_instance_id, path, books)
-            return False
-        slots, _complete = flashforge_slots(detail)
-        usage = flashforge_usage(detail)
         tracker = books.get("tracker")
-        in_job = usage is not None and usage["state"] in ("printing", "paused")
-        counting = in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))
-        if not counting:
-            capture_flashforge_usage(books, usage, None, observed_at)
-        else:
-            status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
-            if status == 401:
-                _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
-                return False
-            desired = None
-            if status == 200:
-                try:
-                    desired = json.loads(body.decode("utf-8"))
-                except (UnicodeDecodeError, ValueError):
-                    desired = None
-            if not isinstance(desired, dict) or len(books["events"]) >= FLASHFORGE_USAGE_QUEUE_LIMIT:
-                # Without the site's assignments no spool can be named.
-                capture_flashforge_usage(books, None, None, observed_at)
-            else:
-                books["events"].extend(capture_flashforge_usage(
-                    books, usage, flashforge_usage_route(slots, desired), observed_at
-                ))
-        if not self._settle(binding, source_instance_id, path, books):
-            return in_job
-        self._report(binding, source_instance_id, key, detail, now)
-        return in_job
+        read_at = books.pop("read_at", None)
+        if isinstance(tracker, dict) and not tracker.get("terminal"):
+            now = time.time()
+            if (
+                isinstance(read_at, (int, float))
+                and not 0 <= now - read_at <= USAGE_WATCH_GAP_SECONDS
+            ):
+                # OrcaSlicer was closed or asleep in the middle of this job.
+                self._lost_reading(books, observed_at)
+            books["read_at"] = now
+        return books
+
+    def _lost_reading(self, books, observed_at):
+        """The printer did not answer: hand over what is charged, charge nothing new."""
+        # The stretch nobody reads is charged to nobody when readings resume.
+        if len(books["events"]) < USAGE_WATCH_QUEUE_LIMIT:
+            books["events"].extend(flush_counter_usage(books, observed_at, "disconnect"))
+        capture_counter_usage(books, None, None, observed_at)
+
+    def _desired(self, binding):
+        """The site's current assignments: ``(desired, linked)``."""
+        status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
+        if status == 401:
+            self._forget(binding)
+            return None, False
+        desired = None
+        if status == 200:
+            try:
+                desired = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                desired = None
+        return desired if isinstance(desired, dict) else None, True
 
     def _settle(self, binding, source_instance_id, path, books):
         """Write the books, then hand the oldest batch to FilamentHub."""
         if books.get("outbox") is None and books["events"]:
-            events = books["events"][:FLASHFORGE_USAGE_BATCH_EVENTS]
-            books["events"] = books["events"][FLASHFORGE_USAGE_BATCH_EVENTS:]
+            events = books["events"][:USAGE_WATCH_BATCH_EVENTS]
+            books["events"] = books["events"][USAGE_WATCH_BATCH_EVENTS:]
             books["outbox"] = {
                 "material_system_id": binding["material_system_id"],
-                "provider": FLASHFORGE_PROVIDER,
+                "provider": self._provider(binding),
                 "transport": "orca_plugin_lan",
                 "source_instance_id": source_instance_id,
                 "sequence": books["next_sequence"],
@@ -11954,7 +12218,7 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
             self._log("usage upload", None)
             return True
         if status == 401:
-            _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+            self._forget(binding)
             return False
         expected = _bridge_expected_sequence(status, body)
         if expected is not None and expected > pending["sequence"]:
@@ -11962,10 +12226,32 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
                 books, outbox=dict(pending, sequence=expected), next_sequence=expected
             ))
         self._usage_retry_at[path] = time.monotonic() + max(
-            FLASHFORGE_USAGE_RETRY_SECONDS, retry_after or 0
+            USAGE_WATCH_RETRY_SECONDS, retry_after or 0
         )
         self._log("usage upload", "HTTP %s" % status)
         return True
+
+    def _report(self, binding, key, snapshot, now):
+        """Tell FilamentHub what the printer says, when that is news."""
+        digest = _bridge_report_digest(snapshot)
+        previous_digest, reported_at = self._reported.get(key, (None, None))
+        if digest == previous_digest or (
+            reported_at is not None and now - reported_at < USAGE_WATCH_SNAPSHOT_MIN_SECONDS
+        ):
+            return
+        if self._stop.is_set():
+            return
+        status, body, _retry_after = http_post_bridge_json(
+            "/printer-bridge/snapshot", binding["bridge_token"], snapshot
+        )
+        code = _bridge_report_code(status, body)
+        if code == "unpaired":
+            self._forget(binding)
+        elif code == "ok":
+            self._reported[key] = (digest, now)
+        else:
+            # Tried: not again before the usual interval.
+            self._reported[key] = (previous_digest, now)
 
     def _write(self, path, books):
         if self._books.get(path) == books:
@@ -11979,35 +12265,105 @@ class FlashforgeWatchRuntime(_BoundedDaemonRuntime):
         self._log("usage books", None)
         return True
 
-    def _report(self, binding, source_instance_id, key, detail, now):
-        """Tell FilamentHub what the printer says, when that is news."""
-        snapshot = build_flashforge_bridge_snapshot(binding, source_instance_id, detail)
-        digest = _flashforge_report_digest(snapshot)
-        previous_digest, reported_at = self._reported.get(key, (None, None))
-        if digest == previous_digest or (
-            reported_at is not None and now - reported_at < FLASHFORGE_SNAPSHOT_MIN_SECONDS
-        ):
-            return
-        if self._stop.is_set():
-            return
-        status, body, _retry_after = http_post_bridge_json(
-            "/printer-bridge/snapshot", binding["bridge_token"], snapshot
+
+class FlashforgeWatchRuntime(_UsageWatchRuntime):
+    """Follows the prints of every linked Flashforge printer."""
+
+    thread_name = "filamenthub-flashforge-watch"
+    label = "Flashforge"
+
+    def _provider(self, binding):
+        return FLASHFORGE_PROVIDER
+
+    def _forget(self, binding):
+        _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = _load_flashforge_bindings()
+        if not bindings:
+            return None
+        with _FLASHFORGE_CONNECTIONS_LOCK:
+            connections = _FLASHFORGE_CONNECTIONS["items"]
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return USAGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Follow one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now):
+            return False
+        connection = next(
+            (
+                item for item in connections
+                if item["serial"] == binding["serial"] and item["check_code"]
+            ),
+            None,
         )
-        code = _flashforge_report_code(status, body)
-        if code == "unpaired":
-            _forget_flashforge_binding(binding["physical_printer_id"], binding["bridge_token"])
-        elif code == "ok":
-            self._reported[key] = (digest, now)
+        if connection is None:
+            return False
+        path = _usage_journal(
+            FLASHFORGE_CONFIG_FILE, "flashforge_usage", binding, source_instance_id
+        )
+        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        books = self._open_books(path, observed_at)
+        if books is None:
+            return False
+        if isinstance(books.get("tracker"), dict):
+            # Books written before the source was recorded: every Flashforge
+            # figure is the slicer's.
+            books["tracker"].setdefault("estimate_source", "slicer_progress")
+        detail, failure = read_flashforge_detail(connection)
+        if self._stop.is_set():
+            return False
+        if detail is None:
+            if failure == "permission":
+                self._block(key, now)
+            self._lost_reading(books, observed_at)
+            self._settle(binding, source_instance_id, path, books)
+            return False
+        slots, _complete = flashforge_slots(detail)
+        usage = flashforge_usage(detail)
+        tracker = books.get("tracker")
+        in_job = usage is not None and usage["state"] in ("printing", "paused")
+        counting = in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))
+        if not counting:
+            capture_counter_usage(books, usage, None, observed_at, job_prefix="flashforge")
         else:
-            # Tried: not again before the usual interval.
-            self._reported[key] = (previous_digest, now)
+            desired, linked = self._desired(binding)
+            if not linked:
+                return False
+            if desired is None or len(books["events"]) >= USAGE_WATCH_QUEUE_LIMIT:
+                # Without the site's assignments no spool can be named.
+                capture_counter_usage(books, None, None, observed_at)
+            else:
+                route, issue = counter_usage_route(slots, desired)
+                books["events"].extend(capture_counter_usage(
+                    books, usage, route, observed_at, issue, "flashforge"
+                ))
+        if not self._settle(binding, source_instance_id, path, books):
+            return in_job
+        self._report(
+            binding, key, build_flashforge_bridge_snapshot(binding, source_instance_id, detail), now
+        )
+        return in_job
 
 
 FLASHFORGE_WATCH_RUNTIME = FlashforgeWatchRuntime()
 
 
-def wake_flashforge_watch():
-    """Start or hurry the watcher, only from the currently loaded plugin."""
+def _wake_usage_watch(runtime):
+    """Start or hurry a watcher, only from the currently loaded plugin."""
     with _PLUGIN_RUNTIME_LOCK:
         expected_epoch = _PLUGIN_RUNTIME_EPOCH
     worker = globals().get("BACKGROUND_WORKER")
@@ -12021,8 +12377,1109 @@ def wake_flashforge_watch():
     with _PLUGIN_RUNTIME_LOCK:
         if not _PLUGIN_RUNTIME_ACTIVE or _PLUGIN_RUNTIME_EPOCH != expected_epoch:
             return False
-        FLASHFORGE_WATCH_RUNTIME.wake()
+        runtime.wake()
         return True
+
+
+# --------------------------------------------------------------------------- #
+# Filament usage of a Klipper printer, through Moonraker
+# --------------------------------------------------------------------------- #
+# The plugin already reaches a Klipper printer through a connection the person
+# bound to its card on FilamentHub. With that it asks the site for a usage
+# link of its own: a bridge token kept in a private file next to the reference
+# of the connection. The printer's address and API key are not kept: they are
+# taken from OrcaSlicer at each sync and stay in memory.
+MAX_MOONRAKER_USAGE_LINKS = 32
+# Where Moonraker's own Spoolman link points is read again this often: while a
+# job is counted, and while nothing prints.
+MOONRAKER_USAGE_CONFIG_SECONDS = 300.0
+MOONRAKER_USAGE_CONFIG_IDLE_SECONDS = 1800.0
+# While this plugin counts a job it tells the site so this often; the site
+# hands the printer to another helper only after a longer silence.
+MOONRAKER_USAGE_HEARTBEAT_SECONDS = 60.0
+_MOONRAKER_USAGE_LOCK = threading.RLock()
+_MOONRAKER_USAGE_CONNECTIONS = {}
+# Printer cards the site refused a usage link for; not asked again this session.
+_MOONRAKER_USAGE_REFUSED = set()
+_MOONRAKER_USAGE_SYSTEMS = frozenset({"happy_hare", "legacy", "manual"})
+
+
+def _load_moonraker_usage_links():
+    try:
+        with open(MOONRAKER_USAGE_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_MOONRAKER_USAGE_LINKS:
+        return []
+    links = []
+    for item in items:
+        if not (
+            isinstance(item, dict)
+            and type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and item.get("provider") in MOONRAKER_USAGE_PROVIDERS
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and isinstance(item.get("connection_ref"), str)
+            and 0 < len(item["connection_ref"]) <= 200
+        ):
+            continue
+        links.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "provider": item["provider"],
+            "bridge_token": item["bridge_token"],
+            "connection_ref": item["connection_ref"],
+        })
+    return links
+
+
+def _save_moonraker_usage_links(links):
+    write_json_atomic(
+        MOONRAKER_USAGE_CONFIG_FILE, {"version": 1, "printers": links}, mode=0o600
+    )
+
+
+def _forget_moonraker_usage_link(physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _MOONRAKER_USAGE_LOCK:
+        links = _load_moonraker_usage_links()
+        kept = [
+            item for item in links
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(links):
+            _save_moonraker_usage_links(kept)
+
+
+def _request_moonraker_usage_link(token, source_instance_id, physical_printer_id, system_id):
+    """Ask FilamentHub for one printer's usage link; None when it gives none."""
+    status, body = http_post_json(
+        "/printer-bridge/klipper-usage-link",
+        token,
+        {
+            "physical_printer_id": physical_printer_id,
+            "material_system_id": system_id,
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            # "consumption" is added by the watcher once it has seen that
+            # Moonraker does not report this printer's prints itself.
+            "capabilities": moonraker_usage_capabilities(True),
+        },
+    )
+    granted = _decode_json_object(body) if status == 200 else None
+    if (
+        not isinstance(granted, dict)
+        or not _valid_fresh_bridge_token(granted.get("bridge_token"))
+        or granted.get("provider") not in MOONRAKER_USAGE_PROVIDERS
+    ):
+        return None, status
+    if (
+        granted.get("physical_printer_id") != physical_printer_id
+        or granted.get("material_system_id") != system_id
+    ):
+        revoke_fresh_bridge_token(granted["bridge_token"])
+        return None, status
+    return {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": system_id,
+        "provider": granted["provider"],
+        "bridge_token": granted["bridge_token"],
+    }, status
+
+
+def link_moonraker_usage(token, inventory, local_connections):
+    """Keep one usage link per Klipper printer this OrcaSlicer reaches (worker thread).
+
+    ``inventory`` is the account's printers as the site lists them for this
+    installation. A link whose printer card is no longer there belongs to
+    another account or a deleted card: it is given back.
+    """
+    source_instance_id = inventory["source_instance_id"]
+    reached = {}
+    for device in inventory["printers"]:
+        physical_printer_id = device.get("id")
+        if type(physical_printer_id) is not int:
+            continue
+        system = next(
+            (
+                item for item in device.get("material_systems") or []
+                if isinstance(item, dict)
+                and type(item.get("id")) is int
+                and item.get("provider") in _MOONRAKER_USAGE_SYSTEMS
+            ),
+            None,
+        )
+        connection, _error = _bound_local_connection(device, local_connections)
+        if system is None or connection is None:
+            continue
+        reached[physical_printer_id] = (system["id"], connection)
+    account_printers = {
+        device.get("id") for device in inventory["printers"] if isinstance(device, dict)
+    }
+    with _MOONRAKER_USAGE_LOCK:
+        links = _load_moonraker_usage_links()
+        kept = []
+        for link in links:
+            if link["physical_printer_id"] in account_printers:
+                kept.append(link)
+            else:
+                _MOONRAKER_USAGE_CONNECTIONS.pop(link["connection_ref"], None)
+                revoke_fresh_bridge_token(link["bridge_token"])
+        changed = len(kept) != len(links)
+        for physical_printer_id, (system_id, connection) in reached.items():
+            connection_ref = connection["connection_ref"]
+            _MOONRAKER_USAGE_CONNECTIONS[connection_ref] = {
+                "print_host": connection["print_host"],
+                "api_key": connection.get("api_key") or "",
+            }
+            known = next(
+                (item for item in kept if item["physical_printer_id"] == physical_printer_id),
+                None,
+            )
+            if known is not None and known["material_system_id"] == system_id:
+                if known["connection_ref"] != connection_ref:
+                    known["connection_ref"] = connection_ref
+                    changed = True
+                continue
+            if (
+                (physical_printer_id, system_id) in _MOONRAKER_USAGE_REFUSED
+                or (known is None and len(kept) >= MAX_MOONRAKER_USAGE_LINKS)
+            ):
+                continue
+            link, status = _request_moonraker_usage_link(
+                token, source_instance_id, physical_printer_id, system_id
+            )
+            if link is None:
+                if status in (404, 409, 422):
+                    # No such feed for usage, or a site that predates this link.
+                    _MOONRAKER_USAGE_REFUSED.add((physical_printer_id, system_id))
+                continue
+            link["connection_ref"] = connection_ref
+            MOONRAKER_WATCH_RUNTIME.relinked((physical_printer_id, system_id))
+            if known is not None:
+                kept.remove(known)
+                revoke_fresh_bridge_token(known["bridge_token"])
+            kept.append(link)
+            changed = True
+        if changed:
+            _save_moonraker_usage_links(kept)
+    if kept:
+        with _PLUGIN_RUNTIME_LOCK:
+            if _PLUGIN_RUNTIME_ACTIVE:
+                MOONRAKER_WATCH_RUNTIME.start()
+    return len(kept)
+
+
+class MoonrakerWatchRuntime(_UsageWatchRuntime):
+    """Follows the prints of every Klipper printer with a usage link."""
+
+    thread_name = "filamenthub-moonraker-watch"
+    label = "Moonraker"
+
+    def __init__(self):
+        super().__init__()
+        self._server_config = {}
+        self._said = {}
+
+    def _provider(self, binding):
+        return binding["provider"]
+
+    def _forget(self, binding):
+        _forget_moonraker_usage_link(binding["physical_printer_id"], binding["bridge_token"])
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        links = _load_moonraker_usage_links()
+        if not links:
+            return None
+        with _MOONRAKER_USAGE_LOCK:
+            connections = dict(_MOONRAKER_USAGE_CONNECTIONS)
+        source_instance_id = plugin_source_instance_id()
+        counting = False
+        for link in links:
+            if self._stop.is_set():
+                break
+            # A printer no sync has reached in this session has no address yet.
+            connection = connections.get(link["connection_ref"])
+            if connection is not None and self._watch(link, connection, source_instance_id):
+                counting = True
+        return USAGE_WATCH_PRINTING_SECONDS if counting else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, link, connection, source_instance_id):
+        """Follow one printer; return whether this plugin is counting its job."""
+        key = (link["physical_printer_id"], link["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now):
+            return False
+        path = _usage_journal(
+            MOONRAKER_USAGE_CONFIG_FILE, "moonraker_usage", link, source_instance_id
+        )
+        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        books = self._open_books(path, observed_at)
+        if books is None:
+            return False
+        status, body, error = _moonraker_json(
+            connection,
+            "/printer/objects/query",
+            {"objects": moonraker_usage_query(link["provider"])},
+        )
+        if self._stop.is_set():
+            return False
+        if status != 200:
+            if error == HOST_PERMISSION_PENDING:
+                self._block(key, now)
+            self._lost_reading(books, observed_at)
+            self._settle(link, source_instance_id, path, books)
+            return False
+        result = body.get("result")
+        status_map = result.get("status") if isinstance(result, dict) else None
+        usage = moonraker_usage(status_map)
+        happy_hare = None
+        if link["provider"] == "happy_hare":
+            try:
+                happy_hare = parse_happy_hare_status(status_map)
+            except ValueError:
+                # Without the MMU's answer the feeding gate is unknown.
+                usage = None
+        tracker = books.get("tracker")
+        in_job = usage is not None and usage["state"] in ("printing", "paused")
+        counting = in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))
+        reports_itself = self._moonraker_reports_itself(key, connection, counting, now)
+        if self._stop.is_set():
+            return False
+        counting_here = in_job and not reports_itself
+        # Said first: the site names this plugin the one that deducts only once
+        # it knows the plugin can.
+        if not self._say(link, source_instance_id, key, reports_itself, counting_here, now):
+            return False
+        if reports_itself or usage is None:
+            # Moonraker reports this print to FilamentHub itself, or nothing
+            # can be read: this stretch is not charged here, now or later.
+            capture_counter_usage(books, None, None, observed_at)
+        elif not counting:
+            capture_counter_usage(books, usage, None, observed_at, job_prefix="moonraker")
+        else:
+            desired, linked = self._desired(link)
+            if not linked:
+                return False
+            if desired is None or len(books["events"]) >= USAGE_WATCH_QUEUE_LIMIT:
+                # Without the site's assignments no spool can be named.
+                capture_counter_usage(books, None, None, observed_at)
+            else:
+                route, issue = counter_usage_route(
+                    moonraker_feed_slots(
+                        happy_hare, desired, moonraker_loaded_slot(status_map)
+                    ),
+                    desired,
+                )
+                if route is not None and happy_hare is not None:
+                    mark = moonraker_feed_mark(status_map)
+                    if mark is None and happy_hare["gate_count"] > 1:
+                        # Nothing tells a gate that fed all along from one
+                        # left and returned to between two readings.
+                        route, issue = None, {"reason": "active_slot_unknown"}
+                    else:
+                        route["feed_mark"] = mark
+                if route is not None and route.get("usage_route_proof") is None:
+                    # The site has not named this plugin the one that deducts:
+                    # Moonraker itself or another helper counts this stretch.
+                    capture_counter_usage(books, None, None, observed_at)
+                else:
+                    books["events"].extend(capture_counter_usage(
+                        books, usage, route, observed_at, issue, "moonraker"
+                    ))
+        self._settle(link, source_instance_id, path, books)
+        return counting_here
+
+    def _moonraker_reports_itself(self, key, connection, counting, now):
+        """Whether Moonraker's own Spoolman link reports to FilamentHub.
+
+        Moonraker's ``/server/config`` is read for that one answer. Nothing else
+        of it is looked at, and only the answer is kept, in memory. An answer
+        that could not be read is asked for again at the next reading.
+        """
+        known = self._server_config.get(key)
+        max_age = MOONRAKER_USAGE_CONFIG_SECONDS if counting else MOONRAKER_USAGE_CONFIG_IDLE_SECONDS
+        if known is not None and now - known[1] < max_age:
+            return known[0]
+        status, body, _error = _moonraker_json(connection, "/server/config")
+        spoolman = moonraker_spoolman_server(body.get("result") if status == 200 else None)
+        answer = moonraker_reports_usage_itself(spoolman, {
+            (urllib.parse.urlsplit(site).hostname or "").lower() for site in _own_site_urls()
+        })
+        if spoolman is not None:
+            self._server_config[key] = (answer, now)
+        return answer
+
+    def _say(self, link, source_instance_id, key, reports_itself, counting_here, now):
+        """Tell FilamentHub whether this link deducts, and that it is on duty.
+
+        Returns False when the site no longer accepts the link.
+        """
+        capabilities = moonraker_usage_capabilities(reports_itself)
+        said = self._said.get(key)
+        if said is not None and said[0] == capabilities and (
+            not counting_here or now - said[1] < MOONRAKER_USAGE_HEARTBEAT_SECONDS
+        ):
+            return True
+        if self._stop.is_set():
+            return True
+        status, _body, _retry_after = http_post_bridge_json(
+            "/printer-bridge/heartbeat",
+            link["bridge_token"],
+            {
+                "material_system_id": link["material_system_id"],
+                "provider": link["provider"],
+                "transport": "orca_plugin_lan",
+                "source_instance_id": source_instance_id,
+                "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "capabilities": capabilities,
+                "provider_reachable": True,
+            },
+        )
+        if status == 401:
+            self._forget(link)
+            return False
+        if status == 200:
+            self._said[key] = (capabilities, now)
+        else:
+            # Tried: not again before the usual interval.
+            self._said[key] = (said[0] if said is not None else None, now)
+        return True
+
+    def relinked(self, key):
+        """A new link starts with no capability to deduct: say it again."""
+        self._said.pop(key, None)
+
+
+MOONRAKER_WATCH_RUNTIME = MoonrakerWatchRuntime()
+
+
+# --------------------------------------------------------------------------- #
+# Creality through OrcaSlicer's own printer connection
+# --------------------------------------------------------------------------- #
+# OrcaSlicer stores a Creality printer's address in its connection settings.
+# The stock firmware asks for no password, so there is nothing else to keep:
+# the plugin's private file holds only the FilamentHub bridge token, the
+# printer's MAC address that selects the Orca connection, and the
+# account-scoped identity evidence.
+#
+# The printer is read when the person connects it, opens its card or syncs,
+# and while OrcaSlicer is open a watcher follows its prints to count their
+# filament. The plugin only reads: it sends the printer no command.
+# fh-bundle: filamenthub_creality
+from filamenthub_creality import (
+    CREALITY_CAPABILITIES,
+    CREALITY_EXTERNAL_INDEX,
+    CREALITY_HEARTBEAT_REPLY,
+    CREALITY_HOST_TYPE,
+    CREALITY_IDENTITY_KIND,
+    CREALITY_INFO_PORT,
+    CREALITY_MAX_BOXES,
+    CREALITY_MAX_FRAME_BYTES,
+    CREALITY_MAX_JOB_LENGTH_MM,
+    CREALITY_PROVIDER,
+    CREALITY_SLOT_QUERY,
+    CREALITY_SLOTS_PER_BOX,
+    CREALITY_WS_PORT,
+    creality_host,
+    creality_info_url,
+    creality_is_heartbeat,
+    creality_mac,
+    creality_message,
+    creality_printer,
+    creality_slots,
+    creality_usage,
+    creality_ws_accepted,
+    creality_ws_frame,
+    creality_ws_frames,
+    creality_ws_handshake,
+)
+# fh-bundle-end
+
+MAX_CREALITY_BRIDGES = 32
+CREALITY_READ_TIMEOUT = 8.0
+# How long the printer is given to list its CFS slots, and how long once it
+# has said that no CFS is connected.
+CREALITY_SLOTS_REPLY_SECONDS = 3.0
+CREALITY_NO_CFS_REPLY_SECONDS = 1.0
+CREALITY_CONNECTIONS_MAX_AGE_SECONDS = 300.0
+_CREALITY_CONNECTIONS = {"items": None, "at": None}
+_CREALITY_CONNECTIONS_LOCK = threading.Lock()
+# What each address answered as this session: its MAC address and host name.
+# A printer that answers under another name is identified again.
+_CREALITY_KNOWN_HOSTS = {}
+CREALITY_MESSAGES = frozenset({"configure-creality", "creality-refresh"})
+_CREALITY_RESULT_TYPES = {
+    "configure-creality": "creality-setup-result",
+    "creality-refresh": "creality-refresh-result",
+}
+_CREALITY_CONFIG_LOCK = threading.RLock()
+
+
+def _snapshot_local_creality_connections():
+    """Copy Creality connections from Orca's user printer presets (UI thread).
+
+    The result stays in memory: it is never written by the plugin and never
+    sent to FilamentHub.
+    """
+    connections = []
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            kinds = {
+                _preset_scalar(_preset_config_value(preset, key)).lower()
+                for key in ("host_type", "printer_agent")
+            }
+            if CREALITY_HOST_TYPE not in kinds:
+                continue
+            host = creality_host(_preset_scalar(_preset_config_value(preset, "print_host")))
+            if host:
+                connections.append({"label": str(preset.name or "")[:200], "host": host})
+    except Exception as exc:
+        fh_log("local Creality scan failed: %s" % type(exc).__name__)
+    else:
+        # Only a completed scan replaces what the watcher works from.
+        with _CREALITY_CONNECTIONS_LOCK:
+            _CREALITY_CONNECTIONS["items"] = [dict(item) for item in connections]
+            _CREALITY_CONNECTIONS["at"] = time.monotonic()
+    return connections
+
+
+def creality_printers(connections, source_instance_id):
+    """Reduce Orca presets to distinct printers with an opaque local reference.
+
+    Several presets (nozzle variants) usually point at one printer; the address
+    tells them apart. The reference is a local hash, so the page can name a
+    choice without learning the address.
+    """
+    printers = {}
+    for connection in connections or []:
+        ref = "cr_" + hashlib.sha256(
+            (source_instance_id + "\0" + connection["host"].lower()).encode("utf-8")
+        ).hexdigest()[:32]
+        printers.setdefault(ref, dict(connection, connection_ref=ref))
+    return list(printers.values())
+
+
+def _load_creality_bindings():
+    try:
+        with open(CREALITY_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_CREALITY_BRIDGES:
+        return []
+    bindings = []
+    for item in items:
+        identity = item.get("device_identity") if isinstance(item, dict) else None
+        if not (
+            isinstance(item, dict)
+            and type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and item.get("mac")
+            and creality_mac({"mac": item.get("mac")}) == item["mac"]
+            and isinstance(identity, dict)
+            and identity.get("kind") == CREALITY_IDENTITY_KIND
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
+        ):
+            continue
+        bindings.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "bridge_token": item["bridge_token"],
+            "mac": item["mac"],
+            "device_identity": {"kind": identity["kind"], "token": identity["token"]},
+        })
+    return bindings
+
+
+def _save_creality_bindings(bindings):
+    write_json_atomic(
+        CREALITY_CONFIG_FILE, {"version": 1, "printers": bindings}, mode=0o600
+    )
+
+
+def _forget_creality_binding(physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _CREALITY_CONFIG_LOCK:
+        bindings = _load_creality_bindings()
+        kept = [
+            item for item in bindings
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(bindings):
+            _save_creality_bindings(kept)
+
+
+def read_creality_info(connection):
+    """Read one printer's ``/info`` (model and MAC address); return ``(info, failure)``.
+
+    The request goes only to a private or link-local address resolved once,
+    over plain HTTP because the firmware offers nothing else.
+    """
+    try:
+        sockaddr = _resolved_lan_address(connection["host"], CREALITY_INFO_PORT)[3]
+        request = _plugin_request(
+            creality_info_url(sockaddr[0]),
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+            },
+        )
+        with _urlopen_authorized(request, CREALITY_READ_TIMEOUT) as response:
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError:
+        return None, "invalid"
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    try:
+        info = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None, "invalid"
+    return (info, None) if isinstance(info, dict) else (None, "invalid")
+
+
+def _creality_send(sock, text, opcode=1):
+    with external_operation():
+        sock.sendall(creality_ws_frame(text, secrets.token_bytes(4), opcode))
+
+
+def read_creality_status(connection):
+    """Read one printer's status and CFS slots; return ``(reading, failure)``.
+
+    ``reading`` is ``{"status": {...}, "boxes": {...} or None}``. The printer
+    sends its whole status to a new client by itself; the only thing asked for
+    is the list of CFS slots. No command is sent, and the connection is closed
+    after the one reading.
+    """
+    try:
+        family, socktype, proto, sockaddr = _resolved_lan_address(
+            connection["host"], CREALITY_WS_PORT
+        )
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    deadline = time.monotonic() + CREALITY_READ_TIMEOUT
+    key = secrets.token_bytes(16)
+    status = {}
+    boxes = None
+    sock = socket.socket(family, socktype, proto)
+    try:
+        sock.settimeout(CREALITY_READ_TIMEOUT)
+        with external_operation():
+            sock.connect(sockaddr)
+        with external_operation():
+            sock.sendall(creality_ws_handshake(sockaddr[0], key))
+        buffer = b""
+        while b"\r\n\r\n" not in buffer:
+            if len(buffer) > 8192 or time.monotonic() > deadline:
+                return None, "invalid"
+            with external_operation():
+                chunk = sock.recv(4096)
+            if not chunk:
+                return None, "invalid"
+            buffer += chunk
+        head, _separator, buffer = buffer.partition(b"\r\n\r\n")
+        if not creality_ws_accepted(head, key):
+            return None, "invalid"
+        _creality_send(sock, json.dumps(CREALITY_SLOT_QUERY, separators=(",", ":")))
+        slots_deadline = min(deadline, time.monotonic() + CREALITY_SLOTS_REPLY_SECONDS)
+        pending = b""
+        closed = False
+        while boxes is None and not closed:
+            frames, buffer = creality_ws_frames(buffer)
+            for final, opcode, payload in frames:
+                if opcode == 8:
+                    closed = True
+                    break
+                if opcode == 9:
+                    _creality_send(sock, payload, opcode=10)
+                    continue
+                if opcode not in (0, 1, 2):
+                    continue
+                pending += payload
+                if len(pending) > CREALITY_MAX_FRAME_BYTES:
+                    return None, "invalid"
+                if not final:
+                    continue
+                message, pending = creality_message(pending), b""
+                if creality_is_heartbeat(message):
+                    _creality_send(sock, CREALITY_HEARTBEAT_REPLY)
+                    continue
+                if message is None:
+                    continue
+                if "boxsInfo" in message:
+                    boxes = {"boxsInfo": message.pop("boxsInfo")}
+                status.update(message)
+                if message.get("cfsConnect") == 0 and "state" in status:
+                    # No CFS is connected: it will list no slots, or soon.
+                    slots_deadline = min(
+                        slots_deadline, time.monotonic() + CREALITY_NO_CFS_REPLY_SECONDS
+                    )
+            remaining = slots_deadline - time.monotonic()
+            if boxes is not None or closed or remaining <= 0:
+                break
+            sock.settimeout(max(0.05, remaining))
+            try:
+                with external_operation():
+                    chunk = sock.recv(65536)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            buffer += chunk
+        if not closed:
+            try:
+                sock.settimeout(1.0)
+                _creality_send(sock, b"", opcode=8)
+            except OSError:
+                pass
+    except PluginLifecycleStopped:
+        raise
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    if "state" not in status:
+        return None, "invalid"
+    return {"status": status, "boxes": boxes}, None
+
+
+def _creality_printer_mac(connection):
+    """The MAC address of the printer at this address: ``(mac, failure)``."""
+    with _CREALITY_CONNECTIONS_LOCK:
+        known = _CREALITY_KNOWN_HOSTS.get(connection["host"])
+    if known:
+        return known["mac"], None
+    info, failure = read_creality_info(connection)
+    if info is None:
+        return "", failure
+    mac = creality_mac(info)
+    if not mac:
+        return "", "identity"
+    with _CREALITY_CONNECTIONS_LOCK:
+        _CREALITY_KNOWN_HOSTS[connection["host"]] = {"mac": mac, "hostname": None}
+    return mac, None
+
+
+def _creality_same_printer(connection, reading):
+    """Whether the status came from the printer identified at this address.
+
+    An address can pass to another printer. Every status carries the printer's
+    host name, so a changed name sends the address back to be identified.
+    """
+    hostname = reading["status"].get("hostname")
+    hostname = hostname if isinstance(hostname, str) and hostname else None
+    with _CREALITY_CONNECTIONS_LOCK:
+        known = _CREALITY_KNOWN_HOSTS.get(connection["host"])
+        if known is None:
+            return False
+        if known["hostname"] in (None, hostname):
+            known["hostname"] = hostname
+            return True
+        _CREALITY_KNOWN_HOSTS.pop(connection["host"], None)
+        return False
+
+
+def _creality_connection_for(binding, connections):
+    """The Orca connection of a linked printer: ``(connection, failure)``."""
+    failure = "credentials"
+    for connection in connections or []:
+        mac, problem = _creality_printer_mac(connection)
+        if mac == binding["mac"]:
+            return connection, None
+        if problem == "permission":
+            failure = "permission"
+        elif problem and failure != "permission":
+            failure = "unreachable"
+    return None, failure
+
+
+def read_creality_printer(binding, connections):
+    """Read a linked printer through whichever Orca connection reaches it."""
+    connection, failure = _creality_connection_for(binding, connections)
+    if connection is None:
+        return None, failure
+    reading, failure = read_creality_status(connection)
+    if reading is None:
+        if failure != "permission":
+            with _CREALITY_CONNECTIONS_LOCK:
+                # Whoever answers here next is identified again.
+                _CREALITY_KNOWN_HOSTS.pop(connection["host"], None)
+        return None, failure
+    if not _creality_same_printer(connection, reading):
+        return None, "unreachable"
+    return reading, None
+
+
+def build_creality_bridge_snapshot(binding, source_instance_id, reading):
+    slots, complete = creality_slots(reading.get("boxes"))
+    return {
+        "material_system_id": binding["material_system_id"],
+        "provider": CREALITY_PROVIDER,
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": list(CREALITY_CAPABILITIES),
+        "printer": creality_printer(reading["status"]),
+        "slots": slots,
+        "slot_topology_complete": complete,
+        "device_identity": binding["device_identity"],
+    }
+
+
+def observe_creality_binding(binding, connections, source_instance_id):
+    """Read one linked printer and report it to FilamentHub; return a result code."""
+    reading, failure = read_creality_printer(binding, connections)
+    if reading is None:
+        if failure != "permission":
+            # The helper is alive; say that the printer did not answer it.
+            status, _body, _retry_after = http_post_bridge_json(
+                "/printer-bridge/heartbeat",
+                binding["bridge_token"],
+                {
+                    "material_system_id": binding["material_system_id"],
+                    "provider": CREALITY_PROVIDER,
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": source_instance_id,
+                    "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "provider_reachable": False,
+                },
+            )
+            if status == 401:
+                _forget_creality_binding(binding["physical_printer_id"], binding["bridge_token"])
+                return "unpaired"
+        return failure
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_creality_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "unpaired":
+        _forget_creality_binding(binding["physical_printer_id"], binding["bridge_token"])
+    return code
+
+
+def observe_creality_bindings(connections, physical_printer_id=None, material_system_id=None):
+    """Report every linked printer, or one; return ``{physical_printer_id: code}``."""
+    bindings = [
+        item for item in _load_creality_bindings()
+        if physical_printer_id is None or (
+            item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        )
+    ]
+    if not bindings:
+        return {}
+    source_instance_id = plugin_source_instance_id()
+    return {
+        binding["physical_printer_id"]: observe_creality_binding(
+            binding, connections, source_instance_id
+        )
+        for binding in bindings
+    }
+
+
+def configure_creality_bridge(
+    physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+):
+    """Link one Creality printer known to OrcaSlicer; return the page result."""
+    source_instance_id = plugin_source_instance_id()
+    printers = creality_printers(connections, source_instance_id)
+    if not printers:
+        return {"ok": False, "code": "notFound"}
+    chosen = [item for item in printers if item["connection_ref"] == connection_ref]
+    if not chosen and len(printers) == 1 and not connection_ref:
+        chosen = printers
+    if len(chosen) != 1:
+        return {
+            "ok": False,
+            "code": "choose",
+            "candidates": [
+                {"connectionRef": item["connection_ref"], "label": item["label"]}
+                for item in printers[:MAX_CREALITY_BRIDGES]
+            ],
+        }
+    connection = chosen[0]
+    with _CREALITY_CONNECTIONS_LOCK:
+        # The person is linking this address now: ask it who it is again.
+        _CREALITY_KNOWN_HOSTS.pop(connection["host"], None)
+    mac, failure = _creality_printer_mac(connection)
+    if not mac:
+        return {"ok": False, "code": failure}
+    with _CREALITY_CONFIG_LOCK:
+        if any(
+            item["mac"] == mac and item["physical_printer_id"] != physical_printer_id
+            for item in _load_creality_bindings()
+        ):
+            return {"ok": False, "code": "linked"}
+    reading, failure = read_creality_status(connection)
+    if reading is None or not _creality_same_printer(connection, reading):
+        return {"ok": False, "code": failure or "unreachable"}
+    pair_status, pair_body = http_post_json(
+        "/printer-bridge/pair",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": CREALITY_PROVIDER,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            "capabilities": list(CREALITY_CAPABILITIES),
+        },
+    )
+    try:
+        paired = json.loads(pair_body.decode("utf-8")) if pair_status == 200 else None
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        paired = None
+    bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else None
+    if not _valid_fresh_bridge_token(bridge_token):
+        return {"ok": False, "code": "pairing"}
+    evidence = _printer_evidence_token(
+        paired.get("printer_discovery_key"), "device", CREALITY_IDENTITY_KIND + "\0" + mac
+    )
+    if (
+        paired.get("physical_printer_id") != physical_printer_id
+        or paired.get("material_system_id") != material_system_id
+        or evidence is None
+    ):
+        # The code belonged to another printer card: give the credential back.
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    binding = {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "bridge_token": bridge_token,
+        "mac": mac,
+        "device_identity": {"kind": CREALITY_IDENTITY_KIND, "token": evidence},
+    }
+    try:
+        with _CREALITY_CONFIG_LOCK:
+            bindings = [
+                item for item in _load_creality_bindings()
+                if item["physical_printer_id"] != physical_printer_id
+            ]
+            if len(bindings) >= MAX_CREALITY_BRIDGES:
+                raise ValueError("too many Creality links")
+            _save_creality_bindings(bindings + [binding])
+    except (OSError, ValueError):
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        bridge_token,
+        build_creality_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "linked":
+        # FilamentHub will never accept this printer for this card: undo the link.
+        _forget_creality_binding(physical_printer_id, bridge_token)
+        http_delete_bridge("/printer-bridge/connection", bridge_token)
+        return {"ok": False, "code": "linked"}
+    # The link itself is saved; a failed first report is retried on refresh.
+    return {"ok": True, "code": code}
+
+
+def handle_creality_message(catalog, msg):
+    """Run one page request about a Creality printer (called on the UI thread)."""
+    msg_type = msg.get("type")
+    request_id = msg.get("requestId")
+    ids = _positive_ids(msg)
+    if not (isinstance(request_id, str) and 0 < len(request_id) <= 100 and ids):
+        return
+    # Host state is copied here, on the UI thread; the worker only does I/O.
+    connections = _snapshot_local_creality_connections()
+    if msg_type == "configure-creality":
+        pairing_code = msg.get("pairingCode")
+        connection_ref = msg.get("connectionRef") or ""
+        if not (
+            isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
+            and isinstance(connection_ref, str) and len(connection_ref) <= 120
+        ):
+            return
+
+        def job():
+            try:
+                result = configure_creality_bridge(
+                    ids[0], ids[1], pairing_code, connection_ref, connections
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Creality setup failed: %s" % type(exc).__name__)
+                result = {"ok": False, "code": "invalid"}
+            catalog._deliver("creality-setup-result", requestId=request_id, result=result)
+            if result.get("ok"):
+                _wake_usage_watch(CREALITY_WATCH_RUNTIME)
+    else:
+        def job():
+            try:
+                code = observe_creality_bindings(connections, ids[0], ids[1]).get(
+                    ids[0], "unpaired"
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Creality refresh failed: %s" % type(exc).__name__)
+                code = "invalid"
+            catalog._deliver(
+                "creality-refresh-result",
+                requestId=request_id,
+                result={"ok": code == "ok", "code": code},
+            )
+            if code == "ok":
+                _wake_usage_watch(CREALITY_WATCH_RUNTIME)
+
+    if BACKGROUND_WORKER.submit(job) is False:
+        catalog._deliver(
+            _CREALITY_RESULT_TYPES[msg_type],
+            requestId=request_id,
+            result={"ok": False, "code": "unavailable"},
+        )
+
+
+def refresh_creality_bindings_after_sync():
+    """Re-read linked Creality printers alongside a page-driven sync (UI thread)."""
+    if not _load_creality_bindings():
+        return
+    connections = _snapshot_local_creality_connections()
+
+    def job():
+        try:
+            observe_creality_bindings(connections)
+        except PluginLifecycleStopped:
+            raise
+        except Exception as exc:
+            fh_log("Creality refresh failed: %s" % type(exc).__name__)
+
+    BACKGROUND_WORKER.submit(job)
+
+
+def refresh_creality_connections():
+    """Keep the watcher's copy of Orca's Creality connections current (UI thread)."""
+    now = time.monotonic()
+    with _CREALITY_CONNECTIONS_LOCK:
+        checked = _CREALITY_CONNECTIONS["at"]
+        if checked is not None and now - checked < CREALITY_CONNECTIONS_MAX_AGE_SECONDS:
+            return
+        # Also the time of a check that found nothing linked, so that people
+        # without a Creality printer pay for one small read in five minutes.
+        _CREALITY_CONNECTIONS["at"] = now
+    if not _load_creality_bindings():
+        return
+    _snapshot_local_creality_connections()
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            CREALITY_WATCH_RUNTIME.start()
+
+
+class CrealityWatchRuntime(_UsageWatchRuntime):
+    """Follows the prints of every linked Creality printer."""
+
+    thread_name = "filamenthub-creality-watch"
+    label = "Creality"
+
+    def _provider(self, binding):
+        return CREALITY_PROVIDER
+
+    def _forget(self, binding):
+        _forget_creality_binding(binding["physical_printer_id"], binding["bridge_token"])
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = _load_creality_bindings()
+        if not bindings:
+            return None
+        with _CREALITY_CONNECTIONS_LOCK:
+            connections = _CREALITY_CONNECTIONS["items"]
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return USAGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Follow one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now) or not connections:
+            return False
+        path = _usage_journal(CREALITY_CONFIG_FILE, "creality_usage", binding, source_instance_id)
+        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        books = self._open_books(path, observed_at)
+        if books is None:
+            return False
+        reading, failure = read_creality_printer(binding, connections)
+        if self._stop.is_set():
+            return False
+        if reading is None:
+            if failure == "permission":
+                self._block(key, now)
+            self._lost_reading(books, observed_at)
+            self._settle(binding, source_instance_id, path, books)
+            return False
+        slots, _complete = creality_slots(reading.get("boxes"))
+        usage = creality_usage(reading["status"])
+        tracker = books.get("tracker")
+        in_job = usage is not None and usage["state"] in ("printing", "paused")
+        counting = in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))
+        if not counting:
+            capture_counter_usage(books, usage, None, observed_at, job_prefix="creality")
+        else:
+            desired, linked = self._desired(binding)
+            if not linked:
+                return False
+            if desired is None or len(books["events"]) >= USAGE_WATCH_QUEUE_LIMIT:
+                # Without the site's assignments no spool can be named.
+                capture_counter_usage(books, None, None, observed_at)
+            else:
+                route, issue = counter_usage_route(slots, desired)
+                books["events"].extend(capture_counter_usage(
+                    books, usage, route, observed_at, issue, "creality"
+                ))
+        if not self._settle(binding, source_instance_id, path, books):
+            return in_job
+        self._report(
+            binding, key, build_creality_bridge_snapshot(binding, source_instance_id, reading), now
+        )
+        return in_job
+
+
+CREALITY_WATCH_RUNTIME = CrealityWatchRuntime()
 
 
 class _PluginRuntimeLifecycleMixin:
@@ -12340,6 +13797,157 @@ def slice_entry_for_key(key):
 def slice_path_for_key(key):
     entry = slice_entry_for_key(key)
     return entry["path"] if entry else None
+
+
+_SENT_PRINTS_LIMIT = 16
+_SENT_PRINT_SLICES = 6
+_SENT_PRINT_MAX_AGE_S = 3 * 24 * 3600
+_SENT_PRINTS_LOCK = threading.Lock()
+
+
+def _sent_prints_file():
+    return os.path.join(os.path.dirname(_SLICE_INDEX_FILE), ".fh_sent_prints.json")
+
+
+def _load_sent_prints():
+    try:
+        with open(_sent_prints_file(), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
+def _print_name_stem(value):
+    """A job name as both OrcaSlicer and the printer spell it, without its file endings."""
+    name = posixpath.basename(str(value or "").replace("\\", "/")).strip()
+    lowered = name.lower()
+    for ending in (".gcode.3mf", ".3mf", ".gcode"):
+        if lowered.endswith(ending):
+            return name[: -len(ending)]
+    return name
+
+
+def remember_sent_print(name, device_id, now=None):
+    """Note which of the plugin's kept slices a print sent from this OrcaSlicer came from.
+
+    The host names the project and the printer, not the plate, so the newest
+    few slices are noted and the printer's own layer count picks one later.
+    """
+    name = _print_name_stem(name)[:500]
+    with _SLICE_INDEX_LOCK:
+        keys = list(_load_slice_index())[-_SENT_PRINT_SLICES:]
+    if not name or not keys:
+        return False
+    record = {
+        "name": name, "device_id": str(device_id or "")[:200],
+        "slice_keys": keys, "at": time.time() if now is None else now,
+    }
+    with _SENT_PRINTS_LOCK:
+        records = [
+            item for item in _load_sent_prints()
+            if (item.get("name"), item.get("device_id")) != (record["name"], record["device_id"])
+        ]
+        records.append(record)
+        write_json_atomic(_sent_prints_file(), records[-_SENT_PRINTS_LIMIT:], mode=0o600)
+    return True
+
+
+def bambu_estimate_from_sent_print(config, report, now=None):
+    """The filament of a job this OrcaSlicer sent, from the plugin's own copy of its G-code.
+
+    For a job whose file cannot be read back from the printer. The job must
+    carry the name the host sent to this printer, and exactly one of the
+    slices noted then must have the layer count the printer reports; anything
+    less certain is left uncounted rather than guessed.
+    """
+    total_layers = _bambu_int(report.get("total_layer_num"))
+    names = {
+        _print_name_stem(report.get(field))
+        for field in ("subtask_name", "gcode_file") if report.get(field)
+    } - {""}
+    if not names or total_layers is None or total_layers <= 0:
+        return None
+    serial = _normalized_bambu_serial(config.get("serial"))
+    now = time.time() if now is None else now
+    with _SENT_PRINTS_LOCK:
+        records = _load_sent_prints()
+    for record in reversed(records):
+        sent_at = record.get("at")
+        if not isinstance(sent_at, (int, float)) or not 0 <= now - sent_at <= _SENT_PRINT_MAX_AGE_S:
+            continue
+        device = _normalized_bambu_serial(record.get("device_id"))
+        if record.get("name") not in names or (device and serial and device != serial):
+            continue
+        matches = []
+        for key in record.get("slice_keys") or []:
+            path = slice_path_for_key(key) if isinstance(key, str) else None
+            if not path:
+                continue
+            weights = _weights_from_gcode_path(path)
+            if not weights:
+                continue
+            try:
+                with open(path, "rb") as stream:
+                    curves = _layer_weights_from_gcode_stream(stream, weights)
+                    stream.seek(0)
+                    digest = hashlib.sha256()
+                    for block in iter(lambda: stream.read(1 << 20), b""):
+                        digest.update(block)
+            except OSError:
+                continue
+            if curves and max(len(curve) for curve in curves.values()) == total_layers:
+                matches.append((key, weights, curves, digest.hexdigest()))
+        if len(matches) != 1:
+            return None
+        key, weights, curves, sha256 = matches[0]
+        return {
+            "source": "orca_slice", "weights": weights, "layer_weights": curves,
+            "layer_source_key": key, "sha256": sha256,
+        }
+    return None
+
+
+def hurry_usage_watchers():
+    """Have the running usage watchers look now instead of at their next round."""
+    for runtime in (BAMBU_BRIDGE_RUNTIME, FLASHFORGE_WATCH_RUNTIME, MOONRAKER_WATCH_RUNTIME):
+        runtime._wake.set()
+
+
+def note_host_print_event(event, ctx):
+    """React to the host sending a print or a printer of its device list changing state.
+
+    Called for a handful of host events only, possibly from a host thread:
+    it writes one small file and sets flags, and never raises into the host.
+    """
+    try:
+        if event == _PRINT_SENT_EVENT:
+            remember_sent_print(getattr(ctx, "name", ""), getattr(ctx, "device_id", ""))
+        hurry_usage_watchers()
+    except Exception as exc:
+        fh_log("host print event failed: %s" % type(exc).__name__)
+
+
+_UNCOUNTED_PRINT_TEXT = {
+    "no_spool_assigned": "usageNotDeductedNoSpool",
+    "slot_without_spool": "usageNotDeductedSlot",
+}
+
+
+def notify_uncounted_prints(events):
+    """Tell the person at OrcaSlicer that a finished print was not deducted, and why."""
+    for event in events:
+        skipped = event.get("skipped") if isinstance(event, dict) else None
+        if not skipped:
+            continue
+        reason = skipped[0].get("reason") if isinstance(skipped[0], dict) else None
+        try:
+            push_native_notification(
+                "WarningNotificationLevel",
+                ui_text(_UNCOUNTED_PRINT_TEXT.get(reason, "usageNotDeducted")),
+            )
+        except Exception as exc:
+            fh_log("uncounted print notice failed: %s" % type(exc).__name__)
 
 
 _SLICE_DELIVERY_TARGET_LOCK = threading.Lock()
@@ -12906,6 +14514,8 @@ class FilamentHubCatalog(
 
     def on_lifecycle_event(self, event, ctx):
         if event != _PRESET_SAVED_EVENT:
+            if event in _PRINTER_ACTIVITY_EVENTS:
+                note_host_print_event(event, ctx)
             return
         self._on_preset_saved(ctx)
 
@@ -14385,6 +15995,12 @@ class FilamentHubCatalog(
                         "physicalPrinterId": linked.get(item["serial"]),
                         "provider": "flashforge", "source": "profile",
                     } for item in flashforge_printers(msg["flashforge"], plugin_source_instance_id()))
+                # Which card a Creality printer is linked to is known only after
+                # asking the printer for its MAC address, so it is not said here.
+                candidates.extend({
+                    "connectionRef": item["connection_ref"], "label": item["label"] or "Creality",
+                    "physicalPrinterId": None, "provider": "creality", "source": "profile",
+                } for item in creality_printers(msg.get("creality") or [], plugin_source_instance_id()))
                 finish(ok=True, candidates=candidates[:256], discoveryComplete=discovery["complete"])
                 return
             pending = {
@@ -14485,6 +16101,7 @@ class FilamentHubCatalog(
     def on_message(self, msg):
         prime_background_runtime()
         refresh_flashforge_connections()
+        refresh_creality_connections()
         denied_before = worker_denial_count()
         try:
             self._handle_message(msg)
@@ -14608,10 +16225,15 @@ class FilamentHubCatalog(
             msg["flashforge"] = (
                 _snapshot_local_flashforge_connections() if msg.get("operation") == "list" else []
             )
+            msg["creality"] = (
+                _snapshot_local_creality_connections() if msg.get("operation") == "list" else []
+            )
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
         elif msg_type in FLASHFORGE_MESSAGES and direct_message:
             handle_flashforge_message(self, msg)
+        elif msg_type in CREALITY_MESSAGES and direct_message:
+            handle_creality_message(self, msg)
         elif msg_type == "read-diagnostics" and plugin_setting("developer_mode"):
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=diagnostic_report_text())
@@ -14992,6 +16614,7 @@ class FilamentHubCatalog(
                 trigger="manual",
             )
             refresh_flashforge_bindings_after_sync()
+            refresh_creality_bindings_after_sync()
         elif msg_type in {
             "happy-hare-preview",
             "happy-hare-apply",
@@ -15686,6 +17309,7 @@ class FilamentHubCatalog(
             remote_names = {}
             remote_ids = set()
             changed_file_ids = set()
+            confirm_user_preset_folder()
             folder = user_filament_dir()
             allow_pull = preferences["allow_filament_presets_export"]
             allow_push = preferences["allow_filament_presets_import"]
@@ -16272,6 +17896,8 @@ if _PAGE_CAPABILITY_BASE is not None:
 
         def on_lifecycle_event(self, event, ctx):
             if event != _PRESET_SAVED_EVENT:
+                if event in _PRINTER_ACTIVITY_EVENTS:
+                    note_host_print_event(event, ctx)
                 return
             try:
                 apply_plugin_settings(read_capability_settings(self))

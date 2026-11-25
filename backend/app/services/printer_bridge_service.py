@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -26,6 +26,7 @@ from app.core.printer_capabilities import has_capability, normalize_capabilities
 from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
 from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.schemas.printer_bridge import (
     PrinterBridgeHeartbeatRequest,
     PrinterBridgeHeartbeatResponse,
@@ -50,9 +51,10 @@ BAMBU_PROVIDER = "bambu"
 BAMBU_TRANSPORT: PrinterBridgeTransport = "orca_plugin_lan"
 EDGE_TRANSPORT: PrinterBridgeTransport = "edge_agent"
 SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
-# Providers whose OrcaSlicer plugin path reports through a paired bridge. Happy
-# Hare reaches the plugin through its own Moonraker contract instead.
-ORCA_BRIDGE_PROVIDERS = frozenset({BAMBU_PROVIDER, "flashforge"})
+# Providers whose OrcaSlicer plugin path is paired with a code from the printer
+# card. A Klipper printer needs no code: the plugin already reaches it through
+# a connection bound to the card, and asks for its usage bridge with that.
+ORCA_BRIDGE_PROVIDERS = frozenset({BAMBU_PROVIDER, "flashforge", "creality"})
 BATCH_RECEIPT_KIND = "usage_batch"
 PRINT_JOB_SOURCE = "printer_bridge"
 
@@ -106,6 +108,25 @@ def _new_pairing_code() -> str:
 
 def _new_bridge_token() -> str:
     return f"fhpb_{secrets.token_urlsafe(32)}"
+
+
+def _issue_bridge_token(
+    credential: PrinterBridgeCredential, source_instance_id: str, plugin_version: str
+) -> str:
+    """Replace whatever the credential held with a fresh token for this installation."""
+    token = _new_bridge_token()
+    now = _now()
+    replacing_active_token = credential.token_hash is not None and credential.revoked_at is None
+    credential.token_hash = _digest(token)
+    credential.pairing_code_hash = None
+    credential.pairing_expires_at = None
+    credential.paired_at = now
+    credential.revoked_at = None
+    credential.source_instance_id = source_instance_id
+    credential.plugin_version = plugin_version
+    credential.credential_generation = int(credential.credential_generation or 0) + 1
+    credential.rotated_at = now if replacing_active_token else credential.rotated_at
+    return token
 
 
 def _safe_capabilities(
@@ -375,18 +396,7 @@ async def pair_printer_bridge(
         # A local Edge with durable retry data may rotate credentials for the
         # same binding, but it must explicitly reset before moving elsewhere.
         raise_error(409, ERR_PRINTER_BRIDGE_PAIRING_INVALID)
-    token = _new_bridge_token()
-    now = _now()
-    replacing_active_token = credential.token_hash is not None and credential.revoked_at is None
-    credential.token_hash = _digest(token)
-    credential.pairing_code_hash = None
-    credential.pairing_expires_at = None
-    credential.paired_at = now
-    credential.revoked_at = None
-    credential.source_instance_id = payload.source_instance_id
-    credential.plugin_version = payload.plugin_version
-    credential.credential_generation = int(credential.credential_generation or 0) + 1
-    credential.rotated_at = now if replacing_active_token else credential.rotated_at
+    token = _issue_bridge_token(credential, payload.source_instance_id, payload.plugin_version)
     connector.source_instance_id = payload.source_instance_id
     connector.node_instance_id = payload.node_instance_id
     connector.capabilities = _safe_capabilities(
@@ -405,6 +415,101 @@ async def pair_printer_bridge(
         material_system_id=connector.material_system_id,
         printer_discovery_key=await discovery_key(db, connector.user_id),
     )
+
+
+async def issue_moonraker_usage_bridge(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+    source_instance_id: str,
+    plugin_version: str,
+    capabilities: list[str],
+) -> tuple[str, PhysicalPrinterConnector]:
+    """Give one OrcaSlicer installation the credential to report a Klipper printer's usage.
+
+    The installation must already hold a connection bound to this printer card.
+    Each installation gets its own connector, so two of them watching one
+    printer are told apart and only one of them is deducted.
+    """
+    await require_physical_printer(db, user_id, physical_printer_id)
+    bound = await db.scalar(
+        select(PrinterConnectionBinding.id)
+        .where(
+            PrinterConnectionBinding.user_id == user_id,
+            PrinterConnectionBinding.physical_printer_id == physical_printer_id,
+            PrinterConnectionBinding.source_instance_id == source_instance_id,
+            PrinterConnectionBinding.status == "bound",
+            PrinterConnectionBinding.connection_ref.is_not(None),
+            # A Bambu or Flashforge connection is not a way to Klipper.
+            or_(
+                PrinterConnectionBinding.provider.is_(None),
+                PrinterConnectionBinding.provider.not_in(ORCA_BRIDGE_PROVIDERS),
+            ),
+        )
+        .limit(1)
+    )
+    if bound is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    system = await db.scalar(
+        select(MaterialSystem).where(
+            MaterialSystem.id == material_system_id,
+            MaterialSystem.user_id == user_id,
+            MaterialSystem.physical_printer_id == physical_printer_id,
+            MaterialSystem.active.is_(True),
+        )
+    )
+    if system is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    if system.provider == "happy_hare":
+        provider = "happy_hare"
+    elif system.provider == "legacy" or (
+        system.provider == "manual" and system.kind == "direct_feed"
+    ):
+        provider = "legacy"
+    else:
+        raise_error(409, ERR_PRINTER_BRIDGE_WRONG_PROVIDER)
+
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.user_id == user_id,
+            PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
+            PhysicalPrinterConnector.provider == provider,
+            PhysicalPrinterConnector.transport == BAMBU_TRANSPORT,
+            PhysicalPrinterConnector.source_instance_id == source_instance_id,
+        )
+        .with_for_update()
+    )
+    if connector is None:
+        connector = PhysicalPrinterConnector(
+            user_id=user_id,
+            physical_printer_id=physical_printer_id,
+            provider=provider,
+            transport=BAMBU_TRANSPORT,
+            source_instance_id=source_instance_id,
+        )
+        db.add(connector)
+    connector.material_system_id = system.id
+    connector.capabilities = _safe_capabilities(
+        capabilities, provider=provider, transport=BAMBU_TRANSPORT
+    )
+    connector.active = True
+    await db.flush()
+
+    credential = await db.scalar(
+        select(PrinterBridgeCredential)
+        .where(PrinterBridgeCredential.connector_id == connector.id)
+        .with_for_update()
+    )
+    if credential is None:
+        credential = PrinterBridgeCredential(connector_id=connector.id)
+        db.add(credential)
+    token = _issue_bridge_token(credential, source_instance_id, plugin_version)
+    await refresh_material_system_capabilities(db, system.id)
+    await db.commit()
+    return token, connector
 
 
 async def require_printer_bridge_token(db: AsyncSession, token: str | None) -> PrinterBridgeContext:

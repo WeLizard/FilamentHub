@@ -28,11 +28,14 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, Any] | None:
+def _route(
+    state: EdgeState, snapshot: ProviderSnapshot
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """The spool to charge, or why this observation cannot be charged to one."""
     desired = state.desired_snapshot or {}
     desired_slots = desired.get("slots")
     if not isinstance(desired_slots, list):
-        return None
+        return None, {"reason": "no_spool_assigned"}
     assignments: dict[int, dict[str, Any]] = {}
     for slot in desired_slots:
         if not isinstance(slot, dict):
@@ -54,15 +57,19 @@ def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, Any] | Non
         provider_index = slot.get("provider_index")
         if isinstance(provider_index, int) and not isinstance(provider_index, bool):
             active_indices.append(provider_index)
+    if not assignments:
+        return None, {"reason": "no_spool_assigned"}
     if len(active_indices) == 1:
         index = active_indices[0]
-        return assignments.get(index)
+        if index in assignments:
+            return assignments[index], None
+        return None, {"reason": "slot_without_spool", "slot_index": index}
 
     # A provider without slot topology is still a complete bridge when the
     # material system has one unambiguous desired feed.
     if not snapshot.slots and len(assignments) == 1:
-        return next(iter(assignments.values()))
-    return None
+        return next(iter(assignments.values())), None
+    return None, {"reason": "active_slot_unknown"}
 
 
 def _new_tracker(
@@ -117,6 +124,7 @@ def _event(
     tracker["next_segment_sequence"] = segment_sequence + 1
     items: list[dict[str, Any]] = []
     if route is not None and length_mm > COUNTER_EPSILON_MM:
+        tracker["charged"] = True
         items.append(
             {
                 "slot_index": route["slot_index"],
@@ -180,7 +188,7 @@ def capture_usage_events(
         return []
     usage = dict(usage)
     usage["filament_used_mm"] = counter
-    current_route = _route(state, snapshot)
+    current_route, route_issue = _route(state, snapshot)
     tracker = state.usage_tracker
 
     if tracker is not None and tracker.get("sampling_suspended"):
@@ -278,6 +286,9 @@ def capture_usage_events(
                 duration_s=total_duration,
             )
         )
+        # A job that charged nothing says why instead of looking like success.
+        if route_issue is not None and not tracker.get("charged"):
+            events[-1]["skipped"] = [route_issue]
         pending = 0.0
         tracker["terminal_emitted"] = True
     elif checkpoint_reason is not None and pending > COUNTER_EPSILON_MM:

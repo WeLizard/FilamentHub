@@ -46,6 +46,25 @@ class PrinterBridgePairResponse(BaseModel):
     printer_discovery_key: str | None = None
 
 
+class PrinterBridgeKlipperLinkRequest(BaseModel):
+    """One OrcaSlicer installation asks to report a Klipper printer's filament usage."""
+
+    physical_printer_id: int = Field(gt=0)
+    material_system_id: int = Field(gt=0)
+    source_instance_id: str = Field(min_length=16, max_length=100)
+    plugin_version: str = Field(min_length=1, max_length=50)
+    capabilities: list[str] = Field(default_factory=list, max_length=32)
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+
+class PrinterBridgeKlipperLinkResponse(BaseModel):
+    bridge_token: str
+    physical_printer_id: int
+    material_system_id: int
+    provider: str
+
+
 class PrinterBridgeStatusResponse(BaseModel):
     configured: bool
     paired: bool

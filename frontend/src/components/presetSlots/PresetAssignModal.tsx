@@ -49,6 +49,8 @@ interface PresetAssignModalProps {
   spools: UserSpool[];
   onClose: () => void;
   onAssigned: () => void;
+  /** Start a new spool from the material the printer reports in this slot. */
+  onCreateSpool?: (search: string) => void;
 }
 
 export function PresetAssignModal({
@@ -70,6 +72,7 @@ export function PresetAssignModal({
   spools,
   onClose,
   onAssigned,
+  onCreateSpool,
 }: PresetAssignModalProps) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -559,6 +562,26 @@ export function PresetAssignModal({
                     {t('presetSlots.happyHare.acceptObserved')}
                   </button>
                 )}
+              {onCreateSpool && observedLoaded && observedMaterial && expectedSpoolId == null && (
+                <button
+                  type="button"
+                  onClick={() => onCreateSpool(observedMaterial)}
+                  className="mb-2 flex items-center gap-2 rounded-lg border border-purple-400/30 px-3 py-2 text-left text-xs text-purple-100 transition hover:bg-white/5"
+                >
+                  {colorHex && (
+                    <span
+                      className="h-4 w-4 flex-shrink-0 rounded-full border border-white/20"
+                      style={{ backgroundColor: colorHex }}
+                    />
+                  )}
+                  <span>
+                    {t('presetSlots.modal.createObservedSpool', {
+                      material: observedMaterial,
+                      slot: slotDisplayLabel,
+                    })}
+                  </span>
+                </button>
+              )}
               {activeSpools.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <Package className="mb-3 h-8 w-8 text-gray-600" />

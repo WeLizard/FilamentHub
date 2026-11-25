@@ -48,9 +48,13 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("happy_hare", "edge_agent"): frozenset(
         {"read", "presence", "spool_identity", "consumption", "tag_read", "local_command"}
     ),
+    # The plugin reads Klipper's own extruder counter while OrcaSlicer is open.
+    # It reports "consumption" only when Moonraker has no Spoolman link of its
+    # own, which would otherwise deduct the same print a second time.
     ("happy_hare", "orca_plugin_lan"): frozenset(
-        {"read", "presence", "spool_identity", "tag_read"}
+        {"read", "presence", "spool_identity", "tag_read", "consumption"}
     ),
+    ("legacy", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     ("happy_hare", "spoolman_compat"): frozenset(
         {"read", "write", "presence", "spool_identity", "consumption"}
     ),
@@ -67,6 +71,9 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("flashforge", "orca_plugin_lan"): frozenset(
         {"read", "presence", "consumption", "write"}
     ),
+    # Creality's stock firmware reports its CFS slots and the length of filament
+    # a job has used, and takes no spool identity. The plugin only reads it.
+    ("creality", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -125,6 +132,15 @@ _KLIPPER_ELSEWHERE = (
     "A Klipper printer without an MMU reports through Moonraker's own Spoolman connection "
     "and through Edge; this connection grants nothing itself.",
 )
+_KLIPPER_NO_SLOT_TO_SET = (
+    "device",
+    "A Klipper printer without an MMU has no slot whose material could be set.",
+)
+_KLIPPER_NAMES_NO_SPOOL = (
+    "device",
+    "Klipper names no spool; the assignment made on the site is the only link.",
+)
+_KLIPPER_NO_READER = ("device", "A Klipper printer without an MMU has no tag reader.")
 ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
     ("bambu", "orca_plugin_lan"): {"spool_identity": _NO_SPOOL_ON_BAMBU},
     ("bambu", "edge_agent"): {
@@ -136,20 +152,16 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
         "tag_read": ("device", "No tag reader is reachable through OctoPrint."),
     },
     ("moonraker", "edge_agent"): {
-        "write": (
-            "device",
-            "A Klipper printer without an MMU has no slot whose material could be set.",
-        ),
-        "spool_identity": (
-            "device",
-            "Klipper names no spool; the assignment made on the site is the only link.",
-        ),
-        "tag_read": ("device", "A Klipper printer without an MMU has no tag reader."),
+        "write": _KLIPPER_NO_SLOT_TO_SET,
+        "spool_identity": _KLIPPER_NAMES_NO_SPOOL,
+        "tag_read": _KLIPPER_NO_READER,
     },
     ("happy_hare", "edge_agent"): {"write": _HAPPY_HARE_SPOOLMAN},
-    ("happy_hare", "orca_plugin_lan"): {
-        "write": _HAPPY_HARE_SPOOLMAN,
-        "consumption": _HAPPY_HARE_SPOOLMAN,
+    ("happy_hare", "orca_plugin_lan"): {"write": _HAPPY_HARE_SPOOLMAN},
+    ("legacy", "orca_plugin_lan"): {
+        "write": _KLIPPER_NO_SLOT_TO_SET,
+        "spool_identity": _KLIPPER_NAMES_NO_SPOOL,
+        "tag_read": _KLIPPER_NO_READER,
     },
     ("happy_hare", "spoolman_compat"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
     ("happy_hare", "legacy_adapter"): {"tag_read": _TAGS_NOT_ON_SPOOLMAN},
@@ -161,6 +173,22 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
     ("flashforge", "orca_plugin_lan"): {
         "spool_identity": _FLASHFORGE_NO_SPOOL,
         "tag_read": _FLASHFORGE_NO_READER,
+    },
+    ("creality", "orca_plugin_lan"): {
+        "write": (
+            "planned",
+            "The printer accepts a slot's material over its LAN channel; the plugin does not "
+            "send it yet.",
+        ),
+        "spool_identity": (
+            "device",
+            "The printer knows the material in a slot, never which spool is loaded.",
+        ),
+        "tag_read": (
+            "planned",
+            "A CFS reads the tag of a Creality spool and reports only what it found on it; "
+            "FilamentHub does not match that to a spool yet.",
+        ),
     },
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),

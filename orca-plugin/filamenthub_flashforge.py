@@ -21,9 +21,9 @@ what the printer can show: a fixed list of material names and a palette of
 documented by the community reference and not confirmed on a printer; the
 caller reads the slot back and believes only that.
 
-FH Edge reads the same API and keeps the same books (edge-agent
-``providers/flashforge.py`` and ``usage.py``). The two are held to one shared
-reading and one shared print scenario so they cannot drift apart.
+FH Edge reads the same API (edge-agent ``providers/flashforge.py``). The two
+are held to one shared reading so they cannot drift apart. The books that turn
+successive readings into usage are in ``filamenthub_usage_books.py``.
 
 This file holds definitions only: no I/O, no module state and no reference
 to the plugin. ``build_package.py`` merges it into the single installable
@@ -33,7 +33,6 @@ plugin file, where every name below becomes a plugin global.
 import math
 import re
 import urllib.parse
-import uuid
 
 FLASHFORGE_PROVIDER = "flashforge"
 FLASHFORGE_HOST_TYPE = "flashforge"
@@ -98,15 +97,7 @@ _FLASHFORGE_USAGE_STATES = {
     "cancel": "cancelled",
     "error": "error",
 }
-_FLASHFORGE_USAGE_OUTCOMES = {
-    "complete": "completed",
-    "cancelled": "cancelled",
-    "error": "failed",
-}
 FLASHFORGE_MAX_JOB_LENGTH_MM = 10_000_000.0
-# A long print is charged in parts, so a lost end does not lose all of it.
-FLASHFORGE_USAGE_CHECKPOINT_S = 300.0
-_FLASHFORGE_USAGE_EPSILON_MM = 0.001
 
 
 def flashforge_serial(value):
@@ -419,206 +410,18 @@ def flashforge_usage(detail):
     if state == "complete":
         # A finished job used its whole estimate, whatever the last reading said.
         progress = 1.0
-    usage = {"state": state, "file_name": job, "filament_used_mm": total * progress}
+    usage = {
+        "state": state,
+        "file_name": job,
+        "filament_used_mm": total * progress,
+        # The printer computed nothing and measured nothing: this is the
+        # slicer's figure.
+        "estimate_source": "slicer_progress",
+    }
     duration = _flashforge_number(detail.get("printDuration"))
     if duration is not None and 0 <= duration <= 31_536_000:
         usage["duration_s"] = duration
     return usage
-
-
-def flashforge_usage_route(slots, desired):
-    """The spool the site put in the one slot that is feeding, or None."""
-    assignments = {}
-    for slot in (desired.get("slots") if isinstance(desired, dict) else None) or []:
-        if not isinstance(slot, dict):
-            continue
-        index = slot.get("index")
-        spool = slot.get("spool")
-        spool_id = spool.get("id") if isinstance(spool, dict) else None
-        if type(index) is int and type(spool_id) is int and spool_id > 0:
-            route = {"slot_index": index, "spool_id": spool_id}
-            for key in ("usage_route_proof", "assignment_revision"):
-                if slot.get(key) is not None:
-                    route[key] = slot[key]
-            assignments[index] = route
-    feeding = [
-        slot["provider_index"] for slot in slots or [] if slot.get("active_feed") is True
-    ]
-    if len(feeding) == 1:
-        return assignments.get(feeding[0])
-    # A printer whose feed could not be read still has one unambiguous spool
-    # when the site knows of exactly one.
-    if not slots and len(assignments) == 1:
-        return next(iter(assignments.values()))
-    return None
-
-
-def _flashforge_usage_event(tracker, event_type, observed_at, route, length_mm, reason, outcome):
-    sequence = tracker["segment_sequence"]
-    tracker["segment_sequence"] = sequence + 1
-    items = []
-    if route is not None and length_mm > _FLASHFORGE_USAGE_EPSILON_MM:
-        proof = route.get("usage_route_proof")
-        item = {
-            "slot_index": route["slot_index"],
-            "spool_id": route["spool_id"],
-            "used_length_mm": length_mm,
-            "evidence": "route_proof" if proof is not None else "current_assignment",
-        }
-        if proof is not None:
-            item["usage_route_proof"] = proof
-        # The printer computed nothing and measured nothing: this is the
-        # slicer's figure.
-        item["consumption_kind"] = "estimated"
-        item["estimate_source"] = "slicer_progress"
-        items.append(item)
-    event = {
-        "contract_version": 2,
-        "job_id": tracker["job_id"],
-        "segment_sequence": sequence,
-        "event_type": event_type,
-        "reasons": [reason],
-        "observed_at": observed_at,
-        "started_at": tracker["started_at"],
-        "items": items,
-    }
-    if tracker.get("file_name"):
-        event["file_name"] = tracker["file_name"]
-    if outcome is not None:
-        event["outcome"] = outcome
-    if tracker.get("duration_s") is not None:
-        event["duration_s"] = tracker["duration_s"]
-    return event
-
-
-def flush_flashforge_usage(state, observed_at, reason):
-    """Hand over what is already charged to a spool; nothing new is inferred."""
-    tracker = state.get("tracker")
-    if (
-        not isinstance(tracker, dict)
-        or tracker.get("terminal")
-        or tracker.get("status") not in ("printing", "paused")
-        or not isinstance(tracker.get("route"), dict)
-        or tracker["pending_mm"] <= _FLASHFORGE_USAGE_EPSILON_MM
-    ):
-        return []
-    event = _flashforge_usage_event(
-        tracker, "checkpoint", observed_at, tracker["route"], tracker["pending_mm"], reason, None
-    )
-    tracker["pending_mm"] = 0.0
-    tracker["emitted_at_s"] = tracker["printed_s"]
-    return [event]
-
-
-def capture_flashforge_usage(state, usage, route, observed_at):
-    """Advance the books in ``state`` by one reading; return the usage that is certain.
-
-    A stretch of the job is charged only when the same spool was feeding at both
-    ends of it. The stretch in which the feeding slot changed, and any stretch
-    without a reading, is charged to nobody. The books start at the first
-    reading, so the part of a job printed before that is not charged either.
-    """
-    tracker = state.get("tracker")
-    if not isinstance(usage, dict):
-        if isinstance(tracker, dict):
-            tracker["suspended"] = True
-        return []
-    status = usage["state"]
-    counter = usage["filament_used_mm"]
-    printed_s = usage.get("duration_s") or 0.0
-    same_job = (
-        isinstance(tracker, dict)
-        and not (
-            tracker.get("file_name")
-            and usage.get("file_name")
-            and tracker["file_name"] != usage["file_name"]
-        )
-        and counter + _FLASHFORGE_USAGE_EPSILON_MM >= tracker["counter_mm"]
-    )
-    if isinstance(tracker, dict) and tracker.get("suspended"):
-        events = flush_flashforge_usage(state, observed_at, "disconnect")
-        if same_job:
-            tracker.pop("suspended")
-            tracker["counter_mm"] = counter
-            tracker["printed_s"] = tracker["emitted_at_s"] = printed_s
-            tracker["duration_s"] = usage.get("duration_s")
-            tracker["route"] = route
-        else:
-            state["tracker"] = None
-        return events + capture_flashforge_usage(state, usage, route, observed_at)
-    if status == "standby":
-        state["tracker"] = None
-        return []
-    outcome = _FLASHFORGE_USAGE_OUTCOMES.get(status)
-    if not isinstance(tracker, dict) or tracker.get("terminal") or not same_job:
-        state["tracker"] = {
-            "job_id": "flashforge:" + uuid.uuid4().hex,
-            "file_name": usage.get("file_name"),
-            "started_at": observed_at,
-            "status": status,
-            "counter_mm": counter,
-            "printed_s": printed_s,
-            "emitted_at_s": printed_s,
-            "duration_s": usage.get("duration_s"),
-            "route": route,
-            "segment_sequence": 1,
-            "pending_mm": 0.0,
-            # A job first seen finished has nothing left to charge.
-            "terminal": outcome is not None,
-        }
-        return []
-
-    previous = tracker.get("route")
-    pending = tracker["pending_mm"]
-    changed = previous != route
-    tracker["duration_s"] = usage.get("duration_s")
-    events = []
-    if changed:
-        if previous is not None and pending > _FLASHFORGE_USAGE_EPSILON_MM:
-            reason = "spool_change"
-            if route is None:
-                reason = "filament_change"
-            elif previous.get("slot_index") != route.get("slot_index"):
-                reason = "tool_change"
-            events.append(_flashforge_usage_event(
-                tracker, "checkpoint", observed_at, previous, pending, reason, None
-            ))
-        pending = 0.0
-        tracker["emitted_at_s"] = printed_s
-    elif route is not None:
-        pending += max(counter - tracker["counter_mm"], 0.0)
-
-    def checkpoint(reason):
-        nonlocal pending
-        events.append(_flashforge_usage_event(
-            tracker, "checkpoint", observed_at, route, pending, reason, None
-        ))
-        pending = 0.0
-        tracker["emitted_at_s"] = printed_s
-
-    if outcome is not None:
-        events.append(_flashforge_usage_event(
-            tracker,
-            "terminal",
-            observed_at,
-            None if changed else route,
-            0.0 if changed else pending,
-            "terminal",
-            outcome,
-        ))
-        pending = 0.0
-        tracker["terminal"] = True
-    elif pending > _FLASHFORGE_USAGE_EPSILON_MM:
-        if status == "paused" and tracker.get("status") != "paused":
-            checkpoint("paused")
-        elif printed_s - tracker["emitted_at_s"] >= FLASHFORGE_USAGE_CHECKPOINT_S:
-            checkpoint("periodic")
-    tracker["status"] = status
-    tracker["counter_mm"] = counter
-    tracker["printed_s"] = printed_s
-    tracker["route"] = route
-    tracker["pending_mm"] = pending
-    return events
 
 
 def flashforge_can_set_slots(detail):

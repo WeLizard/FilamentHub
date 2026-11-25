@@ -56,6 +56,7 @@ from ._bambu_trust import bambu_certificate_fingerprint
 from ._bambu_usage import (
     _bambu_file_candidates,
     _bambu_job_key,
+    _bambu_keep_gap_safe_baselines,
     _buffer_bambu_usage_report,
     capture_bambu_usage,
 )
@@ -419,8 +420,8 @@ class BambuProvider:
             report = observation["report"]
             tracker = books.get("tracker")
             if report.pop("_fh_observation_gap", False) and isinstance(tracker, dict):
-                # Nothing is inferred across an interval nobody watched.
-                tracker["previous"] = {}
+                # A slicer figure resumes along its own curve; a sensor reading starts anew.
+                _bambu_keep_gap_safe_baselines(tracker)
             events.extend(
                 capture_bambu_usage(
                     books, report, desired, self._estimate_for(report), observation["observed_at"]

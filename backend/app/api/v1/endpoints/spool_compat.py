@@ -90,7 +90,10 @@ from app.services.spool_usage_service import (
     resolve_assigned_preset_id,
     spoolman_usage_checkpoint_meta,
 )
-from app.services.stock_alert_service import refresh_stock_alerts
+from app.services.stock_alert_service import (
+    announce_spool_out_by_estimate,
+    refresh_stock_alerts,
+)
 from app.services.tag_scan_relay import claim_broadcast, remember_reader
 
 from . import (
@@ -2041,12 +2044,10 @@ async def _use_spool_impl(
     if spool.first_used_at is None:
         spool.first_used_at = now
     spool.last_used_at = now
-    if spool.used_weight_g >= spool.initial_weight_g:
-        spool.state = UserSpoolState.empty
-        await clear_spool_gate_assignments(
-            db, spool, source=PresetGateStateSource.provider_report
-        )
-        clear_spool_location_projection(spool)
+    if applied_weight > 0 and spool.used_weight_g >= spool.initial_weight_g:
+        # The printer's figure is an estimate: the spool keeps its slot, later
+        # reports stay in its history, and the owner is asked to weigh it.
+        await announce_spool_out_by_estimate(db, spool)
 
     await db.commit()
     updated = await _get_user_spool(db, user.id, spool.id)

@@ -21,6 +21,7 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem
+from app.models.notification import Notification
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent
@@ -604,7 +605,6 @@ async def test_a_printer_cannot_report_away_more_than_the_spool_holds(
 
     await db_session.refresh(spool)
     assert spool.used_weight_g == pytest.approx(spool.initial_weight_g)
-    assert spool.state == UserSpoolState.empty
 
     # What the printer claimed is kept as its claim; what we applied is the
     # 900 g that were actually left. Mixing the two corrupts the history.
@@ -960,10 +960,15 @@ async def test_inactive_happy_hare_system_does_not_enable_usage_compaction(
 
 
 @pytest.mark.asyncio
-async def test_adapter_exhaustion_records_provider_provenance_when_clearing_slot(
+async def test_spool_used_up_by_printer_reports_keeps_its_slot_and_asks_to_be_weighed(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
+    """A printer's figure is an estimate, so it must not unload a spool.
+
+    Dropping the slot at a recorded zero silently stopped all later accounting
+    for a spool that was still printing; the owner is told once instead.
+    """
     user, spool, device = await _seed_spool_context(db_session)
     await _set_material_system_provider(db_session, user, device, "happy_hare")
     gate_state = PresetGateState(
@@ -977,19 +982,27 @@ async def test_adapter_exhaustion_records_provider_provenance_when_clearing_slot
     )
     db_session.add(gate_state)
     await db_session.commit()
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
 
-    response = await client.put(
-        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use",
-        json={"use_weight": 900},
-    )
+    for _report in range(2):
+        response = await client.put(endpoint, json={"use_weight": 900})
+        assert response.status_code == 200
 
-    assert response.status_code == 200
     await db_session.refresh(gate_state)
-    assert gate_state.spool_id is None
-    assert gate_state.source == PresetGateStateSource.provider_report
+    await db_session.refresh(spool)
+    assert gate_state.spool_id == spool.id
+    assert spool.state != UserSpoolState.empty
+    notices = list(
+        await db_session.scalars(
+            select(Notification).where(
+                Notification.user_id == user.id,
+                Notification.title == "spool_out_by_estimate",
+            )
+        )
+    )
+    assert [notice.extra_data["spool_id"] for notice in notices] == [spool.id]
 
 
-@pytest.mark.asyncio
 async def test_spool_compat_create_defaults_to_shelf_and_rejects_empty(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1130,33 +1143,6 @@ async def test_hh_patch_bootstraps_hostname_then_exposes_existing_gate_map(
 
 
 @pytest.mark.asyncio
-async def test_spool_compat_finished_spool_clears_gate(
-    client: AsyncClient,
-    db_session: AsyncSession,
-):
-    _user, spool, device = await _seed_spool_context(db_session)
-    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}"
-    assign_response = await client.patch(
-        endpoint,
-        json={"location": f"{device.name}:Gate0"},
-    )
-    assert assign_response.status_code == 200
-
-    use_response = await client.put(f"{endpoint}/use", json={"use_weight": 900})
-    assert use_response.status_code == 200
-    await db_session.refresh(spool)
-    assert spool.state == UserSpoolState.empty
-    assert spool.extra["printer_name"] == '""'
-    assert spool.extra["mmu_gate_map"] == "-1"
-    gate_spool_id = await db_session.scalar(
-        select(PresetGateState.spool_id).where(
-            PresetGateState.device_id == device.id,
-            PresetGateState.gate_index == 0,
-        )
-    )
-    assert gate_spool_id is None
-
-
 def _approved_preset(**overrides) -> Preset:
     base = {
         "name": "test preset",

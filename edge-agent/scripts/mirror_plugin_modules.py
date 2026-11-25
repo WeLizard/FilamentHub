@@ -53,6 +53,8 @@ USAGE_NAMES = (
     "_bambu_usage_routes",
     "_bambu_progress",
     "_bambu_usage_counters",
+    "_bambu_keep_gap_safe_baselines",
+    "_bambu_skipped_usage",
     "capture_bambu_usage",
     "_buffer_bambu_usage_report",
 )

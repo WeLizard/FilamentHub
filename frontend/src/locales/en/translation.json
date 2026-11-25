@@ -169,7 +169,9 @@
       "bambuHint": "AMS units and external holders are detected automatically after the printer connects.",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings.",
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
-      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate while OrcaSlicer is open or FH Edge is running."
+      "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate while OrcaSlicer is open or FH Edge is running.",
+      "creality": "Creality (K1, K2, Ender-3 V3)",
+      "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -191,7 +193,10 @@
       "manualHint": "Describe your equipment. You can assign spools immediately, without a connection. This is your declaration, not a sensor reading.",
       "edit": "Edit feed paths and slots",
       "flashforgeStation": "Material station, 4 slots (AD5X, Creator 5)",
-      "flashforgeSingle": "Single spool (Adventurer 5M / 5M Pro)"
+      "flashforgeSingle": "Single spool (Adventurer 5M / 5M Pro)",
+      "crealityCfs": "CFS, 4 slots per unit (K2, K1 with CFS)",
+      "crealityCfsSlots": "CFS slots",
+      "crealitySingle": "Single spool (no CFS)"
     },
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","host_permission":"OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and check again.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_unavailable":"The printer was found, but its identity could not be confirmed yet. Try the check again. Your saved printer and assignments are kept.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Add printer",
@@ -7742,6 +7747,8 @@
       "openResponse": "Open response"
     },
     "keys": {
+      "spool_out_by_estimate": "Spool used up by the records",
+      "spool_out_by_estimate_message": "According to printer reports, spool \"{{name}}\" is used up. It stays in its slot and further usage is kept in its history. Weigh the spool or replace it.",
       "low_stock_spool": "Spool running low",
       "low_stock_spool_message": "Spool \"{{name}}\" is running low: {{remaining_g}} g left (alert at {{threshold_g}} g).",
       "low_stock_material": "Material running low",
@@ -8883,6 +8890,27 @@
       "untracked": "legacy or recovered journal"
     }
   },
+  "printerUsageSetup": {
+    "title": "Automatic usage tracking is not working yet",
+    "step": {
+      "connect": "Printer is in contact with FilamentHub",
+      "spools": "Spools are added",
+      "slot": "A spool is assigned to a slot",
+      "print": "First print is deducted"
+    },
+    "hint": {
+      "connect": "FilamentHub has never received data from this printer. Finish the connection.",
+      "connectMoonraker": "Moonraker has never contacted FilamentHub, so usage is not deducted. Add the [spoolman] block from the connection settings to moonraker.conf.",
+      "spools": "There is nothing to deduct from yet: add the spools loaded in the printer.",
+      "slot": "Assign a spool to the slot you print from. Without it the print is not deducted.",
+      "print": "Start a print. Usage is deducted while the printer is in contact with FilamentHub.",
+      "printOrca": "Start a print and keep OrcaSlicer open: usage is counted while it is running."
+    },
+    "action": {
+      "spools": "Add a spool",
+      "slot": "Open slots"
+    }
+  },
   "printJobs": {
     "open": "Print history",
     "title": "Prints · {{printer}}",
@@ -8904,6 +8932,22 @@
     "confirmedConsumption": "Confirmed consumption: {{value}} g",
     "estimatedConsumption": "Estimated consumption: {{value}} g",
     "needsReconciliation": "Needs reconciliation: {{value}} g. Check and update the spool balance.",
+    "trackingInterrupted": "Tracking interrupted",
+    "trackingInterruptedHint": "Reports for this print stopped arriving, so its outcome and usage are unknown. Tracking continues when the printer connection returns. If the print has already ended, set its outcome and weigh the spool.",
+    "usageIssues": {
+      "nothing": "Usage for this print was not deducted",
+      "partial": "Part of this print's usage was not deducted",
+      "reason": {
+        "no_spool_assigned": "No spool is assigned to any printer slot. Assign a spool to a slot and the next print will be deducted.",
+        "slot_without_spool": "The print used slot {{slot}}, which has no spool assigned.",
+        "print_file_unavailable": "The print file could not be read from the printer, so the weight is unknown.",
+        "print_file_access_denied": "The print file on the printer is not accessible. Allow the plugin to access the printer in OrcaSlicer.",
+        "slot_mapping_missing": "The printer did not report which slots the print used.",
+        "tag_mismatch": "Slot {{slot}} holds a different spool from the one assigned in FilamentHub.",
+        "active_slot_unknown": "The slot the print used could not be determined.",
+        "unknown": "The printer reported the print without usage data."
+      }
+    },
     "usageSegments": {
       "title": "Consumption by segment",
       "sequence": "Segment {{count}}",
@@ -9147,6 +9191,8 @@
       "label": "Assigned",
       "notAssigned": "No spool assigned",
       "empty": "Empty",
+      "outByEstimate": "Used up by the records",
+      "outByEstimateHint": "According to printer reports the spool is used up. Weigh or replace it: further usage is kept in the spool history, but the balance no longer decreases.",
       "unknownSpool": "Unknown spool"
     },
     "route": {
@@ -9204,6 +9250,7 @@
       "searchPreset": "Search preset...",
       "noPresets": "No presets found",
       "noPresetsForFilament": "No presets in your library for this filament",
+      "createObservedSpool": "The printer sees {{material}} in slot {{slot}}. Add this spool and assign it to the slot",
       "presetsForFilament": "Presets for {{filament}}",
       "showAllPresets": "Show all",
       "backToFilamentPresets": "← Presets for {{filament}}",
@@ -9218,7 +9265,8 @@
       "direct": "Direct feed",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
-      "flashforge": "Flashforge LAN"
+      "flashforge": "Flashforge LAN",
+      "creality": "Creality LAN"
     },
     "edge": {
       "title": "FH Edge",
@@ -9353,6 +9401,29 @@
         "pairing": "The printer could not be linked to FilamentHub. Try again.",
         "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
         "invalid": "The printer answered unexpectedly. Check its firmware and LAN mode.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+      }
+    },
+    "creality": {
+      "title": "Creality through OrcaSlicer",
+      "description": "The plugin takes the printer's address from its connection settings in OrcaSlicer. Choose the CrealityPrint host type there and enter the address; the printer needs no password.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several Creality printers. Choose this one:",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while it is open, the plugin follows the print and deducts the filament length the printer itself has counted. With OrcaSlicer closed, a print is not counted.",
+      "localOnly": "The printer's address stays in OrcaSlicer and is never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
+      "result": {
+        "notFound": "OrcaSlicer has no Creality printer. Open the printer's connection settings in OrcaSlicer, choose the CrealityPrint host type and enter the address.",
+        "credentials": "None of the connections in OrcaSlicer is this printer. Check the address in the connection settings and connect the printer again.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on and in the same network.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "identity": "The printer did not report its hardware address, so it cannot be told apart from others reliably. Update the printer's firmware and try again.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check that it runs Creality's stock firmware.",
         "unpaired": "The link to this card is no longer valid. Connect the printer again.",
         "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
       }

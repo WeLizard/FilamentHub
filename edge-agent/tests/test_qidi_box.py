@@ -91,6 +91,23 @@ class QidiBoxTest(unittest.TestCase):
                 self.assertEqual(snapshot.usage is not None, usage)
                 self.assertNotIn("spool_identity", snapshot.capabilities)
 
+    def test_the_loaded_slot_is_the_one_that_feeds(self) -> None:
+        status = fixture("query.json")["result"]["status"]
+        # Firmware that records nothing leaves the feed unknown, so nothing is charged.
+        self.assertTrue(
+            all("active_feed" not in slot for slot in qidi_box.build_slots(status, {}, {}))
+        )
+        status["save_variables"]["variables"]["last_load_slot"] = "slot1"
+        self.assertEqual(
+            [slot["active_feed"] for slot in qidi_box.build_slots(status, {}, {})],
+            [False, True, False, False],
+        )
+        status["save_variables"]["variables"]["last_load_slot"] = "slot-1"
+        self.assertEqual(
+            [slot["active_feed"] for slot in qidi_box.build_slots(status, {}, {})],
+            [False, False, False, False],
+        )
+
     def test_unknown_slot_count_is_capped(self) -> None:
         status = fixture("query.json")["result"]["status"]
         status["save_variables"]["variables"]["box_count"] = 40

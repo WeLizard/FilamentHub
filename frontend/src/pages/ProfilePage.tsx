@@ -130,7 +130,7 @@ import {
 } from '../components/presetSlots/assignmentDelivery';
 import { AchievementShowcase } from '../components/AchievementShowcase';
 import { GuidedEmptyState } from '../components/GuidedEmptyState';
-import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
+import { PresetSlotsPanel, type SlotSpoolRequest } from '../components/presetSlots/PresetSlotsPanel';
 import { ViewModeToggle } from '../components/ViewModeToggle';
 import type { ViewMode } from '../components/ViewModeToggle';
 import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
@@ -2610,6 +2610,8 @@ interface SpoolFormProps {
   initialPlacement?: 'ask' | 'shelf' | 'printer';
   /** A free tag read on the station; the new spool starts from what it says. */
   initialStationTag?: StationTagIntake | null;
+  /** The slot this spool is being added for; it is offered that slot once created. */
+  initialSlot?: SlotSpoolRequest | null;
   /** Jump to another owned spool, e.g. from a scanned personal QR. */
   onOpenSpool?: (spoolId: number) => void;
   onSaved: () => void;
@@ -2626,6 +2628,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   initialSource = 'manual',
   initialPlacement = 'ask',
   initialStationTag = null,
+  initialSlot = null,
   onOpenSpool,
   onSaved,
   onCancel,
@@ -2693,7 +2696,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   }, [stationTagFacts]);
   const stationTagSearch = stationTagFacts && !stationTagFacts.inCatalog
     ? [stationTagFacts.decoded.vendor_name, stationTagFacts.decoded.material].filter(Boolean).join(' ')
-    : '';
+    : initialSlot?.search ?? '';
   const edgeStation = useEdgeTagStation();
   const stationBusy = edgeStation.status === 'connecting' || edgeStation.status === 'working';
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -3243,6 +3246,13 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
         const newSpool = await spoolsAPI.create(payload);
         await linkStationTag(newSpool.id);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+        if (initialSlot) {
+          setCreatedSpool(newSpool);
+          setSelectedTargetKey(initialSlot.targetKey);
+          setSelectedSlotId(String(initialSlot.slotId));
+          setGateStep(true);
+          return;
+        }
         if (initialPlacement === 'shelf') {
           onSaved();
           return;
@@ -3314,6 +3324,9 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
   const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 placeholder-gray-500';
   const labelCls = 'block text-xs text-gray-400 mb-1';
 
+  // A spool added for a slot is meant for that slot: assigning is the main action.
+  const gatePrimaryCls = 'px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50';
+  const gateSecondaryCls = 'px-4 py-2 rounded-lg border border-white/20 text-gray-200 text-sm font-medium hover:bg-white/10 disabled:opacity-50 transition-colors';
   if (gateStep && createdSpool) {
     const selectedTarget = feedTargets.find((item) => item.key === selectedTargetKey);
     const selectedTargetSlot = selectedTarget?.slots.find(
@@ -3404,7 +3417,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             type="button"
             onClick={handlePutOnShelf}
             disabled={assigning}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            className={initialSlot ? gateSecondaryCls : gatePrimaryCls}
           >
             {t('profilePage.spoolGateStep.skip')}
           </button>
@@ -3412,7 +3425,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
             type="button"
             onClick={handleAssignToGate}
             disabled={assigning || !selectedTarget || selectedSlotId === ''}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-white/20 text-gray-200 text-sm font-medium hover:bg-white/10 disabled:opacity-50 transition-colors"
+            className={`inline-flex items-center justify-center gap-1.5 ${initialSlot ? gatePrimaryCls : gateSecondaryCls}`}
           >
             {assigning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {t('profilePage.spoolGateStep.assign')}
@@ -3977,9 +3990,12 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
   // A free tag read from the toolbar, handed to the add form; every way the
   // form closes drops it, so the next add form starts clean.
   const [stationTagIntake, setStationTagIntake] = useState<StationTagIntake | null>(null);
+  // A spool being added for a printer slot, from what the printer sees in it.
+  const [slotIntake, setSlotIntake] = useState<SlotSpoolRequest | null>(null);
   const closeAddSpool = () => {
     setIsAddOpen(false);
     setStationTagIntake(null);
+    setSlotIntake(null);
   };
 
   const openSpoolForEdit = async (spoolId: number) => {
@@ -4228,6 +4244,7 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
                   initialSource={initialSource}
                   initialPlacement={initialPlacement}
                   initialStationTag={stationTagIntake}
+                  initialSlot={slotIntake}
                   onOpenSpool={(spoolId) => void openSpoolForEdit(spoolId)}
                   onSaved={() => {
                     closeAddSpool();
@@ -4365,7 +4382,18 @@ export const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 </button>
                 {spoolSlotsSection === 'expanded' && (
                   <div className="mt-3">
-                    <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
+                    <PresetSlotsPanel
+                      compact
+                      spools={spools}
+                      printerProfiles={printerProfiles}
+                      onCreateSpoolForSlot={(request) => {
+                        setEditingSpool(null);
+                        setUsingSpool(null);
+                        setStationTagIntake(null);
+                        setSlotIntake(request);
+                        setIsAddOpen(true);
+                      }}
+                    />
                   </div>
                 )}
               </div>

@@ -137,5 +137,8 @@
   "stockAlertSpool": "Low stock: {name} has {remaining} g left (alert at {threshold} g).",
   "stockAlertMaterial": "Low stock: {name} on the shelf is down to {shelf} g (alert at {threshold} g).",
   "stockAlertMaterialUnknown": "Low stock: {name} on the shelf is down to {shelf} g (alert at {threshold} g). {count} spool(s) of unknown weight are not counted.",
-  "stockAlertOpen": "Open Spools"
+  "stockAlertOpen": "Open Spools",
+  "usageNotDeducted": "FilamentHub: this print's filament was not deducted. The printer's print history on FilamentHub says why.",
+  "usageNotDeductedNoSpool": "FilamentHub: this print was not deducted because no spool is assigned to the printer's slots. Assign a spool on FilamentHub.",
+  "usageNotDeductedSlot": "FilamentHub: part of this print was not deducted because a slot it used has no spool assigned."
 }

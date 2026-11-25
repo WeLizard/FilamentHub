@@ -91,6 +91,13 @@ class PrintJobUsageSegmentResponse(BaseModel):
     items: list[PrintJobUsageSegmentItemResponse]
 
 
+class PrintJobUsageIssueResponse(BaseModel):
+    """Why the reporter could not count the job, or one slot of it."""
+
+    reason: str
+    slot_index: int | None = None
+
+
 class PrintJobResponse(BaseModel):
     id: int
     logical_id: str
@@ -116,6 +123,10 @@ class PrintJobResponse(BaseModel):
     materials: list[PrintJobMaterialResponse]
     events: list[PrintJobEventResponse]
     usage_segments: list[PrintJobUsageSegmentResponse]
+    usage_issues: list[PrintJobUsageIssueResponse] = Field(default_factory=list)
+    # The printer's reports stopped while the job was still running: its
+    # status and consumption are whatever was last heard, not the outcome.
+    tracking_interrupted: bool = False
 
 
 class PrintJobListResponse(BaseModel):

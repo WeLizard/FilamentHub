@@ -21,7 +21,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -36,8 +36,10 @@ from app.core.errors import (
 )
 from app.core.security import decode_access_token, token_fingerprint
 from app.db.session import get_db
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_spool import UserSpool
 from app.schemas.material_contract import (
     MaterialSlotAssignmentUpdate,
     MaterialSystemAssignmentsClearRequest,
@@ -52,6 +54,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterResponse,
     PhysicalPrinterSuggestion,
     PhysicalPrinterUpdate,
+    PrinterUsageSetupResponse,
 )
 from app.schemas.orca_sync import OrcaPrinterRecoveryPlanRequest
 from app.schemas.printer_economics import (
@@ -106,6 +109,7 @@ from app.services.printer_economics_service import (
     resolve_economics,
     suggest_economics,
 )
+from app.services.spool_shelf_filters import AVAILABLE_STATES
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
 
@@ -314,6 +318,32 @@ async def list_feed(
         next_cursor=(_encode_printer_cursor(printers[-1]) if has_more and printers else None),
         has_more=has_more,
         total=total,
+    )
+
+
+@router.get("/usage-setup", response_model=PrinterUsageSetupResponse)
+async def printer_usage_setup(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PrinterUsageSetupResponse:
+    """Facts the printer cards need to show the next step towards accounting."""
+    has_spools = await db.scalar(
+        select(UserSpool.id)
+        .where(UserSpool.user_id == current_user.id, UserSpool.state.in_(AVAILABLE_STATES))
+        .limit(1)
+    )
+    rows = await db.execute(
+        select(PresetUsageEvent.device_id, func.max(PresetUsageEvent.created_at))
+        .where(
+            PresetUsageEvent.user_id == current_user.id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+            PresetUsageEvent.device_id.is_not(None),
+        )
+        .group_by(PresetUsageEvent.device_id)
+    )
+    return PrinterUsageSetupResponse(
+        has_spools=has_spools is not None,
+        last_usage_at=dict(rows.tuples().all()),
     )
 
 
