@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Nova Polymers">
+  <!-- Logo of the fictional showcase manufacturer (scripts/seed_dev_showcase.py).
+       No background of its own: the brand's logo tile supplies it. -->
+  <path fill="#1F6F6B" d="M60 2c5.4 36.2 21.8 52.6 58 58-36.2 5.4-52.6 21.8-58 58-5.4-36.2-21.8-52.6-58-58 36.2-5.4 52.6-21.8 58-58z"/>
+  <circle cx="60" cy="60" r="9" fill="#F4EFE6"/>
+  <circle cx="99" cy="21" r="8" fill="#C0694E"/>
+</svg>

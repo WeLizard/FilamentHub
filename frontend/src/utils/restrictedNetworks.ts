@@ -6,7 +6,7 @@
  * the ban next to such a mention, so the page needs to know when one is present.
  */
 
-const META_HOSTS = ['facebook.com', 'fb.com', 'instagram.com', 'threads.net'];
+const META_HOSTS = ['facebook.com', 'fb.com', 'fb.me', 'messenger.com', 'm.me', 'instagram.com', 'threads.net', 'threads.com'];
 
 function isMetaHost(value: string | null | undefined): boolean {
   if (!value) return false;

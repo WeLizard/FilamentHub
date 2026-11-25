@@ -1,6 +1,16 @@
+import siteOrigins from '../data/siteOrigins.json';
+
 export const SITE_LOCALES = ['en', 'ru', 'zh'] as const;
 
 export type SiteLocale = (typeof SITE_LOCALES)[number];
+
+// Each language has one canonical host; both hosts keep serving every language.
+const SITE_ORIGINS: Record<SiteLocale, string> = siteOrigins;
+const DEFAULT_LOCALE: SiteLocale = 'en';
+
+export function siteOrigin(locale: SiteLocale): string {
+  return SITE_ORIGINS[locale];
+}
 
 const LOCALE_PREFIX_PATTERN = /^\/(en|ru|zh)(?=\/|$)/i;
 
@@ -37,13 +47,19 @@ export function withoutLocalePrefix(path: string): string {
   return `${stripLocalePrefix(parsed.pathname)}${parsed.search}${parsed.hash}`;
 }
 
-export function absoluteSiteUrl(path: string): string {
-  const parsed = new URL(path, 'https://filamenthub.ru');
-  parsed.protocol = 'https:';
-  parsed.host = 'filamenthub.ru';
+function absoluteUrlOnOrigin(path: string, origin: string): string {
+  const target = new URL(origin);
+  const parsed = new URL(path, origin);
+  parsed.protocol = target.protocol;
+  parsed.host = target.host;
   return parsed.toString();
 }
 
+/** The language-neutral address of a page: its default-language canonical URL. */
+export function absoluteSiteUrl(path: string): string {
+  return absoluteUrlOnOrigin(path, siteOrigin(DEFAULT_LOCALE));
+}
+
 export function absoluteLocalizedUrl(path: string, locale: SiteLocale): string {
-  return absoluteSiteUrl(withLocalePrefix(path, locale));
+  return absoluteUrlOnOrigin(withLocalePrefix(path, locale), siteOrigin(locale));
 }

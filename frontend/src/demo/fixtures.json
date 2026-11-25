@@ -1,0 +1,2386 @@
+{
+ "responses": {
+  "/auth/me": {
+   "email": "olga@example.com",
+   "username": "OlgaCraft",
+   "full_name": "Ольга Крафт",
+   "id": 1,
+   "role": "brand",
+   "active": true,
+   "email_verified": true,
+   "avatar_url": null,
+   "country": "KZ",
+   "brand_id": 2,
+   "active_organization_id": null,
+   "brand_name": null,
+   "printer_id": null,
+   "recommend_physical_printer_id": null,
+   "recommend_printer_profile_id": null,
+   "allow_filament_presets_import": true,
+   "allow_filament_presets_export": true,
+   "allow_printer_profiles_import": true,
+   "allow_printer_profiles_export": true,
+   "allow_print_profiles_import": true,
+   "allow_print_profiles_export": true,
+   "auto_import_local_presets": null,
+   "sync_printer_endpoints": null,
+   "oauth_provider": null,
+   "has_password": true,
+   "created_at": "2026-06-18T18:40:09.724632Z",
+   "updated_at": "2026-11-25T18:40:09.905329Z",
+   "last_login": null,
+   "legal_onboarding_required": false,
+   "required_legal_acceptances": [],
+   "legal_document_pack": "ru",
+   "legal_previously_accepted": true,
+   "has_calculator_access": true,
+   "subscription": {
+    "status": "active",
+    "trial_ends_at": null,
+    "current_period_end": "2036-11-22T18:40:09.724632Z",
+    "cancel_at_period_end": false,
+    "is_comp": true,
+    "interested_at": null
+   }
+  },
+  "/auth/me/preferences": {
+   "currency": "RUB"
+  },
+  "/auth/me/presets-stats": {
+   "total_presets": 10,
+   "synced_presets": 10
+  },
+  "/calculator/history/feed?limit=20": {
+   "items": [
+    {
+     "id": 2,
+     "title": "Настольные органайзеры · 8 шт.",
+     "total_cost": 11240.0,
+     "quantity": 8,
+     "source": "gcode",
+     "gcode_file": "desk-organizer-set.gcode",
+     "filament_snapshot": {
+      "name": "Galaxy PLA · Violet Nebula",
+      "brand_name": "FibraCraft"
+     },
+     "created_at": "2026-11-21T18:40:09.724632Z"
+    },
+    {
+     "id": 1,
+     "title": "Корпуса датчиков · 24 шт.",
+     "total_cost": 18480.0,
+     "quantity": 24,
+     "source": "gcode",
+     "gcode_file": "sensor-housing-batch.gcode",
+     "filament_snapshot": {
+      "name": "Everyday PLA · Deep Ocean",
+      "brand_name": "OlgaCraft"
+     },
+     "created_at": "2026-11-15T18:40:09.724632Z"
+    }
+   ],
+   "total": 2,
+   "next_cursor": null,
+   "has_more": false
+  },
+  "/calculator/history?page=1&size=1": {
+   "items": [
+    {
+     "id": 2,
+     "user_id": 1,
+     "title": "Настольные органайзеры · 8 шт.",
+     "pricing_method": "combined",
+     "request_data": {
+      "pricing_method": "combined",
+      "weight_g": 892.0,
+      "supports_weight_g": null,
+      "supports_loss_coefficient": null,
+      "spool_price": null,
+      "spool_weight_kg": null,
+      "delivery_cost": null,
+      "material_lines": [
+       {
+        "line_id": "showcase:desk-organizer-set.gcode:t0",
+        "job_key": null,
+        "tool_index": null,
+        "label": "Galaxy PLA · Violet Nebula",
+        "weight_g": 892.0,
+        "spool_price": 2790.0,
+        "spool_weight_kg": 1.0,
+        "delivery_cost": 0.0,
+        "price_source": "spool",
+        "spool_id": 4,
+        "filament_id": 6,
+        "density_g_cm3": 1.25,
+        "abrasiveness": null,
+        "role_weights_g": {},
+        "role_weight_source": null,
+        "support_weight_g": null,
+        "support_weight_source": null
+       }
+      ],
+      "print_jobs": [],
+      "time_sec": null,
+      "time_hours": 18.0,
+      "time_minutes": 42.0,
+      "price_per_hour": null,
+      "electricity_cost_per_kwh": null,
+      "printer_power_w": null,
+      "power_hotend_w": null,
+      "power_bed_w": null,
+      "power_steppers_w": null,
+      "power_electronics_w": null,
+      "bed_temperature_c": null,
+      "nozzle_temperature_c": null,
+      "scanning_price": null,
+      "modeling_hours": null,
+      "modeling_minutes": null,
+      "modeling_rate_per_hour": null,
+      "postprocessing_hours": null,
+      "postprocessing_minutes": null,
+      "postprocessing_rate_per_hour": null,
+      "printing_rate_per_hour": null,
+      "amortization_rate_per_hour": null,
+      "quantity": 8,
+      "parts_per_print": null,
+      "overhead_percent": 18.0,
+      "markup_percent": 30.0,
+      "tax_rate_percent": null,
+      "urgency_coefficient": null,
+      "complexity_coefficient": null,
+      "volume_discount_coefficient": null,
+      "fixed_costs": null,
+      "min_order_price": null,
+      "bed_prep_cost_per_print": null,
+      "waste_factor_percent": null,
+      "nozzle_price": null,
+      "nozzle_life_cm3": null,
+      "material_abrasiveness": null,
+      "filament_density": null,
+      "monitoring_factor": null,
+      "round_to_nearest": null,
+      "rounding_mode": "up"
+     },
+     "result_data": {
+      "cost_material": 2488.68,
+      "cost_waste": 0.0,
+      "cost_electricity": 0.0,
+      "cost_modeling": 0.0,
+      "cost_scanning": 0.0,
+      "cost_printing": 4838.57,
+      "cost_postprocessing": 0.0,
+      "cost_monitoring": 0.0,
+      "cost_amortization": 0.0,
+      "cost_bed_prep": 0.0,
+      "cost_nozzle_wear": 0.0,
+      "cost_tax": 0.0,
+      "cost_direct": 7327.25,
+      "cost_overhead": 1318.9,
+      "cost_before_markup": 8646.15,
+      "cost_markup": 2593.85,
+      "material_line_costs": [
+       {
+        "line_id": "showcase:desk-organizer-set.gcode:t0",
+        "job_key": null,
+        "tool_index": null,
+        "label": "Galaxy PLA · Violet Nebula",
+        "weight_g": 892.0,
+        "price_per_gram": 2.79,
+        "cost": 2488.68,
+        "price_source": "spool",
+        "spool_id": 4,
+        "filament_id": 6,
+        "support_weight_g": null,
+        "support_cost": null,
+        "non_support_weight_g": null,
+        "non_support_cost": null,
+        "support_weight_source": null,
+        "role_costs": [],
+        "other_weight_g": null,
+        "other_cost": null
+       }
+      ],
+      "cost_first_part": 1405.0,
+      "cost_subsequent_parts": 1405.0,
+      "cost_total": 11240.0,
+      "cost_final": 11240.0,
+      "weight_kg": 0.892,
+      "time_hours": 18.7,
+      "total_time_hours": 18.7,
+      "quantity": 8,
+      "print_runs": 8,
+      "cost_of_goods_sold": 8646.15,
+      "profit_margin": 2593.85,
+      "profit_margin_percent": 23.08,
+      "pricing_method": "combined",
+      "applied_urgency_coefficient": null,
+      "applied_complexity_coefficient": null,
+      "applied_volume_discount": null,
+      "applied_tax_rate_percent": null
+     },
+     "parsed_gcode": {
+      "file_name": "desk-organizer-set.gcode",
+      "file_size_bytes": 4208000,
+      "slicer_name": "OrcaSlicer",
+      "slicer_version": "2.4.2",
+      "printer_settings_id": null,
+      "print_settings_id": null,
+      "printer_model": "Bambu Lab P1S",
+      "suggested_physical_printer_ids": [],
+      "fhub_identities": [],
+      "print_time_seconds": 67320,
+      "first_layer_print_time_seconds": null,
+      "total_filament_weight_g": 892.0,
+      "total_filament_length_mm": null,
+      "total_filament_volume_cm3": null,
+      "infill_filament_weight_g": null,
+      "support_filament_weight_g": null,
+      "brim_filament_weight_g": null,
+      "prime_tower_filament_weight_g": null,
+      "object_filament_weight_g": null,
+      "shared_filament_weight_g": null,
+      "layer_height_mm": null,
+      "initial_layer_height_mm": null,
+      "sparse_infill_density_percent": null,
+      "sparse_infill_pattern": null,
+      "wall_loops": null,
+      "outer_wall_line_width_mm": null,
+      "inner_wall_line_width_mm": null,
+      "outer_wall_speed_mm_s": null,
+      "inner_wall_speed_mm_s": null,
+      "sparse_infill_speed_mm_s": null,
+      "support_speed_mm_s": null,
+      "initial_layer_speed_mm_s": null,
+      "prime_volume_mm3": null,
+      "nozzle_diameter_mm": null,
+      "nozzle_temperature_first_layer_c": null,
+      "nozzle_temperature_other_layers_c": null,
+      "bed_temperature_first_layer_c": null,
+      "bed_temperature_other_layers_c": null,
+      "object_count": null,
+      "object_groups": [],
+      "total_layers": null,
+      "max_z_height_mm": null,
+      "support_type": null,
+      "support_threshold_angle_deg": null,
+      "support_used": null,
+      "support_filament_config_index": null,
+      "support_interface_filament_config_index": null,
+      "support_roles_detected": [],
+      "brim_width_mm": null,
+      "raft_layers": null,
+      "active_material_count": 1,
+      "is_multi_material": false,
+      "toolchange_count": null,
+      "thumbnail_data_url": null,
+      "detail_level": "full",
+      "container_format": "plain_gcode",
+      "plate_index": null,
+      "available_plate_indices": [],
+      "materials": [
+       {
+        "tool_index": 0,
+        "type": "PLA",
+        "name": "Galaxy PLA · Violet Nebula",
+        "settings_id": null,
+        "vendor": null,
+        "color": "#6040A8",
+        "weight_g": 892.0,
+        "length_mm": null,
+        "volume_cm3": null,
+        "density_g_cm3": null,
+        "diameter_mm": null,
+        "slicer_filament_id": null,
+        "identity_resolution": null,
+        "slicer_usage_cost": null,
+        "slicer_profile_price_per_kg": null,
+        "flow_ratio": null,
+        "max_volumetric_speed_mm3_s": null,
+        "prime_volume_mm3": null,
+        "is_support_material": null,
+        "used_for_model": null,
+        "used_for_support": null,
+        "infill_weight_g": null,
+        "support_weight_g": null,
+        "brim_weight_g": null,
+        "prime_tower_weight_g": null
+       }
+      ]
+     },
+     "parsed_jobs": [],
+     "filament_snapshot": {
+      "id": 6,
+      "name": "Galaxy PLA · Violet Nebula",
+      "brand_name": "FibraCraft",
+      "material_type": "PLA",
+      "color_name": "Фиолетовая туманность"
+     },
+     "created_at": "2026-11-21T18:40:09.724632Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z"
+    }
+   ],
+   "total": 2,
+   "next_cursor": "WyIyMDI2LTExLTIxVDE4OjQwOjA5LjcyNDYzMiswMDowMCIsMl0",
+   "has_more": true
+  },
+  "/calculator/profile": {
+   "electricity_cost_per_kwh": 7.2,
+   "printer_power_w": 130.0,
+   "modeling_rate_per_hour": 900.0,
+   "postprocessing_rate_per_hour": 650.0,
+   "printing_rate_per_hour": 190.0,
+   "amortization_rate_per_hour": 22.0,
+   "overhead_percent": 18.0,
+   "markup_percent": 35.0,
+   "tax_rate_percent": 0.0,
+   "fixed_costs": 120.0,
+   "bed_prep_cost_per_print": 35.0,
+   "min_order_price": 700.0,
+   "round_to_nearest": 1,
+   "rounding_mode": "up",
+   "printer_purchase_price": 0.0,
+   "printer_useful_hours": 0,
+   "maintenance_cost_per_hour": 0.0,
+   "power_hotend_w": 0.0,
+   "power_bed_w": 0.0,
+   "power_steppers_w": 0.0,
+   "power_electronics_w": 0.0,
+   "seller_name": "Мастерская OlgaCraft",
+   "seller_inn": "",
+   "seller_phone": "",
+   "payment_terms": "50% перед запуском, остаток после готовности заказа",
+   "seller_registration_id": "",
+   "seller_tax_code": "",
+   "seller_address": "",
+   "seller_bank_details": "",
+   "quote_market": "RU",
+   "validity_days": 14,
+   "disclaimer_mode": "not_offer",
+   "currency": "RUB",
+   "quote_number_prefix": "OC",
+   "updated_at": "2026-11-25T18:40:09.905329Z",
+   "economics_readiness": {
+    "version": 1,
+    "status": "configured",
+    "money_currency": "RUB",
+    "required_fields": [
+     {
+      "key": "currency",
+      "value": "RUB",
+      "source": "none",
+      "source_currency": "RUB",
+      "usable": true,
+      "missing_reason": null
+     },
+     {
+      "key": "machine_hour_rate",
+      "value": 190.0,
+      "source": "none",
+      "source_currency": "RUB",
+      "usable": true,
+      "missing_reason": null
+     },
+     {
+      "key": "electricity_cost_per_kwh",
+      "value": 7.2,
+      "source": "none",
+      "source_currency": "RUB",
+      "usable": true,
+      "missing_reason": null
+     },
+     {
+      "key": "printer_power_w",
+      "value": 130.0,
+      "source": "none",
+      "source_currency": null,
+      "usable": true,
+      "missing_reason": null
+     },
+     {
+      "key": "machine_wear_per_hour",
+      "value": 22.0,
+      "source": "none",
+      "source_currency": "RUB",
+      "usable": true,
+      "missing_reason": null
+     }
+    ],
+    "reasons": [
+     "provenance_unknown"
+    ]
+   }
+  },
+  "/crm/customers?page=1&size=50": {
+   "items": [
+    {
+     "id": 1,
+     "name": "Atelier Nord",
+     "contact_name": "Мария Соколова",
+     "email": "orders@atelier-nord.example",
+     "phone": "",
+     "inn": "",
+     "address": "",
+     "note": "Регулярные небольшие партии предметов для витрин",
+     "archived": false,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "protected_data_unreadable": false
+    }
+   ],
+   "total": 1
+  },
+  "/crm/orders?page=1&size=50": {
+   "items": [
+    {
+     "id": 1,
+     "quote_id": 2,
+     "customer_id": 1,
+     "number": "OC-ORDER-2026-009",
+     "title": "Настольные органайзеры · 8 шт.",
+     "status": "in_production",
+     "currency": "RUB",
+     "total": 11240.0,
+     "due_date": "2026-11-30",
+     "note": "Печать партиями по четыре изделия; проверить оттенок перед второй партией.",
+     "material_requirements": [],
+     "spool_reservations": [],
+     "completed_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "customer": {
+      "id": 1,
+      "name": "Atelier Nord",
+      "contact_name": "Мария Соколова",
+      "email": "orders@atelier-nord.example",
+      "phone": "",
+      "inn": "",
+      "address": "",
+      "note": "Регулярные небольшие партии предметов для витрин",
+      "archived": false,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "protected_data_unreadable": false
+     }
+    }
+   ],
+   "total": 1
+  },
+  "/crm/quotes?page=1&size=50": {
+   "items": [
+    {
+     "id": 1,
+     "customer_id": 1,
+     "number": "OC-2026-014",
+     "title": "Корпуса датчиков · 24 шт.",
+     "status": "sent",
+     "currency": "RUB",
+     "valid_until": "2026-12-07",
+     "sent_at": "2026-11-23T18:40:09.724632Z",
+     "accepted_at": null,
+     "rejected_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "customer": {
+      "id": 1,
+      "name": "Atelier Nord",
+      "contact_name": "Мария Соколова",
+      "email": "orders@atelier-nord.example",
+      "phone": "",
+      "inn": "",
+      "address": "",
+      "note": "Регулярные небольшие партии предметов для витрин",
+      "archived": false,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "protected_data_unreadable": false
+     },
+     "current_version": {
+      "id": 1,
+      "version_number": 1,
+      "source_history_id": 1,
+      "shared_quote_id": null,
+      "seller_snapshot": {
+       "name": "Мастерская OlgaCraft"
+      },
+      "customer_snapshot": {
+       "name": "Atelier Nord"
+      },
+      "calculation_snapshot": {
+       "cost_material": 2619.54,
+       "cost_waste": 0.0,
+       "cost_electricity": 0.0,
+       "cost_modeling": 0.0,
+       "cost_scanning": 0.0,
+       "cost_printing": 9427.39,
+       "cost_postprocessing": 0.0,
+       "cost_monitoring": 0.0,
+       "cost_amortization": 0.0,
+       "cost_bed_prep": 0.0,
+       "cost_nozzle_wear": 0.0,
+       "cost_tax": 0.0,
+       "cost_direct": 12046.93,
+       "cost_overhead": 2168.45,
+       "cost_before_markup": 14215.38,
+       "cost_markup": 4264.62,
+       "material_line_costs": [
+        {
+         "line_id": "showcase:sensor-housing-batch.gcode:t0",
+         "job_key": null,
+         "tool_index": null,
+         "label": "Everyday PLA · Deep Ocean",
+         "weight_g": 1386.0,
+         "price_per_gram": 1.89,
+         "cost": 2619.54,
+         "price_source": "spool",
+         "spool_id": 2,
+         "filament_id": 1,
+         "support_weight_g": null,
+         "support_cost": null,
+         "non_support_weight_g": null,
+         "non_support_cost": null,
+         "support_weight_source": null,
+         "role_costs": [],
+         "other_weight_g": null,
+         "other_cost": null
+        }
+       ],
+       "cost_first_part": 770.0,
+       "cost_subsequent_parts": 770.0,
+       "cost_total": 18480.0,
+       "cost_final": 18480.0,
+       "weight_kg": 1.386,
+       "time_hours": 31.4,
+       "total_time_hours": 31.4,
+       "quantity": 24,
+       "print_runs": 24,
+       "cost_of_goods_sold": 14215.38,
+       "profit_margin": 4264.62,
+       "profit_margin_percent": 23.08,
+       "pricing_method": "combined",
+       "applied_urgency_coefficient": null,
+       "applied_complexity_coefficient": null,
+       "applied_volume_discount": null,
+       "applied_tax_rate_percent": null
+      },
+      "payment_terms": "50% перед запуском, остаток после готовности",
+      "disclaimer_mode": "not_offer",
+      "subtotal": 18480.0,
+      "tax_total": 0.0,
+      "grand_total": 18480.0,
+      "html_content": "",
+      "lines": [
+       {
+        "id": 1,
+        "position": 1,
+        "title": "Комплект корпусов датчиков",
+        "details": [
+         "Deep Ocean PLA",
+         "печать 0.20 мм",
+         "контроль посадочных размеров"
+        ],
+        "quantity": 24.0,
+        "unit": "pcs",
+        "unit_price": 770.0,
+        "total_price": 18480.0,
+        "source_data": {
+         "showcase": true
+        }
+       }
+      ],
+      "created_at": "2026-11-25T18:40:09.905329Z"
+     },
+     "order": null
+    },
+    {
+     "id": 2,
+     "customer_id": 1,
+     "number": "OC-2026-009",
+     "title": "Настольные органайзеры · 8 шт.",
+     "status": "accepted",
+     "currency": "RUB",
+     "valid_until": null,
+     "sent_at": null,
+     "accepted_at": "2026-11-22T18:40:09.724632Z",
+     "rejected_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "customer": {
+      "id": 1,
+      "name": "Atelier Nord",
+      "contact_name": "Мария Соколова",
+      "email": "orders@atelier-nord.example",
+      "phone": "",
+      "inn": "",
+      "address": "",
+      "note": "Регулярные небольшие партии предметов для витрин",
+      "archived": false,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "protected_data_unreadable": false
+     },
+     "current_version": {
+      "id": 2,
+      "version_number": 1,
+      "source_history_id": 2,
+      "shared_quote_id": null,
+      "seller_snapshot": {
+       "name": "Мастерская OlgaCraft"
+      },
+      "customer_snapshot": {
+       "name": "Atelier Nord"
+      },
+      "calculation_snapshot": {
+       "cost_material": 2488.68,
+       "cost_waste": 0.0,
+       "cost_electricity": 0.0,
+       "cost_modeling": 0.0,
+       "cost_scanning": 0.0,
+       "cost_printing": 4838.57,
+       "cost_postprocessing": 0.0,
+       "cost_monitoring": 0.0,
+       "cost_amortization": 0.0,
+       "cost_bed_prep": 0.0,
+       "cost_nozzle_wear": 0.0,
+       "cost_tax": 0.0,
+       "cost_direct": 7327.25,
+       "cost_overhead": 1318.9,
+       "cost_before_markup": 8646.15,
+       "cost_markup": 2593.85,
+       "material_line_costs": [
+        {
+         "line_id": "showcase:desk-organizer-set.gcode:t0",
+         "job_key": null,
+         "tool_index": null,
+         "label": "Galaxy PLA · Violet Nebula",
+         "weight_g": 892.0,
+         "price_per_gram": 2.79,
+         "cost": 2488.68,
+         "price_source": "spool",
+         "spool_id": 4,
+         "filament_id": 6,
+         "support_weight_g": null,
+         "support_cost": null,
+         "non_support_weight_g": null,
+         "non_support_cost": null,
+         "support_weight_source": null,
+         "role_costs": [],
+         "other_weight_g": null,
+         "other_cost": null
+        }
+       ],
+       "cost_first_part": 1405.0,
+       "cost_subsequent_parts": 1405.0,
+       "cost_total": 11240.0,
+       "cost_final": 11240.0,
+       "weight_kg": 0.892,
+       "time_hours": 18.7,
+       "total_time_hours": 18.7,
+       "quantity": 8,
+       "print_runs": 8,
+       "cost_of_goods_sold": 8646.15,
+       "profit_margin": 2593.85,
+       "profit_margin_percent": 23.08,
+       "pricing_method": "combined",
+       "applied_urgency_coefficient": null,
+       "applied_complexity_coefficient": null,
+       "applied_volume_discount": null,
+       "applied_tax_rate_percent": null
+      },
+      "payment_terms": "Оплата после подтверждения макета",
+      "disclaimer_mode": "not_offer",
+      "subtotal": 11240.0,
+      "tax_total": 0.0,
+      "grand_total": 11240.0,
+      "html_content": "",
+      "lines": [
+       {
+        "id": 2,
+        "position": 1,
+        "title": "Комплект настольных органайзеров",
+        "details": [
+         "Galaxy PLA · Violet Nebula",
+         "8 изделий",
+         "упаковка по комплектам"
+        ],
+        "quantity": 8.0,
+        "unit": "pcs",
+        "unit_price": 1405.0,
+        "total_price": 11240.0,
+        "source_data": {
+         "showcase": true
+        }
+       }
+      ],
+      "created_at": "2026-11-25T18:40:09.905329Z"
+     },
+     "order": {
+      "id": 1,
+      "quote_id": 2,
+      "customer_id": 1,
+      "number": "OC-ORDER-2026-009",
+      "title": "Настольные органайзеры · 8 шт.",
+      "status": "in_production",
+      "currency": "RUB",
+      "total": 11240.0,
+      "due_date": "2026-11-30",
+      "note": "Печать партиями по четыре изделия; проверить оттенок перед второй партией.",
+      "material_requirements": [],
+      "spool_reservations": [],
+      "completed_at": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "customer": {
+       "id": 1,
+       "name": "Atelier Nord",
+       "contact_name": "Мария Соколова",
+       "email": "orders@atelier-nord.example",
+       "phone": "",
+       "inn": "",
+       "address": "",
+       "note": "Регулярные небольшие партии предметов для витрин",
+       "archived": false,
+       "created_at": "2026-11-25T18:40:09.905329Z",
+       "updated_at": "2026-11-25T18:40:09.905329Z",
+       "protected_data_unreadable": false
+      }
+     }
+    }
+   ],
+   "total": 2
+  },
+  "/crm/summary": {
+   "customers_total": 1,
+   "quotes_draft": 0,
+   "quotes_sent": 1,
+   "quotes_accepted": 1,
+   "orders_active": 1,
+   "orders_completed": 0,
+   "amount_awaiting_decision": {
+    "RUB": 18480.0
+   },
+   "accepted_amount": {
+    "RUB": 11240.0
+   },
+   "revenue_month": {},
+   "revenue_by_month": [
+    {
+     "month": "2025-12",
+     "amounts": {}
+    },
+    {
+     "month": "2026-01",
+     "amounts": {}
+    },
+    {
+     "month": "2026-02",
+     "amounts": {}
+    },
+    {
+     "month": "2026-03",
+     "amounts": {}
+    },
+    {
+     "month": "2026-04",
+     "amounts": {}
+    },
+    {
+     "month": "2026-05",
+     "amounts": {}
+    },
+    {
+     "month": "2026-06",
+     "amounts": {}
+    },
+    {
+     "month": "2026-07",
+     "amounts": {}
+    },
+    {
+     "month": "2026-08",
+     "amounts": {}
+    },
+    {
+     "month": "2026-09",
+     "amounts": {}
+    },
+    {
+     "month": "2026-10",
+     "amounts": {}
+    },
+    {
+     "month": "2026-11",
+     "amounts": {}
+    }
+   ]
+  },
+  "/edge/nodes": [],
+  "/filament-reviews/my?active_only=true&page=1&size=100": {
+   "items": [
+    {
+     "success": true,
+     "rating": 5.0,
+     "comment": "Подарочная серия вышла ровной с первой попытки. Блёстки не забили сопло 0.4 мм.",
+     "printer_id": null,
+     "printer_model": "Bambu Lab P1S",
+     "id": 6,
+     "filament_id": 6,
+     "user_id": 1,
+     "preset_id": 34,
+     "preset_name": "Smooth outer walls",
+     "username": "OlgaCraft",
+     "active": true,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z"
+    },
+    {
+     "success": true,
+     "rating": 4.5,
+     "comment": "Крепления выдержали нагрузку. На A1 mini снизила скорость первого слоя.",
+     "printer_id": null,
+     "printer_model": "Bambu Lab A1 mini",
+     "id": 7,
+     "filament_id": 9,
+     "user_id": 1,
+     "preset_id": 35,
+     "preset_name": "Stabile Funktionsteile",
+     "username": "OlgaCraft",
+     "active": true,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z"
+    },
+    {
+     "success": true,
+     "rating": 4.0,
+     "comment": "Фактура красивая, но на длинных переездах остаются нити: добавила ретракт.",
+     "printer_id": null,
+     "printer_model": "Bambu Lab A1 mini",
+     "id": 8,
+     "filament_id": 3,
+     "user_id": 1,
+     "preset_id": 38,
+     "preset_name": "Visible wood texture",
+     "username": "OlgaCraft",
+     "active": true,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z"
+    },
+    {
+     "success": true,
+     "rating": 5.0,
+     "comment": "Свой рабочий пресет для декора: перелив ровный на всей высоте вазы.",
+     "printer_id": null,
+     "printer_model": "Bambu Lab P1S",
+     "id": 9,
+     "filament_id": 5,
+     "user_id": 1,
+     "preset_id": 42,
+     "preset_name": "Шёлк без полос",
+     "username": "OlgaCraft",
+     "active": true,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z"
+    }
+   ],
+   "total": 4,
+   "page": 1,
+   "size": 100,
+   "pages": 1
+  },
+  "/notifications/feed?limit=50": {
+   "items": [],
+   "next_cursor": null,
+   "unread_count": 0
+  },
+  "/orcaslicer/printer-connections/bindings": [],
+  "/orcaslicer/printer-connections/pending": [],
+  "/physical-printers": [],
+  "/physical-printers/feed?size=12": {
+   "items": [],
+   "next_cursor": null,
+   "has_more": false,
+   "total": 0
+  },
+  "/physical-printers/suggestions": [
+   {
+    "id": 1,
+    "name": "Olga's A1 mini",
+    "catalog_printer_name": "Bambu Lab A1 mini",
+    "profile_names": [],
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "same_model_printer_ids": []
+   },
+   {
+    "id": 2,
+    "name": "Bambu Lab P1S",
+    "catalog_printer_name": "Bambu Lab P1S",
+    "profile_names": [],
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "same_model_printer_ids": []
+   },
+   {
+    "id": 3,
+    "name": "Prusa MK4S",
+    "catalog_printer_name": "Prusa MK4S",
+    "profile_names": [],
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "same_model_printer_ids": []
+   }
+  ],
+  "/physical-printers/usage-setup": {
+   "has_spools": true,
+   "last_usage_at": {}
+  },
+  "/presets/draft-analyses?limit=100": {
+   "items": [
+    {
+     "preset_id": 47,
+     "evidence_kind": "stored_snapshot",
+     "suggestions": {
+      "material_type": {
+       "value": "PETG",
+       "source": "stored_snapshot",
+       "confidence": "suggested",
+       "direct": false
+      },
+      "filament_name": {
+       "value": "Быстрый PETG",
+       "source": "profile_name",
+       "confidence": "medium",
+       "direct": false
+      },
+      "extruder_temp": {
+       "value": 240.0,
+       "source": "filamenthub_default",
+       "confidence": "suggested",
+       "direct": false
+      },
+      "bed_temp": {
+       "value": 80.0,
+       "source": "filamenthub_default",
+       "confidence": "suggested",
+       "direct": false
+      },
+      "density": {
+       "value": 1.27,
+       "source": "filamenthub_default",
+       "confidence": "suggested",
+       "direct": false
+      }
+     },
+     "brand_match": null,
+     "filament_matches": [],
+     "confirmed_fields": [],
+     "suggested_fields": [
+      "bed_temp",
+      "density",
+      "extruder_temp",
+      "filament_name",
+      "material_type"
+     ],
+     "preset_readiness_percent": 25,
+     "catalog_readiness_percent": 30,
+     "technical_settings_count": 4,
+     "preset_decisions": [
+      "confirm_nozzle_temperature",
+      "confirm_bed_temperature"
+     ],
+     "catalog_decisions": [
+      "identify_brand",
+      "confirm_material_type",
+      "choose_or_create_filament"
+     ],
+     "review_state": "needs_decision",
+     "generic_source": false,
+     "similar_import_users": 0
+    }
+   ],
+   "total": 1,
+   "ready": 0,
+   "almost_ready": 0,
+   "needs_decision": 1,
+   "ambiguous": 0
+  },
+  "/presets?active_only=false&ids=47&size=100": {
+   "items": [],
+   "total": 0,
+   "page": 1,
+   "size": 1,
+   "pages": 1
+  },
+  "/presets?active_only=false&is_official=false&page=1&size=100&user_id=1": {
+   "items": [
+    {
+     "name": "Корпуса без нитей",
+     "description": "Настроено на реальной печати и опубликовано для сообщества.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 240.0,
+     "bed_temp": 80.0,
+     "flow_rate": 98.0,
+     "fan_speed": 40,
+     "retraction_length": 0.7,
+     "retraction_speed": 32.0,
+     "orcaslicer_settings": {
+      "showcase_key": "olga-arctic-enclosures",
+      "filament_max_volumetric_speed": 10.0,
+      "pressure_advance": 0.03
+     },
+     "rating": 4.7,
+     "success_rate": 94.0,
+     "usage_count": 41,
+     "id": 43,
+     "filament_id": 9,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": true,
+     "moderation_status": "approved",
+     "external_id": "showcase:olga-arctic-enclosures",
+     "source": "user",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    },
+    {
+     "name": "Шёлк без полос",
+     "description": "Настроено на реальной печати и опубликовано для сообщества.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 215.0,
+     "bed_temp": 60.0,
+     "flow_rate": 98.0,
+     "fan_speed": 90,
+     "retraction_length": 0.8,
+     "retraction_speed": 30.0,
+     "orcaslicer_settings": {
+      "showcase_key": "olga-aurora-silk-even",
+      "filament_max_volumetric_speed": 10.0,
+      "pressure_advance": 0.03
+     },
+     "rating": 4.8,
+     "success_rate": 96.0,
+     "usage_count": 64,
+     "id": 42,
+     "filament_id": 5,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": true,
+     "moderation_status": "approved",
+     "external_id": "showcase:olga-aurora-silk-even",
+     "source": "user",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    },
+    {
+     "name": "Декор с древесной фактурой",
+     "description": "Настроено на реальной печати и опубликовано для сообщества.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 208.0,
+     "bed_temp": 55.0,
+     "flow_rate": 101.0,
+     "fan_speed": 100,
+     "retraction_length": 0.8,
+     "retraction_speed": 30.0,
+     "orcaslicer_settings": {
+      "showcase_key": "olga-birch-decor",
+      "filament_max_volumetric_speed": 10.0,
+      "pressure_advance": 0.03
+     },
+     "rating": 4.6,
+     "success_rate": 93.0,
+     "usage_count": 27,
+     "id": 44,
+     "filament_id": 3,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": true,
+     "moderation_status": "approved",
+     "external_id": "showcase:olga-birch-decor",
+     "source": "user",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    },
+    {
+     "name": "Мелкие заказы на A1 mini",
+     "description": "Настроено на реальной печати и опубликовано для сообщества.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 212.0,
+     "bed_temp": 58.0,
+     "flow_rate": 99.0,
+     "fan_speed": 100,
+     "retraction_length": 0.8,
+     "retraction_speed": 34.0,
+     "orcaslicer_settings": {
+      "showcase_key": "olga-coral-small-orders",
+      "filament_max_volumetric_speed": 10.0,
+      "pressure_advance": 0.03
+     },
+     "rating": 4.7,
+     "success_rate": 95.0,
+     "usage_count": 19,
+     "id": 46,
+     "filament_id": 2,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": true,
+     "moderation_status": "approved",
+     "external_id": "showcase:olga-coral-small-orders",
+     "source": "user",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    },
+    {
+     "name": "Прочные крепления",
+     "description": "Настроено на реальной печати и опубликовано для сообщества.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 242.0,
+     "bed_temp": 78.0,
+     "flow_rate": 99.0,
+     "fan_speed": 35,
+     "retraction_length": 0.7,
+     "retraction_speed": 30.0,
+     "orcaslicer_settings": {
+      "showcase_key": "olga-forest-mounts",
+      "filament_max_volumetric_speed": 10.0,
+      "pressure_advance": 0.03
+     },
+     "rating": 4.9,
+     "success_rate": 97.0,
+     "usage_count": 38,
+     "id": 45,
+     "filament_id": 4,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": true,
+     "moderation_status": "approved",
+     "external_id": "showcase:olga-forest-mounts",
+     "source": "user",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    },
+    {
+     "name": "Быстрый PETG",
+     "description": "Локальная настройка из OrcaSlicer. Материал ещё не сопоставлен с точным товарным вариантом каталога.",
+     "is_official": false,
+     "is_weighted": false,
+     "extruder_temp": 240.0,
+     "bed_temp": 75.0,
+     "flow_rate": 0.98,
+     "fan_speed": 45,
+     "retraction_length": 0.8,
+     "retraction_speed": 35.0,
+     "orcaslicer_settings": {
+      "fhub_draft_id": "showcase_olga_petg_fast_a1_mini",
+      "filament_type": [
+       "PETG"
+      ],
+      "filament_max_volumetric_speed": [
+       18
+      ],
+      "pressure_advance": 0.032,
+      "enrichment": {
+       "material_type": "PETG"
+      }
+     },
+     "rating": null,
+     "success_rate": null,
+     "usage_count": 0,
+     "id": 47,
+     "filament_id": null,
+     "user_id": 1,
+     "organization_id": null,
+     "created_by_user_id": null,
+     "derived_from_preset_id": null,
+     "derived_from_version_id": null,
+     "active": false,
+     "moderation_status": "pending",
+     "external_id": "showcase:orca-draft:petg-fast-a1-mini",
+     "source": "orcaslicer",
+     "moderation_reason": null,
+     "moderated_by": null,
+     "moderated_at": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "printers": []
+    }
+   ],
+   "total": 6,
+   "page": 1,
+   "size": 100,
+   "pages": 1
+  },
+  "/print-profiles?active_only=false&owner_user_id=1&page=1&size=100": {
+   "items": [],
+   "total": 0,
+   "page": 1,
+   "size": 100,
+   "pages": 0
+  },
+  "/printer-profiles?active_only=false&owner_user_id=1&page=1&size=100": {
+   "items": [],
+   "total": 0,
+   "page": 1,
+   "size": 100,
+   "pages": 0
+  },
+  "/saved-presets": {
+   "items": [
+    {
+     "id": 1,
+     "user_id": 1,
+     "preset_id": 47,
+     "saved_at": "2026-11-25T18:40:09.905329Z",
+     "sync": true,
+     "scope": "unscoped",
+     "target_printer_profile_ids": [],
+     "selected_version_id": null,
+     "selected_version_number": null,
+     "latest_version_id": null,
+     "latest_version_number": null,
+     "update_available": false,
+     "update_unseen": false
+    }
+   ],
+   "total": 1
+  },
+  "/spools": [
+   {
+    "id": 7,
+    "user_id": 1,
+    "filament_id": 4,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 4,
+     "name": "Workshop PETG · Forest",
+     "material_type": "PETG",
+     "color_name": "Лесной зелёный",
+     "color_hex": "#16845B",
+     "brand_name": "OlgaCraft",
+     "price_per_kg": 2190.0,
+     "currency": "RUB",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-PETG-FOREST"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 1000.0,
+    "remaining_weight_g": 0.0,
+    "remaining_pct": 0.0,
+    "price": 2190.0,
+    "currency": null,
+    "state": "empty",
+    "source": "dev_showcase",
+    "lot_nr": "OC-FR-2604",
+    "comment": "Закончилась на партии креплений",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-15T18:40:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-empty-history"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 6,
+    "user_id": 1,
+    "filament_id": 5,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 5,
+     "name": "Silk PLA · Aurora",
+     "material_type": "PLA",
+     "color_name": "Северное сияние",
+     "color_hex": "#8C55D9",
+     "brand_name": "OlgaCraft",
+     "price_per_kg": 2490.0,
+     "currency": "RUB",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-PLA-SILK-AURORA"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 74.5,
+    "remaining_weight_g": 925.5,
+    "remaining_pct": 92.5,
+    "price": 2490.0,
+    "currency": null,
+    "state": "active",
+    "source": "dev_showcase",
+    "lot_nr": "OC-AU-2608",
+    "comment": "Свежая катушка для декоративной печати",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-17T06:40:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-aurora-ams"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 5,
+    "user_id": 1,
+    "filament_id": 9,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 9,
+     "name": "Everyday PETG · Arctic Blue",
+     "material_type": "PETG",
+     "color_name": "Арктический синий",
+     "color_hex": "#43A6C6",
+     "brand_name": "NorthLayer",
+     "price_per_kg": 24.9,
+     "currency": "EUR",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-NORTHLAYER-PETG-ARCTIC-BLUE"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 153.8,
+    "remaining_weight_g": 846.2,
+    "remaining_pct": 84.6,
+    "price": 2490.0,
+    "currency": null,
+    "state": "active",
+    "source": "dev_showcase",
+    "lot_nr": "NL-AB-2607",
+    "comment": "Функциональные детали и крепления",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-14T23:28:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-arctic-ams"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 4,
+    "user_id": 1,
+    "filament_id": 6,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 6,
+     "name": "Galaxy PLA · Violet Nebula",
+     "material_type": "PLA",
+     "color_name": "Фиолетовая туманность",
+     "color_hex": "#6040A8",
+     "brand_name": "FibraCraft",
+     "price_per_kg": 27.9,
+     "currency": "EUR",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-FIBRACRAFT-GALAXY-VIOLET-NEBULA"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 681.3,
+    "remaining_weight_g": 318.70000000000005,
+    "remaining_pct": 31.9,
+    "price": 2790.0,
+    "currency": null,
+    "state": "active",
+    "source": "dev_showcase",
+    "lot_nr": "FC-VN-2606",
+    "comment": "Открытая катушка для подарочной серии",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-15T11:28:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-galaxy-ams"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 3,
+    "user_id": 1,
+    "filament_id": 3,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 3,
+     "name": "Timber Blend · Birch",
+     "material_type": "PLA",
+     "color_name": "Светлая берёза",
+     "color_hex": "#C5A77B",
+     "brand_name": "OlgaCraft",
+     "price_per_kg": 2290.0,
+     "currency": "RUB",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-PLA-WOOD-WARM-GREY"
+    },
+    "initial_weight_g": 750.0,
+    "used_weight_g": 143.2,
+    "remaining_weight_g": 606.8,
+    "remaining_pct": 80.9,
+    "price": 1790.0,
+    "currency": null,
+    "state": "shelf",
+    "source": "dev_showcase",
+    "lot_nr": "OC-BR-2607",
+    "comment": "Для декора и интерьерных изделий",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-25T13:52:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-birch-shelf"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 2,
+    "user_id": 1,
+    "filament_id": 1,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 1,
+     "name": "Everyday PLA · Deep Ocean",
+     "material_type": "PLA",
+     "color_name": "Глубокий океан",
+     "color_hex": "#0E5BD8",
+     "brand_name": "OlgaCraft",
+     "price_per_kg": 1890.0,
+     "currency": "RUB",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-PLA-OCEAN-BLUE"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 327.6,
+    "remaining_weight_g": 672.4,
+    "remaining_pct": 67.2,
+    "price": 1890.0,
+    "currency": null,
+    "state": "active",
+    "source": "dev_showcase",
+    "lot_nr": "OC-DO-2608",
+    "comment": "Основной синий для корпусов",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-17T04:16:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-deep-ocean-ams"
+    },
+    "collection_ids": []
+   },
+   {
+    "id": 1,
+    "user_id": 1,
+    "filament_id": 2,
+    "compat_import_id": null,
+    "empty_spool_weight_g": null,
+    "filament": {
+     "id": 2,
+     "name": "Satin PLA · Coral",
+     "material_type": "PLA",
+     "color_name": "Коралловый сатин",
+     "color_hex": "#E95662",
+     "brand_name": "OlgaCraft",
+     "price_per_kg": 1990.0,
+     "currency": "RUB",
+     "required_nozzle_hrc": null,
+     "qr_code": "FH-SHOW-PLA-SATIN-RED"
+    },
+    "initial_weight_g": 1000.0,
+    "used_weight_g": 460.0,
+    "remaining_weight_g": 540.0,
+    "remaining_pct": 54.0,
+    "price": 1990.0,
+    "currency": null,
+    "state": "shelf",
+    "source": "dev_showcase",
+    "lot_nr": "OC-CR-2608",
+    "comment": "Текущие небольшие заказы на A1 mini",
+    "purchased_on": null,
+    "created_at": "2026-11-25T18:40:09.905329Z",
+    "updated_at": "2026-11-25T18:40:09.905329Z",
+    "last_used_at": "2026-11-16T18:40:09.724632Z",
+    "extra": {
+     "showcase_key": "olga-coral-a1"
+    },
+    "collection_ids": []
+   }
+  ],
+  "/spools/collections": [],
+  "/spools/feed?limit=24&state=active": {
+   "items": [
+    {
+     "id": 6,
+     "user_id": 1,
+     "filament_id": 5,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 5,
+      "name": "Silk PLA · Aurora",
+      "material_type": "PLA",
+      "color_name": "Северное сияние",
+      "color_hex": "#8C55D9",
+      "brand_name": "OlgaCraft",
+      "price_per_kg": 2490.0,
+      "currency": "RUB",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-PLA-SILK-AURORA"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 74.5,
+     "remaining_weight_g": 925.5,
+     "remaining_pct": 92.5,
+     "price": 2490.0,
+     "currency": null,
+     "state": "active",
+     "source": "dev_showcase",
+     "lot_nr": "OC-AU-2608",
+     "comment": "Свежая катушка для декоративной печати",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-17T06:40:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-aurora-ams"
+     },
+     "collection_ids": []
+    },
+    {
+     "id": 5,
+     "user_id": 1,
+     "filament_id": 9,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 9,
+      "name": "Everyday PETG · Arctic Blue",
+      "material_type": "PETG",
+      "color_name": "Арктический синий",
+      "color_hex": "#43A6C6",
+      "brand_name": "NorthLayer",
+      "price_per_kg": 24.9,
+      "currency": "EUR",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-NORTHLAYER-PETG-ARCTIC-BLUE"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 153.8,
+     "remaining_weight_g": 846.2,
+     "remaining_pct": 84.6,
+     "price": 2490.0,
+     "currency": null,
+     "state": "active",
+     "source": "dev_showcase",
+     "lot_nr": "NL-AB-2607",
+     "comment": "Функциональные детали и крепления",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-14T23:28:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-arctic-ams"
+     },
+     "collection_ids": []
+    },
+    {
+     "id": 4,
+     "user_id": 1,
+     "filament_id": 6,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 6,
+      "name": "Galaxy PLA · Violet Nebula",
+      "material_type": "PLA",
+      "color_name": "Фиолетовая туманность",
+      "color_hex": "#6040A8",
+      "brand_name": "FibraCraft",
+      "price_per_kg": 27.9,
+      "currency": "EUR",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-FIBRACRAFT-GALAXY-VIOLET-NEBULA"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 681.3,
+     "remaining_weight_g": 318.70000000000005,
+     "remaining_pct": 31.9,
+     "price": 2790.0,
+     "currency": null,
+     "state": "active",
+     "source": "dev_showcase",
+     "lot_nr": "FC-VN-2606",
+     "comment": "Открытая катушка для подарочной серии",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-15T11:28:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-galaxy-ams"
+     },
+     "collection_ids": []
+    },
+    {
+     "id": 2,
+     "user_id": 1,
+     "filament_id": 1,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 1,
+      "name": "Everyday PLA · Deep Ocean",
+      "material_type": "PLA",
+      "color_name": "Глубокий океан",
+      "color_hex": "#0E5BD8",
+      "brand_name": "OlgaCraft",
+      "price_per_kg": 1890.0,
+      "currency": "RUB",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-PLA-OCEAN-BLUE"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 327.6,
+     "remaining_weight_g": 672.4,
+     "remaining_pct": 67.2,
+     "price": 1890.0,
+     "currency": null,
+     "state": "active",
+     "source": "dev_showcase",
+     "lot_nr": "OC-DO-2608",
+     "comment": "Основной синий для корпусов",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-17T04:16:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-deep-ocean-ams"
+     },
+     "collection_ids": []
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 7,
+    "state_counts": {
+     "active": 4,
+     "shelf": 2,
+     "archived": 0,
+     "empty": 1
+    },
+    "available_remaining_weight_g": null
+   }
+  },
+  "/spools/feed?limit=24&state=shelf": {
+   "items": [
+    {
+     "id": 3,
+     "user_id": 1,
+     "filament_id": 3,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 3,
+      "name": "Timber Blend · Birch",
+      "material_type": "PLA",
+      "color_name": "Светлая берёза",
+      "color_hex": "#C5A77B",
+      "brand_name": "OlgaCraft",
+      "price_per_kg": 2290.0,
+      "currency": "RUB",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-PLA-WOOD-WARM-GREY"
+     },
+     "initial_weight_g": 750.0,
+     "used_weight_g": 143.2,
+     "remaining_weight_g": 606.8,
+     "remaining_pct": 80.9,
+     "price": 1790.0,
+     "currency": null,
+     "state": "shelf",
+     "source": "dev_showcase",
+     "lot_nr": "OC-BR-2607",
+     "comment": "Для декора и интерьерных изделий",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-25T13:52:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-birch-shelf"
+     },
+     "collection_ids": []
+    },
+    {
+     "id": 1,
+     "user_id": 1,
+     "filament_id": 2,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 2,
+      "name": "Satin PLA · Coral",
+      "material_type": "PLA",
+      "color_name": "Коралловый сатин",
+      "color_hex": "#E95662",
+      "brand_name": "OlgaCraft",
+      "price_per_kg": 1990.0,
+      "currency": "RUB",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-PLA-SATIN-RED"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 460.0,
+     "remaining_weight_g": 540.0,
+     "remaining_pct": 54.0,
+     "price": 1990.0,
+     "currency": null,
+     "state": "shelf",
+     "source": "dev_showcase",
+     "lot_nr": "OC-CR-2608",
+     "comment": "Текущие небольшие заказы на A1 mini",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-16T18:40:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-coral-a1"
+     },
+     "collection_ids": []
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 7,
+    "state_counts": {
+     "active": 4,
+     "shelf": 2,
+     "archived": 0,
+     "empty": 1
+    },
+    "available_remaining_weight_g": null
+   }
+  },
+  "/spools/feed?limit=24&state_group=archived": {
+   "items": [
+    {
+     "id": 7,
+     "user_id": 1,
+     "filament_id": 4,
+     "compat_import_id": null,
+     "empty_spool_weight_g": null,
+     "filament": {
+      "id": 4,
+      "name": "Workshop PETG · Forest",
+      "material_type": "PETG",
+      "color_name": "Лесной зелёный",
+      "color_hex": "#16845B",
+      "brand_name": "OlgaCraft",
+      "price_per_kg": 2190.0,
+      "currency": "RUB",
+      "required_nozzle_hrc": null,
+      "qr_code": "FH-SHOW-PETG-FOREST"
+     },
+     "initial_weight_g": 1000.0,
+     "used_weight_g": 1000.0,
+     "remaining_weight_g": 0.0,
+     "remaining_pct": 0.0,
+     "price": 2190.0,
+     "currency": null,
+     "state": "empty",
+     "source": "dev_showcase",
+     "lot_nr": "OC-FR-2604",
+     "comment": "Закончилась на партии креплений",
+     "purchased_on": null,
+     "created_at": "2026-11-25T18:40:09.905329Z",
+     "updated_at": "2026-11-25T18:40:09.905329Z",
+     "last_used_at": "2026-11-15T18:40:09.724632Z",
+     "extra": {
+      "showcase_key": "olga-empty-history"
+     },
+     "collection_ids": []
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 7,
+    "state_counts": {
+     "active": 4,
+     "shelf": 2,
+     "archived": 0,
+     "empty": 1
+    },
+    "available_remaining_weight_g": null
+   }
+  },
+  "/spools/groups?group_by=product&limit=24&state=active": {
+   "items": [
+    {
+     "key": "f:5",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 1,
+      "shelf": 0,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 925.5,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 6,
+      "user_id": 1,
+      "filament_id": 5,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 5,
+       "name": "Silk PLA · Aurora",
+       "material_type": "PLA",
+       "color_name": "Северное сияние",
+       "color_hex": "#8C55D9",
+       "brand_name": "OlgaCraft",
+       "price_per_kg": 2490.0,
+       "currency": "RUB",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-PLA-SILK-AURORA"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 74.5,
+      "remaining_weight_g": 925.5,
+      "remaining_pct": 92.5,
+      "price": 2490.0,
+      "currency": null,
+      "state": "active",
+      "source": "dev_showcase",
+      "lot_nr": "OC-AU-2608",
+      "comment": "Свежая катушка для декоративной печати",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-17T06:40:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-aurora-ams"
+      },
+      "collection_ids": []
+     }
+    },
+    {
+     "key": "f:9",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 1,
+      "shelf": 0,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 846.2,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 5,
+      "user_id": 1,
+      "filament_id": 9,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 9,
+       "name": "Everyday PETG · Arctic Blue",
+       "material_type": "PETG",
+       "color_name": "Арктический синий",
+       "color_hex": "#43A6C6",
+       "brand_name": "NorthLayer",
+       "price_per_kg": 24.9,
+       "currency": "EUR",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-NORTHLAYER-PETG-ARCTIC-BLUE"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 153.8,
+      "remaining_weight_g": 846.2,
+      "remaining_pct": 84.6,
+      "price": 2490.0,
+      "currency": null,
+      "state": "active",
+      "source": "dev_showcase",
+      "lot_nr": "NL-AB-2607",
+      "comment": "Функциональные детали и крепления",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-14T23:28:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-arctic-ams"
+      },
+      "collection_ids": []
+     }
+    },
+    {
+     "key": "f:6",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 1,
+      "shelf": 0,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 318.70000000000005,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 4,
+      "user_id": 1,
+      "filament_id": 6,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 6,
+       "name": "Galaxy PLA · Violet Nebula",
+       "material_type": "PLA",
+       "color_name": "Фиолетовая туманность",
+       "color_hex": "#6040A8",
+       "brand_name": "FibraCraft",
+       "price_per_kg": 27.9,
+       "currency": "EUR",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-FIBRACRAFT-GALAXY-VIOLET-NEBULA"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 681.3,
+      "remaining_weight_g": 318.70000000000005,
+      "remaining_pct": 31.9,
+      "price": 2790.0,
+      "currency": null,
+      "state": "active",
+      "source": "dev_showcase",
+      "lot_nr": "FC-VN-2606",
+      "comment": "Открытая катушка для подарочной серии",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-15T11:28:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-galaxy-ams"
+      },
+      "collection_ids": []
+     }
+    },
+    {
+     "key": "f:1",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 1,
+      "shelf": 0,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 672.4,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 2,
+      "user_id": 1,
+      "filament_id": 1,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 1,
+       "name": "Everyday PLA · Deep Ocean",
+       "material_type": "PLA",
+       "color_name": "Глубокий океан",
+       "color_hex": "#0E5BD8",
+       "brand_name": "OlgaCraft",
+       "price_per_kg": 1890.0,
+       "currency": "RUB",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-PLA-OCEAN-BLUE"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 327.6,
+      "remaining_weight_g": 672.4,
+      "remaining_pct": 67.2,
+      "price": 1890.0,
+      "currency": null,
+      "state": "active",
+      "source": "dev_showcase",
+      "lot_nr": "OC-DO-2608",
+      "comment": "Основной синий для корпусов",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-17T04:16:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-deep-ocean-ams"
+      },
+      "collection_ids": []
+     }
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 4,
+    "group_count": 4,
+    "available_remaining_weight_g": 2762.8,
+    "unknown_mass_count": 0
+   }
+  },
+  "/spools/groups?group_by=product&limit=24&state=shelf": {
+   "items": [
+    {
+     "key": "f:3",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 0,
+      "shelf": 1,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 606.8,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 3,
+      "user_id": 1,
+      "filament_id": 3,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 3,
+       "name": "Timber Blend · Birch",
+       "material_type": "PLA",
+       "color_name": "Светлая берёза",
+       "color_hex": "#C5A77B",
+       "brand_name": "OlgaCraft",
+       "price_per_kg": 2290.0,
+       "currency": "RUB",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-PLA-WOOD-WARM-GREY"
+      },
+      "initial_weight_g": 750.0,
+      "used_weight_g": 143.2,
+      "remaining_weight_g": 606.8,
+      "remaining_pct": 80.9,
+      "price": 1790.0,
+      "currency": null,
+      "state": "shelf",
+      "source": "dev_showcase",
+      "lot_nr": "OC-BR-2607",
+      "comment": "Для декора и интерьерных изделий",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-25T13:52:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-birch-shelf"
+      },
+      "collection_ids": []
+     }
+    },
+    {
+     "key": "f:2",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 0,
+      "shelf": 1,
+      "archived": 0,
+      "empty": 0
+     },
+     "available_remaining_weight_g": 540.0,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 1,
+      "user_id": 1,
+      "filament_id": 2,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 2,
+       "name": "Satin PLA · Coral",
+       "material_type": "PLA",
+       "color_name": "Коралловый сатин",
+       "color_hex": "#E95662",
+       "brand_name": "OlgaCraft",
+       "price_per_kg": 1990.0,
+       "currency": "RUB",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-PLA-SATIN-RED"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 460.0,
+      "remaining_weight_g": 540.0,
+      "remaining_pct": 54.0,
+      "price": 1990.0,
+      "currency": null,
+      "state": "shelf",
+      "source": "dev_showcase",
+      "lot_nr": "OC-CR-2608",
+      "comment": "Текущие небольшие заказы на A1 mini",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-16T18:40:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-coral-a1"
+      },
+      "collection_ids": []
+     }
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 2,
+    "group_count": 2,
+    "available_remaining_weight_g": 1146.8,
+    "unknown_mass_count": 0
+   }
+  },
+  "/spools/groups?group_by=product&limit=24&state_group=archived": {
+   "items": [
+    {
+     "key": "f:4",
+     "spool_count": 1,
+     "state_counts": {
+      "active": 0,
+      "shelf": 0,
+      "archived": 0,
+      "empty": 1
+     },
+     "available_remaining_weight_g": 0.0,
+     "unknown_mass_count": 0,
+     "latest_spool": {
+      "id": 7,
+      "user_id": 1,
+      "filament_id": 4,
+      "compat_import_id": null,
+      "empty_spool_weight_g": null,
+      "filament": {
+       "id": 4,
+       "name": "Workshop PETG · Forest",
+       "material_type": "PETG",
+       "color_name": "Лесной зелёный",
+       "color_hex": "#16845B",
+       "brand_name": "OlgaCraft",
+       "price_per_kg": 2190.0,
+       "currency": "RUB",
+       "required_nozzle_hrc": null,
+       "qr_code": "FH-SHOW-PETG-FOREST"
+      },
+      "initial_weight_g": 1000.0,
+      "used_weight_g": 1000.0,
+      "remaining_weight_g": 0.0,
+      "remaining_pct": 0.0,
+      "price": 2190.0,
+      "currency": null,
+      "state": "empty",
+      "source": "dev_showcase",
+      "lot_nr": "OC-FR-2604",
+      "comment": "Закончилась на партии креплений",
+      "purchased_on": null,
+      "created_at": "2026-11-25T18:40:09.905329Z",
+      "updated_at": "2026-11-25T18:40:09.905329Z",
+      "last_used_at": "2026-11-15T18:40:09.724632Z",
+      "extra": {
+       "showcase_key": "olga-empty-history"
+      },
+      "collection_ids": []
+     }
+    }
+   ],
+   "next_cursor": null,
+   "summary": {
+    "total": 1,
+    "group_count": 1,
+    "available_remaining_weight_g": 0.0,
+    "unknown_mass_count": 0
+   }
+  },
+  "/spools/spending?months=12": {
+   "months": 12,
+   "currencies": [
+    {
+     "currency": null,
+     "bought_total": 15630.0,
+     "bought_count": 7,
+     "bought_priced_count": 7,
+     "consumed_value": 2816.23,
+     "consumed_grams_priced": 1141.3,
+     "shelf_value": 9094.37,
+     "shelf_grams": 3909.6
+    }
+   ],
+   "unpriced": {
+    "spools_without_price": 0,
+    "spools_total": 7,
+    "consumed_grams_without_price": 0.0,
+    "unreconciled_grams": 0.0,
+    "shelf_grams_without_price": 0.0
+   },
+   "by_month": [
+    {
+     "month": "2025-12",
+     "currencies": []
+    },
+    {
+     "month": "2026-01",
+     "currencies": []
+    },
+    {
+     "month": "2026-02",
+     "currencies": []
+    },
+    {
+     "month": "2026-03",
+     "currencies": []
+    },
+    {
+     "month": "2026-04",
+     "currencies": []
+    },
+    {
+     "month": "2026-05",
+     "currencies": []
+    },
+    {
+     "month": "2026-06",
+     "currencies": []
+    },
+    {
+     "month": "2026-07",
+     "currencies": []
+    },
+    {
+     "month": "2026-08",
+     "currencies": []
+    },
+    {
+     "month": "2026-09",
+     "currencies": []
+    },
+    {
+     "month": "2026-10",
+     "currencies": []
+    },
+    {
+     "month": "2026-11",
+     "currencies": [
+      {
+       "currency": null,
+       "bought_total": 15630.0,
+       "consumed_value": 2816.23
+      }
+     ]
+    }
+   ],
+   "by_brand": [
+    {
+     "key": "OlgaCraft",
+     "currency": null,
+     "bought_total": 10350.0,
+     "bought_count": 5,
+     "initial_weight_g": 4750.0,
+     "price_per_kg": 2178.95,
+     "catalog_price_per_kg": null
+    },
+    {
+     "key": "FibraCraft",
+     "currency": null,
+     "bought_total": 2790.0,
+     "bought_count": 1,
+     "initial_weight_g": 1000.0,
+     "price_per_kg": 2790.0,
+     "catalog_price_per_kg": null
+    },
+    {
+     "key": "NorthLayer",
+     "currency": null,
+     "bought_total": 2490.0,
+     "bought_count": 1,
+     "initial_weight_g": 1000.0,
+     "price_per_kg": 2490.0,
+     "catalog_price_per_kg": null
+    }
+   ],
+   "by_material": [
+    {
+     "key": "PLA",
+     "currency": null,
+     "bought_total": 10950.0,
+     "bought_count": 5,
+     "initial_weight_g": 4750.0,
+     "price_per_kg": 2305.26,
+     "catalog_price_per_kg": null
+    },
+    {
+     "key": "PETG",
+     "currency": null,
+     "bought_total": 4680.0,
+     "bought_count": 2,
+     "initial_weight_g": 2000.0,
+     "price_per_kg": 2340.0,
+     "catalog_price_per_kg": null
+    }
+   ]
+  },
+  "/stock-alerts/rules": {
+   "default_threshold_g": 100.0,
+   "rules": []
+  }
+ }
+}

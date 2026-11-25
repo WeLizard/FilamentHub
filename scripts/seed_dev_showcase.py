@@ -119,6 +119,32 @@ BRAND_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "logo_bg": "#14532D",
         "description": "Recycled and natural-filled materials with practical, understated colours.",
     },
+    # A brand page filled in the way a manufacturer would fill it: logo, links,
+    # shops and a full range. The manufacturers page of the site is illustrated
+    # with a capture of it.
+    {
+        "name": "Nova Polymers",
+        "slug": "nova-polymers",
+        "currency": "EUR",
+        "verified": True,
+        "logo_url": "/brand/showcase/nova-polymers.svg",
+        "logo_bg": "#F4EFE6",
+        "description": (
+            "Everyday filaments in calm, useful colours for the modern workshop. "
+            "Every spool ships with a tested OrcaSlicer preset and a QR code that opens it."
+        ),
+        "website": "https://nova-polymers.example",
+        "social_media_urls": [
+            "https://www.youtube.com/@novapolymers",
+            "https://www.tiktok.com/@novapolymers",
+            "https://x.com/novapolymers",
+            "https://www.printables.com/@novapolymers",
+            "https://github.com/novapolymers",
+        ],
+        "shop_links": [
+            {"platform": "Nova Polymers shop", "url": "https://shop.nova-polymers.example"},
+        ],
+    },
 )
 
 
@@ -140,6 +166,45 @@ def visual(
         "effects": effects or ([] if filler == "none" else [filler]),
         "transparency": transparency,
     }
+
+
+# What a brand shows in one country instead of its general page: a
+# representative there keeps the description, links and shops of that market.
+BRAND_MARKETS: tuple[dict[str, Any], ...] = (
+    {
+        "brand": "Nova Polymers", "country": "RU", "currency": "RUB",
+        "website": "https://nova-polymers.example/ru",
+        "description": (
+            "Повседневные филаменты спокойных, практичных цветов для современной мастерской. "
+            "К каждой катушке — проверенный пресет для OrcaSlicer и QR, который его открывает."
+        ),
+        "social_media_urls": [
+            "https://vk.com/novapolymers",
+            "https://t.me/novapolymers_ru",
+            "https://www.youtube.com/@novapolymers",
+            "https://boosty.to/novapolymers",
+        ],
+        "shop_links": [
+            {"platform": "Ozon", "url": "https://www.ozon.ru/seller/nova-polymers"},
+            {"platform": "Wildberries", "url": "https://www.wildberries.ru/brands/nova-polymers"},
+        ],
+    },
+    {
+        "brand": "Nova Polymers", "country": "CN", "currency": "CNY",
+        "website": "https://nova-polymers.example/cn",
+        "description": "为现代工作室准备的日常耗材，色彩沉稳实用。每盘耗材都附带经过测试的 OrcaSlicer 预设，以及可直接打开预设的二维码。",
+        "social_media_urls": [
+            "https://mp.weixin.qq.com/s/novapolymers",
+            "https://weibo.com/novapolymers",
+            "https://space.bilibili.com/novapolymers",
+            "https://www.douyin.com/user/novapolymers",
+            "https://www.xiaohongshu.com/user/profile/novapolymers",
+        ],
+        "shop_links": [
+            {"platform": "Taobao", "url": "https://novapolymers.taobao.com"},
+        ],
+    },
+)
 
 
 FILAMENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
@@ -398,6 +463,36 @@ FILAMENT_DEFINITIONS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# The full range of the showcase manufacturer: (line, colour, hex, type,
+# density, nozzle, bed, price per kg, finish, views).
+_NOVA_RANGE: tuple[tuple[str, str, str, str, float, tuple[int, int], tuple[int, int], float, str, int], ...] = (
+    ("PLA Matte", "Charcoal", "#2F3640", "PLA", 1.24, (200, 220), (50, 60), 24.9, "matte", 1284),
+    ("PLA Matte", "Ivory", "#E8E1D2", "PLA", 1.24, (200, 220), (50, 60), 24.9, "matte", 1102),
+    ("PLA Matte", "Sage", "#9DB3A1", "PLA", 1.24, (200, 220), (50, 60), 24.9, "matte", 968),
+    ("PLA Matte", "Dusk Blue", "#4C6A8A", "PLA", 1.24, (200, 220), (50, 60), 24.9, "matte", 841),
+    ("Silk PLA", "Gold", "#C9A24B", "PLA", 1.24, (205, 225), (50, 60), 27.9, "glossy", 1376),
+    ("Silk PLA", "Copper", "#B66A45", "PLA", 1.24, (205, 225), (50, 60), 27.9, "glossy", 912),
+    ("PETG", "Lagoon", "#2F9BA8", "PETG", 1.27, (230, 250), (70, 85), 26.9, "glossy", 1190),
+    ("PETG", "Clear", "#E9F1F2", "PETG", 1.27, (230, 250), (70, 85), 26.9, "glossy", 774),
+    ("ASA", "Terracotta", "#C0694E", "ASA", 1.07, (245, 265), (95, 110), 32.9, "matte", 655),
+    ("ASA", "Graphite", "#4B4F54", "ASA", 1.07, (245, 265), (95, 110), 32.9, "matte", 608),
+)
+
+FILAMENT_DEFINITIONS += tuple(
+    {
+        "brand": "Nova Polymers", "line": line,
+        "slug": f"nova-{line}-{colour}".lower().replace(" ", "-"),
+        "name": f"{line} · {colour}", "material_type": material_type, "preset_name": "Manufacturer preset",
+        "color_name": colour, "color_hex": color_hex,
+        "density": density, "price_per_kg": price, "spool_weight": 1000.0,
+        "empty_spool_weight_g": 205.0, "nozzle": nozzle, "bed": bed,
+        "visual_settings": visual(color_hex, finish=finish, transparency=colour == "Clear"),
+        "description": f"{line} in {colour}: tuned for clean walls and repeatable results.",
+        "views_count": views, "scans_count": views // 7,
+    }
+    for line, colour, color_hex, material_type, density, nozzle, bed, price, finish, views in _NOVA_RANGE
+)
+
 
 COMMUNITY_USERS: tuple[dict[str, str], ...] = (
     {"email": "layerfox@example.com", "username": "LayerFox", "full_name": "Alex Layer", "country": "FI"},
@@ -408,6 +503,7 @@ COMMUNITY_USERS: tuple[dict[str, str], ...] = (
     {"email": "printjuno@example.com", "username": "PrintJuno", "full_name": "June Parker", "country": "GB"},
     {"email": "atelier3d@example.com", "username": "Atelier3D", "full_name": "Camille Moreau", "country": "FR"},
     {"email": "makerli@example.com", "username": "MakerLi", "full_name": "Li Wei", "country": "CN"},
+    {"email": "sloy3d@example.com", "username": "Sloy3D", "full_name": "Ivan Sloev", "country": "RU"},
 )
 
 
@@ -460,6 +556,38 @@ COMMUNITY_PRESETS: tuple[dict[str, Any], ...] = (
         "flow": 98.0, "fan": 40, "retraction": 0.7, "speed": 32.0,
         "rating": 4.9, "success_rate": 97.0, "usage_count": 137,
     },
+    # The showcase owner's own published presets, on the materials she keeps
+    # on the shelf: her profile and the guest demo show a working account.
+    {
+        "key": "olga-aurora-silk-even", "user": "OlgaCraft", "filament": "pla-silk-aurora",
+        "name": "Шёлк без полос", "temp": 215, "bed": 60,
+        "flow": 98.0, "fan": 90, "retraction": 0.8, "speed": 30.0,
+        "rating": 4.8, "success_rate": 96.0, "usage_count": 64,
+    },
+    {
+        "key": "olga-arctic-enclosures", "user": "OlgaCraft", "filament": "northlayer-petg-arctic-blue",
+        "name": "Корпуса без нитей", "temp": 240, "bed": 80,
+        "flow": 98.0, "fan": 40, "retraction": 0.7, "speed": 32.0,
+        "rating": 4.7, "success_rate": 94.0, "usage_count": 41,
+    },
+    {
+        "key": "olga-birch-decor", "user": "OlgaCraft", "filament": "pla-wood-warm-grey",
+        "name": "Декор с древесной фактурой", "temp": 208, "bed": 55,
+        "flow": 101.0, "fan": 100, "retraction": 0.8, "speed": 30.0,
+        "rating": 4.6, "success_rate": 93.0, "usage_count": 27,
+    },
+    {
+        "key": "olga-forest-mounts", "user": "OlgaCraft", "filament": "petg-forest",
+        "name": "Прочные крепления", "temp": 242, "bed": 78,
+        "flow": 99.0, "fan": 35, "retraction": 0.7, "speed": 30.0,
+        "rating": 4.9, "success_rate": 97.0, "usage_count": 38,
+    },
+    {
+        "key": "olga-coral-small-orders", "user": "OlgaCraft", "filament": "pla-satin-red",
+        "name": "Мелкие заказы на A1 mini", "temp": 212, "bed": 58,
+        "flow": 99.0, "fan": 100, "retraction": 0.8, "speed": 34.0,
+        "rating": 4.7, "success_rate": 95.0, "usage_count": 19,
+    },
 )
 
 
@@ -467,27 +595,47 @@ REVIEW_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "user": "LayerFox", "preset": "layerfox-galaxy-balanced", "rating": 5.0,
         "comment": "Блёстки распределены равномерно. На внешних стенках лучше держать скорость около 80 мм/с.",
-        "printer_slug": "bambulab-bambu-lab-p1s",
+        "printer_slug": "bambu-lab-p1s",
     },
     {
         "user": "MilaPrints", "preset": "milaprints-arctic-strong", "rating": 4.8,
         "comment": "После сушки нити почти исчезли, цвет совпал с карточкой. Детали получились прочными.",
-        "printer_slug": "prusa-prusa-mk4s",
+        "printer_slug": "prusa-mk4s",
     },
     {
         "user": "VoronNorth", "preset": "voronnorth-asa-fast", "rating": 4.7,
         "comment": "Стабильно печатается в закрытой камере. Для крупных углов добавил широкий brim.",
-        "printer_slug": "voron-voron-2-4-350",
+        "printer_slug": "voron-2-4-350",
     },
     {
         "user": "ProtoDen", "preset": "protoden-carbon-dimensional", "rating": 4.9,
         "comment": "Отличная геометрия креплений. Использовал закалённое сопло 0.4 мм.",
-        "printer_slug": "bambulab-bambu-lab-p1s",
+        "printer_slug": "bambu-lab-p1s",
     },
     {
         "user": "NikoMakes", "preset": "nikomakes-wood-detail", "rating": 4.6,
         "comment": "Фактура хорошо проявляется после лёгкой шлифовки. Сопло 0.6 мм оказалось спокойнее.",
-        "printer_slug": "prusa-prusa-mk4s",
+        "printer_slug": "prusa-mk4s",
+    },
+    {
+        "user": "OlgaCraft", "preset": "layerfox-galaxy-balanced", "rating": 5.0,
+        "comment": "Подарочная серия вышла ровной с первой попытки. Блёстки не забили сопло 0.4 мм.",
+        "printer_slug": "bambu-lab-p1s",
+    },
+    {
+        "user": "OlgaCraft", "preset": "milaprints-arctic-strong", "rating": 4.5,
+        "comment": "Крепления выдержали нагрузку. На A1 mini снизила скорость первого слоя.",
+        "printer_slug": "bambu-lab-a1-mini",
+    },
+    {
+        "user": "OlgaCraft", "preset": "nikomakes-wood-detail", "rating": 4.0,
+        "comment": "Фактура красивая, но на длинных переездах остаются нити: добавила ретракт.",
+        "printer_slug": "bambu-lab-a1-mini",
+    },
+    {
+        "user": "OlgaCraft", "preset": "olga-aurora-silk-even", "rating": 5.0,
+        "comment": "Свой рабочий пресет для декора: перелив ровный на всей высоте вазы.",
+        "printer_slug": "bambu-lab-p1s",
     },
 )
 
@@ -667,6 +815,22 @@ async def seed_showcase() -> int:
                 "published": True,
             },
         )
+        for definition in BRAND_MARKETS:
+            brand = brands[definition["brand"]]
+            market = await db.scalar(
+                select(BrandCountryCell).where(
+                    BrandCountryCell.brand_id == brand.id,
+                    BrandCountryCell.country == definition["country"],
+                )
+            )
+            if market is None:
+                market = BrandCountryCell(brand_id=brand.id, country=definition["country"])
+                db.add(market)
+            apply_values(
+                market,
+                {key: value for key, value in definition.items() if key not in {"brand", "country"}}
+                | {"published": True},
+            )
         await db.flush()
 
         users: dict[str, User] = {}
@@ -1037,10 +1201,10 @@ async def seed_showcase() -> int:
                 await db.execute(
                     select(Printer).where(
                         Printer.slug.in_({
-                            "bambulab-bambu-lab-a1-mini",
-                            "bambulab-bambu-lab-p1s",
-                            "prusa-prusa-mk4s",
-                            "voron-voron-2-4-350",
+                            "bambu-lab-a1-mini",
+                            "bambu-lab-p1s",
+                            "prusa-mk4s",
+                            "voron-2-4-350",
                         })
                     )
                 )
@@ -1048,9 +1212,9 @@ async def seed_showcase() -> int:
         }
 
         olga_printer_definitions = (
-            ("olga-a1-mini", "Olga's A1 mini", "bambulab-bambu-lab-a1-mini", 28900.0, 145.0),
-            ("olga-p1s", "Bambu Lab P1S", "bambulab-bambu-lab-p1s", 77900.0, 170.0),
-            ("olga-mk4s", "Prusa MK4S", "prusa-prusa-mk4s", 112000.0, 155.0),
+            ("olga-a1-mini", "Olga's A1 mini", "bambu-lab-a1-mini", 28900.0, 145.0),
+            ("olga-p1s", "Bambu Lab P1S", "bambu-lab-p1s", 77900.0, 170.0),
+            ("olga-mk4s", "Prusa MK4S", "prusa-mk4s", 112000.0, 155.0),
         )
         olga_printers: dict[str, UserPrinterDevice] = {}
         for key, name, printer_slug, purchase_cost, machine_rate in olga_printer_definitions:
@@ -1084,9 +1248,9 @@ async def seed_showcase() -> int:
         for index, definition in enumerate(COMMUNITY_USERS):
             user = users[definition["username"]]
             printer_slug = (
-                "voron-voron-2-4-350" if definition["username"] == "VoronNorth"
-                else "prusa-prusa-mk4s" if index % 2
-                else "bambulab-bambu-lab-p1s"
+                "voron-2-4-350" if definition["username"] == "VoronNorth"
+                else "prusa-mk4s" if index % 2
+                else "bambu-lab-p1s"
             )
             name = (
                 "Voron 2.4 350 · workshop" if definition["username"] == "VoronNorth"

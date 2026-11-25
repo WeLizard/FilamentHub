@@ -78,3 +78,43 @@ html[lang="ru"] #fh-startup .fh-startup-nojs[lang="ru"],
 html[lang="zh"] #fh-startup .fh-startup-nojs[lang="zh"] {
   display: block;
 }
+
+/* Static text of a public page, in #root until the application renders over
+   it. Readers without JavaScript see it; the delay keeps it from flashing at
+   everyone else while the bundle loads. */
+.fh-static {
+  box-sizing: border-box;
+  max-width: 46rem;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  background: #171724;
+  color: #e8e8ef;
+  font: 16px/1.6 system-ui, sans-serif;
+  animation: fh-static-reveal 0s linear 1.5s both;
+}
+
+.fh-static a {
+  color: #c4b5fd;
+}
+
+.fh-static table {
+  border-collapse: collapse;
+}
+
+.fh-static th,
+.fh-static td {
+  padding: 6px 12px 6px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+@keyframes fh-static-reveal {
+  from {
+    visibility: hidden;
+  }
+
+  to {
+    visibility: visible;
+  }
+}

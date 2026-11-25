@@ -37,6 +37,7 @@ import { WikiAuthoringModal, WikiPeerReviewModal } from '../components/wiki';
 import { plainWikiSummary } from '../components/wiki/wikiMarkdown';
 import { toast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
+import { MANUFACTURER_STEPS } from '../data/capabilities';
 import { WikiCategoryIcon } from '../components/wiki/WikiCategoryIcon';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import {
@@ -69,14 +70,20 @@ export function WikiPage() {
     { key: 'printer', icon: Printer3DIcon, contentKey: 'printer-feed-guide', progressId: 'user:printer' },
     { key: 'production', icon: Calculator, contentKey: 'production-calculation-guide', progressId: 'user:production' },
   ];
-  const manufacturerJourneySteps = [
-    { key: 'representation', icon: ShieldCheck, contentKey: 'brand-representation-guide', progressId: 'brand:representation' },
-    { key: 'profile', icon: Factory, contentKey: 'brand-profile-guide', progressId: 'brand:profile' },
-    { key: 'materials', icon: PackageOpen, contentKey: 'brand-materials-guide', progressId: 'brand:materials' },
-    { key: 'presets', icon: Settings, contentKey: 'brand-official-presets-guide', progressId: 'brand:presets' },
-    { key: 'qr', icon: QrCode, contentKey: 'brand-qr-guide', progressId: 'brand:qr' },
-    { key: 'insights', icon: TrendingUp, contentKey: 'brand-insights-guide', progressId: 'brand:insights' },
-  ];
+  const manufacturerStepIcons: Record<string, typeof ShieldCheck> = {
+    representation: ShieldCheck,
+    profile: Factory,
+    materials: PackageOpen,
+    presets: Settings,
+    qr: QrCode,
+    insights: TrendingUp,
+  };
+  const manufacturerJourneySteps = MANUFACTURER_STEPS.map((step) => ({
+    key: step.id,
+    icon: manufacturerStepIcons[step.id],
+    contentKey: step.guide,
+    progressId: `brand:${step.id}`,
+  }));
 
   useEffect(() => {
     const refreshProgress = () => setCompletedGuideIds(getCompletedWikiGuideIds());

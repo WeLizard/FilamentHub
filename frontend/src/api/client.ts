@@ -11,6 +11,7 @@ import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMod
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 import { currentRequestLanguage } from '../utils/requestLanguage';
+import { installDemoTransport } from '../demo/demoTransport';
 import { buildGcodeExcerptFormData, type GcodeExcerpt } from '../utils/gcodeExcerpt';
 import type { LabelExportOptions, LabelMetadata, LabelPreset, LabelPresetSettings, LabelPreview } from '../types/labels';
 
@@ -38,6 +39,8 @@ const notifyCppLogout = () => {
     // Не в контексте OrcaSlicer — игнорируем
   }
 };
+
+installDemoTransport(api);
 
 // Добавляем токен в запросы
 api.interceptors.request.use((config) => {
@@ -734,6 +737,12 @@ export const authAPI = {
   revokeOtherSessions: async (): Promise<{ revoked_count: number }> => {
     const response = await api.post('/auth/sessions/revoke-others');
     return response.data;
+  },
+
+  /** The country this connection appears to come from; a guess for a reader without an account. */
+  getReaderCountry: async (): Promise<string | null> => {
+    const response = await api.get<{ country: string | null }>('/auth/reader-country');
+    return response.data.country;
   },
 
   getLegalRequirements: async (pack?: LegalPack | null): Promise<LegalRequirements> => {

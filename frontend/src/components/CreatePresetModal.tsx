@@ -160,6 +160,16 @@ interface CreatePresetModalProps {
   /** Save only the catalogue material, then return it to the caller without creating a preset. */
   materialOnly?: boolean;
   onMaterialCreated?: (filament: Filament) => void;
+  /** What is already known about the new material, e.g. read from a spool tag. */
+  materialDraft?: MaterialDraft;
+}
+
+export interface MaterialDraft {
+  brandName?: string;
+  materialType?: string;
+  name?: string;
+  /** #RRGGBB */
+  colorHex?: string;
 }
 
 interface DuplicateFilamentSuggestion {
@@ -263,6 +273,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   officialContext = false,
   createFromPreset = false,
   materialOnly = false,
+  materialDraft,
   onMaterialCreated,
 }) => {
   const { user } = useAuth();
@@ -818,6 +829,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     };
 
     resetCatalogForm();
+    if (materialOnly && materialDraft) {
+      // The person still checks and completes the card; this only saves retyping.
+      if (materialDraft.brandName) setBrandSearch(materialDraft.brandName);
+      if (materialDraft.materialType) setMaterialType(materialDraft.materialType);
+      if (materialDraft.name) setFilamentName(materialDraft.name);
+      if (materialDraft.colorHex) {
+        setFilamentColorHex(materialDraft.colorHex);
+        setFilamentVisualColors([materialDraft.colorHex]);
+        setDraftHasColorEvidence(true);
+      }
+    }
     setPlateTemps({});
     setBedTempInitialDefault('');
     setBedTempEdited(false);
@@ -1258,7 +1280,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
-  }, [preset, filamentId, brandId, isDraft, isOpen, officialContext, materialOnly]);
+  }, [preset, filamentId, brandId, isDraft, isOpen, officialContext, materialOnly, materialDraft]);
 
   // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
   useEffect(() => {

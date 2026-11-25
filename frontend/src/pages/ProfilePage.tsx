@@ -48,6 +48,7 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
+import { isDemoSession } from '../demo/demoTransport';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useCurrencyCatalogue } from '../hooks/useCurrencyCatalogue';
 import { useUserCurrency } from '../hooks/useUserCurrency';
@@ -1098,7 +1099,10 @@ export const ProfilePage: React.FC = () => {
                 icon: Sparkles,
               },
               { id: 'settings' as const, label: t('profilePage.tabs.settings'), shortLabel: t('profilePage.tabs.settingsShort'), icon: Cog },
-            ]).map((tab) => {
+            ])
+              // Account and security settings belong to a real account, not to the sample one.
+              .filter((tab) => !isDemoSession() || (tab.id !== 'settings' && tab.id !== 'workshop'))
+              .map((tab) => {
               const isPremiumTab = tab.premium === true;
               const hasCalculatorProAccess = user?.has_calculator_access ?? false;
               const isLocked = isPremiumTab && !hasCalculatorProAccess;
@@ -2676,6 +2680,17 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
     inCatalog: boolean;
   } | null>(null);
   const appliedStationTagRef = useRef<StationTagIntake | null>(null);
+  // A tag naming a material the catalogue lacks carries enough to start its card.
+  const stationTagMaterialDraft = useMemo(() => {
+    if (!stationTagFacts || stationTagFacts.inCatalog) return undefined;
+    const { vendor_name: brandName, material: materialType, name, color_hex: color } = stationTagFacts.decoded;
+    return {
+      brandName,
+      materialType,
+      name,
+      colorHex: color && /^[0-9a-f]{6}/i.test(color) ? `#${color.slice(0, 6).toUpperCase()}` : undefined,
+    };
+  }, [stationTagFacts]);
   const stationTagSearch = stationTagFacts && !stationTagFacts.inCatalog
     ? [stationTagFacts.decoded.vendor_name, stationTagFacts.decoded.material].filter(Boolean).join(' ')
     : '';
@@ -3779,6 +3794,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
         <CreatePresetModal
           isOpen
           materialOnly
+          materialDraft={stationTagMaterialDraft}
           onClose={() => setIsMaterialFormOpen(false)}
           onMaterialCreated={selectCatalogMaterial}
         />
@@ -4502,7 +4518,7 @@ const RecentSpools: React.FC<RecentSpoolsProps> = ({ spools, onViewAll }) => {
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-white text-xs font-medium">{spool.remaining_weight_g.toFixed(0)}г</p>
+                  <p className="text-white text-xs font-medium">{spool.remaining_weight_g.toFixed(0)} {t('common.unitGram')}</p>
                   <p className="text-gray-500 text-xs">{spool.remaining_pct.toFixed(0)}%</p>
                 </div>
               </div>

@@ -1,0 +1,50 @@
+{
+  "groups": [
+    { "id": "catalog", "access": "open", "link": "/" },
+    { "id": "presets", "access": "open", "link": "/wiki/articles/orca-preset-guide?start=1&journey=user%3Aslicer" },
+    { "id": "orca", "access": "account", "link": "/download" },
+    { "id": "spools", "access": "account", "link": "/wiki/articles/my-filaments-guide?start=1&journey=user%3Aspools", "demo": "/demo?tab=spools" },
+    { "id": "printers", "access": "account", "link": "/wiki/articles/printer-feed-guide?start=1&journey=user%3Aprinter", "demo": "/demo?tab=printer-profiles" },
+    { "id": "edge", "access": "account", "link": "/download/edge" },
+    { "id": "production", "access": "account", "link": "/wiki/articles/production-calculation-guide?start=1&journey=user%3Aproduction", "demo": "/demo?tab=calculator-pro" },
+    { "id": "labels", "access": "account", "link": "/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf" },
+    { "id": "learning", "access": "open", "link": "/wiki" },
+    { "id": "brands", "access": "brand", "link": "/for-brands" }
+  ],
+  "items": [
+    { "id": "catalog-search", "group": "catalog", "status": "working" },
+    { "id": "catalog-card", "group": "catalog", "status": "working" },
+    { "id": "brand-cabinet", "group": "brands", "status": "working" },
+    { "id": "presets", "group": "presets", "status": "working" },
+    { "id": "orca-plugin", "group": "orca", "status": "working" },
+    { "id": "spools", "group": "spools", "status": "working" },
+    { "id": "spool-shelf", "group": "spools", "status": "working" },
+    { "id": "spending", "group": "spools", "status": "working" },
+    { "id": "usage", "group": "printers", "status": "working" },
+    { "id": "printers", "group": "printers", "status": "working" },
+    { "id": "calc", "group": "production", "status": "working" },
+    { "id": "quotes", "group": "production", "status": "working" },
+    { "id": "labels", "group": "labels", "status": "working" },
+    { "id": "learning", "group": "learning", "status": "working" },
+    { "id": "edge-bridge", "group": "edge", "status": "progress" },
+    { "id": "edge-tags", "group": "edge", "status": "progress" },
+    { "id": "weight", "group": "spools", "status": "progress" },
+    { "id": "feeders-easy", "group": "printers", "status": "progress" },
+    { "id": "feeders-more", "group": "printers", "status": "progress" },
+    { "id": "android", "group": null, "status": "progress" },
+    { "id": "diagnostics", "group": null, "status": "next" },
+    { "id": "matching", "group": "presets", "status": "next" },
+    { "id": "orca-hints", "group": "orca", "status": "next" },
+    { "id": "edge-scales", "group": "edge", "status": "next" },
+    { "id": "brand-analytics", "group": "brands", "status": "next" },
+    { "id": "workshop", "group": "production", "status": "next" }
+  ],
+  "manufacturerSteps": [
+    { "id": "representation", "guide": "brand-representation-guide" },
+    { "id": "profile", "guide": "brand-profile-guide" },
+    { "id": "materials", "guide": "brand-materials-guide" },
+    { "id": "presets", "guide": "brand-official-presets-guide" },
+    { "id": "qr", "guide": "brand-qr-guide" },
+    { "id": "insights", "guide": "brand-insights-guide" }
+  ]
+}

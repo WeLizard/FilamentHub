@@ -5,10 +5,14 @@ import { getPathLocale } from './utils/siteLocale';
 
 type SupportedLocale = 'en' | 'ru' | 'zh';
 
-const localeLoaders: Record<SupportedLocale, () => Promise<{ default: Record<string, unknown> }>> = {
-  en: () => import('./locales/en/translation.json'),
-  ru: () => import('./locales/ru/translation.json'),
-  zh: () => import('./locales/zh/translation.json'),
+type LocaleModule = Promise<{ default: Record<string, unknown> }>;
+
+// Each language ships as the interface strings plus the public product
+// description (features.json), which the build also turns into static pages.
+const localeLoaders: Record<SupportedLocale, () => LocaleModule[]> = {
+  en: () => [import('./locales/en/translation.json'), import('./locales/en/features.json')],
+  ru: () => [import('./locales/ru/translation.json'), import('./locales/ru/features.json')],
+  zh: () => [import('./locales/zh/translation.json'), import('./locales/zh/features.json')],
 };
 
 const normalizeLocale = (language: string): SupportedLocale => {
@@ -24,8 +28,8 @@ const translationBackend = {
     _namespace: string,
     callback: (error: Error | null, resources?: Record<string, unknown>) => void,
   ) => {
-    localeLoaders[normalizeLocale(language)]()
-      .then((module) => callback(null, module.default))
+    Promise.all(localeLoaders[normalizeLocale(language)]())
+      .then((modules) => callback(null, Object.assign({}, ...modules.map((module) => module.default))))
       .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error))));
   },
 };

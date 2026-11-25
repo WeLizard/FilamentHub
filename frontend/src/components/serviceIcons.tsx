@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { SERVICE_ICON_PATHS, type ServiceIconKey } from './serviceIconPaths';
 
 type ServiceIconProps = SVGProps<SVGSVGElement>;
 
@@ -17,6 +18,11 @@ function MonoServiceIcon({
       <path d={path} />
     </svg>
   );
+}
+
+/** A service from the shared path table, drawn in the current text colour. */
+export function ServicePathIcon({ name, ...props }: ServiceIconProps & { name: ServiceIconKey }) {
+  return <MonoServiceIcon path={SERVICE_ICON_PATHS[name]} {...props} />;
 }
 
 export function GoogleOAuthIcon(props: ServiceIconProps) {

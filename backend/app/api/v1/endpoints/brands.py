@@ -50,7 +50,7 @@ from app.services.catalog_duplicates import (
     find_similar_brands,
     split_trailing_color,
 )
-from app.services.country_market import apply_brand_cell, brand_cell_for
+from app.services.country_market import apply_brand_cell, brand_cell_for, brand_markets
 from app.services.file_service import (
     save_brand_logo,
 )
@@ -135,6 +135,9 @@ async def get_brand(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     payload = BrandResponse.model_validate(brand).model_dump()
+    # The page offers these as a choice; the answer itself depends only on the
+    # country asked for, so it stays safe to cache for every reader.
+    payload["available_markets"] = await brand_markets(db, brand.id)
     cell = await brand_cell_for(db, brand.id, country)
     response = BrandResponse.model_validate(apply_brand_cell(payload, cell))
 

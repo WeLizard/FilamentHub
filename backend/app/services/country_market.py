@@ -119,6 +119,16 @@ async def brand_cell_for(
     )
 
 
+async def brand_markets(db: AsyncSession, brand_id: int) -> list[str]:
+    """Страны, для которых у бренда опубликована своя витрина."""
+    result = await db.scalars(
+        select(BrandCountryCell.country)
+        .where(BrandCountryCell.brand_id == brand_id, BrandCountryCell.published.is_(True))
+        .order_by(BrandCountryCell.country)
+    )
+    return list(result)
+
+
 def apply_brand_cell(payload: dict, cell: BrandCountryCell | None) -> dict:
     """Подставить местные сайт и магазины бренда. Пусто — остаётся общее."""
     if cell is None:

@@ -1,22 +1,76 @@
 # FilamentHub
 
-> FilamentHub is a platform for managing 3D-printing materials and slicer settings, tightly integrated with OrcaSlicer. It hosts a community catalog of filament presets, a print-cost calculator with client quotes and a lightweight CRM, and one-click preset sync into OrcaSlicer.
+> FilamentHub is a service for people who 3D print: a filament catalogue with print settings, tracking for your own spools and costing for orders. The catalogue and the knowledge base are open without sign-up; everything else needs an account.
 
-Key capabilities:
+FilamentHub helps with everything around a print: find settings for your exact filament and printer, know which spools you have and how much is left on them, and work out what an order will cost. The plugin brings all of it right into the official OrcaSlicer. The project is in beta and continues to evolve. The catalogue, presets and basic tracking of your own spools are free, and they will stay free.
 
-- Community filament catalog — brands, filament lines, colors, and shareable OrcaSlicer presets recommended per printer.
-- Print-cost calculator — parses G-code, resolves materials, computes cost, and generates commercial quotes (PDF) with a lightweight CRM for studios and sole proprietors.
-- OrcaSlicer integration — import/export filament presets, printer and process profiles, and QR labels for spools.
-- Multilingual interface (Russian, English, Chinese).
+The site is served in English and Chinese at https://filamenthub.club and in Russian at https://filamenthub.ru/ru/. Both hosts are the same service and the same account.
 
-## Explore (public)
+## What works today
 
-- [Catalog](https://filamenthub.ru/): filament brands, lines, colors, and presets.
-- [Knowledge base](https://filamenthub.ru/wiki): guides on materials, printing, and slicer settings.
-- [Print-cost calculator](https://filamenthub.ru/calculator): estimate print cost and build client quotes.
-- [Downloads and OrcaSlicer plugin](https://filamenthub.ru/download): connect FilamentHub to OrcaSlicer.
+- [Material catalogue](https://filamenthub.club/): An open catalogue of 3D printing filaments: brands, lines, colours and properties. No sign-up needed. Access: no sign-up.
+  - Material catalogue with search by brand, type, colour and properties, with market data for your country
+  - Material card: composition, properties, packaging options and data-sheet values with their source
+- [Print presets](https://filamenthub.club/wiki/articles/orca-preset-guide): Ready settings for a specific filament and printer: from the manufacturer, from the community, and your own. Anyone can view them; saving and editing needs an account. Access: no sign-up.
+  - Print presets: official, community and your own, with version history and settings editing
+- [OrcaSlicer plugin](https://filamenthub.club/download): FilamentHub opens inside the official OrcaSlicer: the catalogue, presets and your spools next to slicing. The plugin installs from Plugin Hub. Access: needs an account.
+  - Plugin for the official OrcaSlicer from Plugin Hub: the catalogue and your spools inside the slicer. On OrcaSlicer 2.5 a preset appears in the list without a restart, and one you save in the slicer goes to your account by itself
+- [Spool tracking](https://filamenthub.club/wiki/articles/my-filaments-guide): Your shelf: which spools you have, how much is left on each and what the filament cost. Needs an account; basic tracking is free. Access: needs an account.
+  - Spool tracking: remaining weight, price, batch and consumption history; Spoolman-compatible, bring your stock over from a spreadsheet or OctoPrint SpoolManager
+  - Shelf grouped by manufacturer or type, personal folders and low-stock alerts
+  - Spending summary: what the filament on your shelf costs and what orders bring in
+- [Printers and usage tracking](https://filamenthub.club/wiki/articles/printer-feed-guide): Your printers, feed systems and spools in slots; usage is deducted from the spool after a print. What is reported automatically depends on how the printer is connected. Access: needs an account.
+  - Usage tracked automatically: Bambu Lab over the local network without the cloud, Happy Hare in place of Spoolman, OctoPrint through the Bridge plugin
+  - Your printers with local network discovery, feed systems and spool assignments to slots; automatic data exchange depends on the connection
+- [FH Edge](https://filamenthub.club/download/edge): Edge is a small node on your network that links printers to FilamentHub with no open slicer and no manufacturer cloud. Currently in alpha. Access: needs an account.
+- [Costing and orders](https://filamenthub.club/wiki/articles/production-calculation-guide): Print cost from G-code, a quote for the client and order tracking. Available to every account. Access: needs an account.
+  - Production costing from G-code or from an OrcaSlicer slice: cost on the right machine, including multi-plate projects
+  - Quotations with a PDF and a link for the client, orders and a CRM workspace
+- [Labels and QR](https://filamenthub.club/wiki/articles/spool-on-shelf): A QR label for every spool: a scan opens its card on any device. Access: needs an account.
+  - Your own QR labels for spools: size, fields and saved layouts; QR scanning right in the browser
+- [Knowledge base](https://filamenthub.club/wiki): Guides on materials, print settings and working with the service. Open to everyone. Access: no sign-up.
+  - Achievements, guides in the Wiki, and the interface in Russian, English and Chinese
+- [For manufacturers](https://filamenthub.club/for-brands): A verified brand page, official materials and presets, QR codes for packaging. Needs a brand representative account. Access: for brand representatives.
+  - Brand pages and a manufacturer cabinet: product lines, colour palettes, availability, CSV import
+
+## In progress
+
+Being built or tested. Not available to every user yet.
+
+- Edge: a direct link between the printer and FilamentHub with no open OrcaSlicer and no manufacturer cloud, including Bambu Lab without Bambu Cloud. The program for Linux and Docker is in alpha
+- Edge tag station: reads and writes NFC tags on spools; built from off-the-shelf boards, currently a prototype
+- Filament tracking by weight, not only by estimate: weigh-ins and empty-spool weight
+- Happy Hare and OctoPrint connection in a few steps
+- QIDI Box and Flashforge printers: slots and usage
+- Android app
+
+## Planned
+
+No dates are promised.
+
+- Troubleshooting failed prints: your slice and a photo give you the settings worth suspecting and what to try first
+- Preset suggestions for your printer that explain why they fit
+- Hints right inside OrcaSlicer: “not enough filament on this spool” and a spool panel next to filament selection
+- Spool scales as part of Edge
+- Analytics for manufacturers
+- Workshops with several people
+
+## Pages
+
+- [What FilamentHub does](https://filamenthub.club/features)
+- [About the project](https://filamenthub.club/about)
+- [For filament manufacturers](https://filamenthub.club/for-brands): Your buyers set up their prints in OrcaSlicer. FilamentHub opens right inside it, and your filament appears there with your settings instead of guesses from chat groups.
+- [FilamentHub in OrcaSlicer](https://filamenthub.club/download): Install the FilamentHub plugin into official OrcaSlicer — browse and one-click-import community-rated filament presets and sync your library.
+- [FilamentHub Bridge](https://filamenthub.club/download/octoprint): Connects OctoPrint to your FilamentHub spools
+- [Print Farm](https://filamenthub.club/download/print-farm): Monitor and control Moonraker, OctoPrint, and Bambu Lab LAN printers together in an independent OrcaSlicer dashboard.
+- [FH Edge](https://filamenthub.club/download/edge): A small program on your network. It tells FilamentHub what is loaded in the slots and what the printer is doing, even while OrcaSlicer is closed.
+- [Knowledge base](https://filamenthub.club/wiki): Guides on materials, print settings and working with the service. Open to everyone.
+
+## Catalogue data
+
+Filament cards and print presets change as manufacturers and users update them. Read the live page for current values instead of relying on a stored copy.
 
 ## Legal
 
-- [User agreement](https://filamenthub.ru/user-agreement)
-- [Privacy policy](https://filamenthub.ru/privacy-policy)
+- [User agreement](https://filamenthub.club/user-agreement)
+- [Privacy policy](https://filamenthub.club/privacy-policy)

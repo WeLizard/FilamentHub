@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/generate-localized-seo.mjs",
+    "build": "node scripts/generate-llms.mjs --check && tsc && vite build && node scripts/generate-localized-seo.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",

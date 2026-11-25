@@ -830,40 +830,13 @@
     "free": "The project is in beta and continues to evolve. The catalogue, presets and basic tracking of your own spools are free, and they will stay free.",
     "roadmapTitle": "What is done and what comes next",
     "working": {
-      "title": "Already working",
-      "items": [
-        "Material catalogue with search by brand, type, colour and properties, with market data for your country",
-        "Brand pages and a manufacturer cabinet: product lines, colour palettes, availability, CSV import",
-        "Print presets: official, community and your own, with version history and settings editing",
-        "Plugin for the official OrcaSlicer from Plugin Hub: the catalogue and your spools inside the slicer. On OrcaSlicer 2.5 a preset appears in the list without a restart, and one you save in the slicer goes to your account by itself",
-        "Spool tracking: remaining weight, price, batch and consumption history; Spoolman-compatible, bring your stock over from a spreadsheet or OctoPrint SpoolManager",
-        "Usage tracked automatically: Bambu Lab over the local network without the cloud, Happy Hare in place of Spoolman, OctoPrint through the Bridge plugin",
-        "Your printers with local network discovery, feed systems and spool assignments to slots; automatic data exchange depends on the connection",
-        "Production costing from G-code or from an OrcaSlicer slice: cost on the right machine, including multi-plate projects",
-        "Quotations with a PDF and a link for the client, orders and a CRM workspace",
-        "Your own QR labels for spools: size, fields and saved layouts; QR scanning right in the browser",
-        "Achievements, guides in the Wiki, and the interface in Russian, English and Chinese"
-      ]
+      "title": "Already working"
     },
     "progress": {
-      "title": "In progress",
-      "items": [
-        "A direct printer-to-FilamentHub link through our own Edge bridge — no open OrcaSlicer and no manufacturer cloud needed, including Bambu Lab without Bambu Cloud",
-        "Filament tracking by weight, not only by estimate: weigh-ins and empty-spool weight",
-        "Happy Hare and OctoPrint connection in a few steps",
-        "Android app"
-      ]
+      "title": "In progress"
     },
     "next": {
-      "title": "Next",
-      "items": [
-        "Troubleshooting failed prints: your slice and a photo give you the settings worth suspecting and what to try first",
-        "Preset suggestions for your printer that explain why they fit",
-        "RFID and NFC tags on spools",
-        "Hints right inside OrcaSlicer: “not enough filament on this spool” and a spool panel next to filament selection",
-        "Analytics for manufacturers",
-        "Workshops with several people"
-      ]
+      "title": "Next"
     },
     "roadmapNote": "In progress describes ongoing development, not features already available to every user. No dates promised: things ship when they are ready.",
     "brand": {
@@ -1673,6 +1646,8 @@
     "endOfCatalog": "You've seen all matching materials"
   },
   "brandDetailPage": {
+    "marketLabel": "Shown for:",
+    "marketGeneral": "All countries",
     "metaRestrictedNotice": "Facebook, Instagram and Threads belong to Meta Platforms Inc., whose activity is banned in Russia.",
     "loading": "Loading brand information...",
     "notFound": "Brand not found",
@@ -1735,6 +1710,21 @@
     "removeWarning": "The node loses access to your account at once. To bring it back, link the device again."
   },
   "edgeSection": {
+    "pathsTitle": "Where to start",
+    "paths": {
+      "printer": {
+        "title": "The Edge program on a computer",
+        "text": "It runs next to your printers and reports slots and usage to the site by itself, even while the slicer is closed.",
+        "status": "Alpha"
+      },
+      "tags": {
+        "title": "A tag station for spools",
+        "text": "Two off-the-shelf boards in a printed case. It reads and writes NFC tags on spools.",
+        "status": "Prototype"
+      }
+    },
+    "laterTitle": "The line-up and other builds",
+    "laterLead": "What is designed and what is planned: a wiring diagram, parts and a case for every build. Only the kit above has firmware.",
     "seoTitle": "FH Edge — printers connected to FilamentHub without OrcaSlicer",
     "seoDescription": "FH Edge runs on your network and tells FilamentHub what is loaded in the slots and what the printer is doing, even while OrcaSlicer is closed. Install it on a computer or build your own device.",
     "title": "FH Edge",
@@ -1992,7 +1982,7 @@
           "note": "Factory Bambu Lab and Creality tags are encrypted; the station does not read them yet.",
           "steps": {
             "read": "Put the tag on the kit and press “Read tag” next to “Add spool” on the “My filaments” tab.",
-            "material": "A tag of your spool opens that spool. Any other tag starts a new spool: the site works out what the tag holds — a FilamentHub address, TigerTag, OpenSpool or OpenPrintTag — and fills in the catalogue material and the weight. If the catalogue has no such material, choose it.",
+            "material": "A tag of your spool opens that spool. Any other tag starts a new spool: the site works out what the tag holds — a FilamentHub address, TigerTag, OpenSpool or OpenPrintTag — and fills in the catalogue material and the weight. If the catalogue has no such material, choose a similar one or add a new one: the brand, type and colour from the tag are filled in for you.",
             "save": "Save the spool: the tag is linked to it. A blank tag gets the spool's address right away; factory data on a tag is left as it is."
           }
         },
@@ -2018,8 +2008,6 @@
     }
   },
   "edgeLineup": {
-    "sectionTitle": "Edge devices",
-    "sectionLead": "Edge can run as a program, or you can build a separate device with an NFC reader. Here is the whole line-up: what works already, what is designed and what is planned, with the wiring, parts and enclosure for each build.",
     "title": "Line-up",
     "lead": "Every device runs the same firmware and protocol: a home-built one can do what a ready-made one can. Designed builds have not been tested on hardware yet.",
     "status": {
@@ -8397,6 +8385,7 @@
     "mergeIntoTitle": "Merge this brand into another one if it is a duplicate"
   },
   "apiErrors": {
+    "ERR_DEMO_READ_ONLY": "This is a demo: changes are not saved. Sign in to work with your own data.",
     "ERR_PLAN_INTEREST_UNAVAILABLE": "This action is unavailable: you already have active access or an unfinished subscription.",
     "ERR_CATALOG_CURATION_NOT_FOUND": "Catalog proposal not found.",
     "ERR_SPOOL_BATCH_KEY_CONFLICT": "This operation was already sent with different data. Reload the page and try again.",
@@ -9709,7 +9698,7 @@
       "readTagHint": "Read a tag on the FH Edge station: a tag of your spool opens it, any other tag starts a new spool.",
       "factoryTag": "{{format}} tag:",
       "factoryTagMatched": "The catalogue material was filled in from the tag; check it. The tag will be linked to the spool and its data left unchanged.",
-      "factoryTagNoMatch": "The catalogue has no such material; choose it from the list. The tag will be linked to the spool and its data left unchanged.",
+      "factoryTagNoMatch": "The catalogue has no such material. Choose a similar one from the list or add a new one: the brand, type and colour from the tag are already filled in. The tag will be linked to the spool and its data left unchanged.",
       "readForNewSpool": "Read tag with station",
       "newSpoolTag": "Tag {{uid}} is read and will be linked to the new spool when you save it.",
       "tagInUse": "This tag is already linked to a spool in your profile.",

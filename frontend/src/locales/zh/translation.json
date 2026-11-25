@@ -829,40 +829,13 @@
     "free": "项目目前处于测试阶段，仍在持续完善。目录、预设以及个人耗材卷的基础管理功能都是免费的，今后也会保持免费。",
     "roadmapTitle": "已完成与后续计划",
     "working": {
-      "title": "已经可用",
-      "items": [
-        "耗材目录，支持按品牌、类型、颜色和特性搜索，并显示您所在国家的市场信息",
-        "品牌页面与制造商后台：产品系列、色卡、供货状态、CSV 导入",
-        "打印预设：官方预设、社区预设和您自己的预设，支持版本历史与参数编辑",
-        "官方 OrcaSlicer 插件，可从 Plugin Hub 安装：在切片软件内使用目录和您的料卷。在 OrcaSlicer 2.5 中，预设无需重启即可出现在列表里，在切片软件中保存的预设会自动同步到您的账户",
-        "耗材管理：剩余量、价格、批次和消耗历史；兼容 Spoolman，可从表格或 OctoPrint SpoolManager 导入库存",
-        "自动记录消耗：拓竹打印机通过局域网、无需云端，Happy Hare 可替代 Spoolman，OctoPrint 通过 Bridge 插件",
-        "管理个人打印机（支持局域网搜索）、供料系统和槽位中的耗材卷；自动数据交换能力取决于连接方式",
-        "基于 G-code 或 OrcaSlicer 切片结果的生产核算：按实际所用设备计算成本，支持多盘项目",
-        "报价单：可生成 PDF 和客户链接，另有订单与 CRM 工作区",
-        "为料卷制作自己的二维码标签：尺寸、字段和保存的版式；直接在浏览器中扫描二维码",
-        "成就系统、“维基”中的使用指南，以及俄语、英语、中文界面"
-      ]
+      "title": "已经可用"
     },
     "progress": {
-      "title": "进行中",
-      "items": [
-        "通过我们自己的 Edge 桥接实现打印机与 FilamentHub 直连——无需打开 OrcaSlicer，也无需厂商云，包括不使用 Bambu Cloud 的拓竹打印机",
-        "按称重而不仅是估算来记录耗材：称重记录与空卷重量",
-        "几步即可连接 Happy Hare 与 OctoPrint",
-        "Android 移动应用"
-      ]
+      "title": "进行中"
     },
     "next": {
-      "title": "后续计划",
-      "items": [
-        "失败打印排查：根据您的切片和照片，提示哪些设置值得怀疑、应先尝试什么",
-        "为您的打印机推荐预设，并说明适合的原因",
-        "料卷上的 RFID 与 NFC 标签",
-        "直接在 OrcaSlicer 中提示：“料卷余量不足”，并在耗材选择旁显示料卷面板",
-        "面向制造商的数据分析",
-        "多人协作的工作室"
-      ]
+      "title": "后续计划"
     },
     "roadmapNote": "“进行中”描述的是正在开发的方向，并不表示这些功能已向所有用户开放。不承诺具体日期：准备好了才发布。",
     "brand": {
@@ -1672,6 +1645,8 @@
     "endOfCatalog": "已显示所有匹配的材料"
   },
   "brandDetailPage": {
+    "marketLabel": "显示地区：",
+    "marketGeneral": "所有国家",
     "metaRestrictedNotice": "Facebook、Instagram 和 Threads 属于 Meta Platforms Inc.，该公司在俄罗斯被禁止运营。",
     "loading": "正在加载品牌信息...",
     "notFound": "未找到品牌",
@@ -1734,6 +1709,21 @@
     "removeWarning": "节点将立即失去对账户的访问权限。要恢复，请重新绑定设备。"
   },
   "edgeSection": {
+    "pathsTitle": "从哪里开始",
+    "paths": {
+      "printer": {
+        "title": "电脑上的 Edge 程序",
+        "text": "在打印机旁运行，即使切片软件关闭，也会自行向网站上报料槽和用量。",
+        "status": "Alpha"
+      },
+      "tags": {
+        "title": "料盘标签站",
+        "text": "两块现成电路板装在打印的外壳里。可读取并写入料盘上的 NFC 标签。",
+        "status": "原型"
+      }
+    },
+    "laterTitle": "产品线与其他组装方案",
+    "laterLead": "已设计和计划中的内容：每个方案都有接线图、零件和外壳。只有上面的套件有固件。",
     "seoTitle": "FH Edge — 无需 OrcaSlicer 即可将打印机连接到 FilamentHub",
     "seoDescription": "FH Edge 运行在您的网络中，即使 OrcaSlicer 已关闭，也会告诉 FilamentHub 各槽位装了什么、打印机在做什么。可安装在电脑上，也可自己组装设备。",
     "title": "FH Edge",
@@ -1991,7 +1981,7 @@
           "note": "Bambu Lab 和 Creality 的出厂标签经过加密，标签站暂时无法读取。",
           "steps": {
             "read": "把标签放在套件上，在「我的耗材」标签页点击「添加料盘」旁的「读取标签」。",
-            "material": "你的料盘的标签会直接打开该料盘。其他标签会开始添加新料盘：网站会识别标签内容——FilamentHub 地址、TigerTag、OpenSpool 或 OpenPrintTag——并填入目录中的材料和重量。如果目录中没有该材料，请自行选择。",
+            "material": "你的料盘的标签会直接打开该料盘。其他标签会开始添加新料盘：网站会识别标签内容——FilamentHub 地址、TigerTag、OpenSpool 或 OpenPrintTag——并填入目录中的材料和重量。如果目录中没有该材料，请选择相近的材料或添加新材料：标签中的品牌、类型和颜色会自动填入。",
             "save": "保存料盘：标签会关联到它。空白标签会立即写入料盘地址，标签上的出厂数据保持不变。"
           }
         },
@@ -2017,8 +2007,6 @@
     }
   },
   "edgeLineup": {
-    "sectionTitle": "Edge 设备",
-    "sectionLead": "Edge 可以作为程序运行，也可以组装成带 NFC 读卡器的独立设备。这里是完整产品线：已可用的、已设计的和计划中的，每种组装都附接线、零件和外壳。",
     "title": "产品线",
     "lead": "所有设备使用同一固件和同一协议：自己组装的与成品功能相同。已设计的组装尚未在硬件上验证。",
     "status": {
@@ -8378,6 +8366,7 @@
     "mergeIntoTitle": "如果此品牌是重复项，将其合并到其他品牌"
   },
   "apiErrors": {
+    "ERR_DEMO_READ_ONLY": "这是演示：更改不会保存。登录后即可使用自己的数据。",
     "ERR_PLAN_INTEREST_UNAVAILABLE": "此操作不可用：您已有有效访问权限或尚未完成的订阅。",
     "ERR_CATALOG_CURATION_NOT_FOUND": "未找到目录提案。",
     "ERR_SPOOL_BATCH_KEY_CONFLICT": "此操作已使用不同的数据提交过。请刷新页面后重试。",
@@ -9685,7 +9674,7 @@
       "readTagHint": "在 FH Edge 标签站读取标签：你的料盘标签会打开该料盘，其他标签会开始添加新料盘。",
       "factoryTag": "{{format}} 标签：",
       "factoryTagMatched": "已根据标签填入目录材料，请检查。标签将关联到料盘，其数据不会改变。",
-      "factoryTagNoMatch": "目录中没有该材料，请从列表中选择。标签将关联到料盘，其数据不会改变。",
+      "factoryTagNoMatch": "目录中没有该材料。请从列表中选择相近的材料，或添加新材料：标签中的品牌、类型和颜色已自动填入。标签将关联到料盘，其数据不会改变。",
       "readForNewSpool": "用读写站读取标签",
       "newSpoolTag": "已读取标签 {{uid}}，保存后将关联到新料卷。",
       "tagInUse": "此标签已关联到你资料中的料卷。",

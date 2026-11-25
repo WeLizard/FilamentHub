@@ -1,77 +1,175 @@
 {
+  "capabilities": {
+    "groups": {
+      "catalog": {
+        "title": "材料目录",
+        "text": "开放的 3D 打印耗材目录：品牌、系列、颜色和特性。无需注册即可使用。",
+        "action": "打开目录"
+      },
+      "presets": {
+        "title": "打印预设",
+        "text": "针对具体耗材和打印机的现成设置：来自厂商、社区以及您自己。无需注册即可查看，保存和编辑需要账号。",
+        "action": "预设如何进入切片软件"
+      },
+      "orca": {
+        "title": "OrcaSlicer 插件",
+        "text": "FilamentHub 可直接在官方 OrcaSlicer 中打开：目录、预设和您的料盘就在切片旁边。插件从 Plugin Hub 安装。",
+        "action": "安装插件"
+      },
+      "spools": {
+        "title": "料盘管理",
+        "text": "个人货架：有哪些料盘、每盘剩多少、耗材花了多少钱。需要账号；基础管理免费。",
+        "action": "如何管理自己的料盘"
+      },
+      "printers": {
+        "title": "打印机与用量扣减",
+        "text": "自己的打印机、供料系统和料槽中的料盘；打印后用量从料盘中扣减。哪些数据自动上报取决于连接方式。",
+        "action": "如何连接打印机"
+      },
+      "edge": {
+        "title": "FH Edge",
+        "text": "Edge 是您网络中的一个小节点，无需打开切片软件、不经过厂商云，就能把打印机连接到 FilamentHub。目前处于 alpha 阶段。",
+        "action": "打开 Edge 页面"
+      },
+      "production": {
+        "title": "成本核算与订单",
+        "text": "根据 G-code 计算打印成本、为客户生成报价并管理订单。所有账号均可使用。",
+        "action": "核算如何进行"
+      },
+      "labels": {
+        "title": "标签与二维码",
+        "text": "为每个料盘打印带二维码的标签：扫码即可在任何设备上打开它的卡片。",
+        "action": "料盘为什么需要二维码"
+      },
+      "learning": {
+        "title": "知识库",
+        "text": "关于材料、打印设置和使用本服务的指南。向所有人开放。",
+        "action": "打开知识库"
+      },
+      "brands": {
+        "title": "面向厂商",
+        "text": "经过验证的品牌页面、官方材料和预设、包装二维码。需要品牌代表账号。",
+        "action": "厂商能得到什么"
+      }
+    },
+    "items": {
+      "catalog-search": "耗材目录，支持按品牌、类型、颜色和特性搜索，并显示您所在国家的市场信息",
+      "catalog-card": "材料卡片：成分、特性、包装规格，以及注明来源的技术数据表数值",
+      "brand-cabinet": "品牌页面与制造商后台：产品系列、色卡、供货状态、CSV 导入",
+      "presets": "打印预设：官方预设、社区预设和您自己的预设，支持版本历史与参数编辑",
+      "orca-plugin": "官方 OrcaSlicer 插件，可从 Plugin Hub 安装：在切片软件内使用目录和您的料卷。在 OrcaSlicer 2.5 中，预设无需重启即可出现在列表里，在切片软件中保存的预设会自动同步到您的账户",
+      "spools": "耗材管理：剩余量、价格、批次和消耗历史；兼容 Spoolman，可从表格或 OctoPrint SpoolManager 导入库存",
+      "spool-shelf": "按厂商或类型分组的货架、个人文件夹和余量不足提醒",
+      "spending": "支出汇总：货架上耗材的成本，以及订单带来的收入",
+      "usage": "自动记录消耗：拓竹打印机通过局域网、无需云端，Happy Hare 可替代 Spoolman，OctoPrint 通过 Bridge 插件",
+      "printers": "管理个人打印机（支持局域网搜索）、供料系统和槽位中的耗材卷；自动数据交换能力取决于连接方式",
+      "calc": "基于 G-code 或 OrcaSlicer 切片结果的生产核算：按实际所用设备计算成本，支持多盘项目",
+      "quotes": "报价单：可生成 PDF 和客户链接，另有订单与 CRM 工作区",
+      "labels": "为料卷制作自己的二维码标签：尺寸、字段和保存的版式；直接在浏览器中扫描二维码",
+      "learning": "成就系统、“维基”中的使用指南，以及俄语、英语、中文界面",
+      "edge-bridge": "Edge：打印机与 FilamentHub 直接连接，无需打开 OrcaSlicer，也不经过厂商云，包括不使用 Bambu Cloud 的 Bambu Lab。Linux 和 Docker 版程序处于 alpha 阶段",
+      "edge-tags": "Edge 标签站：读取并写入料盘上的 NFC 标签；由现成电路板组装，目前是原型",
+      "weight": "按称重而不仅是估算来记录耗材：称重记录与空卷重量",
+      "feeders-easy": "几步即可连接 Happy Hare 与 OctoPrint",
+      "feeders-more": "QIDI Box 与 Flashforge 打印机：料槽与用量",
+      "android": "Android 移动应用",
+      "diagnostics": "失败打印排查：根据您的切片和照片，提示哪些设置值得怀疑、应先尝试什么",
+      "matching": "为您的打印机推荐预设，并说明适合的原因",
+      "orca-hints": "直接在 OrcaSlicer 中提示：“料卷余量不足”，并在耗材选择旁显示料卷面板",
+      "edge-scales": "作为 Edge 组成部分的料盘秤",
+      "brand-analytics": "面向制造商的数据分析",
+      "workshop": "多人协作的工作室"
+    }
+  },
   "featuresPage": {
+    "navLabel": "功能",
     "seoTitle": "功能",
-    "seoDescription": "了解 FilamentHub 的功能：耗材目录、OrcaSlicer 预设、线轴库存、打印机集成、成本计算与订单。",
-    "eyebrow": "FilamentHub 功能",
-    "title": "从货架上的线轴到完成打印",
-    "subtitle": "FilamentHub 将材料记录、工作预设、实体线轴、OrcaSlicer、打印机和计算连接起来。本页是简明的产品地图；指南会逐步说明实际操作。",
-    "primaryAction": "打开目录",
-    "secondaryAction": "查看指南",
-    "principleTitle": "一种材料，一条连贯工作流",
-    "principleText": "无需在彼此分离的表格中重复录入信息：材料记录帮助找到预设，预设用于准备打印，实体线轴用于确认实际库存。",
-    "cardsTitle": "现在可以完成的工作",
-    "cardsSubtitle": "各部分可以协同工作，也可以单独使用。",
-    "cards": [
+    "seoDescription": "FilamentHub 能做什么：耗材目录、OrcaSlicer 预设、料盘管理、从打印机自动扣减用量、打印成本核算以及面向厂商的工具。",
+    "title": "FilamentHub 能做什么",
+    "lead": "FilamentHub 是为 3D 打印用户准备的服务：带打印设置的耗材目录、自己的料盘管理以及订单成本核算。目录和知识库无需注册即可使用，其余功能需要账号。",
+    "access": {
+      "open": "无需注册",
+      "account": "需要账号",
+      "brand": "面向品牌代表"
+    },
+    "workingLabel": "已可用",
+    "progressLabel": "开发中",
+    "aboutTitle": "接下来",
+    "aboutText": "计划和正在进行的工作列在“关于项目”页面。",
+    "aboutAction": "关于项目",
+    "accountTitle": "账号免费",
+    "accountAction": "登录或注册"
+  },
+  "forBrands": {
+    "navLabel": "面向厂商",
+    "seoTitle": "面向耗材厂商",
+    "seoDescription": "面向耗材厂商的 FilamentHub：经过验证的品牌页面、精确的材料卡片、OrcaSlicer 官方预设以及包装二维码。",
+    "title": "面向耗材厂商",
+    "lead": "您的买家在 OrcaSlicer 中设置打印。FilamentHub 可直接在其中打开，您的耗材会带着您自己的设置出现在那里，而不是来自聊天群的猜测。",
+    "stepsTitle": "需要做什么",
+    "steps": {
+      "representation": "申请品牌，或申请在您所在国家的代表资格。审核通过后，品牌会被标记为官方。",
+      "profile": "填写品牌的公共页面以及您所在市场的信息。",
+      "materials": "描述精确的产品型号：系列、颜色、包装。目录可以从 CSV 导入。",
+      "presets": "将官方打印设置与材料关联。买家可在目录和 OrcaSlicer 中获取。",
+      "qr": "为包装盒和料盘准备二维码。扫码即可打开材料卡片及其预设。",
+      "insights": "邀请团队和各国代表，回复评价并查看统计数据。"
+    },
+    "stepAction": "打开指南",
+    "startTitle": "从哪里开始",
+    "startText": "创建账号，在个人资料中切换到公司模式并认领您的品牌。如果目录中还没有该品牌，请提交创建申请。审核通过后，它会出现在您的后台。",
+    "startAction": "登录或注册",
+    "contactText": "关于代表资格和合作的问题：",
+    "changeTitle": "它改变了什么",
+    "now": "现在",
+    "with": "使用 FilamentHub",
+    "rows": [
       {
-        "icon": "catalog",
-        "title": "查找材料",
-        "text": "按制造商、材料类型、颜色、成分、属性和可用打印数据搜索商品型号。",
-        "action": "打开目录",
-        "to": "/"
+        "now": "买家在论坛和聊天群里寻找适合您耗材的设置",
+        "with": "您的官方预设就在材料卡片中，并标记为厂商预设"
       },
       {
-        "icon": "preset",
-        "title": "使用预设",
-        "text": "选择现有预设、创建自己的预设、导入草稿，并在 FilamentHub 与 OrcaSlicer 之间传递设置。",
-        "action": "安装插件",
-        "to": "/download"
+        "now": "网站或 PDF 中的设置被手动抄进切片软件，容易出错",
+        "with": "预设可在切片软件内一键导入 OrcaSlicer"
       },
       {
-        "icon": "spool",
-        "title": "管理实体线轴",
-        "text": "分别记录每个实体线轴、查看余量，并将其关联到材料和预设，同时保留数据来源。",
-        "action": "打开操作流程",
-        "to": "/wiki"
+        "now": "包装盒上没有任何通往打印设置的入口",
+        "with": "包装盒或料盘上的二维码可打开该材料的卡片及其预设"
       },
       {
-        "icon": "integration",
-        "title": "连接设备",
-        "text": "将线轴映射到供料系统槽位，并通过支持的适配器接收可用的实际状态数据。",
-        "action": "阅读指南",
-        "to": "/wiki"
+        "now": "关于您耗材的打印评价分散在各个电商平台",
+        "with": "评分和打印评价集中在材料页面上"
       },
       {
-        "icon": "calculation",
-        "title": "计算任务与订单",
-        "text": "分析 G-code，估算材料、时间和成本，制作报价并保留工作历史。",
-        "action": "了解计算流程",
-        "to": "/wiki"
-      },
-      {
-        "icon": "brand",
-        "title": "代表品牌",
-        "text": "维护已验证的品牌页面、官方材料与预设、区域数据以及 FilamentHub 二维码。",
-        "action": "制造商流程",
-        "to": "/wiki"
+        "now": "每个国家的价格和库存不同，页面却只有一个",
+        "with": "各国代表维护本市场的价格和库存，公共信息仍由您掌握"
       }
     ],
-    "flowsTitle": "FilamentHub 面向谁",
-    "flows": [
-      {
-        "title": "3D 打印用户",
-        "text": "更快找到合适的材料和预设，管理真实线轴，并保留完整的打印上下文。"
-      },
-      {
-        "title": "工作室",
-        "text": "在一个流程中连接计算、客户、报价、订单、材料库存和设备。"
-      },
-      {
-        "title": "制造商",
-        "text": "向用户提供经过验证的材料数据，并缩短从包装到正确预设的路径。"
+    "figureAlt": "FilamentHub 目录中的品牌页面：官方厂商标记以及带颜色的材料列表",
+    "figureCaption": "经过验证的品牌页面：官方厂商标记、带颜色的材料以及每种材料的二维码。图中的品牌为虚构。简介、链接和店铺是厂商为读者所在国家设置的内容。",
+    "stepsLead": "六个步骤，每一步都有指南。",
+    "tags": {
+      "title": "包装上的标签",
+      "lead": "从二维码贴纸到料盘上的 NFC 标签：按您的需要走多远都可以。",
+      "items": {
+        "qr": {
+          "title": "包装盒或料盘上的二维码",
+          "text": "我们为每种材料批量发放二维码。只需把它印在标签上：用手机扫码即可打开材料卡片和您的预设。"
+        },
+        "open": {
+          "title": "您已有的开放格式 NFC 标签",
+          "text": "如果您的料盘上已经带有 TigerTag、OpenSpool 或 OpenPrintTag 标签，FilamentHub 能读懂其中的内容，并据此在目录中找到您的材料。我们自己的读取设备 FH Edge 目前仍是原型。"
+        },
+        "write": {
+          "title": "用 NFC 标签代替贴纸",
+          "text": "面向高端包装。FH Edge 标签站已经可以为用户的料盘写入标签；为厂商材料写入标签已在计划中。"
+        }
       }
-    ],
-    "guideTitle": "需要明确的第一步，而不只是功能清单？",
-    "guideText": "指南会逐步展示真实操作：从查找或扫描线轴，到选择预设、连接打印机并完成计算。",
-    "guideAction": "从指南开始"
+    }
+  },
+  "demo": {
+    "banner": "这是使用示例数据的演示。更改不会保存。",
+    "signUp": "创建自己的账号",
+    "open": "用示例数据查看"
   }
 }

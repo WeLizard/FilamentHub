@@ -172,8 +172,10 @@ def _lookup_country_code(
 def resolve_request_country_code(request: Request) -> str | None:
     """Return the transient ISO country code for server-side policy selection.
 
-    The value is cached only for the lifetime of the request and is not exposed
-    to the client or written to the user profile.
+    The value is cached only for the lifetime of the request. It reaches a
+    client in one place: ``GET /auth/reader-country`` tells a reader their own
+    country, so a public brand page can open on that country's version (owner
+    decision, 2026-11-25). No other reader's country is ever returned.
     """
     cached = getattr(request.state, "request_country_code", None)
     if cached is not None:

@@ -1,77 +1,175 @@
 {
+  "capabilities": {
+    "groups": {
+      "catalog": {
+        "title": "Material catalogue",
+        "text": "An open catalogue of 3D printing filaments: brands, lines, colours and properties. No sign-up needed.",
+        "action": "Open the catalogue"
+      },
+      "presets": {
+        "title": "Print presets",
+        "text": "Ready settings for a specific filament and printer: from the manufacturer, from the community, and your own. Anyone can view them; saving and editing needs an account.",
+        "action": "How a preset reaches the slicer"
+      },
+      "orca": {
+        "title": "OrcaSlicer plugin",
+        "text": "FilamentHub opens inside the official OrcaSlicer: the catalogue, presets and your spools next to slicing. The plugin installs from Plugin Hub.",
+        "action": "Install the plugin"
+      },
+      "spools": {
+        "title": "Spool tracking",
+        "text": "Your shelf: which spools you have, how much is left on each and what the filament cost. Needs an account; basic tracking is free.",
+        "action": "How to track your spools"
+      },
+      "printers": {
+        "title": "Printers and usage tracking",
+        "text": "Your printers, feed systems and spools in slots; usage is deducted from the spool after a print. What is reported automatically depends on how the printer is connected.",
+        "action": "How to connect a printer"
+      },
+      "edge": {
+        "title": "FH Edge",
+        "text": "Edge is a small node on your network that links printers to FilamentHub with no open slicer and no manufacturer cloud. Currently in alpha.",
+        "action": "Open the Edge page"
+      },
+      "production": {
+        "title": "Costing and orders",
+        "text": "Print cost from G-code, a quote for the client and order tracking. Available to every account.",
+        "action": "How costing works"
+      },
+      "labels": {
+        "title": "Labels and QR",
+        "text": "A QR label for every spool: a scan opens its card on any device.",
+        "action": "Why a spool needs a QR"
+      },
+      "learning": {
+        "title": "Knowledge base",
+        "text": "Guides on materials, print settings and working with the service. Open to everyone.",
+        "action": "Open the knowledge base"
+      },
+      "brands": {
+        "title": "For manufacturers",
+        "text": "A verified brand page, official materials and presets, QR codes for packaging. Needs a brand representative account.",
+        "action": "What a manufacturer gets"
+      }
+    },
+    "items": {
+      "catalog-search": "Material catalogue with search by brand, type, colour and properties, with market data for your country",
+      "catalog-card": "Material card: composition, properties, packaging options and data-sheet values with their source",
+      "brand-cabinet": "Brand pages and a manufacturer cabinet: product lines, colour palettes, availability, CSV import",
+      "presets": "Print presets: official, community and your own, with version history and settings editing",
+      "orca-plugin": "Plugin for the official OrcaSlicer from Plugin Hub: the catalogue and your spools inside the slicer. On OrcaSlicer 2.5 a preset appears in the list without a restart, and one you save in the slicer goes to your account by itself",
+      "spools": "Spool tracking: remaining weight, price, batch and consumption history; Spoolman-compatible, bring your stock over from a spreadsheet or OctoPrint SpoolManager",
+      "spool-shelf": "Shelf grouped by manufacturer or type, personal folders and low-stock alerts",
+      "spending": "Spending summary: what the filament on your shelf costs and what orders bring in",
+      "usage": "Usage tracked automatically: Bambu Lab over the local network without the cloud, Happy Hare in place of Spoolman, OctoPrint through the Bridge plugin",
+      "printers": "Your printers with local network discovery, feed systems and spool assignments to slots; automatic data exchange depends on the connection",
+      "calc": "Production costing from G-code or from an OrcaSlicer slice: cost on the right machine, including multi-plate projects",
+      "quotes": "Quotations with a PDF and a link for the client, orders and a CRM workspace",
+      "labels": "Your own QR labels for spools: size, fields and saved layouts; QR scanning right in the browser",
+      "learning": "Achievements, guides in the Wiki, and the interface in Russian, English and Chinese",
+      "edge-bridge": "Edge: a direct link between the printer and FilamentHub with no open OrcaSlicer and no manufacturer cloud, including Bambu Lab without Bambu Cloud. The program for Linux and Docker is in alpha",
+      "edge-tags": "Edge tag station: reads and writes NFC tags on spools; built from off-the-shelf boards, currently a prototype",
+      "weight": "Filament tracking by weight, not only by estimate: weigh-ins and empty-spool weight",
+      "feeders-easy": "Happy Hare and OctoPrint connection in a few steps",
+      "feeders-more": "QIDI Box and Flashforge printers: slots and usage",
+      "android": "Android app",
+      "diagnostics": "Troubleshooting failed prints: your slice and a photo give you the settings worth suspecting and what to try first",
+      "matching": "Preset suggestions for your printer that explain why they fit",
+      "orca-hints": "Hints right inside OrcaSlicer: “not enough filament on this spool” and a spool panel next to filament selection",
+      "edge-scales": "Spool scales as part of Edge",
+      "brand-analytics": "Analytics for manufacturers",
+      "workshop": "Workshops with several people"
+    }
+  },
   "featuresPage": {
+    "navLabel": "Features",
     "seoTitle": "Features",
-    "seoDescription": "Explore FilamentHub features: filament catalog, OrcaSlicer presets, spool inventory, printer integrations, calculations, and orders.",
-    "eyebrow": "FilamentHub features",
-    "title": "From a spool on the shelf to a finished print",
-    "subtitle": "FilamentHub connects material records, working presets, physical spools, OrcaSlicer, printers, and calculations. This page is a concise product map; the guides explain each workflow step by step.",
-    "primaryAction": "Open catalog",
-    "secondaryAction": "Browse guides",
-    "principleTitle": "One material, one connected workflow",
-    "principleText": "You do not have to re-enter the same context in disconnected tables: a material record leads to a preset, the preset prepares the print, and your physical spool confirms the available stock.",
-    "cardsTitle": "What you can do today",
-    "cardsSubtitle": "The areas work together, while each remains useful on its own.",
-    "cards": [
+    "seoDescription": "What FilamentHub does: a filament catalogue, presets for OrcaSlicer, spool tracking, automatic usage tracking from printers, print costing and tools for manufacturers.",
+    "title": "What FilamentHub does",
+    "lead": "FilamentHub is a service for people who 3D print: a filament catalogue with print settings, tracking for your own spools and costing for orders. The catalogue and the knowledge base are open without sign-up; everything else needs an account.",
+    "access": {
+      "open": "No sign-up",
+      "account": "Needs an account",
+      "brand": "For brand representatives"
+    },
+    "workingLabel": "Working",
+    "progressLabel": "In progress",
+    "aboutTitle": "What is next",
+    "aboutText": "Plans and work in progress are listed on the About page.",
+    "aboutAction": "About the project",
+    "accountTitle": "The account is free",
+    "accountAction": "Sign in or sign up"
+  },
+  "forBrands": {
+    "navLabel": "For manufacturers",
+    "seoTitle": "For filament manufacturers",
+    "seoDescription": "FilamentHub for filament manufacturers: a verified brand page, exact material cards, official presets for OrcaSlicer and QR codes for packaging.",
+    "title": "For filament manufacturers",
+    "lead": "Your buyers set up their prints in OrcaSlicer. FilamentHub opens right inside it, and your filament appears there with your settings instead of guesses from chat groups.",
+    "stepsTitle": "What it takes",
+    "steps": {
+      "representation": "Apply for the brand or for its representation in your country. After verification the brand is marked as official.",
+      "profile": "Fill in the shared brand page and the details of your market.",
+      "materials": "Describe exact product variants: lines, colours, packaging. The catalogue can be imported from CSV.",
+      "presets": "Link official print settings to materials. Buyers get them in the catalogue and in OrcaSlicer.",
+      "qr": "Prepare QR codes for boxes and spools. A scan opens the material card and its presets.",
+      "insights": "Invite your team and country representatives, reply to reviews and see the statistics."
+    },
+    "stepAction": "Open the guide",
+    "startTitle": "Where to start",
+    "startText": "Create an account, switch your profile to company mode and claim your brand. If the brand is not in the catalogue yet, send a request to create it. Once approved, it appears in your cabinet.",
+    "startAction": "Sign in or sign up",
+    "contactText": "Questions about representation and working together:",
+    "changeTitle": "What it changes",
+    "now": "Today",
+    "with": "With FilamentHub",
+    "rows": [
       {
-        "icon": "catalog",
-        "title": "Find materials",
-        "text": "Search product variants by manufacturer, material type, color, composition, properties, and available print data.",
-        "action": "Open catalog",
-        "to": "/"
+        "now": "A buyer looks for settings for your filament on forums and in chats",
+        "with": "Your official preset sits on the material card, marked as the manufacturer's"
       },
       {
-        "icon": "preset",
-        "title": "Work with presets",
-        "text": "Choose ready presets, create your own, import drafts, and move settings between FilamentHub and OrcaSlicer.",
-        "action": "Install the plugin",
-        "to": "/download"
+        "now": "Settings from a website or a PDF are copied into the slicer by hand, with mistakes",
+        "with": "The preset is imported into OrcaSlicer in one click, from inside the slicer"
       },
       {
-        "icon": "spool",
-        "title": "Track physical spools",
-        "text": "Keep physical spools separate, follow remaining stock, and link them to materials and presets without losing data provenance.",
-        "action": "Open the workflow",
-        "to": "/wiki"
+        "now": "The box leads nowhere: it has no path to print settings",
+        "with": "A QR code on the box or the spool opens that material's card and its presets"
       },
       {
-        "icon": "integration",
-        "title": "Connect equipment",
-        "text": "Map spools to feed-system slots and receive available observed data through supported adapters.",
-        "action": "Read the guide",
-        "to": "/wiki"
+        "now": "Reviews of printing with your filament are scattered across marketplaces",
+        "with": "Ratings and print reviews are gathered on the material page"
       },
       {
-        "icon": "calculation",
-        "title": "Calculate jobs and orders",
-        "text": "Analyze G-code, estimate material, time, and cost, prepare quotes, and preserve the working history.",
-        "action": "See how calculations work",
-        "to": "/wiki"
-      },
-      {
-        "icon": "brand",
-        "title": "Represent a brand",
-        "text": "Maintain a verified brand page, official materials and presets, regional data, and FilamentHub QR codes.",
-        "action": "Manufacturer journey",
-        "to": "/wiki"
+        "now": "Every country has its own prices and stock, and there is one page for all",
+        "with": "A country representative keeps the prices and stock of their market; the shared details stay with you"
       }
     ],
-    "flowsTitle": "Who FilamentHub is for",
-    "flows": [
-      {
-        "title": "3D printing users",
-        "text": "Find the right material and preset faster, track real spools, and keep the print context intact."
-      },
-      {
-        "title": "Workshops",
-        "text": "Connect calculations, clients, quotes, orders, material stock, and equipment in one workflow."
-      },
-      {
-        "title": "Manufacturers",
-        "text": "Give users verified material data and a short path from the package to the correct preset."
+    "figureAlt": "A brand page in the FilamentHub catalogue: the official manufacturer mark and a list of materials with colours",
+    "figureCaption": "A verified brand page: the official manufacturer mark, materials with colours and a QR code for each. The brand in the picture is fictional. The description, links and shops are the ones the manufacturer set for the reader's country.",
+    "stepsLead": "Six steps. Each has a guide.",
+    "tags": {
+      "title": "Tags on the packaging",
+      "lead": "From a QR sticker to an NFC tag on the spool: as far as you need to go.",
+      "items": {
+        "qr": {
+          "title": "A QR code on the box or the spool",
+          "text": "We issue a QR code for every material, in batches. Printing it on the label is enough: a scan from a phone opens the material card and your preset."
+        },
+        "open": {
+          "title": "Your NFC tags in open formats",
+          "text": "If you already put TigerTag, OpenSpool or OpenPrintTag tags on your spools, FilamentHub reads their contents and finds your material in the catalogue by them. Our own reading device, FH Edge, is still a prototype."
+        },
+        "write": {
+          "title": "An NFC tag instead of a sticker",
+          "text": "For premium packaging. The FH Edge station already writes tags for users' spools; writing tags for a manufacturer's materials is planned."
+        }
       }
-    ],
-    "guideTitle": "Need a clear first step rather than a feature list?",
-    "guideText": "The guides demonstrate real actions step by step, from finding or scanning a spool to a preset, printer, and calculation.",
-    "guideAction": "Start with the guides"
+    }
+  },
+  "demo": {
+    "banner": "This is a demo with sample data. Changes are not saved.",
+    "signUp": "Create your own account",
+    "open": "See it with sample data"
   }
 }

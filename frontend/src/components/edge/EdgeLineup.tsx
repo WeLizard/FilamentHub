@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { DIAGRAM_GROUND, DIAGRAM_INK, DIAGRAM_MUTED, DIAGRAM_PART, DIAGRAM_SIGNAL } from './edgeDiagram';
 import { Cable, Weight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -105,43 +106,110 @@ export function EdgeLineup() {
 
 const CHAIN_PINS = ['V+', 'GND', 'CANH', 'CANL', 'CHAIN', 'GND'];
 
+const INK = DIAGRAM_INK;
+const MUTED = DIAGRAM_MUTED;
+const SIGNAL = DIAGRAM_SIGNAL;
+const PANEL = DIAGRAM_PART;
+const LANE_WIDTH = 84;
+const BUS_Y = 150;
+// Three modules in a row, a gap that stands for the ones not drawn, the last.
+const LANES = [
+  { number: 1, x: 214 },
+  { number: 2, x: 318 },
+  { number: 3, x: 422 },
+  { number: 8, x: 566 },
+];
+
+/** A button, an indicator and a filament sensor: what every lane module carries. */
+function LaneParts({ x, y }: { x: number; y: number }) {
+  return (
+    <g>
+      <circle cx={x - 18} cy={y} r={5} fill="none" stroke={INK} strokeWidth={1.25} />
+      <circle cx={x} cy={y} r={5} fill="none" stroke={MUTED} strokeWidth={1} />
+      <circle cx={x} cy={y} r={2.5} fill={SIGNAL} />
+      <rect x={x + 13} y={y - 5} width={10} height={10} rx={2} fill="none" stroke={INK} strokeWidth={1.25} />
+      <line x1={x + 18} y1={y - 9} x2={x + 18} y2={y + 9} stroke={MUTED} strokeWidth={1} />
+    </g>
+  );
+}
+
 /** Core and a chain of lane modules: the proposed shape, not a chosen bus. */
 function LaneTopology() {
   const { t } = useTranslation();
-  const lanes = [0, 1, 2, 3];
-  const laneX = (index: number) => 238 + index * 104;
+  const last = LANES[LANES.length - 1];
+  const terminator = last.x + LANE_WIDTH + 18;
   return (
     <figure>
-      <div className="rounded-2xl border border-white/10 p-3 md:p-5" style={{ backgroundColor: '#17112e' }}>
-        <svg viewBox="0 0 720 300" role="img" aria-label={t('edgeLineup.lane.title')} className="h-auto w-full">
-          <rect x={20} y={70} width={150} height={110} rx={10} fill="#1d3a55" stroke="#4a6d8a" />
-          <text x={95} y={108} fontSize={15} fontWeight={700} textAnchor="middle" fill="#fff">Edge Core</text>
-          <text x={95} y={128} fontSize={11} textAnchor="middle" fill="#cfe3ea">ESP32-S3</text>
-          <text x={95} y={146} fontSize={10} textAnchor="middle" fill="#cfe3ea">{t('edgeLineup.lane.coreRole')}</text>
-          <line x1={170} y1={125} x2={laneX(0)} y2={125} stroke="#3fbf92" strokeWidth={4} />
-          {lanes.map((index) => (
-            <g key={index}>
-              {index > 0 && <line x1={laneX(index - 1) + 76} y1={125} x2={laneX(index)} y2={125} stroke="#3fbf92" strokeWidth={4} />}
-              <rect x={laneX(index)} y={88} width={76} height={74} rx={8} fill="#1f5873" stroke="#3d87a3" />
-              <text x={laneX(index) + 38} y={112} fontSize={12} fontWeight={700} textAnchor="middle" fill="#fff">Lane {index === 3 ? 8 : index + 1}</text>
-              <circle cx={laneX(index) + 22} cy={136} r={7} fill="#f0a13a" />
-              <rect x={laneX(index) + 38} y={129} width={16} height={14} rx={3} fill="#e5e7eb" />
-              <text x={laneX(index) + 38} y={176} fontSize={9.5} textAnchor="middle" fill="#cfe3ea">{t('edgeLineup.lane.module')}</text>
-            </g>
-          ))}
-          <text x={laneX(2) + 90} y={130} fontSize={16} fontWeight={700} textAnchor="middle" fill="#9fd0dc">…</text>
-          <rect x={laneX(3) + 80} y={113} width={20} height={24} rx={3} fill="#dd7cc4" />
-          <text x={laneX(3) + 90} y={154} fontSize={9.5} textAnchor="middle" fill="#f5d0ea">120 Ω</text>
+      <div className="rounded-2xl border border-white/10 p-3 md:p-5" style={{ backgroundColor: DIAGRAM_GROUND }}>
+        <svg viewBox="0 0 760 344" role="img" aria-label={t('edgeLineup.lane.title')} className="h-auto w-full">
+          {/* The printer's own bus runs past the chain and never joins it. */}
+          <line x1={24} y1={36} x2={736} y2={36} stroke={MUTED} strokeWidth={1.5} strokeDasharray="7 6" />
+          <text x={24} y={24} fontSize={12} fill={MUTED}>{t('edgeLineup.lane.klipper')}</text>
 
-          <text x={20} y={222} fontSize={11} fontWeight={700} fill="#fff">{t('edgeLineup.lane.cable')}</text>
-          {CHAIN_PINS.map((pin, index) => (
-            <g key={`${pin}-${index}`}>
-              <rect x={20 + index * 70} y={232} width={62} height={26} rx={5} fill="#28435a" stroke="#5d7a90" />
-              <text x={51 + index * 70} y={249} fontSize={11} fontWeight={700} textAnchor="middle" fill="#fff" fontFamily="monospace">{pin}</text>
-            </g>
-          ))}
-          <line x1={480} y1={245} x2={700} y2={245} stroke="#a3b1bd" strokeWidth={2} strokeDasharray="6 5" />
-          <text x={590} y={236} fontSize={10} textAnchor="middle" fill="#cfe3ea">{t('edgeLineup.lane.klipper')}</text>
+          <rect x={24} y={104} width={150} height={92} rx={10} fill={PANEL} stroke={INK} strokeWidth={1.25} />
+          <text x={99} y={142} fontSize={16} fontWeight={700} textAnchor="middle" fill={INK}>Edge Core</text>
+          <text x={99} y={161} fontSize={12} textAnchor="middle" fill={MUTED}>ESP32-S3</text>
+          <text x={99} y={178} fontSize={11} textAnchor="middle" fill={MUTED}>{t('edgeLineup.lane.coreRole')}</text>
+
+          <line x1={174} y1={BUS_Y} x2={LANES[0].x} y2={BUS_Y} stroke={SIGNAL} strokeWidth={2.5} />
+          {LANES.map((lane, index) => {
+            const previous = LANES[index - 1];
+            const centre = lane.x + LANE_WIDTH / 2;
+            return (
+              <g key={lane.number}>
+                {previous && (
+                  <line
+                    x1={previous.x + LANE_WIDTH}
+                    y1={BUS_Y}
+                    x2={lane.x}
+                    y2={BUS_Y}
+                    stroke={SIGNAL}
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    // Consecutive modules are wired solid; the dotted run skips the ones not drawn.
+                    strokeDasharray={lane.number - previous.number > 1 ? '1 9' : undefined}
+                  />
+                )}
+                {/* The spool this module watches, and its filament passing the sensor. */}
+                <circle cx={centre} cy={78} r={19} fill="none" stroke={MUTED} strokeWidth={1.25} />
+                <circle cx={centre} cy={78} r={6} fill="none" stroke={MUTED} strokeWidth={1.25} />
+                <line x1={centre + 19} y1={78} x2={centre + 19} y2={118} stroke={MUTED} strokeWidth={1.25} />
+                <rect x={lane.x} y={118} width={LANE_WIDTH} height={64} rx={8} fill={PANEL} stroke={INK} strokeWidth={1.25} />
+                <text x={centre} y={141} fontSize={12} fontWeight={700} textAnchor="middle" fill={INK}>Lane {lane.number}</text>
+                <LaneParts x={centre - 2} y={162} />
+              </g>
+            );
+          })}
+
+          {/* The chain ends in a terminating resistor, drawn as one. */}
+          <polyline
+            points={[
+              [last.x + LANE_WIDTH, 0], [terminator, 0], [terminator + 4, -7], [terminator + 12, 7],
+              [terminator + 20, -7], [terminator + 28, 7], [terminator + 32, 0], [terminator + 44, 0],
+            ].map(([x, dy]) => `${x},${BUS_Y + dy}`).join(' ')}
+            fill="none"
+            stroke={SIGNAL}
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+          <line x1={terminator + 44} y1={BUS_Y - 8} x2={terminator + 44} y2={BUS_Y + 8} stroke={SIGNAL} strokeWidth={2} />
+          <text x={terminator + 16} y={BUS_Y + 28} fontSize={11} textAnchor="middle" fill={MUTED}>120 Ω</text>
+
+          <LaneParts x={LANES[0].x + 20} y={222} />
+          <text x={LANES[0].x + 52} y={226} fontSize={12} fill={MUTED}>{t('edgeLineup.lane.module')}</text>
+
+          <text x={24} y={268} fontSize={12} fontWeight={600} fill={INK}>{t('edgeLineup.lane.cable')}</text>
+          <rect x={24} y={280} width={CHAIN_PINS.length * 62} height={48} rx={8} fill={PANEL} stroke={MUTED} strokeWidth={1} />
+          {CHAIN_PINS.map((pin, index) => {
+            const x = 55 + index * 62;
+            const carriesData = pin.startsWith('CAN') || pin === 'CHAIN';
+            return (
+              <g key={`${pin}-${index}`}>
+                <circle cx={x} cy={296} r={4} fill={carriesData ? SIGNAL : 'none'} stroke={carriesData ? SIGNAL : INK} strokeWidth={1.25} />
+                <text x={x} y={318} fontSize={11} fontWeight={600} textAnchor="middle" fill={INK}>{pin}</text>
+              </g>
+            );
+          })}
         </svg>
       </div>
       <figcaption className="mt-3 max-w-3xl text-sm leading-6 text-gray-400">{t('edgeLineup.lane.caption')}</figcaption>

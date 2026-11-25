@@ -1,48 +1,26 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  BookOpen,
-  Boxes,
-  Calculator,
-  Factory,
-  PackageSearch,
-  PlugZap,
-  QrCode,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, CircleDot, Eye, LayoutGrid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { SEOHead } from '../components/SEOHead';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  CAPABILITY_GROUPS,
+  groupCapabilities,
+  type CapabilityAccess,
+} from '../data/capabilities';
+import { absoluteLocalizedUrl, normalizeSiteLocale } from '../utils/siteLocale';
 
-type FeatureCard = {
-  icon: keyof typeof ICONS;
-  title: string;
-  text: string;
-  action: string;
-  to: string;
+const ACCESS_STYLES: Record<CapabilityAccess, string> = {
+  open: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+  account: 'border-purple-400/30 bg-purple-400/10 text-purple-200',
+  brand: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
 };
-
-type AudienceFlow = {
-  title: string;
-  text: string;
-};
-
-const ICONS = {
-  catalog: PackageSearch,
-  preset: Boxes,
-  spool: QrCode,
-  integration: PlugZap,
-  calculation: Calculator,
-  brand: Factory,
-} as const;
 
 export const FeaturesPage = () => {
-  const { t } = useTranslation();
-  const cardValues = t('featuresPage.cards', { returnObjects: true });
-  const flowValues = t('featuresPage.flows', { returnObjects: true });
-  const cards = Array.isArray(cardValues) ? cardValues as FeatureCard[] : [];
-  const flows = Array.isArray(flowValues) ? flowValues as AudienceFlow[] : [];
+  const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const locale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
 
   return (
     <>
@@ -53,119 +31,125 @@ export const FeaturesPage = () => {
         type="website"
         jsonLd={{
           '@context': 'https://schema.org',
-          '@type': 'WebPage',
-          name: t('featuresPage.seoTitle'),
+          '@type': 'SoftwareApplication',
+          name: 'FilamentHub',
+          url: absoluteLocalizedUrl('/features', locale),
           description: t('featuresPage.seoDescription'),
+          applicationCategory: 'UtilitiesApplication',
+          operatingSystem: 'Web, Windows, macOS, Linux',
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+          featureList: CAPABILITY_GROUPS.map((group) => t(`capabilities.groups.${group.id}.title`)),
         }}
       />
-
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <Link
           to="/"
-          className="mb-6 inline-flex items-center gap-2 text-sm text-purple-300 transition-colors hover:text-white"
+          className="mb-4 inline-flex items-center gap-2 text-purple-400 transition-colors hover:text-purple-300"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>{t('legalDocument.backHome')}</span>
         </Link>
 
-        <section className="overflow-hidden rounded-[2rem] border border-cyan-300/20 bg-slate-950/55 shadow-2xl shadow-purple-950/30 backdrop-blur-xl">
-          <div className="relative px-6 py-10 sm:px-10 sm:py-14 lg:px-14">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(34,211,238,0.15),transparent_34%),radial-gradient(circle_at_85%_15%,rgba(168,85,247,0.2),transparent_38%)]" />
-            <div className="relative max-w-4xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                {t('featuresPage.eyebrow')}
-              </div>
-              <h1 className="max-w-3xl text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
-                {t('featuresPage.title')}
-              </h1>
-              <p className="mt-6 max-w-3xl text-base leading-7 text-slate-300 sm:text-lg">
-                {t('featuresPage.subtitle')}
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link
-                  to="/"
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-950/25 transition-transform hover:-translate-y-0.5"
-                >
-                  {t('featuresPage.primaryAction')}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  to="/wiki"
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-                >
-                  <BookOpen className="h-4 w-4 text-cyan-300" />
-                  {t('featuresPage.secondaryAction')}
-                </Link>
-              </div>
-            </div>
+        <header className="mb-4 flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg shadow-purple-500/25">
+            <LayoutGrid className="h-6 w-6 text-white" />
           </div>
+          <h1 className="text-3xl font-bold text-white">{t('featuresPage.title')}</h1>
+        </header>
+        <p className="max-w-3xl text-slate-300">{t('featuresPage.lead')}</p>
 
-          <div className="border-t border-white/10 bg-white/[0.035] px-6 py-6 sm:px-10 lg:px-14">
-            <h2 className="text-lg font-semibold text-white">{t('featuresPage.principleTitle')}</h2>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
-              {t('featuresPage.principleText')}
-            </p>
-          </div>
-        </section>
+        <div className="mt-8 grid gap-4 lg:grid-cols-2">
+          {CAPABILITY_GROUPS.map((group) => {
+            const working = groupCapabilities(group.id, 'working');
+            const progress = groupCapabilities(group.id, 'progress');
+            return (
+              <section
+                key={group.id}
+                aria-labelledby={`feature-${group.id}`}
+                className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 id={`feature-${group.id}`} className="text-xl font-semibold text-white">
+                    {t(`capabilities.groups.${group.id}.title`)}
+                  </h2>
+                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${ACCESS_STYLES[group.access]}`}>
+                    {t(`featuresPage.access.${group.access}`)}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-300">{t(`capabilities.groups.${group.id}.text`)}</p>
 
-        <section className="mt-12">
-          <h2 className="text-2xl font-bold text-white sm:text-3xl">{t('featuresPage.cardsTitle')}</h2>
-          <p className="mt-2 text-slate-400">{t('featuresPage.cardsSubtitle')}</p>
+                {working.length > 0 && (
+                  <ul className="mt-4 space-y-2" aria-label={t('featuresPage.workingLabel')}>
+                    {working.map((item) => (
+                      <li key={item.id} className="flex gap-2.5 text-sm text-slate-300">
+                        <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                        <span>{t(`capabilities.items.${item.id}`)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {cards.map((card) => {
-              const Icon = ICONS[card.icon] ?? Boxes;
-              return (
-                <article
-                  key={card.title}
-                  className="group flex min-h-64 flex-col rounded-2xl border border-white/10 bg-slate-950/45 p-6 transition-all hover:-translate-y-1 hover:border-cyan-300/25 hover:bg-slate-950/60"
-                >
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-500/20 to-purple-500/20 text-cyan-200">
-                    <Icon className="h-5 w-5" />
+                {progress.length > 0 && (
+                  <div className="mt-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      {t('featuresPage.progressLabel')}
+                    </h3>
+                    <ul className="mt-2 space-y-2">
+                      {progress.map((item) => (
+                        <li key={item.id} className="flex gap-2.5 text-sm text-slate-400">
+                          <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                          <span>{t(`capabilities.items.${item.id}`)}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <h3 className="mt-5 text-xl font-semibold text-white">{card.title}</h3>
-                  <p className="mt-3 flex-1 text-sm leading-6 text-slate-300">{card.text}</p>
+                )}
+
+                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 pt-1">
                   <Link
-                    to={card.to}
-                    className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition-colors group-hover:text-cyan-200"
+                    to={group.link}
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-purple-300 transition-colors hover:text-purple-200"
                   >
-                    {card.action}
+                    {t(`capabilities.groups.${group.id}.action`)}
                     <ArrowRight className="h-4 w-4" />
                   </Link>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="mt-12 rounded-[1.75rem] border border-white/10 bg-white/[0.035] p-6 sm:p-8">
-          <h2 className="text-2xl font-bold text-white">{t('featuresPage.flowsTitle')}</h2>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {flows.map((flow, index) => (
-              <div key={flow.title} className="rounded-2xl border border-white/10 bg-slate-950/35 p-5">
-                <div className="text-xs font-semibold tracking-[0.18em] text-purple-300">
-                  {String(index + 1).padStart(2, '0')}
+                  {group.demo && !user && (
+                    <Link
+                      to={group.demo}
+                      className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 transition-colors hover:text-cyan-200"
+                    >
+                      <Eye className="h-4 w-4" />
+                      {t('demo.open')}
+                    </Link>
+                  )}
                 </div>
-                <h3 className="mt-3 text-lg font-semibold text-white">{flow.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-300">{flow.text}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+              </section>
+            );
+          })}
+        </div>
 
-        <section className="mt-8 flex flex-col gap-5 rounded-[1.75rem] border border-purple-300/20 bg-gradient-to-r from-purple-950/55 to-cyan-950/35 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
-          <div className="max-w-3xl">
-            <h2 className="text-xl font-bold text-white">{t('featuresPage.guideTitle')}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">{t('featuresPage.guideText')}</p>
+        <section className="mt-8 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">{t('featuresPage.aboutTitle')}</h2>
+            <p className="mt-1 text-sm text-slate-300">{t('featuresPage.aboutText')}</p>
           </div>
-          <Link
-            to="/wiki"
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-100"
-          >
-            <BookOpen className="h-4 w-4" />
-            {t('featuresPage.guideAction')}
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              to="/about"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+            >
+              {t('featuresPage.aboutAction')}
+            </Link>
+            {!user && (
+              <Link
+                to="/?auth=login"
+                title={t('featuresPage.accountTitle')}
+                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
+              >
+                {t('featuresPage.accountAction')}
+              </Link>
+            )}
+          </div>
         </section>
       </main>
     </>

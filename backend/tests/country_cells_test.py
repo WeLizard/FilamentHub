@@ -338,3 +338,33 @@ async def test_a_brand_shows_its_local_site_to_that_country(
         shown = (await admin_client.get(f"/api/v1/brands/{brand.id}{elsewhere}")).json()
         assert shown["website"] == "https://creality.com"
         assert shown["market_country"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_brand_names_only_its_published_markets(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """The brand page offers these countries; a draft market must not be offered."""
+    brand, _ = await _brand_with_filament(db_session)
+    for country, published in (("RU", True), ("CN", True), ("DE", False)):
+        created = await admin_client.post(
+            f"/api/v1/brands/{brand.id}/country-cells",
+            json={"country": country, "website": f"https://{country.lower()}.example", "published": published},
+        )
+        assert created.status_code == 201
+
+    # The list is the same whichever market is shown, so the page can switch.
+    for asked in ("", "?country=RU", "?country=UZ"):
+        shown = (await admin_client.get(f"/api/v1/brands/{brand.id}{asked}")).json()
+        assert shown["available_markets"] == ["CN", "RU"]
+
+
+@pytest.mark.asyncio
+async def test_a_guest_country_guess_is_never_shared(client: AsyncClient):
+    """One connection's country must not be cached and handed to the next reader."""
+    response = await client.get("/api/v1/auth/reader-country")
+
+    assert response.status_code == 200
+    assert set(response.json()) == {"country"}
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "x-accel-expires" not in response.headers

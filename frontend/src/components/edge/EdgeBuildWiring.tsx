@@ -1,15 +1,16 @@
 import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import type { EdgeBuild, EdgeNet, EdgePowerStage, EdgeWire } from './edgeBuilds';
+import { DIAGRAM_GROUND, DIAGRAM_INK, DIAGRAM_MUTED, DIAGRAM_PART, DIAGRAM_POWER } from './edgeDiagram';
 
-const PANEL = '#17112e';
+const PANEL = DIAGRAM_GROUND;
 const ROW = 22;
 const TOP = 34;
 const BOARD_X = [40, 196];
 const MODULE_X = [452, 640];
 const LANE_X0 = 232;
 const LANE_STEP = 17;
-const POWER_COLORS: Partial<Record<EdgeNet, string>> = { v5: '#f0665e', v33: '#f0a13a', gnd: '#a3b1bd' };
+const POWER_COLORS: Partial<Record<EdgeNet, string>> = DIAGRAM_POWER;
 const SIGNAL_COLORS = ['#4b9be6', '#3fbf92', '#3cc0d6', '#8087f2', '#dd7cc4', '#b088e0', '#7fd36b', '#e8c547', '#5fb3f0', '#f08bb0', '#9ad0c2'];
 const POWER_PADS = ['5V', '3V3', 'GND'];
 
@@ -134,7 +135,7 @@ export function EdgeBuildWiring({ build }: { build: EdgeBuild }) {
             );
           })}
 
-          <rect x={BOARD_X[0]} y={TOP - 18} width={BOARD_X[1] - BOARD_X[0]} height={boardBottom - TOP + 18} rx={9} fill="#1d3a55" stroke="#4a6d8a" />
+          <rect x={BOARD_X[0]} y={TOP - 18} width={BOARD_X[1] - BOARD_X[0]} height={boardBottom - TOP + 18} rx={9} fill={DIAGRAM_PART} stroke={DIAGRAM_INK} strokeWidth={1.25} />
           {/* Two lines keep a long board name inside the block. */}
           <text x={(BOARD_X[0] + BOARD_X[1]) / 2} y={rowY(3.2)} fontSize={10.5} fontWeight={700} textAnchor="middle" fill="#fff">
             {boardName(build.board).map((line, index) => (
@@ -144,23 +145,23 @@ export function EdgeBuildWiring({ build }: { build: EdgeBuild }) {
           {boardPads.map(({ pad, row, color }) => (
             <g key={`pad-${pad}`}>
               <circle cx={BOARD_X[1]} cy={rowY(row)} r={6} fill={color} stroke={PANEL} />
-              <text x={BOARD_X[1] - 12} y={rowY(row) + 3.5} fontSize={10} fontWeight={700} textAnchor="end" fill="#fff" fontFamily="monospace">{pad}</text>
+              <text x={BOARD_X[1] - 12} y={rowY(row) + 3.5} fontSize={10} fontWeight={700} textAnchor="end" fill={DIAGRAM_INK}>{pad}</text>
             </g>
           ))}
 
           {blocks.map((block) => (
             <g key={block.label}>
-              <rect x={MODULE_X[0]} y={rowY(block.top) - 12} width={MODULE_X[1] - MODULE_X[0]} height={block.rows * ROW + 4} rx={8} fill="#1f5873" stroke="#3d87a3" />
+              <rect x={MODULE_X[0]} y={rowY(block.top) - 12} width={MODULE_X[1] - MODULE_X[0]} height={block.rows * ROW + 4} rx={8} fill={DIAGRAM_PART} stroke={DIAGRAM_INK} strokeWidth={1.25} />
               <text x={MODULE_X[0] + 14} y={rowY(block.top) + 4} fontSize={11} fontWeight={700} fill="#fff">{block.label}</text>
               {block.note && (
-                <text x={MODULE_X[0] + 14} y={rowY(block.top + block.rows - 1) + 4} fontSize={9.5} fill="#cfe3ea">{t(block.note)}</text>
+                <text x={MODULE_X[0] + 14} y={rowY(block.top + block.rows - 1) + 4} fontSize={9.5} fill={DIAGRAM_MUTED}>{t(block.note)}</text>
               )}
             </g>
           ))}
           {pins.map(({ wire, row, color }) => (
             <g key={`label-${wire.module}-${wire.modulePin}`}>
               <circle cx={MODULE_X[0]} cy={rowY(row)} r={6} fill={color} stroke={PANEL} />
-              <text x={MODULE_X[0] + 14} y={rowY(row) + 3.5} fontSize={10} fontWeight={600} fill="#fff" fontFamily="monospace">{wire.modulePin}</text>
+              <text x={MODULE_X[0] + 14} y={rowY(row) + 3.5} fontSize={10} fontWeight={600} fill={DIAGRAM_INK}>{wire.modulePin}</text>
             </g>
           ))}
         </svg>

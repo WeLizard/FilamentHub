@@ -4,11 +4,18 @@ from datetime import datetime
 from html import escape
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.site import (
+    DEFAULT_LOCALE,
+    SITE_LOCALES,
+    SITE_ORIGINS,
+    canonical_url,
+    origin_for_host,
+)
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
@@ -17,40 +24,40 @@ from app.models.wiki_category import WikiCategory
 
 router = APIRouter(tags=["seo"])
 
-BASE_URL = "https://filamenthub.ru"
-SITEMAP_LOCALES = ("en", "ru", "zh")
-
-
-def _localized_path(path: str, locale: str) -> str:
-    if locale == "en":
-        return path
-    if path == "/":
-        return f"/{locale}/"
-    return f"/{locale}{path}"
-
-
 def _append_url(
     xml_lines: list[str],
     *,
-    path: str,
-    lastmod: datetime | None,
+    origin: str,
+    path: str | None = None,
+    paths: dict[str, str] | None = None,
+    lastmod: datetime | None | dict[str, datetime | None],
     changefreq: str,
     priority: str,
 ) -> None:
-    alternates = {
-        "x-default": f"{BASE_URL}{_localized_path(path, 'en')}",
-        **{
-            locale: f"{BASE_URL}{_localized_path(path, locale)}"
-            for locale in SITEMAP_LOCALES
-        },
-    }
-    for locale in SITEMAP_LOCALES:
+    """Add one page in every language it exists in.
+
+    ``path`` is a page that exists under the same address in every language;
+    ``paths`` maps each language to its own address when only some languages
+    have the page (a wiki article and its translations); ``lastmod`` may then
+    give each language its own date.
+    """
+    if paths is None:
+        assert path is not None
+        paths = dict.fromkeys(SITE_LOCALES, path)
+    languages = [locale for locale in SITE_LOCALES if locale in paths]
+    alternates = {locale: canonical_url(paths[locale], locale) for locale in languages}
+    if DEFAULT_LOCALE in paths:
+        alternates = {"x-default": alternates[DEFAULT_LOCALE], **alternates}
+    # A sitemap lists only addresses of its own host: the languages whose
+    # canonical host is the one being asked.
+    for locale in languages:
+        if SITE_ORIGINS[locale] != origin:
+            continue
         xml_lines.append("  <url>")
-        xml_lines.append(
-            f"    <loc>{escape(f'{BASE_URL}{_localized_path(path, locale)}')}</loc>"
-        )
-        if lastmod is not None:
-            xml_lines.append(f"    <lastmod>{lastmod.strftime('%Y-%m-%d')}</lastmod>")
+        xml_lines.append(f"    <loc>{escape(alternates[locale])}</loc>")
+        stamp = lastmod.get(locale) if isinstance(lastmod, dict) else lastmod
+        if stamp is not None:
+            xml_lines.append(f"    <lastmod>{stamp.strftime('%Y-%m-%d')}</lastmod>")
         for hreflang, href in alternates.items():
             xml_lines.append(
                 "    <xhtml:link rel=\"alternate\" "
@@ -63,6 +70,7 @@ def _append_url(
 
 @router.get("/sitemap.xml", response_class=PlainTextResponse)
 async def sitemap_xml(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """
@@ -76,6 +84,7 @@ async def sitemap_xml(
     - Wiki категории
     - Wiki статьи
     """
+    origin = origin_for_host(request.headers.get("host"))
     xml_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"',
@@ -88,6 +97,9 @@ async def sitemap_xml(
     # Статические страницы
     static_pages = [
         ("/", "1.0", "daily"),
+        ("/features", "0.9", "monthly"),
+        ("/for-brands", "0.8", "monthly"),
+        ("/about", "0.6", "monthly"),
         ("/wiki", "0.9", "weekly"),
         ("/download", "0.8", "monthly"),
         ("/download/octoprint", "0.6", "monthly"),
@@ -98,6 +110,7 @@ async def sitemap_xml(
     for path, priority, changefreq in static_pages:
         _append_url(
             xml_lines,
+            origin=origin,
             path=path,
             lastmod=None,
             changefreq=changefreq,
@@ -114,6 +127,7 @@ async def sitemap_xml(
     for filament_slug, updated_at, brand_slug in filaments_result.all():
         _append_url(
             xml_lines,
+            origin=origin,
             path=f"/brands/{brand_slug}/filaments/{filament_slug}",
             lastmod=updated_at,
             changefreq="weekly",
@@ -135,6 +149,7 @@ async def sitemap_xml(
     for brand_slug, updated_at in brands_result.all():
         _append_url(
             xml_lines,
+            origin=origin,
             path=f"/brands/{brand_slug}",
             lastmod=updated_at,
             changefreq="monthly",
@@ -155,25 +170,40 @@ async def sitemap_xml(
     for category_slug, updated_at in categories_result.all():
         _append_url(
             xml_lines,
+            origin=origin,
             path=f"/wiki/{category_slug}",
             lastmod=updated_at,
             changefreq="weekly",
             priority="0.8",
         )
 
-    # Wiki статьи (только опубликованные)
+    # Wiki статьи (только опубликованные). Each edition has its own language
+    # and address; the editions of one material are each other's alternates.
     articles_result = await db.execute(
-        select(WikiArticle.slug, WikiArticle.updated_at).where(
-            WikiArticle.status == WikiArticleStatus.PUBLISHED
+        select(
+            WikiArticle.content_key,
+            WikiArticle.language,
+            WikiArticle.slug,
+            WikiArticle.updated_at,
         )
+        .where(WikiArticle.status == WikiArticleStatus.PUBLISHED)
+        .order_by(WikiArticle.content_key, WikiArticle.language)
     )
-    articles = articles_result.all()
+    editions: dict[str, dict[str, tuple[str, datetime | None]]] = {}
+    for content_key, language, article_slug, updated_at in articles_result.all():
+        if language in SITE_ORIGINS:
+            editions.setdefault(content_key, {})[language] = (article_slug, updated_at)
 
-    for article_slug, updated_at in articles:
+    for material in editions.values():
+        paths = {
+            language: f"/wiki/articles/{article_slug}"
+            for language, (article_slug, _updated_at) in material.items()
+        }
         _append_url(
             xml_lines,
-            path=f"/wiki/articles/{article_slug}",
-            lastmod=updated_at,
+            origin=origin,
+            paths=paths,
+            lastmod={language: updated_at for language, (_slug, updated_at) in material.items()},
             changefreq="monthly",
             priority="0.9",
         )
@@ -191,14 +221,15 @@ async def sitemap_xml(
 
 
 @router.get("/robots.txt", response_class=PlainTextResponse)
-async def robots_txt() -> Response:
+async def robots_txt(request: Request) -> Response:
     """Allow public crawling while excluding service API and connector paths.
 
     Private web routes stay crawlable so their ``X-Robots-Tag: noindex``
     response can be observed and the URL can be removed from search indexes.
     """
-    robots_content = """# robots.txt для FilamentHub
-# https://filamenthub.ru/robots.txt
+    origin = origin_for_host(request.headers.get("host"))
+    robots_content = f"""# robots.txt для FilamentHub
+# {origin}/robots.txt
 
 User-agent: *
 Allow: /
@@ -206,7 +237,7 @@ Disallow: /api/
 Disallow: /spool_compat/
 
 # Sitemap
-Sitemap: https://filamenthub.ru/sitemap.xml
+Sitemap: {origin}/sitemap.xml
 """
 
     return PlainTextResponse(

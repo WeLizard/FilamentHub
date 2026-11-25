@@ -1,17 +1,20 @@
 /** Защищенный роут - требует аутентификации */
 
 import { useAuth } from '../contexts/AuthContext';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { User, Lock, LogIn, Home, Clock3, Package, Settings, Calculator } from 'lucide-react';
+import { User, Lock, LogIn, Home, Clock3, Package, Settings, Calculator, Eye } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PageBackground } from './PageBackground';
+import { demoWasChosen } from '../demo/demoTransport';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requiredRole?: 'admin' | 'brand';
   /** Set when rendered inside Layout, which already provides the page background. */
   insideLayout?: boolean;
+  /** Where a guest can see this section with sample data. With it the guest chooses; nothing redirects. */
+  demoPath?: string;
 }
 
 interface ProtectedStateProps {
@@ -27,7 +30,7 @@ function ProtectedState({ insideLayout, className, children }: ProtectedStatePro
   return <PageBackground className={className}>{children}</PageBackground>;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole, insideLayout = false }) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole, insideLayout = false, demoPath }) => {
   const { t } = useTranslation();
   const { isAuthenticated, isLoading, user, unauthenticatedReason } = useAuth();
   const sessionExpired = unauthenticatedReason === 'session_expired';
@@ -46,7 +49,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
   // Автоматическая переадресация на главную
   useEffect(() => {
-    if (!isAuthenticated && !isLoading && !sessionExpired) {
+    if (!isAuthenticated && !isLoading && !sessionExpired && !demoPath) {
       setCountdown(5);
       let remaining = 5;
       const timer = setInterval(() => {
@@ -60,7 +63,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
       return () => clearInterval(timer);
     }
-  }, [isAuthenticated, isLoading, sessionExpired, navigate, location.pathname, location.search, location.hash]);
+  }, [isAuthenticated, isLoading, sessionExpired, demoPath, navigate, location.pathname, location.search, location.hash]);
 
   if (isLoading) {
     return (
@@ -73,6 +76,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
         </div>
       </ProtectedState>
     );
+  }
+
+  if (!isAuthenticated && demoPath && !sessionExpired && demoWasChosen()) {
+    // The guest is looking around with sample data: keep the section they asked for.
+    const tab = new URLSearchParams(location.search).get('tab');
+    return <Navigate to={tab && !demoPath.includes('?') ? `${demoPath}?tab=${encodeURIComponent(tab)}` : demoPath} replace />;
   }
 
   if (!isAuthenticated) {
@@ -117,14 +126,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
               </div>
             </div>
 
-            {!sessionExpired && <div className="mb-6 rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
+            {!sessionExpired && !demoPath && <div className="mb-6 rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
               <div className="flex items-center justify-center gap-2 text-sm text-purple-100">
                 <Clock3 className="h-4 w-4" />
                 <span>{t('protectedRoute.redirect_countdown', { count: countdown })}</span>
               </div>
             </div>}
 
-            <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+            <div className="flex flex-col flex-wrap sm:flex-row gap-3 justify-center mb-4">
               <button
                 onClick={handleLogin}
                 className="flex items-center justify-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 font-medium"
@@ -132,6 +141,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
                 <LogIn className="w-5 h-5" />
                 <span>{t('protectedRoute.login_button')}</span>
               </button>
+              {demoPath && !sessionExpired && (
+                <button
+                  onClick={() => navigate(demoPath)}
+                  className="flex items-center justify-center space-x-2 whitespace-nowrap px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 font-medium"
+                >
+                  <Eye className="w-5 h-5" />
+                  <span>{t('demo.open')}</span>
+                </button>
+              )}
               <button
                 onClick={handleGoToCatalog}
                 className="flex items-center justify-center space-x-2 px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 font-medium"

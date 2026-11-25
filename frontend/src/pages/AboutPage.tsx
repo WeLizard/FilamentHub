@@ -1,8 +1,9 @@
-import { ArrowLeft, ChevronDown, CircleDot, Download, Heart, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, CircleDot, Download, Heart, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { SEOHead } from '../components/SEOHead';
+import { capabilitiesWithStatus } from '../data/capabilities';
 import { externalUrl } from '../utils/externalUrl';
 import { SUPPORT_URL } from '../utils/support';
 
@@ -49,23 +50,30 @@ export const AboutPage = () => {
           <div className="space-y-3 text-slate-300">
             <p>{t('aboutPage.intro')}</p>
             <p>{t('aboutPage.free')}</p>
+            <Link
+              to="/features"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-purple-300 transition-colors hover:text-purple-200"
+            >
+              {t('featuresPage.title')}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
 
           <section className="mt-10 space-y-6">
             <h2 className="text-xl font-semibold text-white">{t('aboutPage.roadmapTitle')}</h2>
 
             {ROADMAP_SECTIONS.map(({ key, accent }) => {
-              const items = t(`aboutPage.${key}.items`, { returnObjects: true });
+              const items = capabilitiesWithStatus(key);
               return (
                 <div key={key} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
                   <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
                     {t(`aboutPage.${key}.title`)}
                   </h3>
                   <ul className="space-y-2">
-                    {(Array.isArray(items) ? items : []).map((item: string) => (
-                      <li key={item} className="flex gap-2.5 text-sm text-slate-300">
+                    {items.map((item) => (
+                      <li key={item.id} className="flex gap-2.5 text-sm text-slate-300">
                         <CircleDot className={`mt-0.5 h-4 w-4 flex-shrink-0 ${accent}`} />
-                        <span>{item}</span>
+                        <span>{t(`capabilities.items.${item.id}`)}</span>
                       </li>
                     ))}
                   </ul>

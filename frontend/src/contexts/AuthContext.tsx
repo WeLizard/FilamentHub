@@ -7,7 +7,7 @@ import { getRefreshToken, getToken, hasSessionCandidate, isOrcaEmbedded, removeT
 import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, reportWorkstationKeyToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout, subscribeToWorkstationKeyState } from '../utils/pluginBridge';
 import type { LegalAcceptancePayload, RegistrationPayload, Token, User } from '../types/api';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -23,7 +23,7 @@ interface AuthContextType {
   clearMaintenanceMode: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

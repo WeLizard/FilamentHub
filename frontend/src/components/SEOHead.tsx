@@ -8,6 +8,7 @@ import {
   absoluteSiteUrl,
   getPathLocale,
   normalizeSiteLocale,
+  siteOrigin,
   withoutLocalePrefix,
 } from '../utils/siteLocale';
 
@@ -32,7 +33,6 @@ interface SEOHeadProps {
 }
 
 const DEFAULT_IMAGE = '/email/hero.jpg';
-const BASE_URL = 'https://filamenthub.ru';
 const DEFAULT_IMAGE_WIDTH = '1120';
 const DEFAULT_IMAGE_HEIGHT = '625';
 const OG_LOCALES = {
@@ -68,7 +68,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       .map((locale) => OG_LOCALES[locale]),
     [activeLocale],
   );
-  const fullImage = image ? (image.startsWith('http') ? image : `${BASE_URL}${image}`) : `${BASE_URL}${DEFAULT_IMAGE}`;
+  const imageOrigin = siteOrigin(activeLocale);
+  const fullImage = image
+    ? (image.startsWith('http') ? image : `${imageOrigin}${image}`)
+    : `${imageOrigin}${DEFAULT_IMAGE}`;
   const requestedPage = url || window.location.pathname;
   const basePagePath = withoutLocalePrefix(requestedPage);
   const pathLocale = getPathLocale(window.location.pathname);

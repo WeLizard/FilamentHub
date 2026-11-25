@@ -17,7 +17,10 @@ import {
 } from 'lucide-react';
 import { brandsAPI, filamentsAPI, filamentLinesAPI, filamentReviewsAPI } from '../api/client';
 import type { Filament } from '../types/api';
+import { useGuestCountryGuess } from '../hooks/useGuestCountryGuess';
 import { useReaderCountry } from '../hooks/useReaderCountry';
+import { GENERAL_MARKET, brandMarketCountry, parseMarketChoice } from '../utils/brandMarket';
+import { countryName } from '../utils/countries';
 import { useLoadMoreOnScroll } from '../hooks/useLoadMoreOnScroll';
 import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { useAuth } from '../contexts/AuthContext';
@@ -127,7 +130,7 @@ export const BrandDetailPage: React.FC = () => {
   const { identifier } = useParams<{ identifier: string }>();
   const navigate = useNavigate();
   // The catalogue's brand view links here with the reader's search and family.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(
     () => searchParams.get('material') || null,
@@ -135,6 +138,22 @@ export const BrandDetailPage: React.FC = () => {
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const readerCountry = useReaderCountry();
   const { user } = useAuth();
+  // The brand's own description, links and shops follow the reader's country;
+  // prices in the list below stay with the confirmed country of the profile.
+  const guess = useGuestCountryGuess();
+  const marketChoice = parseMarketChoice(searchParams.get('country'));
+  const brandCountry = brandMarketCountry({
+    choice: marketChoice,
+    profileCountry: readerCountry,
+    guessedCountry: guess.country,
+  });
+  const chooseMarket = (country: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('country', country);
+      return next;
+    }, { replace: true });
+  };
   const [grouping, setGrouping] = useStoredUiChoice('brandPage.groupBy', user?.id, BRAND_GROUPINGS, 'none');
 
   // Загружаем бренд
@@ -143,9 +162,9 @@ export const BrandDetailPage: React.FC = () => {
     isLoading: isLoadingBrand,
     error: brandError,
   } = useQuery({
-    queryKey: ['brand', identifier, readerCountry],
-    queryFn: () => brandsAPI.get(identifier!, undefined, readerCountry),
-    enabled: !!identifier,
+    queryKey: ['brand', identifier, brandCountry],
+    queryFn: () => brandsAPI.get(identifier!, undefined, brandCountry),
+    enabled: !!identifier && (marketChoice !== null || guess.ready),
   });
 
   // Загружаем филаменты бренда
@@ -306,6 +325,32 @@ export const BrandDetailPage: React.FC = () => {
 
             {brand.description && (
               <p className="text-gray-300 mb-4 max-w-2xl">{brand.description}</p>
+            )}
+
+            {(brand.available_markets?.length ?? 0) > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label={t('brandDetailPage.marketLabel')}>
+                <span className="text-gray-400">{t('brandDetailPage.marketLabel')}</span>
+                {[GENERAL_MARKET, ...brand.available_markets!].map((market) => {
+                  const selected = market === (brand.market_country ?? GENERAL_MARKET);
+                  return (
+                    <button
+                      key={market}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => chooseMarket(market)}
+                      className={`rounded-full border px-3 py-1 transition-colors ${
+                        selected
+                          ? 'border-purple-400/60 bg-purple-500/25 text-white'
+                          : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {market === GENERAL_MARKET
+                        ? t('brandDetailPage.marketGeneral')
+                        : countryName(market, i18n.language)}
+                    </button>
+                  );
+                })}
+              </div>
             )}
 
             {/* Статистика */}

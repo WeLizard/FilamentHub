@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { EdgeNfcPins } from '../../utils/edgeFirmware';
+import { DIAGRAM_DETAIL, DIAGRAM_GROUND, DIAGRAM_INK, DIAGRAM_MUTED, DIAGRAM_PART, DIAGRAM_POWER } from './edgeDiagram';
 
 type Point = [number, number];
 
@@ -9,17 +10,17 @@ const BOARD_LEFT = ['5', '6', '7', '8', '9', '10', '20', '21'];
 const BOARD_RIGHT = ['5V', 'G', '3.3', '4', '3', '2', '1', '0'];
 const READER = ['+5V', '+3.3V', 'RST', 'NSS', 'MOSI', 'MISO', 'SCK', 'BUSY', 'GND', 'GPIO', 'IRQ', 'AUX', 'REQ'];
 const COLORS: Record<string, string> = {
-  '+5V': '#f0665e',
-  '+3.3V': '#f0a13a',
+  '+5V': DIAGRAM_POWER.v5,
+  '+3.3V': DIAGRAM_POWER.v33,
   RST: '#b088e0',
   NSS: '#4b9be6',
   MOSI: '#3fbf92',
   MISO: '#3cc0d6',
   SCK: '#8087f2',
   BUSY: '#dd7cc4',
-  GND: '#a3b1bd',
+  GND: DIAGRAM_POWER.gnd,
 };
-const PANEL = '#17112e';
+const PANEL = DIAGRAM_GROUND;
 const UNUSED = '#6b7686';
 const boardY = (row: number) => 205 + row * 38;
 const readerY = (row: number) => 185 + row * 24;
@@ -120,15 +121,15 @@ export function EdgeKitBoardWiring({ pins }: { pins: EdgeNfcPins }) {
             </g>
           ))}
 
-          <rect x={130} y={170} width={130} height={320} rx={9} fill="#1d3a55" stroke="#4a6d8a" strokeWidth={1.2} />
-          <rect x={171} y={158} width={47} height={22} rx={5} fill="#b7c5cf" stroke="#738797" />
+          <rect x={130} y={170} width={130} height={320} rx={9} fill={DIAGRAM_PART} stroke={DIAGRAM_INK} strokeWidth={1.25} />
+          <rect x={171} y={158} width={47} height={22} rx={5} fill={DIAGRAM_DETAIL} stroke={DIAGRAM_MUTED} />
           <text x={194.5} y={196} fontSize={9.2} fontWeight={700} textAnchor="middle" fill="#fff">USB-C</text>
-          <rect x={149} y={300} width={90} height={71} rx={7} fill="#28435a" stroke="#5d7a90" />
+          <rect x={149} y={300} width={90} height={71} rx={7} fill={DIAGRAM_DETAIL} stroke={DIAGRAM_MUTED} />
           <text x={194} y={338} fontSize={10.5} fontWeight={700} textAnchor="middle" fill="#fff">ESP32-C3</text>
           {BOARD_LEFT.map((name, row) => pad(130, boardY(row), name, 147, 'start'))}
           {BOARD_RIGHT.map((name, row) => pad(260, boardY(row), name, 246, 'end'))}
 
-          <rect x={600} y={170} width={210} height={320} rx={9} fill="#1f5873" stroke="#3d87a3" strokeWidth={1.2} />
+          <rect x={600} y={170} width={210} height={320} rx={9} fill={DIAGRAM_PART} stroke={DIAGRAM_INK} strokeWidth={1.25} />
           {[0, 1, 2, 3, 4].map((turn) => (
             <rect
               key={turn}
@@ -138,11 +139,11 @@ export function EdgeKitBoardWiring({ pins }: { pins: EdgeNfcPins }) {
               height={205 - turn * 16}
               rx={2}
               fill="none"
-              stroke="#9fd0dc"
+              stroke={DIAGRAM_MUTED}
               strokeWidth={1.5}
             />
           ))}
-          <rect x={648} y={296} width={43} height={42} rx={4} fill="#123247" stroke="#81abbc" />
+          <rect x={648} y={296} width={43} height={42} rx={4} fill={DIAGRAM_DETAIL} stroke={DIAGRAM_MUTED} />
           <text x={669.5} y={320} fontSize={7.2} fontWeight={700} textAnchor="middle" fill="#fff">PN5180</text>
           {READER.map((name, row) => {
             const used = wires.find((item) => item.reader === name);
@@ -153,13 +154,13 @@ export function EdgeKitBoardWiring({ pins }: { pins: EdgeNfcPins }) {
                 {used && (
                   <text x={600} y={y + 2.6} fontSize={7.2} fontWeight={700} textAnchor="middle" fill={PANEL}>{used.number}</text>
                 )}
-                <text x={616} y={y + 3.4} fontSize={9.4} fontWeight={used ? 700 : 400} fill={used ? '#fff' : '#b9cbd4'}>{name}</text>
-                {!used && <text x={664} y={y + 3.2} fontSize={7.6} fontWeight={700} fill="#b9cbd4">NC</text>}
+                <text x={616} y={y + 3.4} fontSize={9.4} fontWeight={used ? 700 : 400} fill={used ? DIAGRAM_INK : DIAGRAM_MUTED}>{name}</text>
+                {!used && <text x={664} y={y + 3.2} fontSize={7.6} fontWeight={700} fill={DIAGRAM_MUTED}>NC</text>}
               </g>
             );
           })}
-          <text x={130} y={513} fontSize={10} fontWeight={600} fill="#e5e7eb">{t('edgeKit.guide.wiring.boardCaption')}</text>
-          <text x={600} y={513} fontSize={10} fontWeight={600} fill="#e5e7eb">{t('edgeKit.guide.wiring.readerCaption')}</text>
+          <text x={130} y={513} fontSize={10} fontWeight={600} fill={DIAGRAM_MUTED}>{t('edgeKit.guide.wiring.boardCaption')}</text>
+          <text x={600} y={513} fontSize={10} fontWeight={600} fill={DIAGRAM_MUTED}>{t('edgeKit.guide.wiring.readerCaption')}</text>
         </svg>
       </div>
       <ul className="mt-4 grid gap-x-6 gap-y-1.5 text-sm text-gray-200 sm:grid-cols-3">

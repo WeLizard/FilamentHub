@@ -51,10 +51,10 @@ describe('SEOHead locale metadata', () => {
         .map((link) => [link.hreflang, link.href]),
     );
     expect(alternates).toEqual({
-      'x-default': 'https://filamenthub.ru/download',
-      en: 'https://filamenthub.ru/download',
+      'x-default': 'https://filamenthub.club/download',
+      en: 'https://filamenthub.club/download',
       ru: 'https://filamenthub.ru/ru/download',
-      zh: 'https://filamenthub.ru/zh/download',
+      zh: 'https://filamenthub.club/zh/download',
     });
   });
 

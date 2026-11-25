@@ -58,6 +58,9 @@ class BrandResponse(BrandBase):
     market_country: str | None = Field(
         None, description="Страна, чья витрина подставлена в ответ"
     )
+    available_markets: list[str] = Field(
+        default_factory=list, description="Страны, для которых у бренда опубликована своя витрина"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

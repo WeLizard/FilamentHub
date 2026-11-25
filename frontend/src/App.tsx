@@ -38,6 +38,9 @@ const FilamentDetailPage = lazy(() => import('./pages/FilamentDetailPage').then(
 const TermsPage = lazy(() => import('./pages/TermsPage').then(m => ({ default: m.TermsPage })));
 const ConsentPage = lazy(() => import('./pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
 const AboutPage = lazy(() => import('./pages/AboutPage').then(m => ({ default: m.AboutPage })));
+const DemoSession = lazy(() => import('./demo/DemoSession').then(m => ({ default: m.DemoSession })));
+const ForBrandsPage = lazy(() => import('./pages/ForBrandsPage').then(m => ({ default: m.ForBrandsPage })));
+const FeaturesPage = lazy(() => import('./pages/FeaturesPage').then(m => ({ default: m.FeaturesPage })));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })));
 const OAuthPluginStartPage = lazy(() => import('./pages/OAuthPluginStartPage').then(m => ({ default: m.OAuthPluginStartPage })));
@@ -332,9 +335,23 @@ function AppContent() {
           }
         />
         <Route
+          path="/demo"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <DemoSession>
+                <Layout>
+                  <Suspense fallback={<PageLoader />}>
+                    <ProfilePage />
+                  </Suspense>
+                </Layout>
+              </DemoSession>
+            </Suspense>
+          }
+        />
+        <Route
           path="/profile"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute demoPath="/demo">
               <Layout>
                 <Suspense fallback={<PageLoader />}>
                   <ProfilePage />
@@ -346,7 +363,7 @@ function AppContent() {
         <Route
           path="/calculator"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute demoPath="/demo?tab=calculator-pro">
               <Layout>
                 <Suspense fallback={<PageLoader />}>
                   <CalculatorPage />
@@ -370,7 +387,7 @@ function AppContent() {
         <Route
           path="/workspace"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute demoPath="/demo?tab=calculator-pro">
               <Layout>
                 <Suspense fallback={<PageLoader />}>
                   <CrmWorkspacePage />
@@ -447,7 +464,7 @@ function AppContent() {
           path="/embed"
           element={
             <Layout>
-              <ProtectedRoute insideLayout>
+              <ProtectedRoute insideLayout demoPath="/demo">
                 <Suspense fallback={<PageLoader />}>
                   <ProfilePage />
                 </Suspense>
@@ -460,6 +477,8 @@ function AppContent() {
           element={<Layout><CatalogPage /></Layout>}
         />
         <Route path="/about" element={<Layout><Suspense fallback={<PageLoader />}><AboutPage /></Suspense></Layout>} />
+        <Route path="/for-brands" element={<Layout><Suspense fallback={<PageLoader />}><ForBrandsPage /></Suspense></Layout>} />
+        <Route path="/features" element={<Layout><Suspense fallback={<PageLoader />}><FeaturesPage /></Suspense></Layout>} />
         <Route path="/user-agreement" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
         <Route path="/personal-data-consent" element={<Suspense fallback={<PageLoader />}><ConsentPage /></Suspense>} />

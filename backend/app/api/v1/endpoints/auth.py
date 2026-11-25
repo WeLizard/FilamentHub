@@ -366,6 +366,18 @@ async def get_legal_requirements(
     return LegalRequirementsResponse(**current_legal_requirements(selected_pack))
 
 
+@router.get("/reader-country")
+async def get_reader_country(request: Request, response: Response) -> dict[str, str | None]:
+    """The country this request appears to come from, for a reader with no account.
+
+    A public page uses it to show a brand's local links first. It is a guess the
+    reader can change on the page, never a stored choice, and it must not be
+    cached: the answer belongs to one connection.
+    """
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"country": resolve_request_country_code(request)}
+
+
 @router.get(
     "/legal-documents/{document_type}",
     response_model=LegalDocumentResponse,

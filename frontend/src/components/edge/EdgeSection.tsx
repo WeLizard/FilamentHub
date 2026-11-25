@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { fetchEdgeKits, type EdgeKit } from '../../utils/edgeFirmware';
@@ -11,6 +12,10 @@ import { EdgeRuntimeInstall } from './EdgeRuntimeInstall';
 const BENEFITS = ['slots', 'oneNode', 'keys'] as const;
 const PRINTERS = ['happyHare', 'klipper', 'qidi', 'flashforgeStation', 'flashforgeSingle', 'bambu'] as const;
 const STEPS = ['printer', 'install', 'pair'] as const;
+const PATHS = [
+  { key: 'tags', href: '#edge-kit', action: 'toKit', chip: 'border-amber-300/40 bg-amber-400/10 text-amber-200' },
+  { key: 'printer', href: '#edge-install', action: 'toInstall', chip: 'border-cyan-300/40 bg-cyan-400/10 text-cyan-200' },
+] as const;
 const OTHER_WAYS = [
   { key: 'bambu', to: '/download' },
   { key: 'octoprint', to: '/download/octoprint' },
@@ -36,16 +41,39 @@ export function EdgeSection() {
       <header className="mb-8 max-w-3xl md:mb-10">
         <h1 className="mb-4 text-4xl font-bold tracking-tight text-white md:text-5xl">{t('edgeSection.title')}</h1>
         <p className="mb-3 text-lg leading-8 text-gray-100 md:text-xl">{t('edgeSection.lead')}</p>
-        <p className="mb-6 text-base leading-7 text-gray-300">{t('edgeSection.forms')}</p>
-        <div className="flex flex-wrap gap-3">
-          <a href="#edge-install" className="inline-flex items-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-purple-500">
-            {t('edgeSection.toInstall')}
-          </a>
-          <a href="#edge-kit" className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-gray-100 transition-all hover:bg-white/10">
-            {t('edgeSection.toKit')}
-          </a>
-        </div>
+        <p className="text-base leading-7 text-gray-300">{t('edgeSection.forms')}</p>
       </header>
+
+      <section aria-labelledby="edge-paths" className="mb-14 md:mb-20">
+        <h2 id="edge-paths" className={heading}>{t('edgeSection.pathsTitle')}</h2>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          {PATHS.map(({ key, href, action, chip }) => (
+            <div key={key} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xl font-semibold text-white">{t(`edgeSection.paths.${key}.title`)}</h3>
+                <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${chip}`}>
+                  {t(`edgeSection.paths.${key}.status`)}
+                </span>
+              </div>
+              <p className="mt-2 flex-1 text-sm leading-6 text-gray-300">{t(`edgeSection.paths.${key}.text`)}</p>
+              <a
+                href={href}
+                className="mt-4 inline-flex items-center self-start rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-purple-500"
+              >
+                {t(`edgeSection.${action}`)}
+              </a>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* The device being built now leads the page: what it is, its files and its
+          assembly come before the program and the builds that are only designed. */}
+      {kits.length > 0 && (
+        <div id="edge-kit" className="scroll-mt-24">
+          {kits.map((kit) => <EdgeKitGuide key={kit.id} kit={kit} />)}
+        </div>
+      )}
 
       <EdgeMap />
 
@@ -108,14 +136,22 @@ export function EdgeSection() {
         <p className="mt-4 max-w-2xl text-sm leading-6 text-gray-400">{t('edgeSection.privacy')}</p>
       </section>
 
-      <section id="edge-kit" className="mb-12 scroll-mt-24 border-t border-white/10 pt-12">
-        <h2 className={heading}>{t('edgeLineup.sectionTitle')}</h2>
-        <p className={lead}>{t('edgeLineup.sectionLead')}</p>
-        <EdgeLineup />
-        <EdgeBuildConfigurator />
-      </section>
-
-      {kits.map((kit) => <EdgeKitGuide key={kit.id} kit={kit} />)}
+      <details
+        id={kits.length === 0 ? 'edge-kit' : undefined}
+        className="group mb-12 scroll-mt-24 rounded-2xl border border-white/10 bg-white/[0.03]"
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl p-5 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400 [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="block text-xl font-semibold text-white">{t('edgeSection.laterTitle')}</span>
+            <span className="mt-1 block text-sm text-gray-400">{t('edgeSection.laterLead')}</span>
+          </span>
+          <ChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 text-gray-400 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-white/10 p-5">
+          <EdgeLineup />
+          <EdgeBuildConfigurator />
+        </div>
+      </details>
     </>
   );
 }

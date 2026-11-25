@@ -138,13 +138,23 @@ async def test_sitemap_contains_only_canonical_localized_catalog_urls(
     db_session.add(empty_brand)
     await db_session.commit()
 
-    response = await client.get("/sitemap.xml")
+    path = "/brands/hexflow/filaments/abs-black"
+    russian = await client.get("/sitemap.xml", headers={"host": "filamenthub.ru"})
+    world = await client.get("/sitemap.xml", headers={"host": "www.filamenthub.club"})
 
-    assert response.status_code == 200
-    assert "https://filamenthub.ru/brands/hexflow/filaments/abs-black" in response.text
-    assert "https://filamenthub.ru/ru/brands/hexflow/filaments/abs-black" in response.text
-    assert "https://filamenthub.ru/zh/brands/hexflow/filaments/abs-black" in response.text
-    assert f"https://filamenthub.ru/filaments/{public_filament.id}" not in response.text
-    assert f"https://filamenthub.ru/brands/{public_filament.brand_id}" not in response.text
-    assert "https://filamenthub.ru/en/" not in response.text
-    assert "https://filamenthub.ru/brands/empty-brand" not in response.text
+    assert russian.status_code == 200
+    assert world.status_code == 200
+    # Each host lists only the languages it is canonical for, and names the
+    # other host's versions as alternates.
+    assert f"<loc>https://filamenthub.ru/ru{path}</loc>" in russian.text
+    assert "<loc>https://filamenthub.club" not in russian.text
+    assert f'hreflang="en" href="https://filamenthub.club{path}"' in russian.text
+    assert f"<loc>https://filamenthub.club{path}</loc>" in world.text
+    assert f"<loc>https://filamenthub.club/zh{path}</loc>" in world.text
+    assert "<loc>https://filamenthub.ru" not in world.text
+    assert f'hreflang="ru" href="https://filamenthub.ru/ru{path}"' in world.text
+    for response in (russian, world):
+        assert f"/filaments/{public_filament.id}<" not in response.text
+        assert f"/brands/{public_filament.brand_id}<" not in response.text
+        assert "/en/" not in response.text
+        assert "/brands/empty-brand" not in response.text

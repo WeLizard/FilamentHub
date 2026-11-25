@@ -36,9 +36,12 @@ describe('siteLocale', () => {
     expect(withoutLocalePrefix('/zh/wiki/materials?tab=all')).toBe('/wiki/materials?tab=all');
   });
 
-  it('keeps canonical URLs on the production origin', () => {
-    expect(absoluteSiteUrl('/download')).toBe('https://filamenthub.ru/download');
+  it('gives each language its own canonical host', () => {
+    expect(absoluteSiteUrl('/download')).toBe('https://filamenthub.club/download');
+    expect(absoluteLocalizedUrl('/download', 'en')).toBe('https://filamenthub.club/download');
     expect(absoluteLocalizedUrl('/download', 'ru')).toBe('https://filamenthub.ru/ru/download');
-    expect(absoluteLocalizedUrl('/download', 'en')).toBe('https://filamenthub.ru/download');
+    expect(absoluteLocalizedUrl('/download', 'zh')).toBe('https://filamenthub.club/zh/download');
+    expect(absoluteLocalizedUrl('https://example.org/ru/download?a=1', 'ru'))
+      .toBe('https://filamenthub.ru/ru/download?a=1');
   });
 });

@@ -4,6 +4,10 @@ export interface Brand {
   id: number;
   name: string;
   slug: string;
+  /** Countries the brand keeps its own page for. */
+  available_markets?: string[];
+  /** Set when the answer carries that country's description, links and shops. */
+  market_country?: string | null;
   description: string | null;
   website: string | null;
   logo_url: string | null;

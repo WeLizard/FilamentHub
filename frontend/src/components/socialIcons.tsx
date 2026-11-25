@@ -8,16 +8,20 @@ import {
   GitHubIcon,
   InstagramIcon,
   LinkedInIcon,
+  OdnoklassnikiIcon,
   OzonIcon,
   RedditIcon,
+  ServicePathIcon,
   TelegramIcon,
   ThreadsIcon,
   VkIcon,
+  WhatsAppIcon,
   WildberriesIcon,
   XIcon,
   YandexIcon,
   YouTubeIcon,
 } from './serviceIcons';
+import type { ServiceIconKey } from './serviceIconPaths';
 
 const HOSTS = {
   telegram: ['t.me', 'telegram.me', 'telegram.org'],
@@ -30,7 +34,9 @@ const HOSTS = {
   github: ['github.com'],
   reddit: ['reddit.com'],
   discord: ['discord.com', 'discord.gg'],
-  threads: ['threads.net'],
+  threads: ['threads.net', 'threads.com'],
+  whatsapp: ['whatsapp.com', 'wa.me'],
+  odnoklassniki: ['ok.ru', 'odnoklassniki.ru'],
   apple: ['apple.com'],
   yandex: [
     'ya.ru',
@@ -72,8 +78,54 @@ const HOSTS = {
     'amazon.eg',
     'amazon.cn',
   ],
-  etsy: ['etsy.com'],
 } as const;
+
+// Services drawn from the shared path table, in the order they are tried.
+// Hosts are listed exactly: a look-alike domain must not get a service's mark.
+// WeChat comes before QQ because its public pages live under qq.com.
+const PATH_SERVICES: readonly (readonly [ServiceIconKey, readonly string[]])[] = [
+  ['tiktok', ['tiktok.com', 'douyin.com', 'iesdouyin.com']],
+  ['pinterest', ['pinterest.com', 'pin.it', 'pinterest.co.uk', 'pinterest.de', 'pinterest.fr', 'pinterest.ru']],
+  ['twitch', ['twitch.tv']],
+  ['bluesky', ['bsky.app', 'bsky.social']],
+  ['mastodon', ['mastodon.social', 'mastodon.online', 'mstdn.social', 'fosstodon.org']],
+  ['snapchat', ['snapchat.com']],
+  ['tumblr', ['tumblr.com']],
+  ['messenger', ['messenger.com', 'm.me']],
+  ['signal', ['signal.org', 'signal.me', 'signal.group']],
+  ['viber', ['viber.com', 'vb.me']],
+  ['line', ['line.me', 'lin.ee']],
+  ['kakaotalk', ['kakao.com']],
+  ['naver', ['naver.com']],
+  ['zalo', ['zalo.me']],
+  ['wechat', ['weixin.qq.com', 'wechat.com', 'weixin.com']],
+  ['weibo', ['weibo.com', 'weibo.cn']],
+  ['bilibili', ['bilibili.com', 'b23.tv']],
+  ['xiaohongshu', ['xiaohongshu.com', 'xhslink.com']],
+  ['qq', ['qq.com']],
+  ['zhihu', ['zhihu.com']],
+  ['kuaishou', ['kuaishou.com']],
+  ['douban', ['douban.com']],
+  ['baidu', ['baidu.com']],
+  ['habr', ['habr.com']],
+  ['livejournal', ['livejournal.com']],
+  ['boosty', ['boosty.to']],
+  ['patreon', ['patreon.com']],
+  ['kofi', ['ko-fi.com']],
+  ['medium', ['medium.com']],
+  ['substack', ['substack.com']],
+  ['behance', ['behance.net']],
+  ['dribbble', ['dribbble.com']],
+  ['vimeo', ['vimeo.com']],
+  ['printables', ['printables.com']],
+  ['thingiverse', ['thingiverse.com']],
+  ['bambulab', ['makerworld.com', 'makerworld.com.cn', 'bambulab.com', 'bambulab.cn']],
+  ['taobao', ['taobao.com']],
+  ['alibaba', ['alibaba.com', '1688.com']],
+  ['ebay', ['ebay.com', 'ebay.co.uk', 'ebay.de', 'ebay.fr', 'ebay.it', 'ebay.es', 'ebay.ca', 'ebay.com.au']],
+  ['etsy', ['etsy.com']],
+  ['shopee', ['shopee.com', 'shopee.sg', 'shopee.co.id', 'shopee.vn', 'shopee.co.th', 'shopee.ph', 'shopee.com.my', 'shopee.tw', 'shopee.com.br']],
+];
 
 function matchesHost(host: string, domains: readonly string[]): boolean {
   return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
@@ -108,12 +160,15 @@ export function SocialIcon({
   if (matchesHost(host, HOSTS.reddit)) return <RedditIcon className={className} />;
   if (matchesHost(host, HOSTS.discord)) return <DiscordIcon className={className} />;
   if (matchesHost(host, HOSTS.threads)) return <ThreadsIcon className={className} />;
+  if (matchesHost(host, HOSTS.whatsapp)) return <WhatsAppIcon className={className} />;
+  if (matchesHost(host, HOSTS.odnoklassniki)) return <OdnoklassnikiIcon className={className} />;
   if (matchesHost(host, HOSTS.apple)) return <AppleIcon className={className} />;
   if (matchesHost(host, HOSTS.yandex)) return <YandexIcon className={className} />;
   if (matchesHost(host, HOSTS.ozon)) return <OzonIcon className={className} />;
   if (matchesHost(host, HOSTS.wildberries)) return <WildberriesIcon className={className} />;
   if (matchesHost(host, HOSTS.aliexpress)) return <AliExpressIcon className={className} />;
   if (matchesHost(host, HOSTS.amazon)) return <AmazonIcon className={className} />;
-  if (matchesHost(host, HOSTS.etsy)) return <ShoppingBag className={className} />;
+  const service = PATH_SERVICES.find(([, domains]) => matchesHost(host, domains));
+  if (service) return <ServicePathIcon name={service[0]} className={className} />;
   return fallback;
 }

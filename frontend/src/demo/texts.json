@@ -1,0 +1,170 @@
+{
+  "Фиолетовая туманность": {
+    "en": "Violet Nebula",
+    "zh": "紫色星云"
+  },
+  "Лесной зелёный": {
+    "en": "Forest Green",
+    "zh": "森林绿"
+  },
+  "Северное сияние": {
+    "en": "Aurora",
+    "zh": "极光"
+  },
+  "Арктический синий": {
+    "en": "Arctic Blue",
+    "zh": "极地蓝"
+  },
+  "Светлая берёза": {
+    "en": "Light Birch",
+    "zh": "浅桦木"
+  },
+  "Глубокий океан": {
+    "en": "Deep Ocean",
+    "zh": "深海蓝"
+  },
+  "Коралловый сатин": {
+    "en": "Coral Satin",
+    "zh": "珊瑚缎面"
+  },
+  "Закончилась на партии креплений": {
+    "en": "Ran out during a batch of mounts",
+    "zh": "在一批固定件中用完"
+  },
+  "Свежая катушка для декоративной печати": {
+    "en": "A fresh spool for decorative prints",
+    "zh": "用于装饰打印的新料盘"
+  },
+  "Функциональные детали и крепления": {
+    "en": "Functional parts and mounts",
+    "zh": "功能件和固定件"
+  },
+  "Открытая катушка для подарочной серии": {
+    "en": "An opened spool for the gift series",
+    "zh": "用于礼品系列的已开封料盘"
+  },
+  "Для декора и интерьерных изделий": {
+    "en": "For decor and interior pieces",
+    "zh": "用于装饰和室内摆件"
+  },
+  "Основной синий для корпусов": {
+    "en": "The main blue for enclosures",
+    "zh": "外壳用的主力蓝色"
+  },
+  "Текущие небольшие заказы на A1 mini": {
+    "en": "Current small orders on the A1 mini",
+    "zh": "A1 mini 上的日常小订单"
+  },
+  "Мария Соколова": {
+    "en": "Maria Sokolova",
+    "zh": "玛丽亚·索科洛娃"
+  },
+  "Локальная настройка из OrcaSlicer. Материал ещё не сопоставлен с точным товарным вариантом каталога.": {
+    "en": "A local setting from OrcaSlicer. The material is not yet matched to an exact catalogue product variant.",
+    "zh": "来自 OrcaSlicer 的本地设置。材料尚未与目录中的具体产品型号匹配。"
+  },
+  "печать 0.20 мм": {
+    "en": "0.20 mm layers",
+    "zh": "0.20 毫米层高"
+  },
+  "контроль посадочных размеров": {
+    "en": "fit dimensions checked",
+    "zh": "检查配合尺寸"
+  },
+  "8 изделий": {
+    "en": "8 pieces",
+    "zh": "8 件"
+  },
+  "упаковка по комплектам": {
+    "en": "packed in sets",
+    "zh": "按套包装"
+  },
+  "Ольга Крафт": {
+    "en": "Olga Kraft",
+    "zh": "奥尔加·克拉夫特"
+  },
+  "Мастерская OlgaCraft": {
+    "en": "OlgaCraft Workshop",
+    "zh": "OlgaCraft 工作室"
+  },
+  "Быстрый PETG": {
+    "en": "Fast PETG",
+    "zh": "快速 PETG"
+  },
+  "Регулярные небольшие партии предметов для витрин": {
+    "en": "Regular small batches of display items",
+    "zh": "定期小批量的橱窗陈列品"
+  },
+  "Печать партиями по четыре изделия; проверить оттенок перед второй партией.": {
+    "en": "Printed in batches of four; check the shade before the second batch.",
+    "zh": "每批打印四件；第二批之前检查色调。"
+  },
+  "50% перед запуском, остаток после готовности заказа": {
+    "en": "50% before start, the rest when the order is ready",
+    "zh": "开工前支付 50%，订单完成后支付余款"
+  },
+  "50% перед запуском, остаток после готовности": {
+    "en": "50% before start, the rest on completion",
+    "zh": "开工前支付 50%，完成后支付余款"
+  },
+  "Оплата после подтверждения макета": {
+    "en": "Payment after the mock-up is approved",
+    "zh": "样稿确认后付款"
+  },
+  "Настольные органайзеры · 8 шт.": {
+    "en": "Desk organisers · 8 pcs",
+    "zh": "桌面收纳盒 · 8 件"
+  },
+  "Корпуса датчиков · 24 шт.": {
+    "en": "Sensor housings · 24 pcs",
+    "zh": "传感器外壳 · 24 件"
+  },
+  "Комплект корпусов датчиков": {
+    "en": "Sensor housing set",
+    "zh": "传感器外壳套装"
+  },
+  "Комплект настольных органайзеров": {
+    "en": "Desk organiser set",
+    "zh": "桌面收纳盒套装"
+  },
+  "Шёлк без полос": {
+    "en": "Silk without banding",
+    "zh": "无条纹丝绸质感"
+  },
+  "Корпуса без нитей": {
+    "en": "Enclosures without stringing",
+    "zh": "无拉丝外壳"
+  },
+  "Декор с древесной фактурой": {
+    "en": "Decor with a wood texture",
+    "zh": "带木纹质感的装饰件"
+  },
+  "Прочные крепления": {
+    "en": "Strong mounts",
+    "zh": "结实的固定件"
+  },
+  "Мелкие заказы на A1 mini": {
+    "en": "Small orders on the A1 mini",
+    "zh": "A1 mini 上的小订单"
+  },
+  "Настроено на реальной печати и опубликовано для сообщества.": {
+    "en": "Tuned on real prints and published for the community.",
+    "zh": "在实际打印中调校，并发布给社区使用。"
+  },
+  "Подарочная серия вышла ровной с первой попытки. Блёстки не забили сопло 0.4 мм.": {
+    "en": "The gift series came out even on the first try. The glitter did not clog the 0.4 mm nozzle.",
+    "zh": "礼品系列第一次打印就很均匀。闪粉没有堵塞 0.4 毫米喷嘴。"
+  },
+  "Крепления выдержали нагрузку. На A1 mini снизила скорость первого слоя.": {
+    "en": "The mounts held the load. On the A1 mini I lowered the first-layer speed.",
+    "zh": "固定件承受住了负载。在 A1 mini 上我降低了首层速度。"
+  },
+  "Фактура красивая, но на длинных переездах остаются нити: добавила ретракт.": {
+    "en": "The texture is beautiful, but long travels leave strings: I added retraction.",
+    "zh": "质感很漂亮，但长距离空驶会留下拉丝：我增加了回抽。"
+  },
+  "Свой рабочий пресет для декора: перелив ровный на всей высоте вазы.": {
+    "en": "My own working preset for decor: the colour shift stays even along the whole vase.",
+    "zh": "我自己用于装饰件的常用预设：整个花瓶高度上的渐变都很均匀。"
+  }
+}
