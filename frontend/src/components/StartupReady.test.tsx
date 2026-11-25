@@ -9,6 +9,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// The error boundary reports a failed render to the server; the real client
+// would start the whole i18n setup, which this test replaces above.
+vi.mock('../api/client', () => ({ clientErrorsAPI: { report: () => Promise.resolve() } }));
+
 const markup = html.match(/<body>([\s\S]*)<\/body>/)?.[1] ?? '';
 const startWatchdog = (host: Window = window) => new Function('window', 'document', watchdog)(host, document);
 const startup = () => document.getElementById('fh-startup');
