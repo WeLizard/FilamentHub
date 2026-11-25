@@ -43,11 +43,12 @@ PIPE = parts.material("Light pipe", parts.srgb("#e0f2fe"), 0.12)
 
 
 def screw(parent, x, y):
-    """A pan-head screw in the device's own frame: head under the base, shank going in."""
+    """A pan-head Torx screw in the device's own frame: head under the base, shank going in."""
     head = parts.cyl(parent, M["screw"], 2.3, 1.6, (x, y, -1.6), segments=32, bevel=0.3)
     shank = parts.cyl(parent, M["screw"], 1.2, 8.0, (x, y, 0.0), segments=20)
-    for angle in (0.0, math.pi / 2):
-        parts.box(head, P["chip"], (2.4, 0.5, 0.5), (0.0, 0.0, -0.05), rot=(0, 0, angle))
+    # A Torx recess: three bars make its six lobes.
+    for lobe in range(3):
+        parts.box(head, P["chip"], (2.1, 0.75, 0.5), (0.0, 0.0, -0.05), rot=(0, 0, lobe * math.pi / 3))
     return head, shank
 
 
