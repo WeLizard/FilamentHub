@@ -1,4 +1,4 @@
-"""A Flashforge or Creality printer linked through the OrcaSlicer plugin's paired bridge."""
+"""A Flashforge, Creality, SDCP or Elegoo MQTT printer linked through the OrcaSlicer plugin."""
 
 from datetime import datetime, timezone
 
@@ -169,6 +169,79 @@ async def test_creality_cfs_reports_through_the_orca_plugin_bridge(
         )
     ))
     assert sources == {"creality_orca"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["sdcp", "elegoo_mqtt"])
+async def test_canvas_reports_through_the_orca_plugin_bridge(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    provider: str,
+) -> None:
+    printer_id, system_id = await _system(auth_client, provider)
+    source_instance_id = "orca-desktop-instance-03"
+
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+    )
+    assert pairing.status_code == 200, pairing.text
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": provider,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.3.0",
+            # The printer counts no filament used, so a claim to count it is trimmed.
+            "capabilities": ["read", "presence", "consumption", "write"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system_id,
+            PhysicalPrinterConnector.transport == "orca_plugin_lan",
+        )
+    )
+    assert connector is not None and connector.provider == provider
+    assert sorted(connector.capabilities) == ["presence", "read"]
+
+    snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]},
+        json={
+            "material_system_id": system_id,
+            "provider": provider,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "capabilities": ["read", "presence"],
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "printer": {"state": "printing", "progress_percent": 42, "remaining_seconds": 1890},
+            "slots": [
+                {"provider_index": 0, "label": "CANVAS 1 slot 1", "kind": "slot", "present": True,
+                 "active_feed": False, "spool_identity_known": False, "material": "PLA",
+                 "color_hex": "E8E8E8"},
+                {"provider_index": 1, "label": "CANVAS 1 slot 2", "kind": "slot", "present": True,
+                 "active_feed": True, "spool_identity_known": False, "material": "PETG",
+                 "color_hex": "1F6FB2"},
+                {"provider_index": 2, "label": "CANVAS 1 slot 3", "kind": "slot", "present": False,
+                 "active_feed": False, "spool_identity_known": False},
+                {"provider_index": 3, "label": "CANVAS 1 slot 4", "kind": "slot", "present": True,
+                 "active_feed": False, "spool_identity_known": False, "material": "PLA",
+                 "color_hex": "C0392B"},
+            ],
+            "slot_topology_complete": True,
+        },
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["accepted"] is True
+    sources = set(await db_session.scalars(
+        select(MaterialSlotObservation.source).where(
+            MaterialSlotObservation.connector_id == connector.id
+        )
+    ))
+    assert sources == {f"{provider}_orca"}
 
 
 @pytest.mark.asyncio

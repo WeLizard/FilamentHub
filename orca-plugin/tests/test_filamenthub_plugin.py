@@ -166,6 +166,8 @@ def test_klipper_profile_scan_takes_only_types_that_hide_moonraker(plugin_module
     presets = [
         ("Generic Klipper", "192.168.1.70", "octoprint", ""),
         ("Neptune 4", "192.168.1.71", "elegoolink", ""),
+        # Its own SDCP search asks a Centauri; it runs no Moonraker.
+        ("Centauri Carbon", "192.168.1.75", "elegoolink", "", "Elegoo Centauri Carbon"),
         ("Qidi X-Plus 5", "192.168.1.72", "octoprint", "qidi"),  # already a Moonraker connection
         ("Creality K1C", "192.168.1.73", "octoprint", "crealityprint"),  # Creality adapter
         ("Prusa MK4", "192.168.1.74", "prusalink", ""),
@@ -173,10 +175,10 @@ def test_klipper_profile_scan_takes_only_types_that_hide_moonraker(plugin_module
     ]
 
     class Preset:
-        def __init__(self, name, host, host_type, agent):
+        def __init__(self, name, host, host_type, agent, model=""):
             self.name = name
             self._values = {"print_host": host, "host_type": host_type, "printer_agent": agent,
-                            "printhost_apikey": "key-" + name}
+                            "printhost_apikey": "key-" + name, "printer_model": model}
 
         @staticmethod
         def is_user():

@@ -1,0 +1,44 @@
+{
+  "Status": {
+    "CurrentStatus": [
+      1
+    ],
+    "TimeLapseStatus": 0,
+    "PlatFormType": 0,
+    "AmsConnectStatus": 0,
+    "TempOfHotbed": 59.98,
+    "TempOfNozzle": 219.6,
+    "TempOfBox": 31.2,
+    "TempTargetHotbed": 60,
+    "TempTargetNozzle": 220,
+    "TempTargetBox": 0,
+    "CurrenCoord": "110.20,84.10,3.40",
+    "CurrentFanSpeed": {
+      "ModelFan": 100,
+      "AuxiliaryFan": 0,
+      "BoxFan": 30
+    },
+    "LightStatus": {
+      "SecondLight": 1,
+      "RgbLight": [
+        0,
+        0,
+        0
+      ]
+    },
+    "PrintInfo": {
+      "Status": 13,
+      "CurrentLayer": 17,
+      "TotalLayer": 125,
+      "CurrentTicks": 1820.4,
+      "TotalTicks": 6513,
+      "Filename": "/local/benchy_PLA.gcode",
+      "TaskId": "8a1b",
+      "PrintSpeedPct": 100,
+      "Progress": 28
+    }
+  },
+  "MainboardID": "1c7319d30105041800009c0000000000",
+  "TimeStamp": 91200,
+  "Topic": "sdcp/status/1c7319d30105041800009c0000000000"
+}

@@ -1,0 +1,27 @@
+{
+  "Attributes": {
+    "Name": "Centauri Carbon",
+    "MachineName": "Centauri Carbon",
+    "BrandName": "ELEGOO",
+    "ProtocolVersion": "V3.0.0",
+    "FirmwareVersion": "V1.4.49",
+    "XYZsize": "218.88x128.88x220",
+    "MainboardIP": "192.168.1.139",
+    "MainboardMAC": "00:11:22:33:44:55",
+    "MainboardID": "1c7319d30105041800009c0000000000",
+    "SDCPStatus": 0,
+    "NetworkStatus": "wlan",
+    "UsbDiskStatus": 0,
+    "Capabilities": [
+      "FILE_TRANSFER",
+      "PRINT_CONTROL",
+      "VIDEO_STREAM"
+    ],
+    "SupportFileType": [
+      "gcode"
+    ]
+  },
+  "MainboardID": "1c7319d30105041800009c0000000000",
+  "TimeStamp": 89654,
+  "Topic": "sdcp/attributes/1c7319d30105041800009c0000000000"
+}
