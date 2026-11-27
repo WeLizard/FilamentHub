@@ -1420,3 +1420,86 @@ async def test_flashforge_edge_reports_station_slots_and_estimated_usage(
     assert usage.json()["events"][0]["consumed_weight_g"] == pytest.approx(expected_weight)
     await db_session.refresh(spool)
     assert spool.used_weight_g == pytest.approx(expected_weight)
+
+
+@pytest.mark.asyncio
+async def test_anycubic_edge_reports_ace_slots_and_claims_no_usage(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post("/api/v1/physical-printers", json={"name": "Kobra S1"})
+    printer_id = created.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "ACE Pro",
+            "provider": "anycubic",
+            "kind": "mmu",
+            "slots": [{"provider_index": index, "kind": "slot"} for index in range(4)],
+        },
+    )
+    assert system_response.status_code in {200, 201}, system_response.text
+    system_id = system_response.json()["material_systems"][0]["id"]
+    source_instance_id = "anycubic-edge-instance-01"
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "anycubic",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-anycubic-01",
+            # Edge counts no Anycubic usage yet: a wider claim is trimmed.
+            "capabilities": ["read", "presence", "consumption", "spool_identity"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system_id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    assert connector is not None and connector.provider == "anycubic"
+    assert sorted(connector.capabilities) == ["presence", "read"]
+
+    snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]},
+        json={
+            "material_system_id": system_id,
+            "provider": "anycubic",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "capabilities": ["read", "presence"],
+            "sequence": 1,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "printer": {"state": "printing", "job_name": "bracket.gcode", "progress_percent": 37},
+            "slots": [
+                {"provider_index": 0, "label": "ACE 1 slot 1", "kind": "slot", "present": True,
+                 "active_feed": False, "material": "PLA", "color_hex": "FFFFFF",
+                 "remaining_percent": 80},
+                {"provider_index": 1, "label": "ACE 1 slot 2", "kind": "slot", "present": False,
+                 "active_feed": False},
+                {"provider_index": 2, "label": "ACE 1 slot 3", "kind": "slot", "present": True,
+                 "active_feed": True, "material": "PETG", "color_hex": "1A73E8",
+                 "remaining_percent": 55},
+                {"provider_index": 3, "label": "ACE 1 slot 4", "kind": "slot", "present": True,
+                 "active_feed": False, "material": "PLA", "color_hex": "E63946"},
+            ],
+            "slot_topology_complete": True,
+        },
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["accepted"] is True
+    sources = set(await db_session.scalars(
+        select(MaterialSlotObservation.source).where(
+            MaterialSlotObservation.connector_id == connector.id
+        )
+    ))
+    assert sources == {"anycubic_edge"}

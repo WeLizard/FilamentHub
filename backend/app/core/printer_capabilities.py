@@ -82,6 +82,8 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # Anycubic's LAN mode reports the job and the ACE slots over the printer's
     # own MQTT broker. The plugin only reads it and claims no usage yet.
     ("anycubic", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    # Edge reads the same LAN mode with a copy of the plugin's protocol code.
+    ("anycubic", "edge_agent"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -170,6 +172,28 @@ _CANVAS_READ_ONLY: dict[str, tuple[GapKind, str]] = {
     ),
 }
 
+# Anycubic's LAN mode lacks the same needs whether the plugin or Edge reads it.
+_ANYCUBIC_LAN_GAPS: dict[str, tuple[GapKind, str]] = {
+    "consumption": (
+        "planned",
+        "The printer reports a job's filament use, but its unit is not confirmed; neither "
+        "the plugin nor Edge counts it yet.",
+    ),
+    "write": (
+        "planned",
+        "Whether the printer takes a slot's material over LAN mode is not confirmed; the "
+        "plugin and Edge only read it.",
+    ),
+    "spool_identity": (
+        "device",
+        "The printer knows the material in a slot, never which spool is loaded.",
+    ),
+    "tag_read": (
+        "planned",
+        "An ACE reports the product code of an Anycubic spool it recognised; FilamentHub "
+        "does not match that to a spool yet.",
+    ),
+}
 ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
     ("bambu", "orca_plugin_lan"): {"spool_identity": _NO_SPOOL_ON_BAMBU},
     ("bambu", "edge_agent"): {
@@ -221,27 +245,8 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
     },
     ("sdcp", "orca_plugin_lan"): _CANVAS_READ_ONLY,
     ("elegoo_mqtt", "orca_plugin_lan"): _CANVAS_READ_ONLY,
-    ("anycubic", "orca_plugin_lan"): {
-        "consumption": (
-            "planned",
-            "The printer reports a job's filament use, but its unit is not confirmed; the "
-            "plugin does not count it yet.",
-        ),
-        "write": (
-            "planned",
-            "Whether the printer takes a slot's material over LAN mode is not confirmed; the "
-            "plugin only reads it.",
-        ),
-        "spool_identity": (
-            "device",
-            "The printer knows the material in a slot, never which spool is loaded.",
-        ),
-        "tag_read": (
-            "planned",
-            "An ACE reports the product code of an Anycubic spool it recognised; FilamentHub "
-            "does not match that to a spool yet.",
-        ),
-    },
+    ("anycubic", "orca_plugin_lan"): _ANYCUBIC_LAN_GAPS,
+    ("anycubic", "edge_agent"): _ANYCUBIC_LAN_GAPS,
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
 }
