@@ -69,7 +69,7 @@ FilamentHub is in beta. What is in progress and what comes next, without dates, 
 - **Slices.** Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations, never the full G-code. With the FilamentHub slicing step chosen, the plugin adds comment lines with profile identifiers to the end of the G-code.
 - **Diagnostics.** The log stays on your computer. **Report a problem** can attach its end with version details; you see it first, your home folder name is replaced and keys are masked. Nothing is sent automatically.
 - **At start-up** the plugin reads its settings and preset files and, if you already linked a printer, reads it again and sends its usage to FilamentHub. It does not open a browser or scan the network.
-- **What it opens and writes.** The browser opens only when you click a link or sign in. The plugin starts no other programs and writes only to its own storage folder and its FilamentHub preset folder. Quotations print from the FilamentHub tab (use Print and Save as PDF).
+- **What it opens and writes.** The browser opens only when you click a link or sign in. The plugin starts no other programs and writes only to its own storage folder and its FilamentHub preset folder. On update, it can read its previous local storage to keep printer connections and queued reports, using a file lock to prevent simultaneous copies. Quotations print from the FilamentHub tab (use Print and Save as PDF).
 - **Permissions.** The plugin declares what it needs when it loads, so you answer once. OrcaSlicer still asks the first time anything else is needed, such as a new network address.
 
 ## Requirements

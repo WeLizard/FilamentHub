@@ -3,6 +3,7 @@
 Newest first. The numbered entry matching the plugin version is used for release notes.
 
 ## 0.3.0
+- Updating the plugin keeps existing printer connections and queued filament reports. Local wheel updates keep the same storage even when the wheel filename changes.
 - New printers when you add a printer, found at the address already saved in OrcaSlicer: Anycubic Kobra 3, S1 and X in LAN mode with ACE Pro slots, Creality K1, K2 and newer Ender-3 with CFS slots, Prusa over PrusaLink, Elegoo Centauri Carbon (SDCP, with CANVAS) and Centauri Carbon 2, QIDI, Snapmaker U1, and Klipper printers set up as "Octo/Klipper" or ElegooLink, such as Voron, Sovol, RatRig and Neptune 4. The plugin only reads them and sends no commands; addresses, keys and access codes stay on this computer. Turning on LAN mode takes an Anycubic printer out of your Anycubic cloud account.
 - Flashforge Adventurer 5M, AD5X and Creator 5 need less setup: the serial number is found on the network, and the check code is asked for once when OrcaSlicer does not have it.
 - Filament usage is deducted while OrcaSlicer is open: Klipper and Happy Hare by the extruder length, QIDI Box from its loaded slot, Snapmaker U1 from the printing head, Creality by the printer's own count. Anycubic, Elegoo and single-spool Prusa count no filament, so they are charged OrcaSlicer's estimate of the job, marked as an estimate. On OrcaSlicer 2.5 and later this needs no change in the print settings. The stretch around a filament or head change is charged to no spool, and a Prusa MMU or XL is not deducted.

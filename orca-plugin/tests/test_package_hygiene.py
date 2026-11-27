@@ -27,6 +27,8 @@ ALLOWED_MODULES = OWN_MODULES | {
     "html", "inspect", "io", "ipaddress", "json", "math", "os", "posixpath", "queue",
     "random", "re", "secrets", "shutil", "struct", "sys", "tempfile", "threading", "time",
     "uuid", "xml", "zipfile", "zlib",
+    # Lock only the plugin's migration file for simultaneous Orca starts.
+    "fcntl", "msvcrt",
     # The network: FilamentHub over HTTPS, and printers on the local network.
     "ftplib", "select", "socket", "ssl", "urllib",
     # Opens a FilamentHub page in the person's browser.

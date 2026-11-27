@@ -1499,14 +1499,181 @@ def fallback_plugin_storage_dir():
     return os.path.join(data_root, ".filamenthub", "orca-plugin")
 
 
-def configure_plugin_storage():
-    """Use durable private storage without depending on a particular host API.
+_STORAGE_FILES = (
+    ".auth.json", ".fh_sync.json", ".fh_imported.json", ".fh_printer_bundles.json",
+    ".fh_workstation_key.json", ".fh_stock_alerts.json", ".fh_printer_connections.json",
+    ".fh_bambu.json", ".fh_bambu_revoke.json", ".fh_flashforge.json",
+    ".fh_moonraker_usage.json", ".fh_creality.json", ".fh_anycubic.json",
+    ".fh_prusalink.json", ".fh_sdcp.json", ".fh_elegoo_mqtt.json",
+    ".fh_slices.json", ".fh_slice_reports.json", ".fh_sent_prints.json",
+)
+_STORAGE_JOURNALS = (
+    "bambu_usage", "flashforge_usage", "moonraker_usage", "creality_usage",
+    "anycubic_usage", "prusalink_usage", "sdcp_usage", "elegoo_mqtt_usage",
+)
+_STORAGE_MIGRATION_FILE = ".fh_storage_migration.json"
+_STORAGE_MIGRATION_LOCK = threading.RLock()
+_LOCAL_RELEASE_WHEEL = re.compile(r"filamenthub-\d+\.\d+\.\d+-py3-none-any(?:\.whl)?", re.I)
+_PREVIOUS_LOCAL_WHEEL_KEY = "filamenthub-0.2.10-py3-none-any"
 
-    Prefer ``orca.host.plugin.storage()`` when the host exposes it, with a
-    stable directory outside the replaceable plugin package for compatible
-    older hosts.  Existing sidecar state is copied once and retained as a
-    rollback fallback.
-    """
+
+def _storage_member(root, *parts):
+    root = os.path.realpath(root)
+    path = os.path.join(root, *parts)
+    if os.path.normcase(os.path.realpath(path)) != os.path.normcase(path):
+        raise OSError("Plugin storage migration cannot follow a redirected path")
+    return path
+
+
+def _has_plugin_storage_state(root):
+    return bool(root and any(
+        _storage_exists(os.path.join(root, name))
+        for name in (*_STORAGE_FILES, *_STORAGE_JOURNALS, "slices")
+    ))
+
+
+def _storage_exists(path):
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _copy_storage_file(source, target):
+    """Copy a file atomically; an interrupted copy must not look complete."""
+    if _storage_exists(target) or not _storage_exists(source):
+        return
+    os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+    temporary = _temporary_path(target)
+    try:
+        with open(source, "rb") as original, open(temporary, "wb") as copied:
+            shutil.copyfileobj(original, copied)
+            copied.flush()
+            os.fsync(copied.fileno())
+        try:
+            os.chmod(temporary, 0o600)
+        except OSError:
+            pass
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def _rebase_storage_slice_index(source, target):
+    index_path = _storage_member(target, ".fh_slices.json")
+    if not os.path.isfile(index_path):
+        return
+    try:
+        with open(index_path, encoding="utf-8") as handle:
+            index = json.load(handle)
+    except ValueError:
+        return  # Preserve the old bytes and let the regular cache reader handle them.
+    if not isinstance(index, dict):
+        return
+    changed = False
+    for key, entry in index.items():
+        if not re.fullmatch(r"[0-9a-f]{64}", key) or not isinstance(entry, dict):
+            continue
+        old = entry.get("path")
+        filename = key + ".gcode"
+        expected = _storage_member(source, "slices", filename)
+        copied = _storage_member(target, "slices", filename)
+        if (isinstance(old, str) and os.path.isabs(old)
+                and os.path.normcase(os.path.normpath(old)) == os.path.normcase(expected)
+                and os.path.isfile(copied)):
+            entry["path"] = copied
+            changed = True
+    if changed:
+        write_json_atomic(index_path, index, mode=0o600)
+
+
+def _copy_storage_tree(source, target):
+    for name in (*_STORAGE_FILES, ".fh_sync.log"):
+        _copy_storage_file(_storage_member(source, name), _storage_member(target, name))
+    for folder in (*_STORAGE_JOURNALS, "slices"):
+        legacy = _storage_member(source, folder)
+        if not _storage_exists(legacy):
+            continue
+        suffix = ".gcode" if folder == "slices" else ".json"
+        for name in os.listdir(legacy):
+            if name.endswith(suffix):
+                _copy_storage_file(
+                    _storage_member(source, folder, name),
+                    _storage_member(target, folder, name),
+                )
+    _rebase_storage_slice_index(source, target)
+
+
+@contextmanager
+def _lock_storage_migration(target):
+    # Closing the file releases the OS lock even if the installer crashes.
+    lock_path = _storage_member(target, ".fh_storage_migration.lock")
+    with _STORAGE_MIGRATION_LOCK, open(lock_path, "a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+        else:
+            import fcntl
+
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                if os.name == "nt":
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (BlockingIOError, PermissionError) as exc:
+                if time.monotonic() >= deadline:
+                    raise OSError("Another Orca process is migrating FilamentHub storage") from exc
+                time.sleep(0.1)
+        yield
+
+
+def _read_storage_migration(marker):
+    try:
+        with open(marker, encoding="utf-8") as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        return None
+    if not isinstance(state, dict) or (
+        state.get("complete") is not True and not isinstance(state.get("source"), str)
+    ):
+        raise OSError("Plugin storage migration marker is invalid")
+    return state
+
+
+def _migrate_plugin_storage(target, source_roots):
+    """Choose one prior store and keep that choice through interrupted upgrades."""
+    marker = _storage_member(target, _STORAGE_MIGRATION_FILE)
+    with _lock_storage_migration(target):
+        state = _read_storage_migration(marker)
+        if state and state.get("complete") is True:
+            return
+        if state is None and _has_plugin_storage_state(target):
+            write_json_atomic(marker, {"complete": True}, mode=0o600)
+            return
+        destination = os.path.normcase(os.path.realpath(target))
+        candidates = tuple(dict.fromkeys(
+            os.path.realpath(root) for root in source_roots() if root
+            and os.path.normcase(os.path.realpath(root)) != destination
+        ))
+        if state is not None:
+            source = state["source"]
+            if source not in candidates or not os.path.isdir(source):
+                raise OSError("Previous plugin storage is unavailable for migration")
+        else:
+            source = next((root for root in candidates if _has_plugin_storage_state(root)), None)
+            if source:
+                write_json_atomic(marker, {"source": source}, mode=0o600)
+        if source:
+            _copy_storage_tree(source, target)
+        write_json_atomic(marker, {"complete": True}, mode=0o600)
+
+
+def configure_plugin_storage():
+    """Keep subscription isolation and give versioned local wheels a stable store."""
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
     global FLASHFORGE_CONFIG_FILE, MOONRAKER_USAGE_CONFIG_FILE, CREALITY_CONFIG_FILE
@@ -1515,68 +1682,51 @@ def configure_plugin_storage():
     global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
 
-    fallback_root = fallback_plugin_storage_dir()
-    target_root = ""
+    subscribed = "_subscribed" in PLUGIN_DIR.replace("\\", "/").split("/")
+    fallback_root = "" if subscribed else fallback_plugin_storage_dir()
+    plugins_root = os.path.dirname(os.path.abspath(PLUGIN_DIR))
+    data_root = os.path.dirname(plugins_root)
+    native_root = ""
     plugin_host = getattr(getattr(orca, "host", None), "plugin", None)
     storage = getattr(plugin_host, "storage", None)
     if callable(storage):
         try:
-            target_root = os.path.abspath(storage())
+            path = storage()
+            if path and os.path.isabs(path):
+                native_root = os.path.abspath(path)
         except (OSError, RuntimeError, TypeError, ValueError):
-            target_root = ""
+            pass
+    target_root = native_root or fallback_root
+    local_wheel = bool(fallback_root and not DEV_CONTOUR
+                      and _LOCAL_RELEASE_WHEEL.fullmatch(os.path.basename(PLUGIN_DIR)))
+    if local_wheel:
+        target_root = _storage_member(data_root, ".filamenthub", "orca-plugin-local")
+    elif not native_root and fallback_root:
+        target_root = _storage_member(data_root, ".filamenthub", "orca-plugin")
     if not target_root:
-        target_root = fallback_root
-    if not target_root:
+        if subscribed:
+            raise OSError("Subscribed plugin storage is unavailable")
         return False
+
+    def source_roots():
+        if subscribed:
+            return ()
+        if local_wheel:
+            previous = _storage_member(plugins_root, "plugin_data", _PREVIOUS_LOCAL_WHEEL_KEY)
+            if _storage_exists(previous):
+                return native_root, previous
+        fallback = _storage_member(data_root, ".filamenthub", "orca-plugin") if fallback_root else ""
+        return native_root, fallback, PLUGIN_DIR
+
     try:
         os.makedirs(target_root, mode=0o700, exist_ok=True)
         try:
             os.chmod(target_root, 0o700)
         except OSError:
             pass
-    except OSError:
-        return False
-
-    file_names = (
-        ".fh_sync.log",
-        ".auth.json",
-        ".fh_imported.json",
-        ".fh_sync.json",
-        ".fh_slices.json",
-        ".fh_slice_reports.json",
-        ".fh_bambu.json",
-        ".fh_bambu_revoke.json",
-        ".fh_printer_bundles.json",
-    )
-    source_roots = []
-    for candidate in (fallback_root, PLUGIN_DIR):
-        if candidate and os.path.abspath(candidate) != os.path.abspath(target_root):
-            source_roots.append(candidate)
-    for name in file_names:
-        target = os.path.join(target_root, name)
-        if os.path.exists(target):
-            continue
-        for source_root in source_roots:
-            source = os.path.join(source_root, name)
-            if not os.path.isfile(source):
-                continue
-            try:
-                shutil.copy2(source, target)
-            except OSError:
-                pass
-            break
-
-    target_cache = os.path.join(target_root, "slices")
-    if not os.path.exists(target_cache):
-        for source_root in source_roots:
-            legacy_cache = os.path.join(source_root, "slices")
-            if not os.path.isdir(legacy_cache):
-                continue
-            try:
-                shutil.copytree(legacy_cache, target_cache)
-            except OSError:
-                pass
-            break
+    except OSError as exc:
+        raise OSError("Plugin storage is unavailable") from exc
+    _migrate_plugin_storage(target_root, source_roots)
 
     PLUGIN_STORAGE_DIR = target_root
     SYNC_LOG_FILE = os.path.join(target_root, ".fh_sync.log")
@@ -1596,7 +1746,7 @@ def configure_plugin_storage():
     STOCK_ALERT_STATE_FILE = os.path.join(target_root, ".fh_stock_alerts.json")
     _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
     _SLICE_REPORT_OUTBOX_FILE = os.path.join(target_root, ".fh_slice_reports.json")
-    _SLICE_CACHE_DIR = target_cache
+    _SLICE_CACHE_DIR = os.path.join(target_root, "slices")
     return True
 
 
