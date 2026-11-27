@@ -254,8 +254,8 @@ try {
             if line.strip() and not line.lstrip().startswith("#")
         }
         for required in (
-            ".env",
-            ".env.*",
+            "**/.env",
+            "**/.env.*",
             ".git/",
             ".venv/",
             "tests/",
@@ -273,7 +273,7 @@ try {
             self.assertNotIn(must_keep, patterns)
             self.assertNotIn(must_keep.rstrip("/"), patterns)
 
-    def test_rollback_is_refused_fail_closed_when_migrations_applied(self) -> None:
+    def test_rollback_uses_live_schema_even_when_the_state_file_is_stale(self) -> None:
         bash = _git_bash()
         if bash is None:
             self.skipTest("needs Git Bash")
@@ -293,8 +293,13 @@ warn() { printf 'WARN:%s\\n' "$*" >&2; }
 fail() { printf 'FAIL:%s\\n' "$*" >&2; exit 1; }
 docker() {
     printf 'DOCKER:%s\\n' "$*" >> "$DOCKER_LOG"
-    return 0
+    case "$*" in
+        *filamenthub-backend:previous) echo sha256:retained-backend ;;
+        *filamenthub-frontend:previous) echo sha256:retained-frontend ;;
+    esac
 }
+database_revision() { printf '%s\\n' "$LIVE_REVISION"; }
+backend_image_head() { printf '%s\\n' "$RETAINED_HEAD"; }
 git() { printf 'deadbeef'; }
 verify_release() { return 0; }
 """
@@ -311,29 +316,139 @@ verify_release() { return 0; }
                 "TARGET_REVISION": "2222222",
                 "LATEST_BACKUP": "/srv/backups/backup_20261127.sql.gz.gpg",
             }
-            blocked = subprocess.run(
+            for state, live, retained in (
+                ("", "new", "old"),
+                ("record_deploy_state false", "new", "old"),
+                ("record_deploy_state false", "", "old"),
+                ("record_deploy_state false", "old\nother", "old"),
+                ("record_deploy_state false", "old", "old\nother"),
+            ):
+                with self.subTest(state=state, live=live, retained=retained):
+                    blocked = subprocess.run(
+                        [bash, "-c", f"{prelude}\n{functions}\n{state}\nrollback_release"],
+                        capture_output=True,
+                        text=True,
+                        env={**env, "LIVE_REVISION": live, "RETAINED_HEAD": retained},
+                    )
+                    self.assertNotEqual(blocked.returncode, 0, blocked.stdout + blocked.stderr)
+                    logged = docker_log.read_text(encoding="utf-8")
+                    self.assertNotIn("DOCKER:tag ", logged)
+                    self.assertNotIn("DOCKER:compose up ", logged)
+
+            allowed = subprocess.run(
                 [bash, "-c", f"{prelude}\n{functions}\nrecord_deploy_state true\nrollback_release"],
                 capture_output=True,
                 text=True,
-                env=env,
-            )
-            self.assertNotEqual(blocked.returncode, 0)
-            self.assertIn("Rollback aborted to prevent a backend crash-loop", blocked.stderr)
-            self.assertIn("/srv/backups/backup_20261127.sql.gz.gpg", blocked.stderr)
-            self.assertIn("1111111", blocked.stderr)
-            self.assertEqual(docker_log.read_text(encoding="utf-8"), "")
-
-            allowed = subprocess.run(
-                [bash, "-c", f"{prelude}\n{functions}\nrecord_deploy_state false\nrollback_release"],
-                capture_output=True,
-                text=True,
-                env=env,
+                env={**env, "LIVE_REVISION": "old", "RETAINED_HEAD": "old"},
             )
             self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
             logged = docker_log.read_text(encoding="utf-8")
-            self.assertIn("DOCKER:tag filamenthub-backend:previous filamenthub-backend:latest", logged)
-            self.assertIn("DOCKER:tag filamenthub-frontend:previous filamenthub-frontend:latest", logged)
+            self.assertIn("DOCKER:tag sha256:retained-backend filamenthub-backend:latest", logged)
+            self.assertIn("DOCKER:tag sha256:retained-frontend filamenthub-frontend:latest", logged)
             self.assertIn("DOCKER:compose up -d --no-build --remove-orphans", logged)
+
+    def test_deploy_stops_backend_before_the_status_type_change(self) -> None:
+        bash = _git_bash()
+        if bash is None:
+            self.skipTest("needs Git Bash")
+        worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
+        functions = "\n".join(_shell_function(worker, name) for name in ("parse_alembic_head", "deploy"))
+        prelude = """
+set -Eeuo pipefail
+DRY_RUN=false
+LATEST_BACKUP=/mock/backup
+PREVIOUS_REVISION=previous
+TARGET_REVISION=target
+info() { :; }
+warn() { :; }
+success() { :; }
+fail() { echo "$*" >&2; exit 1; }
+resolve_target() { :; }
+check_required_certificates() { :; }
+confirm_deploy() { :; }
+create_backup() { :; }
+git() { :; }
+tag_release_images() { :; }
+services_to_build() { :; }
+build_service_if_needed() { :; }
+verify_release() { :; }
+prune_superseded_docker_artifacts() { :; }
+record_deploy_state() { :; }
+database_revision() { cat "$MOCK_REVISION"; }
+docker() {
+    case "$*" in
+        *"backend heads") echo "printer_request_status_check (head)" ;;
+        *"backend history -r "*)
+            echo "preset_version_filament -> printer_request_status_varchar, Status type change"
+            echo "printer_request_status_varchar -> printer_request_status_check (head), Status check"
+            ;;
+        "compose stop backend") echo STOP ;;
+        *"backend upgrade head")
+            echo UPGRADE
+            [[ "$FAIL_UPGRADE" == false ]] || return 42
+            echo "printer_request_status_check" > "$MOCK_REVISION"
+            ;;
+        "compose up -d --no-build --remove-orphans") echo START ;;
+    esac
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            revision = Path(tmp, "revision")
+            for before, failed, expected in (
+                ("preset_version_filament", False, ["STOP", "UPGRADE", "START"]),
+                ("printer_request_status_varchar", False, ["UPGRADE", "START"]),
+                ("printer_request_status_check", False, ["UPGRADE", "START"]),
+                ("preset_version_filament", True, ["STOP", "UPGRADE"]),
+            ):
+                with self.subTest(before=before, failed=failed):
+                    revision.write_text(before, encoding="utf-8")
+                    result = subprocess.run(
+                        [bash, "-c", f"{prelude}\n{functions}\ndeploy"],
+                        capture_output=True,
+                        text=True,
+                        env={
+                            **os.environ,
+                            "MOCK_REVISION": str(revision).replace("\\", "/"),
+                            "FAIL_UPGRADE": str(failed).lower(),
+                        },
+                    )
+                    events = [line for line in result.stdout.splitlines() if line in {"STOP", "UPGRADE", "START"}]
+                    self.assertEqual(events, expected, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode != 0, failed, result.stderr)
+
+    def test_saved_image_head_inspection_rejects_multiple_heads_with_branch_labels(self) -> None:
+        bash = _git_bash()
+        if bash is None:
+            self.skipTest("needs Git Bash")
+        worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
+        functions = "\n".join(
+            _shell_function(worker, name) for name in ("parse_alembic_head", "backend_image_head")
+        )
+        prelude = """
+set -Eeuo pipefail
+docker() {
+    [[ "$*" == *"--network none"* && "$*" == *"--env SECRET_KEY="* ]] || return 42
+    printf '%s\\n' "$MOCK_HEADS"
+}
+"""
+        for heads, expected in (
+            ("old (head)", "old"),
+            ("old (legacy) (head)", "old"),
+            ("old (head)\nother (feature) (head)", None),
+            ("", None),
+        ):
+            with self.subTest(heads=heads):
+                result = subprocess.run(
+                    [bash, "-c", f"{prelude}\n{functions}\nbackend_image_head sha256:retained-backend"],
+                    capture_output=True,
+                    text=True,
+                    env={**os.environ, "MOCK_HEADS": heads},
+                )
+                if expected is None:
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
 
 
 def _shell_function(source: str, name: str) -> str:

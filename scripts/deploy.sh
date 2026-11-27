@@ -60,7 +60,7 @@ Options:
   --rebuild-all     Rebuild both images even if their code is unchanged, e.g.
                     after changing VITE_* build arguments in the server .env.
   --rollback        Put the images kept before the last release back in service.
-                    Code only: refused when the last release applied migrations.
+                    Requires the kept backend's Alembic head to match the database.
   --status          Show container, migration and public health status.
   --backup-only     Create and verify an encrypted database backup, then exit.
   --prune-build-cache
@@ -470,9 +470,23 @@ tag_release_images() {
     done
 }
 
-schema_revision() {
-    docker compose run --rm --no-deps --entrypoint alembic backend current 2>/dev/null \
-        | tr -d '[:space:]'
+database_revision() {
+    docker exec filamenthub_postgres_prod sh -c \
+        'exec psql -XAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT min(version_num) FROM alembic_version HAVING count(*) = 1"'
+}
+
+parse_alembic_head() {
+    awk '
+        NF { lines++; if ($1 ~ /^[[:alnum:]_]+$/ && $NF == "(head)") revision = $1 }
+        END { if (lines != 1 || revision == "") exit 1; print revision }
+    '
+}
+
+backend_image_head() {
+    # Some historical revisions import app settings while Alembic reads the graph.
+    docker run --rm --pull=never --network none \
+        --env SECRET_KEY=offline-alembic-head-inspection --entrypoint alembic "$1" heads \
+        | parse_alembic_head
 }
 
 record_deploy_state() {
@@ -552,38 +566,33 @@ verify_release() {
 }
 
 rollback_release() {
-    local service recorded_backup recorded_prev
-    local missing=false
+    local backend_image frontend_image current head recorded_backup recorded_prev
 
-    if grep -qx 'migrations_applied=true' "$DEPLOY_STATE_FILE" 2>/dev/null; then
-        recorded_backup="$(sed -n 's/^backup_file=//p' "$DEPLOY_STATE_FILE" 2>/dev/null | head -n 1)"
-        recorded_prev="$(sed -n 's/^previous_revision=//p' "$DEPLOY_STATE_FILE" 2>/dev/null | head -n 1)"
-        warn "Automatic --rollback is blocked because the last deployment applied database migrations."
-        warn "Switching back to filamenthub-backend:${PREVIOUS_IMAGE_TAG} would crash-loop on the Alembic head check in docker-entrypoint.sh."
-        [[ -n "$recorded_prev" ]] && warn "Previous code revision: $recorded_prev"
-        if [[ -n "$recorded_backup" ]]; then
-            warn "Encrypted pre-deploy backup: $recorded_backup"
-        else
-            warn "Encrypted pre-deploy backups directory: $BACKUP_DIR"
+    backend_image="$(docker image inspect --format '{{.Id}}' "filamenthub-backend:${PREVIOUS_IMAGE_TAG}")" \
+        && [[ -n "$backend_image" ]] || fail "No kept backend image. Deploy a fixed revision instead."
+    frontend_image="$(docker image inspect --format '{{.Id}}' "filamenthub-frontend:${PREVIOUS_IMAGE_TAG}")" \
+        && [[ -n "$frontend_image" ]] || fail "No kept frontend image. Deploy a fixed revision instead."
+
+    current="$(database_revision)" && [[ "$current" =~ ^[[:alnum:]_]+$ ]] \
+        || fail "Rollback aborted: could not read exactly one database revision."
+    head="$(backend_image_head "$backend_image")" && [[ "$head" =~ ^[[:alnum:]_]+$ ]] \
+        || fail "Rollback aborted: could not read exactly one Alembic head from the kept backend."
+    if [[ "$current" != "$head" ]]; then
+        warn "Database revision $current differs from the kept backend head $head."
+        if [[ -r "$DEPLOY_STATE_FILE" ]]; then
+            recorded_prev="$(sed -n '/^previous_revision=/{s/^previous_revision=//;p;q;}' "$DEPLOY_STATE_FILE")"
+            recorded_backup="$(sed -n '/^backup_file=/{s/^backup_file=//;p;q;}' "$DEPLOY_STATE_FILE")"
+            [[ -n "$recorded_prev" ]] && warn "Recorded previous code revision: $recorded_prev"
+            [[ -n "$recorded_backup" ]] && warn "Recorded pre-deploy backup: $recorded_backup"
         fi
-        warn "Recovery options:"
-        warn "  1. Forward-fix (preferred): deploy a fixed commit on top of the current schema (bash scripts/deploy.sh --revision <sha>)."
-        warn "  2. Full database + code restore: decrypt and restore the pre-deploy backup into filamenthub_postgres_prod, verify alembic current matches the previous image, then switch images manually."
+        warn "Deploy a forward fix, or verify a matching encrypted backup and restore schema and code together."
+        warn "Encrypted backups directory: $BACKUP_DIR"
         fail "Rollback aborted to prevent a backend crash-loop."
     fi
 
-    for service in backend frontend; do
-        docker image inspect "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}" >/dev/null 2>&1 && continue
-        warn "No kept image for $service (filamenthub-${service}:${PREVIOUS_IMAGE_TAG})"
-        missing=true
-    done
-    [[ "$missing" == false ]] \
-        || fail "Nothing to put back. Deploy a fixed revision the normal way instead."
-
     info "Putting the kept images back in service..."
-    for service in backend frontend; do
-        docker tag "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}" "filamenthub-${service}:latest"
-    done
+    docker tag "$backend_image" filamenthub-backend:latest
+    docker tag "$frontend_image" filamenthub-frontend:latest
     COMPOSE_BAKE=false docker compose up -d --no-build --remove-orphans
 
     if ! verify_release; then
@@ -598,8 +607,7 @@ rollback_release() {
 }
 
 deploy() {
-    local migration_heads head_count schema_before schema_after planned_builds
-    local failed=false
+    local migration_heads target_head schema_before schema_after planned_builds pending_history
 
     resolve_target
     check_required_certificates
@@ -624,14 +632,30 @@ deploy() {
     info "Checking the migration graph in the newly built backend image..."
     migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"
     printf '%s\n' "$migration_heads" | sed 's/^/  /'
-    head_count="$(printf '%s\n' "$migration_heads" | grep -c '(head)' || true)"
-    [[ "$head_count" == "1" ]] \
-        || fail "Expected exactly one Alembic head, found $head_count. The current app is still running."
+    target_head="$(parse_alembic_head <<<"$migration_heads")" \
+        || fail "Expected exactly one Alembic head. The current app is still running."
 
-    schema_before="$(schema_revision)"
+    schema_before="$(database_revision)" && [[ "$schema_before" =~ ^[[:alnum:]_]+$ ]] \
+        || fail "Expected exactly one revision in the production database. Services were not switched."
+    if [[ "$schema_before" != "$target_head" ]]; then
+        pending_history="$(docker compose run --rm --no-deps --entrypoint alembic \
+            backend history -r "$schema_before:$target_head")" \
+            || fail "Could not read the pending Alembic revisions. Services were not switched."
+    else
+        pending_history=""
+    fi
+    record_deploy_state pending
+    # Changing the SELECT result type invalidates prepared queries in old API workers.
+    if [[ "$schema_before" != printer_request_status_varchar ]] \
+        && grep -Eq ' -> printer_request_status_varchar([[:space:]]|,)' <<<"$pending_history"; then
+        warn "Stopping the backend before changing the printer request status column type."
+        docker compose stop backend
+    fi
     info "Applying migrations with the newly built image before switching the API..."
-    docker compose run --rm --no-deps --entrypoint alembic backend upgrade head
-    schema_after="$(schema_revision)"
+    docker compose run --rm --no-deps --entrypoint alembic backend upgrade head \
+        || fail "Migration failed. Check the database revision before recovery. Pre-deploy backup: $LATEST_BACKUP"
+    schema_after="$(database_revision)" && [[ "$schema_after" == "$target_head" ]] \
+        || fail "Database revision does not match $target_head after upgrade. Pre-deploy backup: $LATEST_BACKUP"
     if [[ "$schema_before" == "$schema_after" ]]; then
         record_deploy_state false
     else
@@ -646,12 +670,7 @@ deploy() {
         warn "Deployment verification failed. Automatic schema rollback is intentionally disabled."
         warn "Previous revision: $PREVIOUS_REVISION"
         warn "Pre-deploy backup: $LATEST_BACKUP"
-        if [[ "$schema_before" == "$schema_after" ]]; then
-            warn "Put the previous code back: bash scripts/deploy.sh --rollback"
-        else
-            warn "Schema changed ($schema_before -> $schema_after); image-only --rollback is blocked because the previous image lacks the new Alembic head."
-            warn "Deploy a forward-fix revision, or restore $LATEST_BACKUP before switching back to the previous image."
-        fi
+        warn "Image rollback checks the actual schema before switching images: bash scripts/deploy.sh --rollback"
         warn "Inspect immediately: docker compose ps && docker compose logs --tail=200 backend frontend"
         exit 1
     fi
@@ -719,6 +738,11 @@ if [[ -n "$BUILD_CACHE_RETENTION_OVERRIDE" && "$ACTION" != "prune" ]]; then
 fi
 
 cd "$PROJECT_DIR"
+if [[ "$ACTION" == deploy || "$ACTION" == rollback ]]; then
+    require_command flock
+    exec 9<"$PROJECT_DIR"
+    flock -n 9 || fail "Another deploy or rollback is active for this checkout."
+fi
 case "$ACTION" in
     deploy) deploy ;;
     rollback) rollback_release ;;

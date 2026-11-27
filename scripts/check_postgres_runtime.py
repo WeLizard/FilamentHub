@@ -135,6 +135,7 @@ def _single_alembic_head(env: dict[str, str]) -> str:
 async def _verify_application_contract(expected_head: str) -> None:
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy import inspect, text
+    from sqlalchemy.exc import IntegrityError
 
     import app.models  # noqa: F401 - registers every ORM table in Base.metadata
     from app.db.base import Base
@@ -179,6 +180,25 @@ async def _verify_application_contract(expected_head: str) -> None:
         print(check_schema_drift.render(drift), flush=True)
         if not drift.ok:
             raise RuntimeError("Migrated schema drifted from the ORM models")
+
+        async with engine.begin() as connection:
+            insert_request = text(
+                "INSERT INTO printer_requests (name, manufacturer, model, slug, status) "
+                "VALUES ('Runtime printer request', 'FilamentHub', 'Contract', :slug, :status) "
+                "RETURNING status"
+            )
+            for status in ("pending", "approved", "rejected"):
+                saved = await connection.scalar(insert_request, {"slug": f"contract-{status}", "status": status})
+                if saved != status:
+                    raise RuntimeError(f"Could not persist known printer request status {status}")
+            try:
+                async with connection.begin_nested():
+                    await connection.execute(insert_request, {"slug": "contract-unknown", "status": "unknown"})
+            except IntegrityError as exc:
+                if getattr(exc.orig, "sqlstate", None) != "23514":
+                    raise
+            else:
+                raise RuntimeError("PostgreSQL accepted an unsupported printer request status")
 
         async with AsyncSessionLocal() as session:
             brand = Brand(

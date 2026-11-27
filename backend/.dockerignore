@@ -1,6 +1,6 @@
 # Secrets and local environment files must never enter an image layer.
-.env
-.env.*
+**/.env
+**/.env.*
 
 # Version control and local virtual environments / toolchains
 .git/

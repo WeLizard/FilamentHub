@@ -49,4 +49,3 @@ index-only-in-model:ix_printer_profiles_active
 index-only-in-model:ix_printer_profiles_is_official
 index-only-in-model:ix_printer_profiles_owner_user_id
 index-only-in-model:ix_printer_profiles_printer_id
-
