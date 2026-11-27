@@ -34,6 +34,14 @@ def select_components(paths: list[str]) -> set[str]:
                 "frontend/src/data/orcaPresetSchema."
             ):
                 selected.add("backend")
+            # The plugin's listing test compares its roadmap picture with the
+            # About page's roadmap.
+            if path in (
+                "frontend/src/data/capabilities.json",
+                "frontend/src/locales/en/features.json",
+                "frontend/src/locales/en/translation.json",
+            ):
+                selected.add("plugins")
         elif path.startswith("edge-agent/") or path == "repository.yaml":
             selected.add("edge")
             # The backend contract imports the Edge QIDI Box parser, and both the

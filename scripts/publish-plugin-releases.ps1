@@ -1312,7 +1312,7 @@ if ($printFarmRepositoryRoot) {
     )
 }
 
-$orcaSourcePaths = @('orca-plugin', ':(exclude)orca-plugin/description.md')
+$orcaSourcePaths = @('orca-plugin', ':(exclude)orca-plugin/description.md', ':(exclude)orca-plugin/listing')
 $plans = @()
 if ($selected -contains 'orcaslicer') {
     $version = Get-OrcaVersion

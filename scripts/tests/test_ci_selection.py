@@ -34,6 +34,7 @@ class ComponentSelectionTest(unittest.TestCase):
                 "plugins",
             },
             "orca-plugin/description.md": {"plugins"},
+            "frontend/src/data/capabilities.json": {"frontend", "plugins"},
             "orca-plugin/filamenthub_bambu.py": {"plugins", "edge"},
             "orca-plugin/filamenthub_plugin.py": {"plugins", "edge"},
             "edge-agent/tests/fixtures/bambu/report_printing.json": {"edge", "plugins"},
@@ -254,7 +255,13 @@ class CrossComponentReadTest(unittest.TestCase):
                 )
                 if self.file_name.match(value)
             }
-            found |= {f"{path}/{value}" for path in set(found) for value in literals}
+            # Only a directory can hold the named files; a path to a file is whole.
+            found |= {
+                f"{path}/{value}"
+                for path in set(found)
+                if not self.file_name.match(path.rsplit("/", 1)[-1])
+                for value in literals
+            }
         return found
 
     def test_reference_scanner_understands_known_read_styles(self) -> None:

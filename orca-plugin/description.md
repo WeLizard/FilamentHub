@@ -47,18 +47,9 @@ Settings are in OrcaSlicer's plugin manager: server, appearance, automatic sync,
 
 ## What is coming
 
-FilamentHub is in beta. These are planned, without dates:
+FilamentHub is in beta. What is in progress and what comes next, without dates, is on the [About page](https://filamenthub.ru/about) and in the picture below. The catalogue, presets and basic tracking of your own spools are free, and they will stay free.
 
-- A direct printer link through our own Edge bridge, with no open OrcaSlicer and no manufacturer cloud.
-- Tracking by weight: weigh-ins and empty-spool weight.
-- An Android app.
-- Troubleshooting failed prints from your slice and a photo, and preset suggestions that explain why they fit your printer.
-- RFID and NFC tags, and spool hints right inside OrcaSlicer.
-- Analytics for manufacturers and workshops with several people.
-
-The catalogue, presets and basic tracking of your own spools are free, and they will stay free.
-
-![What is coming](https://api.orcaslicer.com/api/v1/bundles/media/3cdd9b2d-5bec-4b37-88f6-fccaed071894/content)
+![What is coming](listing/09-what-is-coming.png)
 
 ## Your data and your computer
 

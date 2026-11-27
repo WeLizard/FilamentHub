@@ -19,6 +19,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event.release.tag_name }}
+      # The markdown file that holds the plugin description on OrcaCloud.
+      DESCRIPTION_FILE: orca-plugin/description.md
     steps:
       - name: Prepare FilamentHub release
         shell: bash
@@ -41,6 +43,10 @@ jobs:
             --pattern "filamenthub-${version}-py3-none-any.whl" \
             --pattern "SHA256SUMS" \
             --dir "$release_dir"
+          # The description as it is at the released tag, not on the branch.
+          gh api -H "Accept: application/vnd.github.raw" \
+            "repos/$GITHUB_REPOSITORY/contents/$DESCRIPTION_FILE?ref=$RELEASE_TAG" \
+            > "$release_dir/description.md"
 
           mapfile -t plugin_files < <(
             find "$release_dir" -maxdepth 1 -type f \
@@ -56,7 +62,8 @@ jobs:
             "$release_dir/metadata.json" \
             "${plugin_files[0]}" \
             "$release_dir/SHA256SUMS" \
-            "$version" <<'PY'
+            "$version" \
+            "$release_dir/description.md" <<'PY'
           import ast
           import csv
           import hashlib
@@ -67,7 +74,10 @@ jobs:
           import zipfile
           from pathlib import Path
 
-          release_path, metadata_path, wheel_path, checksum_path, version = sys.argv[1:]
+          (
+              release_path, metadata_path, wheel_path, checksum_path, version,
+              description_file,
+          ) = sys.argv[1:]
           release = json.loads(Path(release_path).read_text(encoding="utf-8"))
           expected_tag = f"v{version}"
           if release["tagName"] != expected_tag:
@@ -160,8 +170,22 @@ jobs:
                   kept.append(line)
               changelog = "\n".join(kept).rstrip() + more
 
+          # OrcaCloud replaces the listing's description with this file on
+          # every release; outside 100-10000 characters it refuses the release.
+          description = Path(description_file).read_text(encoding="utf-8").strip()
+          if not 100 <= len(description) <= 10000:
+              raise SystemExit(
+                  f"{os.environ['DESCRIPTION_FILE']} has {len(description)} characters; "
+                  "OrcaCloud takes 100-10000"
+              )
+
           Path(metadata_path).write_text(
-              json.dumps({"version": version, "changelog": changelog}),
+              json.dumps({
+                  "version": version,
+                  "changelog": changelog,
+                  "description": description,
+                  "description_path": os.environ["DESCRIPTION_FILE"],
+              }),
               encoding="utf-8",
           )
           PY
