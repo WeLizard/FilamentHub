@@ -1,4 +1,4 @@
-"""A Flashforge, Creality, SDCP or Elegoo MQTT printer linked through the OrcaSlicer plugin."""
+"""A Flashforge, Creality, Prusa, SDCP or Elegoo MQTT printer linked through the OrcaSlicer plugin."""
 
 from datetime import datetime, timezone
 
@@ -169,6 +169,72 @@ async def test_creality_cfs_reports_through_the_orca_plugin_bridge(
         )
     ))
     assert sources == {"creality_orca"}
+
+
+@pytest.mark.asyncio
+async def test_prusa_printer_reports_its_state_and_one_spool_through_the_orca_plugin_bridge(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    printer_id, system_id = await _system(auth_client, "prusalink")
+    source_instance_id = "orca-desktop-instance-03"
+
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+    )
+    assert pairing.status_code == 200, pairing.text
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "prusalink",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.3.0",
+            # PrusaLink counts no filament and the plugin sets nothing on it.
+            "capabilities": ["read", "presence", "consumption", "write"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system_id,
+            PhysicalPrinterConnector.transport == "orca_plugin_lan",
+        )
+    )
+    assert connector is not None and connector.provider == "prusalink"
+    assert sorted(connector.capabilities) == ["presence", "read"]
+
+    snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]},
+        json={
+            "material_system_id": system_id,
+            "provider": "prusalink",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "capabilities": ["read", "presence"],
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "printer": {
+                "state": "printing", "progress_percent": 42, "remaining_seconds": 3120,
+                "job_name": "3DBenchy_0.4n_0.2mm_PLA_MK4S_42m.bgcode",
+                "nozzle_temperature": 215.1, "bed_temperature": 60.0,
+            },
+            "slots": [
+                {"provider_index": 0, "label": "Spool", "kind": "external", "present": True,
+                 "active_feed": True, "spool_identity_known": False, "material": "PLA"},
+            ],
+            "slot_topology_complete": True,
+        },
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["accepted"] is True
+    sources = set(await db_session.scalars(
+        select(MaterialSlotObservation.source).where(
+            MaterialSlotObservation.connector_id == connector.id
+        )
+    ))
+    assert sources == {"prusalink_orca"}
 
 
 @pytest.mark.asyncio

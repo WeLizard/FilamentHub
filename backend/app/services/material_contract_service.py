@@ -875,7 +875,7 @@ def _printer_bridge_observation_source(provider: str, transport: str) -> str:
     if provider == "bambu" and transport == "orca_plugin_lan":
         return "bambu_lan_mqtt"
     if transport == "orca_plugin_lan" and provider in {
-        "flashforge", "creality", "sdcp", "elegoo_mqtt",
+        "flashforge", "creality", "prusalink", "sdcp", "elegoo_mqtt",
     }:
         # The plugin reads the printer's own LAN API, not Moonraker.
         return f"{provider}_orca"

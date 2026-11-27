@@ -5,6 +5,7 @@ import { elegooMqttAdapter } from './elegooMqtt';
 import { flashforgeAdapter } from './flashforge';
 import { happyHareAdapter } from './happyHare';
 import { octoprintAdapter } from './octoprint';
+import { prusaLinkAdapter } from './prusalink';
 import { sdcpAdapter } from './sdcp';
 import type { FeedAdapter, FeedTopologyChoice } from './types';
 import type { Printer } from '../../../types/api';
@@ -17,6 +18,7 @@ export const FEED_ADAPTERS: FeedAdapter[] = [
   octoprintAdapter,
   flashforgeAdapter,
   crealityAdapter,
+  prusaLinkAdapter,
   sdcpAdapter,
   elegooMqttAdapter,
 ];

@@ -680,6 +680,7 @@ PLUGIN_CAPABILITIES = (
     "printer-bundle-toggle-v1",
     "printer-recovery-v1",
     "bambu-lan-bridge",
+    "prusalink-lan-bridge",
     "flashforge-lan-bridge",
     "flashforge-material-write",
     "creality-lan-bridge",
@@ -11427,6 +11428,8 @@ def resume_deferred_background_threads():
                 if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
                     BAMBU_BRIDGE_RUNTIME.start()
                 STOCK_ALERT_RUNTIME.start()
+                if _load_prusalink_bindings():
+                    PRUSALINK_WATCH_RUNTIME.start()
                 if _load_flashforge_bindings():
                     FLASHFORGE_WATCH_RUNTIME.start()
                 if _load_moonraker_usage_links():
@@ -11456,6 +11459,8 @@ def start_plugin_runtime(storage_initialized=False):
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
         STOCK_ALERT_RUNTIME.start()
+        if _load_prusalink_bindings():
+            PRUSALINK_WATCH_RUNTIME.start()
         if _load_flashforge_bindings():
             FLASHFORGE_WATCH_RUNTIME.start()
         if _load_moonraker_usage_links():
@@ -11483,6 +11488,7 @@ def stop_plugin_runtime():
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
     STOCK_ALERT_RUNTIME.stop()
+    PRUSALINK_WATCH_RUNTIME.stop()
     FLASHFORGE_WATCH_RUNTIME.stop()
     MOONRAKER_WATCH_RUNTIME.stop()
     CREALITY_WATCH_RUNTIME.stop()
@@ -13124,6 +13130,683 @@ class MoonrakerWatchRuntime(_UsageWatchRuntime):
 
 
 MOONRAKER_WATCH_RUNTIME = MoonrakerWatchRuntime()
+
+
+# --------------------------------------------------------------------------- #
+# PrusaLink through OrcaSlicer's own printer connection
+# --------------------------------------------------------------------------- #
+# OrcaSlicer stores a Prusa printer's address and its login (an API key, or a
+# user name and password for HTTP Digest) in its connection settings. They are
+# copied from the host for each request and never written by the plugin: its
+# private file holds only the FilamentHub bridge token, the printer's serial
+# number that selects the Orca connection, and the account-scoped identity
+# evidence.
+#
+# The printer is read when the person connects it, opens its card or syncs, and
+# while OrcaSlicer is open a watcher reports its state. The plugin only reads:
+# every request is a GET, and the printer is sent no command.
+# fh-bundle: filamenthub_prusalink
+from filamenthub_prusalink import (
+    PRUSALINK_CAPABILITIES,
+    PRUSALINK_DEFAULT_PORT,
+    PRUSALINK_HOST_TYPE,
+    PRUSALINK_IDENTITY_KIND,
+    PRUSALINK_INFO_PATH,
+    PRUSALINK_JOB_PATH,
+    PRUSALINK_LEGACY_PRINTER_PATH,
+    PRUSALINK_PROVIDER,
+    PRUSALINK_STATUS_PATH,
+    PRUSALINK_VERSION_PATH,
+    prusalink_capabilities,
+    prusalink_credentials,
+    prusalink_digest_authorization,
+    prusalink_digest_challenge,
+    prusalink_endpoint,
+    prusalink_printer,
+    prusalink_serial,
+    prusalink_single_spool,
+    prusalink_slots,
+    prusalink_url,
+    prusalink_version_kind,
+)
+# fh-bundle-end
+
+MAX_PRUSALINK_BRIDGES = 32
+PRUSALINK_READ_TIMEOUT = 8.0
+PRUSALINK_CONNECTIONS_MAX_AGE_SECONDS = 300.0
+_PRUSALINK_CONNECTIONS = {"items": None, "at": None}
+_PRUSALINK_CONNECTIONS_LOCK = threading.Lock()
+# What each address answered as this session: the printer's serial number and
+# its /api/version, which names the model. Another serial sends it back to be
+# identified again.
+_PRUSALINK_KNOWN_HOSTS = {}
+PRUSALINK_MESSAGES = frozenset({"configure-prusalink", "prusalink-refresh"})
+_PRUSALINK_RESULT_TYPES = {
+    "configure-prusalink": "prusalink-setup-result",
+    "prusalink-refresh": "prusalink-refresh-result",
+}
+_PRUSALINK_CONFIG_LOCK = threading.RLock()
+# A failure worth telling the person ahead of "unreachable" when several Orca
+# connections were tried.
+_PRUSALINK_FAILURE_ORDER = (
+    "auth", "credentials", "permission", "firmware", "octoprint", "identity",
+    "invalid", "unreachable",
+)
+
+
+def _prusalink_config_file():
+    # Beside the other links, in whichever storage configure_plugin_storage chose.
+    return os.path.join(PLUGIN_STORAGE_DIR, ".fh_prusalink.json")
+
+
+def _snapshot_local_prusalink_connections():
+    """Copy PrusaLink connections from Orca's user printer presets (UI thread).
+
+    The result, login included, stays in memory: it is never written by the
+    plugin and never sent to FilamentHub.
+    """
+    connections = []
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            host_type = _preset_scalar(_preset_config_value(preset, "host_type"))
+            if host_type.lower() != PRUSALINK_HOST_TYPE:
+                continue
+            endpoint = prusalink_endpoint(_preset_scalar(_preset_config_value(preset, "print_host")))
+            if endpoint is None:
+                continue
+            connections.append({
+                "label": str(preset.name or "")[:200],
+                "host": endpoint[0],
+                "port": endpoint[1],
+                "credentials": prusalink_credentials(*(
+                    _preset_scalar(_preset_config_value(preset, key)) for key in (
+                        "printhost_authorization_type", "printhost_apikey",
+                        "printhost_user", "printhost_password",
+                    )
+                )),
+            })
+    except Exception as exc:
+        fh_log("local PrusaLink scan failed: %s" % type(exc).__name__)
+    else:
+        # Only a completed scan replaces what the watcher works from.
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            _PRUSALINK_CONNECTIONS["items"] = [dict(item) for item in connections]
+            _PRUSALINK_CONNECTIONS["at"] = time.monotonic()
+    return connections
+
+
+def prusalink_printers(connections, source_instance_id):
+    """Reduce Orca presets to distinct printers with an opaque local reference.
+
+    Nozzle variants usually share one address. The reference is a local hash,
+    so the page can name a choice without learning the address.
+    """
+    printers = {}
+    for connection in connections or []:
+        endpoint = "%s:%d" % (connection["host"].lower(), connection["port"])
+        ref = "pl_" + hashlib.sha256(
+            (source_instance_id + "\0" + endpoint).encode("utf-8")
+        ).hexdigest()[:32]
+        printers.setdefault(ref, dict(connection, connection_ref=ref))
+    return list(printers.values())
+
+
+def _load_prusalink_bindings():
+    try:
+        with open(_prusalink_config_file(), "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_PRUSALINK_BRIDGES:
+        return []
+    bindings = []
+    for item in items:
+        identity = item.get("device_identity") if isinstance(item, dict) else None
+        if not (
+            isinstance(item, dict)
+            and type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and item.get("serial")
+            and prusalink_serial({"serial": item.get("serial")}) == item["serial"]
+            and isinstance(identity, dict)
+            and identity.get("kind") == PRUSALINK_IDENTITY_KIND
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
+        ):
+            continue
+        bindings.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "bridge_token": item["bridge_token"],
+            "serial": item["serial"],
+            "device_identity": {"kind": identity["kind"], "token": identity["token"]},
+        })
+    return bindings
+
+
+def _save_prusalink_bindings(bindings):
+    write_json_atomic(
+        _prusalink_config_file(), {"version": 1, "printers": bindings}, mode=0o600
+    )
+
+
+def _forget_prusalink_binding(physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _PRUSALINK_CONFIG_LOCK:
+        bindings = _load_prusalink_bindings()
+        kept = [
+            item for item in bindings
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(bindings):
+            _save_prusalink_bindings(kept)
+
+
+class _PrusaLinkFailure(Exception):
+    """A reading stopped for a reason the page explains."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+class _PrusaLinkSession:
+    """The GET requests of one reading, with the login from Orca.
+
+    The address is resolved once, to a private or link-local destination only.
+    A Digest challenge is answered and kept for the following requests, as
+    both firmwares allow; the User-Agent stays the same, because Prusa-Link
+    ties its nonce to it.
+    """
+
+    def __init__(self, connection):
+        self._connection = connection
+        self._address = None
+        self._challenge = None
+        self._count = 0
+        self._cnonce = secrets.token_hex(8)
+
+    def get(self, path):
+        """Return ``(status, payload)``; raise _PrusaLinkFailure when it cannot be read."""
+        credentials = self._connection.get("credentials")
+        if not credentials:
+            raise _PrusaLinkFailure("credentials")
+        if self._address is None:
+            try:
+                sockaddr = _resolved_lan_address(
+                    self._connection["host"], self._connection["port"]
+                )[3]
+            except (OSError, ValueError) as exc:
+                raise _PrusaLinkFailure("permission" if _host_denied(exc) else "unreachable")
+            self._address = sockaddr[0]
+        url = prusalink_url(self._address, self._connection["port"], path)
+        for attempt in range(2):
+            headers = {
+                "Accept": "application/json",
+                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+            }
+            if credentials["mode"] == "key":
+                headers["X-Api-Key"] = credentials["key"]
+            elif self._challenge is not None:
+                self._count += 1
+                headers["Authorization"] = prusalink_digest_authorization(
+                    self._challenge, "GET", path, credentials["user"],
+                    credentials["password"], self._cnonce, self._count,
+                )
+            request = _plugin_request(url, headers=headers)
+            try:
+                with _urlopen_authorized(request, PRUSALINK_READ_TIMEOUT) as response:
+                    status = response.getcode()
+                    body = _read_response_limited(response)
+            except urllib.error.HTTPError as exc:
+                challenge = None
+                if exc.code == 401 and credentials["mode"] == "digest" and attempt == 0:
+                    challenge = prusalink_digest_challenge(
+                        exc.headers.get_all("WWW-Authenticate") if exc.headers else None
+                    )
+                exc.close()
+                if challenge is not None:
+                    # First contact, or a nonce the printer let expire.
+                    self._challenge, self._count = challenge, 0
+                    continue
+                if exc.code in (401, 403):
+                    raise _PrusaLinkFailure("auth")
+                return exc.code, None
+            except (OSError, ValueError, urllib.error.URLError) as exc:
+                raise _PrusaLinkFailure("permission" if _host_denied(exc) else "unreachable")
+            if status == 204:
+                return status, None
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                raise _PrusaLinkFailure("invalid")
+            if not isinstance(payload, dict):
+                raise _PrusaLinkFailure("invalid")
+            return status, payload
+        raise _PrusaLinkFailure("auth")
+
+
+def read_prusalink_status(connection):
+    """Read one printer through the API generation it answers; return ``(reading, failure)``.
+
+    ``reading`` holds the printer's serial number and the answers of
+    ``/api/version``, ``/api/v1/info``, ``/api/v1/status``, ``/api/v1/job`` and,
+    for a single-spool printer, ``/api/printer``. A printer without the
+    ``/api/v1`` generation names no serial number and is reported as
+    ``"firmware"``; a real OctoPrint as ``"octoprint"``.
+    """
+    session = _PrusaLinkSession(connection)
+    key = (connection["host"].lower(), connection["port"])
+    try:
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            known = _PRUSALINK_KNOWN_HOSTS.get(key)
+        version = known["version"] if known else None
+        if version is None:
+            code, version = session.get(PRUSALINK_VERSION_PATH)
+            kind = prusalink_version_kind(version) if code == 200 else None
+            if kind != "prusalink":
+                raise _PrusaLinkFailure(kind if kind == "octoprint" else "invalid")
+        code, info = session.get(PRUSALINK_INFO_PATH)
+        if code == 404:
+            raise _PrusaLinkFailure("firmware")
+        if code != 200 or info is None:
+            raise _PrusaLinkFailure("invalid")
+        serial = prusalink_serial(info)
+        if not serial:
+            raise _PrusaLinkFailure("identity")
+        if known and known["serial"] != serial:
+            # Another printer took this address: its model is asked again.
+            code, version = session.get(PRUSALINK_VERSION_PATH)
+            if code != 200 or prusalink_version_kind(version) != "prusalink":
+                raise _PrusaLinkFailure("invalid")
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            _PRUSALINK_KNOWN_HOSTS[key] = {"serial": serial, "version": version}
+        code, status = session.get(PRUSALINK_STATUS_PATH)
+        if code != 200 or status is None:
+            raise _PrusaLinkFailure("invalid")
+        job = None
+        if isinstance(status.get("job"), dict):
+            code, job = session.get(PRUSALINK_JOB_PATH)
+            job = job if code == 200 else None
+        legacy = None
+        if prusalink_single_spool(version, info):
+            # Only the OctoPrint-compatible answer names the loaded material.
+            code, legacy = session.get(PRUSALINK_LEGACY_PRINTER_PATH)
+            legacy = legacy if code == 200 else None
+    except _PrusaLinkFailure as failure:
+        if failure.code not in {"permission", "credentials"}:
+            with _PRUSALINK_CONNECTIONS_LOCK:
+                # Whoever answers here next is identified again.
+                _PRUSALINK_KNOWN_HOSTS.pop(key, None)
+        return None, failure.code
+    return {
+        "serial": serial, "version": version, "info": info,
+        "status": status, "job": job, "printer": legacy,
+    }, None
+
+
+def _prusalink_worst(failures):
+    return next((code for code in _PRUSALINK_FAILURE_ORDER if code in failures), None)
+
+
+def read_prusalink_printer(binding, connections):
+    """Read a linked printer through whichever Orca connection reaches it.
+
+    The connection that answered with this serial number before is tried
+    first, so a person with several Prusa printers does not have all of them
+    read for each one.
+    """
+    def known_serial(connection):
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            known = _PRUSALINK_KNOWN_HOSTS.get((connection["host"].lower(), connection["port"]))
+        return known["serial"] if known else None
+
+    failures = set()
+    ordered = sorted(connections or [], key=lambda item: known_serial(item) != binding["serial"])
+    for connection in ordered:
+        reading, failure = read_prusalink_status(connection)
+        if reading is not None and reading["serial"] == binding["serial"]:
+            return reading, None
+        if failure:
+            failures.add(failure)
+    # Every connection answered as another printer: this one is not in Orca.
+    return None, _prusalink_worst(failures) or "other"
+
+
+def build_prusalink_bridge_snapshot(binding, source_instance_id, reading):
+    slots, complete = prusalink_slots(reading["version"], reading["info"], reading["printer"])
+    return {
+        "material_system_id": binding["material_system_id"],
+        "provider": PRUSALINK_PROVIDER,
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": prusalink_capabilities(slots),
+        "printer": prusalink_printer(reading["status"], reading["job"]),
+        "slots": slots,
+        "slot_topology_complete": complete,
+        "device_identity": binding["device_identity"],
+    }
+
+
+def observe_prusalink_binding(binding, connections, source_instance_id):
+    """Read one linked printer and report it to FilamentHub; return a result code."""
+    reading, failure = read_prusalink_printer(binding, connections)
+    if reading is None:
+        if failure != "permission":
+            # The helper is alive; say that the printer did not answer it.
+            status, _body, _retry_after = http_post_bridge_json(
+                "/printer-bridge/heartbeat",
+                binding["bridge_token"],
+                {
+                    "material_system_id": binding["material_system_id"],
+                    "provider": PRUSALINK_PROVIDER,
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": source_instance_id,
+                    "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "provider_reachable": False,
+                },
+            )
+            if status == 401:
+                _forget_prusalink_binding(binding["physical_printer_id"], binding["bridge_token"])
+                return "unpaired"
+        return failure
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_prusalink_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "unpaired":
+        _forget_prusalink_binding(binding["physical_printer_id"], binding["bridge_token"])
+    return code
+
+
+def observe_prusalink_bindings(connections, physical_printer_id=None, material_system_id=None):
+    """Report every linked printer, or one; return ``{physical_printer_id: code}``."""
+    bindings = [
+        item for item in _load_prusalink_bindings()
+        if physical_printer_id is None or (
+            item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        )
+    ]
+    if not bindings:
+        return {}
+    source_instance_id = plugin_source_instance_id()
+    return {
+        binding["physical_printer_id"]: observe_prusalink_binding(
+            binding, connections, source_instance_id
+        )
+        for binding in bindings
+    }
+
+
+def configure_prusalink_bridge(
+    physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+):
+    """Link one Prusa printer known to OrcaSlicer; return the page result."""
+    source_instance_id = plugin_source_instance_id()
+    printers = prusalink_printers(connections, source_instance_id)
+    if not printers:
+        return {"ok": False, "code": "notFound"}
+    chosen = [item for item in printers if item["connection_ref"] == connection_ref]
+    if not chosen and len(printers) == 1 and not connection_ref:
+        chosen = printers
+    if len(chosen) != 1:
+        return {
+            "ok": False,
+            "code": "choose",
+            "candidates": [
+                {"connectionRef": item["connection_ref"], "label": item["label"]}
+                for item in printers[:MAX_PRUSALINK_BRIDGES]
+            ],
+        }
+    connection = chosen[0]
+    with _PRUSALINK_CONNECTIONS_LOCK:
+        # The person is linking this address now: ask it who it is again.
+        _PRUSALINK_KNOWN_HOSTS.pop((connection["host"].lower(), connection["port"]), None)
+    reading, failure = read_prusalink_status(connection)
+    if reading is None:
+        return {"ok": False, "code": failure}
+    serial = reading["serial"]
+    with _PRUSALINK_CONFIG_LOCK:
+        if any(
+            item["serial"] == serial and item["physical_printer_id"] != physical_printer_id
+            for item in _load_prusalink_bindings()
+        ):
+            return {"ok": False, "code": "linked"}
+    slots, _complete = prusalink_slots(reading["version"], reading["info"], reading["printer"])
+    pair_status, pair_body = http_post_json(
+        "/printer-bridge/pair",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": PRUSALINK_PROVIDER,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            "capabilities": prusalink_capabilities(slots),
+        },
+    )
+    try:
+        paired = json.loads(pair_body.decode("utf-8")) if pair_status == 200 else None
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        paired = None
+    bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else None
+    if not _valid_fresh_bridge_token(bridge_token):
+        return {"ok": False, "code": "pairing"}
+    evidence = _printer_evidence_token(
+        paired.get("printer_discovery_key"), "device", PRUSALINK_IDENTITY_KIND + "\0" + serial
+    )
+    if (
+        paired.get("physical_printer_id") != physical_printer_id
+        or paired.get("material_system_id") != material_system_id
+        or evidence is None
+    ):
+        # The code belonged to another printer card: give the credential back.
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    binding = {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "bridge_token": bridge_token,
+        "serial": serial,
+        "device_identity": {"kind": PRUSALINK_IDENTITY_KIND, "token": evidence},
+    }
+    try:
+        with _PRUSALINK_CONFIG_LOCK:
+            bindings = [
+                item for item in _load_prusalink_bindings()
+                if item["physical_printer_id"] != physical_printer_id
+            ]
+            if len(bindings) >= MAX_PRUSALINK_BRIDGES:
+                raise ValueError("too many PrusaLink links")
+            _save_prusalink_bindings(bindings + [binding])
+    except (OSError, ValueError):
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        bridge_token,
+        build_prusalink_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "linked":
+        # FilamentHub will never accept this printer for this card: undo the link.
+        _forget_prusalink_binding(physical_printer_id, bridge_token)
+        http_delete_bridge("/printer-bridge/connection", bridge_token)
+        return {"ok": False, "code": "linked"}
+    # The link itself is saved; a failed first report is retried on refresh.
+    return {"ok": True, "code": code}
+
+
+def handle_prusalink_message(catalog, msg):
+    """Run one page request about a Prusa printer (called on the UI thread)."""
+    msg_type = msg.get("type")
+    request_id = msg.get("requestId")
+    ids = _positive_ids(msg)
+    if not (isinstance(request_id, str) and 0 < len(request_id) <= 100 and ids):
+        return
+    # Host state is copied here, on the UI thread; the worker only does I/O.
+    connections = _snapshot_local_prusalink_connections()
+    if msg_type == "configure-prusalink":
+        pairing_code = msg.get("pairingCode")
+        connection_ref = msg.get("connectionRef") or ""
+        if not (
+            isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
+            and isinstance(connection_ref, str) and len(connection_ref) <= 120
+        ):
+            return
+
+        def job():
+            try:
+                result = configure_prusalink_bridge(
+                    ids[0], ids[1], pairing_code, connection_ref, connections
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("PrusaLink setup failed: %s" % type(exc).__name__)
+                result = {"ok": False, "code": "invalid"}
+            if not result.get("ok"):
+                fh_log("PrusaLink setup: %s" % result.get("code"))
+            catalog._deliver("prusalink-setup-result", requestId=request_id, result=result)
+            if result.get("ok"):
+                _wake_usage_watch(PRUSALINK_WATCH_RUNTIME)
+    else:
+        def job():
+            try:
+                code = observe_prusalink_bindings(connections, ids[0], ids[1]).get(
+                    ids[0], "unpaired"
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("PrusaLink refresh failed: %s" % type(exc).__name__)
+                code = "invalid"
+            catalog._deliver(
+                "prusalink-refresh-result",
+                requestId=request_id,
+                result={"ok": code == "ok", "code": code},
+            )
+            if code == "ok":
+                _wake_usage_watch(PRUSALINK_WATCH_RUNTIME)
+
+    if BACKGROUND_WORKER.submit(job) is False:
+        catalog._deliver(
+            _PRUSALINK_RESULT_TYPES[msg_type],
+            requestId=request_id,
+            result={"ok": False, "code": "unavailable"},
+        )
+
+
+def refresh_prusalink_bindings_after_sync():
+    """Re-read linked Prusa printers alongside a page-driven sync (UI thread)."""
+    if not _load_prusalink_bindings():
+        return
+    connections = _snapshot_local_prusalink_connections()
+
+    def job():
+        try:
+            observe_prusalink_bindings(connections)
+        except PluginLifecycleStopped:
+            raise
+        except Exception as exc:
+            fh_log("PrusaLink refresh failed: %s" % type(exc).__name__)
+
+    BACKGROUND_WORKER.submit(job)
+
+
+def refresh_prusalink_connections():
+    """Keep the watcher's copy of Orca's PrusaLink connections current (UI thread)."""
+    now = time.monotonic()
+    with _PRUSALINK_CONNECTIONS_LOCK:
+        checked = _PRUSALINK_CONNECTIONS["at"]
+        if checked is not None and now - checked < PRUSALINK_CONNECTIONS_MAX_AGE_SECONDS:
+            return
+        # Also the time of a check that found nothing linked, so that people
+        # without a Prusa printer pay for one small read in five minutes.
+        _PRUSALINK_CONNECTIONS["at"] = now
+    if not _load_prusalink_bindings():
+        return
+    _snapshot_local_prusalink_connections()
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            PRUSALINK_WATCH_RUNTIME.start()
+
+
+class PrusaLinkWatchRuntime(_UsageWatchRuntime):
+    """Reports the state of every linked Prusa printer while OrcaSlicer is open.
+
+    The printer counts no filament, so there are no usage books here: only the
+    state, sent when it changes.
+    """
+
+    thread_name = "filamenthub-prusalink-watch"
+    label = "PrusaLink"
+
+    def _provider(self, binding):
+        return PRUSALINK_PROVIDER
+
+    def _forget(self, binding):
+        _forget_prusalink_binding(binding["physical_printer_id"], binding["bridge_token"])
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = _load_prusalink_bindings()
+        if not bindings:
+            return None
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            connections = _PRUSALINK_CONNECTIONS["items"]
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return USAGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Read one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now) or not connections:
+            return False
+        reading, failure = read_prusalink_printer(binding, connections)
+        if self._stop.is_set():
+            return False
+        if reading is None:
+            if failure == "permission":
+                self._block(key, now)
+            self._log("reading", failure)
+            return False
+        self._log("reading", None)
+        snapshot = build_prusalink_bridge_snapshot(binding, source_instance_id, reading)
+        self._report(binding, key, snapshot, now)
+        return snapshot["printer"]["state"] in ("printing", "paused")
+
+
+PRUSALINK_WATCH_RUNTIME = PrusaLinkWatchRuntime()
 
 
 # --------------------------------------------------------------------------- #
@@ -17424,6 +18107,12 @@ class FilamentHubCatalog(
                     "physicalPrinterId": item.get("physical_printer_id"), "provider": item["provider"],
                     "source": item["source"], "printerModel": item.get("printer_model", ""),
                 } for item in discovery["items"] if item["provider"] != "moonraker" and item["connection_ref"] not in detached)
+                # Like Creality, which card a Prusa printer is linked to is
+                # known only after asking the printer for its serial number.
+                candidates.extend({
+                    "connectionRef": item["connection_ref"], "label": item["label"] or "Prusa",
+                    "physicalPrinterId": None, "provider": "prusalink", "source": "profile",
+                } for item in prusalink_printers(msg.get("prusalink") or [], plugin_source_instance_id()))
                 flashforge = _flashforge_offered(msg.get("flashforge"))
                 if flashforge:
                     linked = {item["serial"]: item["physical_printer_id"]
@@ -17542,6 +18231,7 @@ class FilamentHubCatalog(
 
     def on_message(self, msg):
         prime_background_runtime()
+        refresh_prusalink_connections()
         refresh_flashforge_connections()
         refresh_creality_connections()
         denied_before = worker_denial_count()
@@ -17668,6 +18358,9 @@ class FilamentHubCatalog(
             local = observe_local_moonraker_connections(observations)
             msg = dict(msg)
             msg["labels"] = {item.get("connection_ref"): item.get("preset_name") for item in observations}
+            msg["prusalink"] = (
+                _snapshot_local_prusalink_connections() if msg.get("operation") == "list" else []
+            )
             msg["flashforge"] = (
                 _snapshot_local_flashforge_connections() if msg.get("operation") == "list" else []
             )
@@ -17683,6 +18376,8 @@ class FilamentHubCatalog(
             )
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
+        elif msg_type in PRUSALINK_MESSAGES and direct_message:
+            handle_prusalink_message(self, msg)
         elif msg_type in FLASHFORGE_MESSAGES and direct_message:
             handle_flashforge_message(self, msg)
         elif msg_type in CREALITY_MESSAGES and direct_message:
@@ -18068,6 +18763,7 @@ class FilamentHubCatalog(
                 operation_id=operation_id,
                 trigger="manual",
             )
+            refresh_prusalink_bindings_after_sync()
             refresh_flashforge_bindings_after_sync()
             refresh_creality_bindings_after_sync()
             refresh_profile_lan_bindings_after_sync()

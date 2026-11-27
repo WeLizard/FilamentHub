@@ -57,7 +57,7 @@ SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
 # card. A Klipper printer needs no code: the plugin already reaches it through
 # a connection bound to the card, and asks for its usage bridge with that.
 ORCA_BRIDGE_PROVIDERS = frozenset(
-    {BAMBU_PROVIDER, "flashforge", "creality", "sdcp", "elegoo_mqtt"}
+    {BAMBU_PROVIDER, "flashforge", "creality", "prusalink", "sdcp", "elegoo_mqtt"}
 )
 BATCH_RECEIPT_KIND = "usage_batch"
 # One row per pairing code and workstation: the last reason that setup failed.
