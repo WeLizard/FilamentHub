@@ -74,6 +74,11 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # Creality's stock firmware reports its CFS slots and the length of filament
     # a job has used, and takes no spool identity. The plugin only reads it.
     ("creality", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
+    # SDCP (Chitu's open protocol; the Elegoo Centauri Carbon speaks it) and
+    # Elegoo's MQTT API (the Centauri Carbon 2) report the print and the CANVAS
+    # slots, and count no filament a job uses. The plugin only reads them.
+    ("sdcp", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    ("elegoo_mqtt", "orca_plugin_lan"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -141,6 +146,27 @@ _KLIPPER_NAMES_NO_SPOOL = (
     "Klipper names no spool; the assignment made on the site is the only link.",
 )
 _KLIPPER_NO_READER = ("device", "A Klipper printer without an MMU has no tag reader.")
+# What SDCP and Elegoo's MQTT API lack alike: both carry the same CANVAS slots.
+_CANVAS_READ_ONLY: dict[str, tuple[GapKind, str]] = {
+    "consumption": (
+        "planned",
+        "The printer reports no filament used; counting the slicer's estimate by "
+        "progress, as for Flashforge, is not built yet.",
+    ),
+    "write": (
+        "planned",
+        "The plugin only reads; setting a CANVAS slot's material is not built yet.",
+    ),
+    "spool_identity": (
+        "device",
+        "The printer knows the material in a slot, never which spool is loaded.",
+    ),
+    "tag_read": (
+        "planned",
+        "FilamentHub reads no spool tag from these printers yet.",
+    ),
+}
+
 ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
     ("bambu", "orca_plugin_lan"): {"spool_identity": _NO_SPOOL_ON_BAMBU},
     ("bambu", "edge_agent"): {
@@ -190,6 +216,8 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
             "FilamentHub does not match that to a spool yet.",
         ),
     },
+    ("sdcp", "orca_plugin_lan"): _CANVAS_READ_ONLY,
+    ("elegoo_mqtt", "orca_plugin_lan"): _CANVAS_READ_ONLY,
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
 }

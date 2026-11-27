@@ -683,6 +683,8 @@ PLUGIN_CAPABILITIES = (
     "flashforge-lan-bridge",
     "flashforge-material-write",
     "creality-lan-bridge",
+    "sdcp-lan-bridge",
+    "elegoo_mqtt-lan-bridge",
     "profile-sync",
     "profile-sync-scopes-v1",
     "bambu-material-write",
@@ -1489,6 +1491,7 @@ def configure_plugin_storage():
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
     global FLASHFORGE_CONFIG_FILE, MOONRAKER_USAGE_CONFIG_FILE, CREALITY_CONFIG_FILE
+    global SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
@@ -1563,6 +1566,8 @@ def configure_plugin_storage():
     BAMBU_REVOKE_FILE = os.path.join(target_root, ".fh_bambu_revoke.json")
     FLASHFORGE_CONFIG_FILE = os.path.join(target_root, ".fh_flashforge.json")
     CREALITY_CONFIG_FILE = os.path.join(target_root, ".fh_creality.json")
+    SDCP_CONFIG_FILE = os.path.join(target_root, ".fh_sdcp.json")
+    ELEGOO_MQTT_CONFIG_FILE = os.path.join(target_root, ".fh_elegoo_mqtt.json")
     MOONRAKER_USAGE_CONFIG_FILE = os.path.join(target_root, ".fh_moonraker_usage.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
@@ -1678,6 +1683,8 @@ BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
 FLASHFORGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_flashforge.json")
 CREALITY_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_creality.json")
+SDCP_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_sdcp.json")
+ELEGOO_MQTT_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_elegoo_mqtt.json")
 MOONRAKER_USAGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_moonraker_usage.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 WORKSTATION_KEY_FILE = os.path.join(PLUGIN_DIR, ".fh_workstation_key.json")
@@ -3663,6 +3670,8 @@ _CREDENTIAL_HEADERS = frozenset({
     "authorization",
     "x-filamenthub-bridge-token",
     "x-api-key",
+    # The access code of an Elegoo Centauri Carbon 2.
+    "x-token",
 })
 
 
@@ -13513,6 +13522,875 @@ class CrealityWatchRuntime(_UsageWatchRuntime):
 CREALITY_WATCH_RUNTIME = CrealityWatchRuntime()
 
 
+# --------------------------------------------------------------------------- #
+# SDCP printers and Elegoo's MQTT API through OrcaSlicer's own connection
+# --------------------------------------------------------------------------- #
+# Two adapters share this glue, one per protocol: SDCP (Chitu's open protocol;
+# the Elegoo Centauri Carbon is a known device) and Elegoo's MQTT API (the
+# Centauri Carbon 2). OrcaSlicer stores the printer's address, and for the
+# MQTT API its access code, in the connection settings. Both stay in memory
+# here: the plugin's private files hold only the FilamentHub bridge token, the
+# printer's own identifier (SDCP's MainboardID, the MQTT API's serial number)
+# that selects the Orca connection, and the account-scoped identity evidence.
+#
+# The printer is read when the person connects it, opens its card or syncs.
+# Neither protocol reports the filament a job has used, so nothing follows the
+# prints in between. The plugin only reads: it sends no command that changes
+# the printer.
+# fh-bundle: filamenthub_sdcp
+from filamenthub_sdcp import (
+    SDCP_CAPABILITIES,
+    SDCP_CMD_ATTRIBUTES,
+    SDCP_CMD_CANVAS,
+    SDCP_CMD_STATUS,
+    SDCP_HOST_TYPES,
+    SDCP_IDENTITY_KIND,
+    SDCP_PATH,
+    SDCP_PORT,
+    SDCP_PROVIDER,
+    SDCP_ROUTE_KNOWN,
+    SDCP_ROUTE_PROBE,
+    sdcp_attributes,
+    sdcp_canvas_supported,
+    sdcp_mainboard_id,
+    sdcp_message,
+    sdcp_printer,
+    sdcp_profile_route,
+    sdcp_request,
+    sdcp_response,
+    sdcp_status,
+    sdcp_topic,
+)
+# fh-bundle-end
+# fh-bundle: filamenthub_elegoo_mqtt
+from filamenthub_elegoo_mqtt import (
+    ELEGOO_MQTT_CANVAS,
+    ELEGOO_MQTT_CAPABILITIES,
+    ELEGOO_MQTT_DEFAULT_ACCESS_CODE,
+    ELEGOO_MQTT_HOST_TYPES,
+    ELEGOO_MQTT_HTTP_PORT,
+    ELEGOO_MQTT_IDENTITY_KIND,
+    ELEGOO_MQTT_MONO_FILAMENT,
+    ELEGOO_MQTT_PORT,
+    ELEGOO_MQTT_PROVIDER,
+    ELEGOO_MQTT_STATUS,
+    ELEGOO_MQTT_USERNAME,
+    elegoo_mqtt_access_code,
+    elegoo_mqtt_canvas_info,
+    elegoo_mqtt_message,
+    elegoo_mqtt_mono_filament,
+    elegoo_mqtt_printer,
+    elegoo_mqtt_profile,
+    elegoo_mqtt_register_payload,
+    elegoo_mqtt_register_result,
+    elegoo_mqtt_request,
+    elegoo_mqtt_serial,
+    elegoo_mqtt_system_info,
+    elegoo_mqtt_topics,
+)
+# fh-bundle-end
+# fh-bundle: filamenthub_canvas
+from filamenthub_canvas import (
+    CANVAS_EXTERNAL_INDEX,
+    CANVAS_MAX_UNITS,
+    CANVAS_SLOTS_PER_UNIT,
+    canvas_single_spool,
+    canvas_slots,
+    canvas_units,
+)
+# fh-bundle-end
+
+PROFILE_LAN_PROVIDERS = (SDCP_PROVIDER, ELEGOO_MQTT_PROVIDER)
+MAX_PROFILE_LAN_BRIDGES = 32
+PROFILE_LAN_READ_TIMEOUT = 8.0
+# How long a printer is given to answer each read once it is connected.
+PROFILE_LAN_REPLY_SECONDS = 4.0
+# A profile of unknown protocol is asked once, briefly, when printers are listed.
+PROFILE_LAN_PROBE_SECONDS = 2.0
+PROFILE_LAN_MAX_MESSAGE_BYTES = 1024 * 1024
+# What each address answered as this session, per protocol: the printer's own identifier.
+_PROFILE_LAN_KNOWN_HOSTS = {}
+_PROFILE_LAN_KNOWN_HOSTS_LOCK = threading.Lock()
+PROFILE_LAN_MESSAGES = frozenset(
+    message for provider in PROFILE_LAN_PROVIDERS
+    for message in ("configure-" + provider, provider + "-refresh")
+)
+# The most telling reason first when no connection reached the printer.
+_PROFILE_LAN_FAILURE_ORDER = (
+    "permission", "auth", "access_code", "busy", "identity", "invalid", "unreachable",
+)
+_PROFILE_LAN_CONFIG_LOCK = threading.RLock()
+
+
+def _profile_lan_config_file(provider):
+    return SDCP_CONFIG_FILE if provider == SDCP_PROVIDER else ELEGOO_MQTT_CONFIG_FILE
+
+
+def _profile_lan_identity_kind(provider):
+    return SDCP_IDENTITY_KIND if provider == SDCP_PROVIDER else ELEGOO_MQTT_IDENTITY_KIND
+
+
+def _profile_lan_capabilities(provider):
+    return list(SDCP_CAPABILITIES if provider == SDCP_PROVIDER else ELEGOO_MQTT_CAPABILITIES)
+
+
+def _profile_lan_device_id(provider, value):
+    return sdcp_mainboard_id(value) if provider == SDCP_PROVIDER else elegoo_mqtt_serial(value)
+
+
+def _snapshot_profile_lan_connections():
+    """Copy SDCP and Elegoo MQTT connections from Orca's user printer presets (UI thread).
+
+    The result stays in memory: it is never written by the plugin and never
+    sent to FilamentHub. A profile is matched by its model and host type; one
+    that may run Moonraker instead is marked to be confirmed by the printer's
+    own answer.
+    """
+    connections = {provider: [] for provider in PROFILE_LAN_PROVIDERS}
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            host_type = _preset_scalar(_preset_config_value(preset, "host_type")).lower()
+            if host_type not in SDCP_HOST_TYPES and host_type not in ELEGOO_MQTT_HOST_TYPES:
+                continue
+            model = _preset_scalar(_preset_config_value(preset, "printer_model"))
+            # The address alone is used: the printer's ports are fixed.
+            host = creality_host(_preset_scalar(_preset_config_value(preset, "print_host")))
+            if not host:
+                continue
+            label = str(preset.name or "")[:200]
+            if elegoo_mqtt_profile(host_type, model):
+                connections[ELEGOO_MQTT_PROVIDER].append({
+                    "label": label, "host": host,
+                    "access_code": elegoo_mqtt_access_code(
+                        _preset_scalar(_preset_config_value(preset, "printhost_apikey"))
+                    ),
+                })
+                continue
+            route = sdcp_profile_route(host_type, model)
+            if route:
+                connections[SDCP_PROVIDER].append({"label": label, "host": host, "route": route})
+    except Exception as exc:
+        fh_log("local SDCP and Elegoo MQTT scan failed: %s" % type(exc).__name__)
+    return connections
+
+
+def profile_lan_printers(provider, connections, source_instance_id):
+    """Reduce Orca presets to distinct printers with an opaque local reference.
+
+    Nozzle variants of one printer share its address; the reference is a local
+    hash, so the page can name a choice without learning the address.
+    """
+    printers = {}
+    for connection in connections or []:
+        ref = provider[:2] + "_" + hashlib.sha256((
+            source_instance_id + "\0" + provider + "\0" + connection["host"].lower()
+        ).encode("utf-8")).hexdigest()[:32]
+        if ref in printers and connection.get("route") == SDCP_ROUTE_KNOWN:
+            # Another variant already says the model: the address is known to speak SDCP.
+            printers[ref]["route"] = SDCP_ROUTE_KNOWN
+        printers.setdefault(ref, dict(connection, connection_ref=ref))
+    return list(printers.values())
+
+
+def profile_lan_setup_candidates(snapshot):
+    """SDCP and Elegoo MQTT printers to offer when a printer is added on the site.
+
+    Runs on the worker. A profile that may run Moonraker is offered only if
+    the printer answers SDCP; Moonraker itself is found by its own search.
+    """
+    source_instance_id = plugin_source_instance_id()
+    candidates = []
+    for provider in PROFILE_LAN_PROVIDERS:
+        for item in profile_lan_printers(provider, (snapshot or {}).get(provider), source_instance_id):
+            if item.get("route") == SDCP_ROUTE_PROBE:
+                reading, _failure = read_sdcp(item, probe=True)
+                if reading is None:
+                    continue
+            # Which card a printer is linked to is known only after reading it.
+            candidates.append({
+                "connectionRef": item["connection_ref"],
+                "label": item["label"] or (
+                    "SDCP printer" if provider == SDCP_PROVIDER else "Elegoo Centauri Carbon 2"
+                ),
+                "physicalPrinterId": None, "provider": provider, "source": "profile",
+            })
+    return candidates
+
+
+def _load_profile_lan_bindings(provider):
+    try:
+        with open(_profile_lan_config_file(provider), "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_PROFILE_LAN_BRIDGES:
+        return []
+    kind = _profile_lan_identity_kind(provider)
+    bindings = []
+    for item in items:
+        identity = item.get("device_identity") if isinstance(item, dict) else None
+        if not (
+            type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and item.get("device_id")
+            and _profile_lan_device_id(provider, item.get("device_id")) == item["device_id"]
+            and isinstance(identity, dict)
+            and identity.get("kind") == kind
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
+        ):
+            continue
+        bindings.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "bridge_token": item["bridge_token"],
+            "device_id": item["device_id"],
+            "device_identity": {"kind": kind, "token": identity["token"]},
+        })
+    return bindings
+
+
+def _save_profile_lan_bindings(provider, bindings):
+    write_json_atomic(
+        _profile_lan_config_file(provider), {"version": 1, "printers": bindings}, mode=0o600
+    )
+
+
+def _forget_profile_lan_binding(provider, physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _PROFILE_LAN_CONFIG_LOCK:
+        bindings = _load_profile_lan_bindings(provider)
+        kept = [
+            item for item in bindings
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(bindings):
+            _save_profile_lan_bindings(provider, kept)
+
+
+def _sdcp_send(sock, text, opcode=1):
+    with external_operation():
+        sock.sendall(creality_ws_frame(text, secrets.token_bytes(4), opcode))
+
+
+def read_sdcp(connection, probe=False):
+    """Read an SDCP printer; return ``(reading, failure)``.
+
+    The printer is asked for its attributes and status (commands 1 and 0) and,
+    when its firmware has multi-colour support, for its CANVAS slots (324). A
+    probe asks only for the attributes, which name the printer. The
+    connection is closed after the one reading.
+    """
+    try:
+        family, socktype, proto, sockaddr = _resolved_lan_address(connection["host"], SDCP_PORT)
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    timeout = PROFILE_LAN_PROBE_SECONDS if probe else PROFILE_LAN_READ_TIMEOUT
+    deadline = time.monotonic() + timeout
+    key = secrets.token_bytes(16)
+    status = None
+    attributes = None
+    mainboard_id = ""
+    canvas = None
+    canvas_request = None
+    canvas_done = False
+    sock = socket.socket(family, socktype, proto)
+    try:
+        sock.settimeout(timeout)
+        with external_operation():
+            sock.connect(sockaddr)
+        with external_operation():
+            sock.sendall(creality_ws_handshake(sockaddr[0], key, SDCP_PORT, SDCP_PATH))
+        buffer = b""
+        while b"\r\n\r\n" not in buffer:
+            if len(buffer) > 8192 or time.monotonic() > deadline:
+                return None, "invalid"
+            with external_operation():
+                chunk = sock.recv(4096)
+            if not chunk:
+                return None, "invalid"
+            buffer += chunk
+        head, _separator, buffer = buffer.partition(b"\r\n\r\n")
+        if not creality_ws_accepted(head, key):
+            return None, "invalid"
+        commands = (SDCP_CMD_ATTRIBUTES,) if probe else (SDCP_CMD_ATTRIBUTES, SDCP_CMD_STATUS)
+        for command in commands:
+            _sdcp_send(sock, sdcp_request(command, secrets.token_hex(16), int(time.time() * 1000)))
+        reply_deadline = min(deadline, time.monotonic() + PROFILE_LAN_REPLY_SECONDS)
+        pending = b""
+        closed = False
+
+        def finished():
+            if probe:
+                return attributes is not None
+            return status is not None and attributes is not None and (
+                canvas_done or (canvas_request is None and not sdcp_canvas_supported(attributes))
+            )
+
+        while not closed and not finished():
+            frames, buffer = creality_ws_frames(buffer)
+            for final, opcode, payload in frames:
+                if opcode == 8:
+                    closed = True
+                    break
+                if opcode == 9:
+                    _sdcp_send(sock, payload, opcode=10)
+                    continue
+                if opcode not in (0, 1, 2):
+                    continue
+                pending += payload
+                if len(pending) > PROFILE_LAN_MAX_MESSAGE_BYTES:
+                    return None, "invalid"
+                if not final:
+                    continue
+                message, pending = sdcp_message(pending), b""
+                kind = sdcp_topic(message)
+                if kind == "status" and sdcp_status(message) is not None:
+                    status = sdcp_status(message)
+                    mainboard_id = mainboard_id or sdcp_mainboard_id(message.get("MainboardID"))
+                elif kind == "attributes":
+                    attributes = sdcp_attributes(message) or {}
+                    mainboard_id = sdcp_mainboard_id(attributes.get("MainboardID")) or mainboard_id
+                elif kind == "response" and canvas_request is not None:
+                    data = message.get("Data")
+                    if isinstance(data, dict) and data.get("RequestID") == canvas_request:
+                        canvas = sdcp_response(message, canvas_request)
+                        canvas_done = True
+            if (
+                not probe and not closed and canvas_request is None
+                and mainboard_id and sdcp_canvas_supported(attributes)
+            ):
+                canvas_request = secrets.token_hex(16)
+                _sdcp_send(sock, sdcp_request(
+                    SDCP_CMD_CANVAS, canvas_request, int(time.time() * 1000), mainboard_id
+                ))
+                reply_deadline = min(deadline, time.monotonic() + PROFILE_LAN_REPLY_SECONDS)
+            remaining = reply_deadline - time.monotonic()
+            if closed or finished() or remaining <= 0:
+                break
+            sock.settimeout(max(0.05, remaining))
+            try:
+                with external_operation():
+                    chunk = sock.recv(65536)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            buffer += chunk
+        if not closed:
+            try:
+                sock.settimeout(1.0)
+                _sdcp_send(sock, b"", opcode=8)
+            except OSError:
+                pass
+    except PluginLifecycleStopped:
+        raise
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    if (attributes if probe else status) is None:
+        return None, "invalid"
+    if not mainboard_id:
+        return None, "identity"
+    return {
+        "device_id": mainboard_id,
+        "status": status,
+        "canvas": canvas,
+        # The firmware takes command 324, and so has a say about CANVAS.
+        "canvas_asked": canvas_request is not None,
+    }, None
+
+
+def read_elegoo_mqtt_serial(connection, sockaddr):
+    """The serial number the printer reports for this access code: ``(serial, failure)``."""
+    host = "[%s]" % sockaddr[0] if ":" in sockaddr[0] else sockaddr[0]
+    try:
+        request = _plugin_request(
+            "http://%s:%d/system/info?X-Token=%s" % (
+                host, ELEGOO_MQTT_HTTP_PORT,
+                urllib.parse.quote(connection["access_code"], safe=""),
+            ),
+            headers={
+                "Accept": "application/json",
+                "X-Token": connection["access_code"],
+                "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+            },
+        )
+        with _urlopen_authorized(request, PROFILE_LAN_READ_TIMEOUT) as response:
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError as exc:
+        return "", "auth" if exc.code in (401, 403) else "invalid"
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return "", "permission" if _host_denied(exc) else "unreachable"
+    return elegoo_mqtt_system_info(body)
+
+
+def _elegoo_mqtt_publish(sock, topic, text):
+    packet = _mqtt_field(topic.encode("utf-8")) + text.encode("utf-8")
+    with external_operation():
+        sock.sendall(b"\x30" + _mqtt_len(len(packet)) + packet)
+
+
+def _elegoo_mqtt_received(sock, header, body):
+    """Topic and JSON of a received PUBLISH, acknowledging it if asked: ``(topic, message)``."""
+    if header >> 4 != 3 or len(body) < 2:
+        return None, None
+    size = struct.unpack("!H", body[:2])[0]
+    topic = body[2:2 + size].decode("utf-8", "replace")
+    offset = 2 + size
+    if (header >> 1) & 0x03:
+        packet_id = body[offset:offset + 2]
+        offset += 2
+        with external_operation():
+            sock.sendall(b"\x40\x02" + packet_id)
+    return topic, elegoo_mqtt_message(body[offset:])
+
+
+def read_elegoo_mqtt(connection):
+    """Read a printer over Elegoo's MQTT API; return ``(reading, failure)``.
+
+    The plugin registers as a client and asks for the status, the CANVAS slots
+    and, without CANVAS, the single spool. Nothing else is sent, and the
+    connection is closed after the one reading.
+    """
+    if not connection.get("access_code"):
+        return None, "access_code"
+    try:
+        sockaddr = _resolved_lan_address(connection["host"], ELEGOO_MQTT_HTTP_PORT)[3]
+        family, socktype, proto, mqtt_address = _resolved_lan_address(
+            connection["host"], ELEGOO_MQTT_PORT
+        )
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    serial, failure = read_elegoo_mqtt_serial(connection, sockaddr)
+    if not serial:
+        return None, failure
+    client_id = "1_PC_%04d" % (1000 + secrets.randbelow(9000))
+    topics = elegoo_mqtt_topics(serial, client_id)
+    answers = {}
+    registered = False
+    deadline = time.monotonic() + PROFILE_LAN_READ_TIMEOUT
+    sock = socket.socket(family, socktype, proto)
+    try:
+        sock.settimeout(PROFILE_LAN_READ_TIMEOUT)
+        with external_operation():
+            sock.connect(mqtt_address)
+        variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 60)
+        connect = (
+            variable
+            + _mqtt_field(client_id.encode("ascii"))
+            + _mqtt_field(ELEGOO_MQTT_USERNAME.encode("ascii"))
+            + _mqtt_field(connection["access_code"].encode("utf-8"))
+        )
+        with external_operation():
+            sock.sendall(b"\x10" + _mqtt_len(len(connect)) + connect)
+        header, connack = _mqtt_read_packet(sock, deadline)
+        if header >> 4 != 2 or len(connack) < 2:
+            return None, "invalid"
+        if connack[1] in (4, 5):
+            return None, "auth"
+        if connack[1] != 0:
+            return None, "invalid"
+        subscribe = struct.pack("!H", 1) + b"".join(
+            _mqtt_field(topics[name].encode("utf-8")) + b"\x00"
+            for name in ("register_response", "response")
+        )
+        with external_operation():
+            sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
+        while True:
+            header, _suback = _mqtt_read_packet(sock, deadline)
+            if header >> 4 == 9:
+                break
+        _elegoo_mqtt_publish(sock, topics["register"], elegoo_mqtt_register_payload(client_id))
+        reply_deadline = min(deadline, time.monotonic() + PROFILE_LAN_REPLY_SECONDS)
+        asked = None
+        try:
+            while True:
+                header, body = _mqtt_read_packet(sock, reply_deadline)
+                topic, message = _elegoo_mqtt_received(sock, header, body)
+                if topic == topics["register_response"] and not registered:
+                    outcome = elegoo_mqtt_register_result(message, client_id)
+                    if outcome == "busy":
+                        return None, "busy"
+                    if outcome == "refused":
+                        return None, "invalid"
+                    if outcome != "ok":
+                        continue
+                    registered = True
+                    asked = (1, ELEGOO_MQTT_STATUS)
+                elif topic == topics["response"] and message and asked:
+                    result = message.get("result")
+                    if message.get("id") != asked[0] or not isinstance(result, dict):
+                        continue
+                    if result.get("error_code", 0) == 0:
+                        answers[asked[1]] = result
+                    if asked[1] == ELEGOO_MQTT_STATUS:
+                        asked = (2, ELEGOO_MQTT_CANVAS)
+                    elif asked[1] == ELEGOO_MQTT_CANVAS and not canvas_units(
+                        elegoo_mqtt_canvas_info(answers.get(ELEGOO_MQTT_CANVAS))
+                    ):
+                        # Without CANVAS the printer names its single spool.
+                        asked = (3, ELEGOO_MQTT_MONO_FILAMENT)
+                    else:
+                        break
+                else:
+                    continue
+                reply_deadline = min(deadline, time.monotonic() + PROFILE_LAN_REPLY_SECONDS)
+                _elegoo_mqtt_publish(sock, topics["request"], elegoo_mqtt_request(*asked))
+        except TimeoutError:
+            # What the printer answered in time is still a reading.
+            pass
+        try:
+            with external_operation():
+                sock.sendall(b"\xe0\x00")
+        except OSError:
+            pass
+    except PluginLifecycleStopped:
+        raise
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    if ELEGOO_MQTT_STATUS not in answers:
+        return None, "invalid" if registered else "unreachable"
+    return {
+        "device_id": serial,
+        "status": answers[ELEGOO_MQTT_STATUS],
+        "canvas": elegoo_mqtt_canvas_info(answers.get(ELEGOO_MQTT_CANVAS)),
+        "canvas_asked": ELEGOO_MQTT_CANVAS in answers,
+        "mono": elegoo_mqtt_mono_filament(answers.get(ELEGOO_MQTT_MONO_FILAMENT)),
+    }, None
+
+
+def read_profile_lan_status(provider, connection):
+    """Read one printer by its protocol; return ``(reading, failure)``."""
+    if provider == SDCP_PROVIDER:
+        return read_sdcp(connection)
+    return read_elegoo_mqtt(connection)
+
+
+def profile_lan_observation(provider, reading):
+    """The printer state and slots of one reading: ``(printer, slots, complete)``."""
+    if provider == SDCP_PROVIDER:
+        printer = sdcp_printer(reading["status"])
+    else:
+        printer = elegoo_mqtt_printer(reading["status"])
+    if canvas_units(reading.get("canvas")):
+        slots, complete = canvas_slots(reading["canvas"])
+    elif reading.get("canvas") is not None or reading.get("mono") is not None or (
+        provider == SDCP_PROVIDER and not reading.get("canvas_asked")
+    ):
+        # No CANVAS: the printer feeds its own spool.
+        slots, complete = [canvas_single_spool(reading.get("mono"))], True
+    else:
+        # The printer was asked about CANVAS and did not say.
+        slots, complete = [], False
+    return printer, slots, complete
+
+
+def _profile_lan_worst(failures):
+    return next((code for code in _PROFILE_LAN_FAILURE_ORDER if code in failures), "unreachable")
+
+
+def read_profile_lan_printer(provider, binding, connections):
+    """Read a linked printer through whichever Orca connection reaches it.
+
+    Every reading carries the printer's own identifier, so an address that has
+    passed to another printer is never taken for this one.
+    """
+    with _PROFILE_LAN_KNOWN_HOSTS_LOCK:
+        known = {
+            host: device_id for (kind, host), device_id in _PROFILE_LAN_KNOWN_HOSTS.items()
+            if kind == provider
+        }
+    candidates = [
+        item for item in connections or []
+        if known.get(item["host"]) in (None, binding["device_id"])
+    ]
+    candidates.sort(key=lambda item: known.get(item["host"]) != binding["device_id"])
+    failures = set()
+    for connection in candidates:
+        reading, failure = read_profile_lan_status(provider, connection)
+        with _PROFILE_LAN_KNOWN_HOSTS_LOCK:
+            if reading is None:
+                _PROFILE_LAN_KNOWN_HOSTS.pop((provider, connection["host"]), None)
+            else:
+                _PROFILE_LAN_KNOWN_HOSTS[(provider, connection["host"])] = reading["device_id"]
+        if reading is not None and reading["device_id"] == binding["device_id"]:
+            return reading, None
+        if failure:
+            failures.add(failure)
+    # No connection in OrcaSlicer answered as this printer.
+    return None, _profile_lan_worst(failures) if failures else "credentials"
+
+
+def build_profile_lan_bridge_snapshot(provider, binding, source_instance_id, reading):
+    printer, slots, complete = profile_lan_observation(provider, reading)
+    return {
+        "material_system_id": binding["material_system_id"],
+        "provider": provider,
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": _profile_lan_capabilities(provider),
+        "printer": printer,
+        "slots": slots,
+        "slot_topology_complete": complete,
+        "device_identity": binding["device_identity"],
+    }
+
+
+def observe_profile_lan_binding(provider, binding, connections, source_instance_id):
+    """Read one linked printer and report it to FilamentHub; return a result code."""
+    reading, failure = read_profile_lan_printer(provider, binding, connections)
+    if reading is None:
+        fh_log("%s printer not read: %s" % (provider, failure))
+        if failure != "permission":
+            # The helper is alive; say that the printer did not answer it.
+            status, _body, _retry_after = http_post_bridge_json(
+                "/printer-bridge/heartbeat",
+                binding["bridge_token"],
+                {
+                    "material_system_id": binding["material_system_id"],
+                    "provider": provider,
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": source_instance_id,
+                    "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "provider_reachable": False,
+                },
+            )
+            if status == 401:
+                _forget_profile_lan_binding(
+                    provider, binding["physical_printer_id"], binding["bridge_token"]
+                )
+                return "unpaired"
+        return failure
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_profile_lan_bridge_snapshot(provider, binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "unpaired":
+        _forget_profile_lan_binding(provider, binding["physical_printer_id"], binding["bridge_token"])
+    return code
+
+
+def observe_profile_lan_bindings(
+    provider, connections, physical_printer_id=None, material_system_id=None
+):
+    """Report every linked printer of a protocol, or one; return ``{physical_printer_id: code}``."""
+    bindings = [
+        item for item in _load_profile_lan_bindings(provider)
+        if physical_printer_id is None or (
+            item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        )
+    ]
+    if not bindings:
+        return {}
+    source_instance_id = plugin_source_instance_id()
+    return {
+        binding["physical_printer_id"]: observe_profile_lan_binding(
+            provider, binding, connections, source_instance_id
+        )
+        for binding in bindings
+    }
+
+
+def configure_profile_lan_bridge(
+    provider, physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+):
+    """Link one printer known to OrcaSlicer; return the page result."""
+    source_instance_id = plugin_source_instance_id()
+    printers = profile_lan_printers(provider, connections, source_instance_id)
+    if not printers:
+        return {"ok": False, "code": "notFound"}
+    chosen = [item for item in printers if item["connection_ref"] == connection_ref]
+    if not chosen and len(printers) == 1 and not connection_ref:
+        chosen = printers
+    if len(chosen) != 1:
+        return {
+            "ok": False,
+            "code": "choose",
+            "candidates": [
+                {"connectionRef": item["connection_ref"], "label": item["label"]}
+                for item in printers[:MAX_PROFILE_LAN_BRIDGES]
+            ],
+        }
+    connection = chosen[0]
+    reading, failure = read_profile_lan_status(provider, connection)
+    if reading is None:
+        fh_log("%s setup could not read the printer: %s" % (provider, failure))
+        return {"ok": False, "code": failure}
+    with _PROFILE_LAN_KNOWN_HOSTS_LOCK:
+        _PROFILE_LAN_KNOWN_HOSTS[(provider, connection["host"])] = reading["device_id"]
+    device_id = reading["device_id"]
+    with _PROFILE_LAN_CONFIG_LOCK:
+        if any(
+            item["device_id"] == device_id and item["physical_printer_id"] != physical_printer_id
+            for item in _load_profile_lan_bindings(provider)
+        ):
+            return {"ok": False, "code": "linked"}
+    pair_status, pair_body = http_post_json(
+        "/printer-bridge/pair",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": provider,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            "capabilities": _profile_lan_capabilities(provider),
+        },
+    )
+    try:
+        paired = json.loads(pair_body.decode("utf-8")) if pair_status == 200 else None
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        paired = None
+    bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else None
+    if not _valid_fresh_bridge_token(bridge_token):
+        return {"ok": False, "code": "pairing"}
+    kind = _profile_lan_identity_kind(provider)
+    evidence = _printer_evidence_token(
+        paired.get("printer_discovery_key"), "device", kind + "\0" + device_id
+    )
+    if (
+        paired.get("physical_printer_id") != physical_printer_id
+        or paired.get("material_system_id") != material_system_id
+        or evidence is None
+    ):
+        # The code belonged to another printer card: give the credential back.
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    binding = {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "bridge_token": bridge_token,
+        "device_id": device_id,
+        "device_identity": {"kind": kind, "token": evidence},
+    }
+    try:
+        with _PROFILE_LAN_CONFIG_LOCK:
+            bindings = [
+                item for item in _load_profile_lan_bindings(provider)
+                if item["physical_printer_id"] != physical_printer_id
+            ]
+            if len(bindings) >= MAX_PROFILE_LAN_BRIDGES:
+                raise ValueError("too many %s links" % provider)
+            _save_profile_lan_bindings(provider, bindings + [binding])
+    except (OSError, ValueError):
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        bridge_token,
+        build_profile_lan_bridge_snapshot(provider, binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "linked":
+        # FilamentHub will never accept this printer for this card: undo the link.
+        _forget_profile_lan_binding(provider, physical_printer_id, bridge_token)
+        http_delete_bridge("/printer-bridge/connection", bridge_token)
+        return {"ok": False, "code": "linked"}
+    # The link itself is saved; a failed first report is retried on refresh.
+    return {"ok": True, "code": code}
+
+
+def handle_profile_lan_message(catalog, msg):
+    """Run one page request about an SDCP or Elegoo MQTT printer (called on the UI thread)."""
+    msg_type = msg.get("type")
+    setup = msg_type.startswith("configure-")
+    provider = msg_type[len("configure-"):] if setup else msg_type[:-len("-refresh")]
+    result_type = provider + ("-setup-result" if setup else "-refresh-result")
+    request_id = msg.get("requestId")
+    ids = _positive_ids(msg)
+    if not (isinstance(request_id, str) and 0 < len(request_id) <= 100 and ids):
+        return
+    # Host state is copied here, on the UI thread; the worker only does I/O.
+    connections = _snapshot_profile_lan_connections()[provider]
+    if setup:
+        pairing_code = msg.get("pairingCode")
+        connection_ref = msg.get("connectionRef") or ""
+        if not (
+            isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
+            and isinstance(connection_ref, str) and len(connection_ref) <= 120
+        ):
+            return
+
+        def job():
+            try:
+                result = configure_profile_lan_bridge(
+                    provider, ids[0], ids[1], pairing_code, connection_ref, connections
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("%s setup failed: %s" % (provider, type(exc).__name__))
+                result = {"ok": False, "code": "invalid"}
+            catalog._deliver(result_type, requestId=request_id, result=result)
+    else:
+        def job():
+            try:
+                code = observe_profile_lan_bindings(provider, connections, ids[0], ids[1]).get(
+                    ids[0], "unpaired"
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("%s refresh failed: %s" % (provider, type(exc).__name__))
+                code = "invalid"
+            catalog._deliver(
+                result_type, requestId=request_id, result={"ok": code == "ok", "code": code}
+            )
+
+    if BACKGROUND_WORKER.submit(job) is False:
+        catalog._deliver(
+            result_type, requestId=request_id, result={"ok": False, "code": "unavailable"}
+        )
+
+
+def refresh_profile_lan_bindings_after_sync():
+    """Re-read linked SDCP and Elegoo MQTT printers alongside a page-driven sync (UI thread)."""
+    providers = [provider for provider in PROFILE_LAN_PROVIDERS if _load_profile_lan_bindings(provider)]
+    if not providers:
+        return
+    connections = _snapshot_profile_lan_connections()
+
+    def job():
+        for provider in providers:
+            try:
+                observe_profile_lan_bindings(provider, connections[provider])
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("%s refresh failed: %s" % (provider, type(exc).__name__))
+
+    BACKGROUND_WORKER.submit(job)
+
+
 class _PluginRuntimeLifecycleMixin:
     """Use the common lifecycle supplied by every current capability base."""
 
@@ -16032,6 +16910,7 @@ class FilamentHubCatalog(
                     "connectionRef": item["connection_ref"], "label": item["label"] or "Creality",
                     "physicalPrinterId": None, "provider": "creality", "source": "profile",
                 } for item in creality_printers(msg.get("creality") or [], plugin_source_instance_id()))
+                candidates.extend(profile_lan_setup_candidates(msg.get("profile_lan")))
                 fh_log("printer setup list: candidates=%d moonraker=%d discovery_complete=%s" % (
                     len(candidates), sum(item["provider"] == "moonraker" for item in candidates),
                     discovery["complete"]))
@@ -16266,12 +17145,17 @@ class FilamentHubCatalog(
             msg["creality"] = (
                 _snapshot_local_creality_connections() if msg.get("operation") == "list" else []
             )
+            msg["profile_lan"] = (
+                _snapshot_profile_lan_connections() if msg.get("operation") == "list" else {}
+            )
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
         elif msg_type in FLASHFORGE_MESSAGES and direct_message:
             handle_flashforge_message(self, msg)
         elif msg_type in CREALITY_MESSAGES and direct_message:
             handle_creality_message(self, msg)
+        elif msg_type in PROFILE_LAN_MESSAGES and direct_message:
+            handle_profile_lan_message(self, msg)
         elif msg_type == "read-diagnostics" and plugin_setting("developer_mode"):
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=diagnostic_report_text())
@@ -16653,6 +17537,7 @@ class FilamentHubCatalog(
             )
             refresh_flashforge_bindings_after_sync()
             refresh_creality_bindings_after_sync()
+            refresh_profile_lan_bindings_after_sync()
         elif msg_type in {
             "happy-hare-preview",
             "happy-hare-apply",

@@ -98,12 +98,16 @@ def _creality_base64(raw):
     return codecs.encode(raw, "base64").replace(b"\n", b"")
 
 
-def creality_ws_handshake(address, key_bytes):
-    """The opening request of the status channel; ``key_bytes`` is 16 random bytes."""
+def creality_ws_handshake(address, key_bytes, port=CREALITY_WS_PORT, path="/"):
+    """The opening request of a WebSocket; ``key_bytes`` is 16 random bytes.
+
+    The plugin's other LAN printers that speak WebSocket open theirs the same
+    way on their own port and path.
+    """
     host = "[%s]" % address if ":" in address else address
     return (
-        b"GET / HTTP/1.1\r\n"
-        b"Host: " + ("%s:%d" % (host, CREALITY_WS_PORT)).encode("ascii") + b"\r\n"
+        b"GET " + path.encode("ascii") + b" HTTP/1.1\r\n"
+        b"Host: " + ("%s:%d" % (host, port)).encode("ascii") + b"\r\n"
         b"Upgrade: websocket\r\n"
         b"Connection: Upgrade\r\n"
         b"Sec-WebSocket-Key: " + _creality_base64(key_bytes) + b"\r\n"

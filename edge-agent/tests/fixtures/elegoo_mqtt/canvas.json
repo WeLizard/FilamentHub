@@ -1,0 +1,60 @@
+{
+  "error_code": 0,
+  "canvas_info": {
+    "active_canvas_id": 0,
+    "active_tray_id": 1,
+    "auto_refill": false,
+    "canvas_list": [
+      {
+        "canvas_id": 0,
+        "connected": 1,
+        "tray_list": [
+          {
+            "tray_id": 0,
+            "brand": "ELEGOO",
+            "filament_type": "PLA",
+            "filament_name": "PLA Matte",
+            "filament_code": "0x0006",
+            "filament_color": "#E8E8E8",
+            "min_nozzle_temp": 190,
+            "max_nozzle_temp": 230,
+            "status": 1
+          },
+          {
+            "tray_id": 1,
+            "brand": "ELEGOO",
+            "filament_type": "PETG",
+            "filament_name": "PETG PRO",
+            "filament_code": "0x0103",
+            "filament_color": "#1F6FB2",
+            "min_nozzle_temp": 230,
+            "max_nozzle_temp": 260,
+            "status": 2
+          },
+          {
+            "tray_id": 2,
+            "brand": "",
+            "filament_type": "",
+            "filament_name": "",
+            "filament_code": "",
+            "filament_color": "",
+            "min_nozzle_temp": 0,
+            "max_nozzle_temp": 0,
+            "status": 0
+          },
+          {
+            "tray_id": 3,
+            "brand": "Generic",
+            "filament_type": "PLA",
+            "filament_name": "PLA",
+            "filament_code": "0x0000",
+            "filament_color": "#C0392BFF",
+            "min_nozzle_temp": 190,
+            "max_nozzle_temp": 230,
+            "status": 1
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -171,7 +171,11 @@
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
       "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate while OrcaSlicer is open or FH Edge is running.",
       "creality": "Creality (K1, K2, Ender-3 V3)",
-      "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open."
+      "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open.",
+      "sdcp": "SDCP (Elegoo Centauri Carbon)",
+      "sdcpHint": "Printers on the open SDCP protocol, such as the Elegoo Centauri Carbon, through the OrcaSlicer plugin. Shows the print state and, with CANVAS on recent firmware, its slots with material and colour as the printer sees them. These printers count no filament used, so a print is not deducted from a spool automatically.",
+      "elegooMqtt": "Elegoo Centauri Carbon 2",
+      "elegooMqttHint": "Elegoo Centauri Carbon 2 through the OrcaSlicer plugin. Shows the print state and the CANVAS slots with material and colour, as the printer sees them. The printer counts no filament used, so a print is not deducted from a spool automatically."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -196,7 +200,10 @@
       "flashforgeSingle": "Single spool (Adventurer 5M / 5M Pro)",
       "crealityCfs": "CFS, 4 slots per unit (K2, K1 with CFS)",
       "crealityCfsSlots": "CFS slots",
-      "crealitySingle": "Single spool (no CFS)"
+      "crealitySingle": "Single spool (no CFS)",
+      "canvas": "CANVAS, 4 slots per unit",
+      "canvasSlots": "CANVAS slots",
+      "canvasSingle": "Single spool (no CANVAS)"
     },
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","host_permission":"OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and check again.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_unavailable":"The printer was found, but its identity could not be confirmed yet. Try the check again. Your saved printer and assignments are kept.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Add printer",
@@ -9335,7 +9342,9 @@
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
       "flashforge": "Flashforge LAN",
-      "creality": "Creality LAN"
+      "creality": "Creality LAN",
+      "sdcp": "SDCP LAN",
+      "elegoo_mqtt": "Elegoo LAN"
     },
     "edge": {
       "title": "FH Edge",
@@ -9493,6 +9502,55 @@
         "pairing": "The printer could not be linked to FilamentHub. Try again.",
         "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
         "invalid": "The printer answered unexpectedly. Check that it runs Creality's stock firmware.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+      }
+    },
+    "sdcp": {
+      "title": "SDCP printer through OrcaSlicer",
+      "description": "The plugin takes the printer's address from its connection settings in OrcaSlicer. For an Elegoo Centauri Carbon choose the ElegooLink host type there and enter the address; the printer needs no password.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several SDCP printers. Choose this one:",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer to refresh the print state and slots. The printer does not count used filament, so a print is not deducted from a spool automatically.",
+      "localOnly": "The printer's address stays in OrcaSlicer and is never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
+      "result": {
+        "notFound": "OrcaSlicer has no SDCP printer. Open the printer's connection settings in OrcaSlicer, choose the ElegooLink host type and enter the address.",
+        "credentials": "None of the connections in OrcaSlicer is this printer. Check the address in the connection settings and connect the printer again.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on and in the same network.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "identity": "The printer did not report its mainboard ID, so it cannot be told apart from others reliably. Update the printer's firmware and try again.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check that it speaks SDCP, as a Centauri Carbon on Elegoo's own firmware does.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+      }
+    },
+    "elegooMqtt": {
+      "title": "Elegoo Centauri Carbon 2 through OrcaSlicer",
+      "description": "The plugin takes the printer's address and access code from its connection settings in OrcaSlicer. Choose the ElegooLink host type there and enter the address; leave the access code empty if the code on the printer was never changed.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several Centauri Carbon 2 printers. Choose this one:",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer to refresh the print state and slots. The printer does not count used filament, so a print is not deducted from a spool automatically.",
+      "localOnly": "The printer's address and access code stay in OrcaSlicer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
+      "result": {
+        "notFound": "OrcaSlicer has no Centauri Carbon 2. Open the printer's connection settings in OrcaSlicer, choose the ElegooLink host type and enter the address.",
+        "credentials": "None of the connections in OrcaSlicer is this printer. Check the address in the connection settings and connect the printer again.",
+        "access_code": "The access code in the printer's connection settings in OrcaSlicer is not valid. Enter the code shown on the printer, or leave the field empty for the default code.",
+        "auth": "The printer rejected the access code. Compare it with the code on the printer's screen and correct it in OrcaSlicer.",
+        "busy": "The printer already serves as many apps as it allows. Close another app or slicer connected to it and try again.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on and in the same network.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "identity": "The printer did not report its serial number, so it cannot be told apart from others reliably. Update the printer's firmware and try again.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check that it is a Centauri Carbon 2 on Elegoo's own firmware.",
         "unpaired": "The link to this card is no longer valid. Connect the printer again.",
         "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
       }
