@@ -1,6 +1,6 @@
 FilamentHub connects materials, print settings, your spools and printers. Find a filament and a suitable profile, bring the settings into OrcaSlicer, keep track of your stock and calculate what a print costs.
 
-> **OrcaSlicer will ask for permission.** When you install or update the plugin, OrcaSlicer asks whether it may run work in the background. Please allow it: syncing with your account and loading presets run in the background, so the slicer does not freeze while it waits for the network.
+> **OrcaSlicer will ask for permission.** When the plugin loads, OrcaSlicer asks whether it may run work in the background. Answer "Yes": syncing and loading presets run in the background so the slicer does not freeze. OrcaSlicer remembers the answer; with "No" it does not load the plugin.
 
 ![Find the right settings for your filament: the FilamentHub catalogue](https://api.orcaslicer.com/api/v1/bundles/media/36cc1c18-b99c-4acd-b19c-c9beeb77bef4/content)
 
@@ -8,11 +8,11 @@ FilamentHub connects materials, print settings, your spools and printers. Find a
 
 **If you print**
 
-- **Find the right settings.** Search the catalogue by brand, type, colour, property or your printer. Presets are official, published by the community, or your own, and a generative preset combines the community's presets for a filament into one, with the temperature people actually print at.
-- **Know your spools.** Remaining weight, price, batch and usage history, and which printer or material-system slot a spool sits in. Bring your stock over from a spreadsheet or an OctoPrint SpoolManager export.
-- **Your own QR labels.** Scan the maker's QR code on a spool, or give the spool its own QR and print a label for it. A phone scan opens the spool.
-- **Usage tracked automatically.** Bambu spool use over LAN, plus Moonraker and Happy Hare. FilamentHub can serve as the spool manager for Happy Hare in place of Spoolman. Usage calculated from G-code is marked as an estimate.
-- **From G-code to a quotation.** Reuse a completed OrcaSlicer slice to calculate production cost per filament, see whether each spool has enough left, save the calculation, prepare a customer quotation and continue accepted work as an order.
+- **Find the right settings.** Search the catalogue by brand, type, colour, property or your printer. Presets are official, from the community, or your own; a generative preset combines the community's presets for a filament into one, with the temperature people actually print at.
+- **Know your spools.** Remaining weight, price, batch, usage history, and the printer slot a spool sits in. Bring your stock over from a spreadsheet or an OctoPrint SpoolManager export.
+- **QR labels.** Scan the maker's QR code on a spool, or print a label with the spool's own QR. A phone scan opens the spool.
+- **Usage tracked automatically** while OrcaSlicer is open: Bambu Lab, Klipper with Moonraker and Happy Hare, QIDI, Snapmaker U1, Creality, Flashforge. Anycubic, Elegoo and Prusa count no filament themselves, so they are charged OrcaSlicer's estimate of the job. Every estimate is marked as one.
+- **From G-code to a quotation.** Reuse an OrcaSlicer slice to calculate the cost per filament, check that each spool has enough left, prepare a customer quotation and continue accepted work as an order.
 
 **If you make filament**
 
@@ -22,25 +22,18 @@ FilamentHub connects materials, print settings, your spools and printers. Find a
 
 ## What the plugin does inside OrcaSlicer
 
-The plugin adds a **FilamentHub** tab to OrcaSlicer and keeps the slicer and your FilamentHub account in step.
+The plugin adds a **FilamentHub** tab and keeps the slicer and your account in step.
 
-- **Presets in the normal filament list.** Imported and synchronized presets keep their colour and inheritance. On OrcaSlicer 2.5.0-alpha and later a new or updated preset shows up in the list at once, with no restart.
-- **Edit presets the way Orca groups them.** Familiar tabs and Simple, Advanced or Expert detail level.
-- **Automatic sync.** Saving a filament or process preset in OrcaSlicer syncs it to FilamentHub when **Sync automatically** is on. Several saves in a row are combined and OrcaSlicer is never held up by the upload. A **FilamentHub Sync** action in Speed Dial starts a full sync, and problems or "restart needed" notices appear as OrcaSlicer notifications.
-- **Your look.** Choose the FilamentHub appearance, or match OrcaSlicer's light or dark colours.
+- **Presets in the normal filament list**, with their colour and inheritance. On OrcaSlicer 2.5 and later a new or updated preset appears at once; older builds need a restart.
+- **Edit presets the way Orca groups them**: familiar tabs and Simple, Advanced or Expert detail.
+- **Automatic sync.** With **Sync automatically** on, saving a filament or process preset syncs it to FilamentHub without holding OrcaSlicer up. **FilamentHub Sync** in Speed Dial starts a full sync.
+- **Your look**: the FilamentHub appearance, or OrcaSlicer's light or dark colours.
 
 ![A FilamentHub preset in OrcaSlicer's filament list, before and after the sync](https://api.orcaslicer.com/api/v1/bundles/media/3823bfcd-fbd7-4c27-9945-94f7fc9fac2a/content)
 
 ![Edit presets the way Orca groups them](https://api.orcaslicer.com/api/v1/bundles/media/3064ff05-e5c0-4f7c-ab58-5528e95a34cd/content)
 
-### The plugin toolbar
-
-- **My Spools**: your spools and their slots.
-- **Catalog**: the FilamentHub catalogue of materials and presets.
-- **Profile**: your presets, printers, filaments, calculations, quotations and orders.
-- **Wiki**: short guides, right inside OrcaSlicer.
-- **Sync**: a manual sync of the presets you selected.
-- **Recover**: scans this computer for your existing OrcaSlicer presets, across all Orca accounts and version backups, and shows a checklist. Only what you tick is imported into FilamentHub. Filaments become drafts, and nothing in OrcaSlicer is overwritten.
+The toolbar: **My Spools**, **Catalog**, **Profile** (presets, printers, calculations, quotations, orders), **Wiki** (short guides), **Sync** (selected presets), and **Recover**, which finds your existing OrcaSlicer presets on this computer, across accounts and backups, and imports only what you tick. Nothing in OrcaSlicer is overwritten.
 
 ![Usage tracked automatically: AMS slots and the spools in them](https://api.orcaslicer.com/api/v1/bundles/media/3f5d7ba8-d90f-48b0-b5aa-b212a2f99203/content)
 
@@ -50,59 +43,43 @@ The plugin adds a **FilamentHub** tab to OrcaSlicer and keeps the slicer and you
 
 ![Plugin settings in OrcaSlicer](https://api.orcaslicer.com/api/v1/bundles/media/3c3709cf-bbf0-404a-b8b0-6277e7b5cf15/content)
 
-Plugin settings live in OrcaSlicer's plugin manager: server, appearance, automatic sync, notifications and developer mode. The optional Slicing Pipeline reporter brings completed slices into FilamentHub ready for cost calculations, saved calculations, customer quotations and orders.
+Settings are in OrcaSlicer's plugin manager: server, appearance, automatic sync, notifications and developer mode. The optional Slicing Pipeline reporter brings completed slices into FilamentHub for cost calculations and quotations.
 
 ## What is coming
 
-FilamentHub is in beta and keeps evolving. These items are not available to every user yet; no dates are promised.
+FilamentHub is in beta. These are planned, without dates:
 
-**In development**
-
-- A direct printer-to-FilamentHub link through our own Edge bridge: no open OrcaSlicer and no manufacturer cloud, including Bambu Lab without Bambu Cloud.
-- Filament tracking by weight, not only by estimate: weigh-ins and empty-spool weight.
-- Happy Hare and OctoPrint connection in a few steps.
-- Android app.
-
-**Next**
-
-- Troubleshooting failed prints: your slice and a photo point to the settings worth suspecting and what to try first.
-- Preset suggestions for your printer that explain why they fit.
-- RFID and NFC tags on spools.
-- Hints right inside OrcaSlicer: "not enough filament on this spool" and a spool panel next to filament selection.
-- Analytics for manufacturers.
-- Workshops with several people.
+- A direct printer link through our own Edge bridge, with no open OrcaSlicer and no manufacturer cloud.
+- Tracking by weight: weigh-ins and empty-spool weight.
+- An Android app.
+- Troubleshooting failed prints from your slice and a photo, and preset suggestions that explain why they fit your printer.
+- RFID and NFC tags, and spool hints right inside OrcaSlicer.
+- Analytics for manufacturers and workshops with several people.
 
 The catalogue, presets and basic tracking of your own spools are free, and they will stay free.
 
 ![What is coming](https://api.orcaslicer.com/api/v1/bundles/media/3cdd9b2d-5bec-4b37-88f6-fccaed071894/content)
 
-## Your local setup stays yours
+## Your data and your computer
 
-- FilamentHub manages only the preset copies it creates. System, project, third-party and other user presets are left untouched.
-- Printer access codes and API keys stay on your computer. Connection addresses can be synchronized to your FilamentHub account when you enable **Store printer addresses in FilamentHub**, and may then appear on the site.
-- Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations. The full G-code never leaves your computer; a calculation sends only its summary (the start and end of the file and per-part totals computed locally).
-- Network discovery, profile recovery and changes to printer material systems start only from an explicit action.
-- Bambu usage calculated from G-code is marked as an estimate, so it is never presented as a scale measurement.
-- When the plugin loads, OrcaSlicer 2.5 shows its own window asking to let the plugin create a background thread. This is an OrcaSlicer security check for every plugin: FilamentHub runs network and file work in the background so OrcaSlicer never freezes. Answer "Yes" once and OrcaSlicer remembers it. If you answer "No", OrcaSlicer does not load the plugin. On OrcaSlicer builds before 2.5.0-alpha the question comes later, when you first open the FilamentHub tab.
-
-## What the plugin does on your computer
-
-- **Who it talks to.** The FilamentHub site and API (filamenthub.ru, or filamenthub.club if you choose that server in the plugin settings), and the printers you have configured. No other services.
-- **Printers, only after you set them up.** A Bambu Lab printer is read over your local network: status through MQTT and, to read the file being printed, through FTPS, read-only. The only thing FilamentHub writes to it is the material of an AMS slot, when you apply a spool assignment. A Klipper printer with Moonraker is reached over HTTP at the address in your printer profile; for Happy Hare, FilamentHub sends one command to refresh its spool list, and only when you ask for it. While OrcaSlicer is open the plugin also reads the print state of a Klipper printer whose connection you linked to your account, every 30 seconds during a print and every two minutes otherwise, to deduct the filament it uses. It reads Moonraker's configuration only to see whether its `[spoolman]` section points at FilamentHub, keeps nothing else of it, and sends that printer nothing. A Creality printer on stock firmware is read at the address in your printer profile: its state, the slots of its CFS and the filament length a job has used, and `/info` once to tell printers apart by their hardware address. The plugin sends it no commands. An Anycubic Kobra 3, S1 or X in LAN mode is read at the address in your printer profile: the plugin asks the printer for its LAN login on port 18910, reads its state and ACE slots over its own MQTT connection on port 9883, and keeps the login only in memory. It sends that printer no commands either. A Prusa printer through PrusaLink and an Elegoo printer through SDCP or its own MQTT connection are read at the address in your printer profile in the same way, and sent no commands. For Anycubic, Elegoo and single-spool Prusa printers, which do not count filament themselves, the plugin charges the slicer's estimate of a job: while such a printer is linked, it keeps a copy of the newest few G-code files OrcaSlicer writes, in its storage folder and nowhere else, and reads the one that matches the job name the printer reports. Searching for printers (a multicast query and a listen for Bambu announcements) runs only when you press the search or start printer setup.
-- **Printer profiles and keys.** To sync your printer profiles the plugin reads them, including any print-host key or password OrcaSlicer saved there. It removes those fields before anything is uploaded and never sends them. If a Moonraker printer in your profile has a key, the plugin uses it only to talk to that printer and keeps a copy in its own storage folder.
-- **Bambu access code.** The access code you enter is kept in the plugin's own storage folder, in a file restricted to your user account where the system supports it. It is used only to connect to your printer and is never sent to FilamentHub.
-- **Computer name.** During a printer search the plugin asks the system for the computer name only to list your network adapters, so the search goes out on each of them. The name is not stored or sent.
-- **Diagnostics.** The plugin's log stays on your computer. When you send feedback from the FilamentHub tab, the form can attach the end of that log with the plugin, OrcaSlicer, Python and system versions and your language; you see it first and can remove it, your home folder name is replaced and keys are masked. Nothing is sent automatically.
-- **When it loads.** At start-up the plugin reads its own settings, checks the preset files in its own FilamentHub folder, and, if you have already connected a Bambu, Flashforge, Creality, Anycubic, Prusa or Elegoo printer, reads it again in the background and sends its usage readings to FilamentHub. A linked Klipper printer is read again only after the first sync of the session, when its address is taken from OrcaSlicer. It does not open a browser or scan the network, and nothing is loaded from the site until you open the FilamentHub tab.
-- **When it opens something.** The browser opens only when you click: signing in, a link to a FilamentHub page such as the wiki. The plugin never opens any other program: a quotation is previewed and printed inside the FilamentHub tab (use Print and choose Save as PDF to get a file), or opened on the site in your browser when you click Open in browser.
-- **Where it writes.** Its own storage folder (settings, sign-in, state, log), either in OrcaSlicer's plugin storage or in a `.filamenthub` folder inside the OrcaSlicer data folder; and the FilamentHub preset folder under your OrcaSlicer user presets. It writes no PDF files. If you choose the FilamentHub slicing plugin, it also adds comment lines with the profile identifiers to the end of the G-code that OrcaSlicer produces. "Recover" and slice reading only read.
-- **Permissions.** The plugin declares the permission it needs to OrcaSlicer when it loads, so you answer once in one window rather than being asked in the middle of your work. Other requests, for example a network address, are still asked by OrcaSlicer when they first happen.
+- **Your presets.** FilamentHub manages only the preset copies it creates. System, project, third-party and other user presets are left untouched.
+- **Who it talks to.** The FilamentHub site and API (filamenthub.ru, or filamenthub.club if you choose that server) and the printers you set up. No other services.
+- **Printers, only after you set them up**, at the address in your printer profile, over your local network:
+  - Bambu Lab: status over MQTT and the file being printed over FTPS, read-only. The only thing written is an AMS slot's material, when you apply a spool assignment.
+  - Klipper with Moonraker: the print state every 30 seconds during a print and every two minutes otherwise, and its configuration only to see whether `[spoolman]` points at FilamentHub. For Happy Hare, one command refreshes its spool list, only when you ask.
+  - Creality, Anycubic (LAN mode), Prusa (PrusaLink) and Elegoo (SDCP or MQTT): state and slots are read, and no commands are sent. Anycubic's LAN login is fetched from the printer on port 18910, used for its MQTT connection on port 9883 and kept only in memory.
+  - For Anycubic, Elegoo and Prusa the plugin keeps a copy of the newest few G-code files OrcaSlicer writes, in its own storage folder, to find a job's estimate.
+  - Searching for printers on the network runs only when you press search or start printer setup. It asks the system for the computer name only to list your network adapters; the name is not stored or sent.
+- **Keys and passwords.** Printer access codes, API keys and print-host passwords stay on your computer: they are removed before a printer profile is uploaded. A Bambu access code and a Moonraker key are kept in the plugin's storage folder, restricted to your user account where the system supports it. Printer addresses are synced to your account only if you turn on **Store printer addresses in FilamentHub**.
+- **Slices.** Slice reporting is optional. FilamentHub receives the slice details needed for history and calculations, never the full G-code. With the FilamentHub slicing step chosen, the plugin adds comment lines with profile identifiers to the end of the G-code.
+- **Diagnostics.** The log stays on your computer. **Report a problem** can attach its end with version details; you see it first, your home folder name is replaced and keys are masked. Nothing is sent automatically.
+- **At start-up** the plugin reads its settings and preset files and, if you already linked a printer, reads it again and sends its usage to FilamentHub. It does not open a browser or scan the network.
+- **What it opens and writes.** The browser opens only when you click a link or sign in. The plugin starts no other programs and writes only to its own storage folder and its FilamentHub preset folder. Quotations print from the FilamentHub tab (use Print and Save as PDF).
+- **Permissions.** The plugin declares what it needs when it loads, so you answer once. OrcaSlicer still asks the first time anything else is needed, such as a new network address.
 
 ## Requirements
 
-- A FilamentHub account for the catalogue, preset synchronization, spool inventory and slice history.
+- A FilamentHub account.
 - An OrcaSlicer build with Python plugin support.
-- Windows or Linux. The plugin has no Windows-only parts and installs on macOS, but macOS has not been tested yet. If presets do not appear in OrcaSlicer on a Mac, please turn on developer mode in the plugin settings and send a report with **Report a problem** in the FilamentHub tab.
-- Local-network access to the printer for optional Bambu or Happy Hare integration.
-
-On OrcaSlicer builds with the plugin preset API (2.5.0-alpha and later), a newly imported or updated preset appears in the slicer's preset selectors immediately. Older builds need a restart first.
+- Windows or Linux. macOS installs but has not been tested yet; if presets do not appear on a Mac, turn on developer mode and send **Report a problem** from the FilamentHub tab.
+- Local-network access to your printer for printer features.
