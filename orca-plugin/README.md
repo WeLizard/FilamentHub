@@ -242,13 +242,47 @@ OrcaSlicer connection, and the account-scoped identity evidence.
   ids, the one-time pairing code and an optional opaque local reference, and
   receives a result code. It never receives an address, serial or check code.
 
+### Prusa through OrcaSlicer's own connection (PrusaLink)
+
+- A printer whose connection in OrcaSlicer uses host type PrusaLink is offered
+  when a printer is added. The plugin takes the address and login from that
+  printer preset: the API key (`printhost_apikey`, OrcaSlicer's default) or,
+  with HTTP Digest, `printhost_user` / `printhost_password`. They stay on this
+  computer and are never sent to the page or the site.
+- The local API differs between firmwares, and the plugin asks which one
+  answers. Buddy firmware (MK4/MK4S, MK3.5/3.9, XL, CORE One, MINI) from 4.7.0
+  has `/api/v1/info`, `/api/v1/status` and `/api/v1/job`; it takes the key as
+  `X-Api-Key` or Digest without qop. Prusa-Link on a Raspberry Pi (MK3S) has
+  the same paths with MD5-sess Digest. Older Buddy firmware has only the
+  OctoPrint-compatible `/api/...` paths and no serial number, so it cannot be
+  told apart from another printer and is not linked; the person is asked to
+  update. An OctoPrint answering at the address is sent to the OctoPrint
+  plugin. The printer's serial number is its identity (`prusalink_serial`).
+- The connector claims `read`, and `presence` when a slot is shown. Only a
+  Buddy printer with one nozzle and no MMU reports its loaded material (from
+  `/api/printer`), so only it gets one slot. The local API reports no MMU3
+  slots, no XL tool materials and no filament used, so such printers send the
+  state alone, prints are not deducted, and nothing is ever written to the
+  printer.
+- PrusaConnect is Prusa's cloud. The plugin does not read it: that would mean
+  acting as a cloud client. The page asks for a PrusaLink connection with the
+  printer's local address instead.
+- The request goes only to a private or link-local address, resolved once,
+  over plain HTTP as the firmware offers it. While OrcaSlicer is open, one
+  watcher thread follows every linked printer and reports the state when it
+  changes, from the copy of the connection settings taken the last time the
+  FilamentHub tab was used in this session.
+- The page sends `configure-prusalink` / `prusalink-refresh` and receives a
+  result code. Built from the firmware sources; not yet confirmed on a printer.
+
 ### Adapter modules
 
 The installable plugin is one file, because OrcaSlicer installs a local plugin
 from a single `.py` or a wheel with one entry module. Provider adapters are
 still developed as separate source files next to `filamenthub_plugin.py`:
 `filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_creality.py`
-(Creality's status channel and CFS slots), `filamenthub_moonraker.py`
+(Creality's status channel and CFS slots), `filamenthub_prusalink.py`
+(PrusaLink of Prusa's Buddy firmware and Prusa-Link), `filamenthub_moonraker.py`
 (Happy Hare, QIDI Box and filament usage through Moonraker's printer objects),
 `filamenthub_usage_books.py` (charging a printer's running filament counter to
 spools, shared by Flashforge and Klipper),
