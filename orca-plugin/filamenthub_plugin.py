@@ -5465,6 +5465,12 @@ def observe_local_moonraker_connections(observations):
     return _resolve_local_moonraker_connections(observations, connections, error)
 
 
+# OrcaSlicer printer agents that talk to the printer through Moonraker. Qidi
+# and Snapmaker profiles keep host_type "octoprint" ("Octo/Klipper") and name
+# their agent instead. Creality's agent has its own adapter and is left out.
+MOONRAKER_PRINTER_AGENTS = frozenset({"moonraker", "qidi", "snapmaker"})
+
+
 def _snapshot_local_moonraker_connections():
     connections = []
     try:
@@ -5483,7 +5489,9 @@ def _snapshot_local_moonraker_connections():
             printer_agent = _preset_scalar(
                 _preset_config_value(preset, "printer_agent")
             ).lower()
-            if not host or "moonraker" not in {host_type, printer_agent}:
+            if not host or not (
+                host_type == "moonraker" or printer_agent in MOONRAKER_PRINTER_AGENTS
+            ):
                 continue
             connections.append((
                 str(preset.name or ""), host,
@@ -5650,12 +5658,34 @@ def save_local_setup_connection(context, connection, physical_printer_id, eviden
         write_json_atomic(path, {"version": 1, "connections": items}, mode=0o600)
 
 
+def _network_error_kind(error):
+    """Name a failed request's cause without the address or body it may carry."""
+    text = str(error or "").lower()
+    if not text:
+        return "none"
+    if text in {HOST_PERMISSION_PENDING, "invalid json"}:
+        return text.replace(" ", "_")
+    for kind, needles in (
+        ("timeout", ("timed out", "timeout", "10060")),
+        ("refused", ("refused", "10061")),
+        ("dns", ("getaddrinfo", "name or service", "nodename", "11001")),
+        ("unreachable", ("unreachable", "10065", "10051", "no route")),
+        ("tls", ("ssl", "certificate")),
+        ("address", ("address", "port", "route prefix")),
+    ):
+        if any(needle in text for needle in needles):
+            return kind
+    return "other"
+
+
 def probe_printer_setup(context, connection, origin):
     """Read capabilities first; absent MMU is not inferred from a failed request."""
     status, body, error = _moonraker_json(connection, "/printer/objects/list")
     result = body.get("result")
     objects = result.get("objects") if isinstance(result, dict) else None
     if status != 200 or not isinstance(objects, list):
+        fh_log("printer setup probe: objects status=%s error=%s" % (
+            status, _network_error_kind(error)))
         if error == HOST_PERMISSION_PENDING:
             raise ValueError(HOST_PERMISSION_PENDING)
         raise ValueError("printer_auth" if status in {401, 403} else "unreachable")
@@ -5666,6 +5696,7 @@ def probe_printer_setup(context, connection, origin):
         snapshot = read_qidi_box_snapshot(connection)
     identity = _observe_moonraker_identity(connection)
     if origin == "local_manual" and not identity:
+        fh_log("printer setup probe: Moonraker instance_id unavailable")
         raise ValueError("identity_unavailable")
     evidence = {
         "source_instance_id": context["source_instance_id"],
@@ -16001,6 +16032,9 @@ class FilamentHubCatalog(
                     "connectionRef": item["connection_ref"], "label": item["label"] or "Creality",
                     "physicalPrinterId": None, "provider": "creality", "source": "profile",
                 } for item in creality_printers(msg.get("creality") or [], plugin_source_instance_id()))
+                fh_log("printer setup list: candidates=%d moonraker=%d discovery_complete=%s" % (
+                    len(candidates), sum(item["provider"] == "moonraker" for item in candidates),
+                    discovery["complete"]))
                 finish(ok=True, candidates=candidates[:256], discoveryComplete=discovery["complete"])
                 return
             pending = {
@@ -16092,11 +16126,15 @@ class FilamentHubCatalog(
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
             # Exceptions can carry addresses, headers or response bodies. Never relay them.
             code = str(exc)
-            finish(ok=False, code=code if code in {
+            if code not in {
                 "auth", "setup_context", "printer_auth", "unreachable", "expired",
                 HOST_PERMISSION_PENDING,
                 "connection_not_found", "identity_changed", "identity_unavailable", "snapshot_failed",
-            } else "setup_failed")
+            }:
+                code = "setup_failed"
+            fh_log("printer setup failed: type=%s operation=%s code=%s error=%s" % (
+                msg.get("type"), msg.get("operation"), code, type(exc).__name__))
+            finish(ok=False, code=code)
 
     def on_message(self, msg):
         prime_background_runtime()

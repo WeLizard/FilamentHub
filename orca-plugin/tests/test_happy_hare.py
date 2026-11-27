@@ -102,18 +102,9 @@ def test_failed_probe_does_not_invent_identity_and_empty_snapshot_is_sent(plugin
     plugin_module.send_printer_observations("token", empty, "source")
     assert posted[1]["snapshot_complete"] is True
 
-def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeypatch):
-    values = {
-        "printer_settings_id": "Workshop Voron",
-        "printer_model": "Voron 2.4 350",
-        "print_host": "192.168.1.21:7125",
-        "host_type": "moonraker",
-        "printhost_apikey": "local-secret",
-        "nozzle_diameter": ["0.4"],
-    }
-
+def _install_user_printer_preset(plugin_module, monkeypatch, values):
     class Preset:
-        name = "Workshop Voron"
+        name = values["printer_settings_id"]
         bundle_id = "user"
         file = ""
 
@@ -145,6 +136,17 @@ def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeyp
         raising=False,
     )
 
+
+def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeypatch):
+    _install_user_printer_preset(plugin_module, monkeypatch, {
+        "printer_settings_id": "Workshop Voron",
+        "printer_model": "Voron 2.4 350",
+        "print_host": "192.168.1.21:7125",
+        "host_type": "moonraker",
+        "printhost_apikey": "local-secret",
+        "nozzle_diameter": ["0.4"],
+    })
+
     observations = plugin_module.observe_printer_presets()
     local = plugin_module.observe_local_moonraker_connections(observations)
 
@@ -155,6 +157,51 @@ def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeyp
     assert "local-secret" not in json.dumps(
         plugin_module._observations_for_sync(observations)
     )
+
+
+@pytest.mark.parametrize(("model", "printer_agent", "is_moonraker"), [
+    # OrcaSlicer 2.5 vendor profiles: "Octo/Klipper" host type plus an agent
+    # derived from its Moonraker agent.
+    ("Qidi X-Plus 5", "qidi", True),
+    ("Snapmaker U1", "snapmaker", True),
+    # A real OctoPrint server must not be probed as Klipper.
+    ("Prusa MK3S", "", False),
+])
+def test_moonraker_based_printer_agents_join_the_local_connection_scan(
+    plugin_module, monkeypatch, model, printer_agent, is_moonraker,
+):
+    _install_user_printer_preset(plugin_module, monkeypatch, {
+        "printer_settings_id": model + " 0.4 nozzle - Workshop",
+        "printer_model": model,
+        "print_host": "192.168.1.30",
+        "host_type": "octoprint",
+        "printer_agent": printer_agent,
+        "nozzle_diameter": ["0.4"],
+    })
+
+    observations = plugin_module.observe_printer_presets()
+    local = plugin_module.observe_local_moonraker_connections(observations)
+
+    assert [item["print_host"] for item in local] == (["192.168.1.30"] if is_moonraker else [])
+
+
+def test_printer_setup_failure_is_logged_without_the_address(plugin_module, monkeypatch):
+    logged = []
+    monkeypatch.setattr(plugin_module, "fh_log", logged.append)
+    monkeypatch.setattr(
+        plugin_module, "_moonraker_json",
+        lambda *_a, **_k: (0, {}, "<urlopen error [WinError 10060] 192.168.1.30 timed out>"),
+    )
+
+    with pytest.raises(ValueError, match="^unreachable$"):
+        plugin_module.probe_printer_setup(
+            {"source_instance_id": "s", "discovery_key": "k"},
+            {"connection_ref": "local-1", "print_host": "192.168.1.30"},
+            "local_manual",
+        )
+
+    assert logged == ["printer setup probe: objects status=0 error=timeout"]
+
 
 def test_happy_hare_snapshot_requires_one_exact_topology(plugin_module, monkeypatch):
     def moonraker(_connection, path, payload=None):
