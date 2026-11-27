@@ -8136,7 +8136,7 @@ button:disabled{opacity:.5;cursor:wait}#status{min-height:21px;margin-top:14px;c
 </div></form></main><script>
 'use strict';
 var action=__ACTION__,copy=__COPY__,session=__SESSION__,kind=action.type==='configure-bambu'?'bambu':'moonraker',
-activeSearchRequest='',ignoredSearchRequest='',searchTimer=0,activeConnectRequest='',ignoredConnectRequest='',connectTimer=0,needsRepair=false;
+activeSearchRequest='',ignoredSearchRequest='',searchTimer=0,activeConnectRequest='',ignoredConnectRequest='',connectTimer=0,needsRepair=false,autoSearched=false;
 var form=document.getElementById('form'),host=document.getElementById('host'),secret=document.getElementById('secret'),
 serial=document.getElementById('serial'),candidate=document.getElementById('candidate'),statusLine=document.getElementById('status'),
 save=document.getElementById('save'),search=document.getElementById('search'),remove=document.getElementById('remove');
@@ -8184,19 +8184,21 @@ if(kind==='bambu'){
     save.textContent=needsRepair?copy.bambuRepair:copy.bambuSave;
     statusLine.textContent=needsRepair?copy.bambuRepairRequired:copy.bambuFound;}
    candidate.onchange=choose;choose();statusLine.textContent=copy.bambuFound||'';
-  }else{statusLine.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):''}
+  }else{statusLine.textContent=data.discoveryAttempted?(data.discoveryComplete===false?(copy.bambuSearchIncomplete||''):(copy.bambuNotFound||'')):'';
+   if(data.discoveryAttempted)document.getElementById('serial-wrap').open=true}
   if(!items.length){needsRepair=false;secret.required=true;host.readOnly=false;serial.readOnly=false;}
   if(needsRepair&&!secret.value)statusLine.textContent=copy.bambuRepairRequired||'Repairing the saved local connection…';
-  if(data.localConfigStatus==='corrupt'||data.localConfigStatus==='unreadable'){
-   setBusy(true);statusLine.textContent=copy.bambuLocalConfigCorrupt;
-  }else if(data.localConfigStatus==='missing'&&!items.length){statusLine.textContent=copy.bambuLocalConfigMissing;}
-  remove.style.display=data.hasSavedConnection?'':'none';search.textContent=data.discoveryAttempted?(copy.bambuSearchAgain||copy.bambuSearch):copy.bambuSearch;}
+  var unusable=data.localConfigStatus==='corrupt'||data.localConfigStatus==='unreadable';
+  if(unusable){setBusy(true);statusLine.textContent=copy.bambuLocalConfigCorrupt;}
+  remove.style.display=data.hasSavedConnection?'':'none';search.textContent=data.discoveryAttempted?(copy.bambuSearchAgain||copy.bambuSearch):copy.bambuSearch;
+  if(!unusable&&!items.length&&!data.discoveryAttempted&&!data.hasSavedConnection&&!autoSearched){autoSearched=true;prepare(true)}}
  orca.onMessage(function(data){if(!data||data.source!=='filamenthub-host')return;
   if(data.type==='bambu-setup-candidates')candidates(data);
   if(data.type==='bambu-setup-result'){
    if((activeConnectRequest&&data.requestId!==activeConnectRequest)||data.requestId===ignoredConnectRequest)return;
    clearTimeout(connectTimer);activeConnectRequest='';
-   if(data.ok){finish('saved')}else{setBusy(false);statusLine.textContent=copy[data.code]||copy.bambuInvalid||'Connection failed';secret.focus()}}});
+   if(data.ok){finish('saved')}else{setBusy(false);statusLine.textContent=copy[data.code]||copy.bambuInvalid||'Connection failed';
+    if(data.code==='bambuNoReportSerial'||data.code==='bambuSerialRequired'){document.getElementById('serial-wrap').open=true;serial.focus()}else{secret.focus()}}}});
  prepare(false);host.focus();
 }else{
  var labels=action.copy||{};document.getElementById('title').textContent=labels.title||'Moonraker';
@@ -8342,10 +8344,29 @@ def _mqtt_read_packet(sock, deadline):
     raise ValueError("invalid MQTT remaining length")
 
 
+@contextmanager
+def _bambu_lan_stage(stage):
+    """Mark the step of a Bambu LAN read that failed, keeping the exception type.
+
+    Readers and the background runtime keep catching the same exceptions; only
+    printer setup reads the mark, to tell the person what to fix.
+    """
+    try:
+        yield
+    except (OSError, ValueError) as exc:
+        if getattr(exc, "fh_bambu_stage", None) is None:
+            try:
+                exc.fh_bambu_stage = stage
+            except AttributeError:
+                pass
+        raise
+
+
 def _resolved_bambu_address(host):
-    return _resolved_lan_address(
-        host, BAMBU_MQTT_PORT, "Bambu address must resolve inside the local network"
-    )
+    with _bambu_lan_stage("address"):
+        return _resolved_lan_address(
+            host, BAMBU_MQTT_PORT, "Bambu address must resolve inside the local network"
+        )
 
 
 def _resolved_lan_address(
@@ -8381,6 +8402,81 @@ class BambuCertificateRejected(ConnectionError):
     """The device at a printer's address is not the printer that was linked."""
 
 
+def bambu_setup_failure(exc, serial_given):
+    """Return (stage, message key) for a failed Bambu LAN check.
+
+    The stage comes from _bambu_lan_stage. The keys follow what OrcaSlicer
+    itself tells the user at the same step: CONNACK refused -> wrong access
+    code; connected but no report -> LAN only / Developer mode is off.
+    """
+    stage = getattr(exc, "fh_bambu_stage", None) or "unknown"
+    if isinstance(exc, BambuCertificateRejected):
+        return "tls", "bambuCertificateRejected"
+    if isinstance(exc, PermissionError):
+        return "auth", "bambuLanAuthRejected"
+    if stage == "address":
+        # getaddrinfo failures are OSError; a public or malformed address is
+        # ValueError from _resolved_lan_address.
+        return stage, "bambuUnreachable" if isinstance(exc, OSError) else "bambuNotLocal"
+    if stage == "connect":
+        return stage, "bambuUnreachable"
+    if stage in {"tls", "auth"}:
+        return stage, "bambuTlsFailed"
+    if stage == "subscribe":
+        return stage, "bambuSubscriptionRejected"
+    if stage == "report":
+        return stage, "bambuNoReport" if serial_given else "bambuNoReportSerial"
+    return stage, "bambuInvalid"
+
+
+_SETUP_REPORT_STAGES = {
+    "bambuLocalConfigCorrupt": "local",
+    "bambuCodeRequired": "repair",
+    "bambuRepairUnavailable": "repair",
+    "bambuSerialRequired": "report",
+    "bambuPairingFailed": "pair",
+    "bambuPairingExpired": "pair",
+    "bambuRepairRequired": "snapshot",
+}
+
+
+def _setup_report_platform():
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return "other"
+
+
+def report_printer_bridge_setup_attempt(pairing_code, provider, transport, stage, code):
+    """Tell the site why a local printer check ended without pairing.
+
+    Best effort and content-free: only the step and the message key travel,
+    never an address, serial or access code. The pairing code identifies the
+    connector the site already created, so no account token is needed.
+    """
+    if not isinstance(pairing_code, str) or not 8 <= len(pairing_code) <= 32:
+        return None
+    status, _ = http_post_json(
+        "/printer-bridge/setup-attempt",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": provider,
+            "transport": transport,
+            "source_instance_id": plugin_source_instance_id(),
+            "stage": stage,
+            "code": code,
+            "plugin_version": PLUGIN_VERSION,
+            "platform": _setup_report_platform(),
+        },
+    )
+    fh_log("printer setup attempt reported: stage=%s code=%s HTTP %s" % (stage, code, status))
+    return status
+
+
 def _bambu_tls_context(verify, maximum_version=None):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     # A printer certificate names a serial number, not a host; the caller
@@ -8405,9 +8501,9 @@ def _bambu_tls_handshake(address, timeout, verify, maximum_version=None):
     raw = socket.socket(family, socktype, proto)
     raw.settimeout(timeout)
     try:
-        with external_operation():
+        with external_operation(), _bambu_lan_stage("connect"):
             raw.connect(sockaddr)
-        with external_operation():
+        with external_operation(), _bambu_lan_stage("tls"):
             return _bambu_tls_context(verify, maximum_version).wrap_socket(
                 raw, server_hostname=None
             )
@@ -8565,27 +8661,29 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
             + _mqtt_field(b"bblp")
             + _mqtt_field(access_code.encode("utf-8"))
         )
-        with external_operation():
-            sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
-        header, connack = _mqtt_read_packet(sock, deadline)
-        if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
-            fh_log("bambu_lan_auth_rejected")
-            raise PermissionError("Bambu MQTT authentication rejected")
+        with _bambu_lan_stage("auth"):
+            with external_operation():
+                sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
+            header, connack = _mqtt_read_packet(sock, deadline)
+            if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+                fh_log("bambu_lan_auth_rejected")
+                raise PermissionError("Bambu MQTT authentication rejected")
         _remember_bambu_certificate(config, sock)
 
         report_topic = (
             "device/%s/report" % serial if serial else "device/+/report"
         ).encode("utf-8")
         subscribe = struct.pack("!H", 1) + _mqtt_field(report_topic) + b"\x00"
-        with external_operation():
-            sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
-        sub_header, suback = _mqtt_read_packet(sock, deadline)
-        if (
-            (sub_header & 0xF0) != 0x90
-            or len(suback) < 3
-            or suback[2] == 0x80
-        ):
-            raise ConnectionError("Bambu MQTT subscription rejected")
+        with _bambu_lan_stage("subscribe"):
+            with external_operation():
+                sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
+            sub_header, suback = _mqtt_read_packet(sock, deadline)
+            if (
+                (sub_header & 0xF0) != 0x90
+                or len(suback) < 3
+                or suback[2] == 0x80
+            ):
+                raise ConnectionError("Bambu MQTT subscription rejected")
 
         def request_full_snapshot(target_serial):
             topic = ("device/%s/request" % target_serial).encode("utf-8")
@@ -8671,6 +8769,12 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT, on_report=None):
         if fallback is not None:
             return serial, fallback
         raise TimeoutError("Bambu MQTT report timed out")
+    except (OSError, ValueError) as exc:
+        # Anything after an accepted subscription: the printer took the access
+        # code but sent no usable report in time.
+        if getattr(exc, "fh_bambu_stage", None) is None:
+            exc.fh_bambu_stage = "report"
+        raise
     finally:
         try:
             sock.sendall(b"\xE0\x00")
@@ -14313,6 +14417,13 @@ class FilamentHubCatalog(
         if not open_ and outcome in {"saved", "cancelled", "removed"}:
             payload["outcome"] = outcome
         self._deliver("local-printer-setup-state", **payload)
+        if provider == "bambu" and not open_ and outcome == "cancelled" and context.get("pairingCode"):
+            # Closing the window is the most common end of a Bambu setup; the
+            # site keeps an earlier failure reason over this one.
+            BACKGROUND_WORKER.submit(
+                report_printer_bridge_setup_attempt,
+                context["pairingCode"], "bambu", "orca_plugin_lan", "dialog", "cancelled",
+            )
 
     def _on_local_dialog_close(self):
         if self._local_window is None:
@@ -14405,6 +14516,7 @@ class FilamentHubCatalog(
             "provider": provider,
             "physicalPrinterId": action.get("physicalPrinterId"),
             "materialSystemId": action.get("materialSystemId"),
+            "pairingCode": action.get("pairingCode") if provider == "bambu" else None,
         }
         self._local_window = orca.host.ui.create_window(
             title="FilamentHub",
@@ -14969,11 +15081,20 @@ class FilamentHubCatalog(
         request_id="",
         token="",
     ):
-        def finish(key, status):
+        def finish(key, status, stage=""):
             if request_id:
                 self._deliver_native_setup("bambu-setup-result", requestId=request_id, ok=status == "success", code=key)
             else:
                 self._deliver_notice(ui_text(key), status)
+            if status == "error" and key != "bambuSiteUnreachable":
+                # After the result is shown: the user must not wait for this.
+                try:
+                    report_printer_bridge_setup_attempt(
+                        pairing_code, "bambu", "orca_plugin_lan",
+                        stage or _SETUP_REPORT_STAGES.get(key, "unknown"), key,
+                    )
+                except (OSError, TypeError, ValueError):
+                    fh_log("printer setup attempt report failed")
 
         bridge_token = ""
         previous_local = None
@@ -15013,7 +15134,6 @@ class FilamentHubCatalog(
                     finish("bambuRepairUnavailable", "error")
                     return
                 host, access_code, serial = saved["host"], saved["access_code"], saved["serial"]
-            _resolved_bambu_address(host)
             # An empty serial is the normal case: the wildcard report topic
             # carries it, so the address and the access code are enough.
             serial = _normalized_bambu_serial(serial)
@@ -15026,13 +15146,14 @@ class FilamentHubCatalog(
             }
             fh_log("Bambu setup: reading local MQTT snapshot")
             try:
+                _resolved_bambu_address(host)
                 discovered_serial, report = read_bambu_lan_snapshot(pending)
-            except PermissionError:
-                fh_log("bambu_lan_auth_rejected")
-                finish("bambuLanAuthRejected", "error")
-                return
-            except BambuCertificateRejected:
-                finish("bambuCertificateRejected", "error")
+            except (OSError, ValueError) as exc:
+                stage, key = bambu_setup_failure(exc, bool(serial))
+                if key == "bambuLanAuthRejected":
+                    fh_log("bambu_lan_auth_rejected")
+                fh_log("bambu_setup_failed: stage=%s code=%s error=%s" % (stage, key, type(exc).__name__))
+                finish(key, "error", stage)
                 return
             connected_serial = _normalized_bambu_serial(discovered_serial)
             if not connected_serial:
@@ -15040,7 +15161,7 @@ class FilamentHubCatalog(
                 finish("bambuSerialRequired", "error")
                 return
             if serial and connected_serial != serial:
-                finish("bambuInvalid", "error")
+                finish("bambuInvalid", "error", "report")
                 return
             fh_log("Bambu setup: local MQTT snapshot received")
             _assert_bambu_binding_available(
@@ -15068,7 +15189,14 @@ class FilamentHubCatalog(
             )
             fh_log("Bambu setup: pairing request returned HTTP %s" % pair_status)
             if pair_status != 200:
-                finish("bambuPairingFailed", "error")
+                # 401 is the server's answer for an unknown or expired code
+                # (pair_printer_bridge); 0 means the site was not reached.
+                finish(
+                    "bambuPairingExpired" if pair_status == 401
+                    else "bambuSiteUnreachable" if pair_status == 0
+                    else "bambuPairingFailed",
+                    "error",
+                )
                 return
             paired = json.loads(pair_body.decode("utf-8"))
             bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else ""
@@ -15128,7 +15256,7 @@ class FilamentHubCatalog(
                     invalidate_interrupted_bambu_binding(
                         physical_printer_id, bridge_token, previous_local
                     )
-                finish("bambuRepairRequired" if snapshot_status == 401 else "bambuPairingFailed", "error")
+                finish("bambuRepairRequired" if snapshot_status == 401 else "bambuPairingFailed", "error", "snapshot")
                 return
             if snapshot_status != 200:
                 # The durable local binding is valid and the background
