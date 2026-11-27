@@ -206,6 +206,7 @@ async def observed_snapshot(
         user_id=context.connector.user_id,
         physical_printer_id=context.connector.physical_printer_id,
         payload=payload,
+        authenticated_connector_id=context.connector.id,
     )
 
 

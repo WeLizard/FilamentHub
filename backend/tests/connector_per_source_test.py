@@ -68,6 +68,23 @@ async def test_pairing_a_second_workstation_does_not_evict_the_first(
     assert sources == ["workstation-aaaaaaaaaaaa", "workstation-bbbbbbbbbbbb"]
     assert len([c for c in body["contact_channels"] if c["kind"] == "connector"]) == 2
 
+    connector_ids = {c["source_instance_id"]: c["id"] for c in body["connectors"]}
+    for token, source in ((first, "workstation-aaaaaaaaaaaa"), (second, "workstation-bbbbbbbbbbbb")):
+        snapshot = await auth_client.post(
+            "/api/v1/printer-bridge/snapshot",
+            headers={"X-FilamentHub-Bridge-Token": token},
+            json={
+                "material_system_id": system_id,
+                "provider": "bambu",
+                "transport": "orca_plugin_lan",
+                "source_instance_id": source,
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+                "printer": {"state": "idle"},
+            },
+        )
+        assert snapshot.status_code == 200, snapshot.text
+        assert snapshot.json()["connector_id"] == connector_ids[source]
+
     # The same workstation pairing again replaces its own token, not a new row.
     again = await _pair(auth_client, printer_id, system_id, "workstation-bbbbbbbbbbbb")
     body = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()

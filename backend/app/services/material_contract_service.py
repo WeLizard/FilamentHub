@@ -1023,6 +1023,7 @@ async def ingest_printer_bridge_snapshot(
     physical_printer_id: int,
     payload: PrinterBridgeSnapshotRequest,
     *,
+    authenticated_connector_id: int | None = None,
     commit: bool = True,
 ) -> PrinterBridgeSnapshotResponse:
     """Persist only normalized facts from a locally authenticated connector.
@@ -1068,9 +1069,14 @@ async def ingest_printer_bridge_snapshot(
             if item.physical_printer_id == physical_printer_id
             and item.provider == payload.provider
             and item.transport == payload.transport
+            and (authenticated_connector_id is None or item.id == authenticated_connector_id)
         ),
         None,
     )
+    if authenticated_connector_id is not None and (
+        connector is None or not connector.active or connector.material_system_id != system.id
+    ):
+        raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
     if connector is None:
         connector = PhysicalPrinterConnector(
             user_id=user_id,
