@@ -5786,6 +5786,8 @@ def probe_printer_setup(context, connection, origin):
         snapshot = read_happy_hare_snapshot(connection)
     elif _qidi_box_present(objects):
         snapshot = read_qidi_box_snapshot(connection)
+    elif _snapmaker_present(objects):
+        snapshot = read_snapmaker_snapshot(connection)
     identity = _observe_moonraker_identity(connection)
     if origin == "local_manual" and not identity:
         fh_log("printer setup probe: Moonraker instance_id unavailable")
@@ -5817,10 +5819,13 @@ from filamenthub_moonraker import (
     MOONRAKER_BYPASS_PROVIDER_INDEX,
     MOONRAKER_STATUS_OBJECTS,
     MOONRAKER_USAGE_PROVIDERS,
+    SNAPMAKER_HEADS,
     _QIDI_DICT_PATH,
     _moonraker_base_url,
     _physical_tag_uid,
     _qidi_box_present,
+    _snapmaker_present,
+    is_snapmaker_status,
     moonraker_feed_mark,
     moonraker_feed_slots,
     moonraker_loaded_slot,
@@ -5835,6 +5840,11 @@ from filamenthub_moonraker import (
     qidi_box_loaded_slot,
     qidi_box_query,
     qidi_box_variables,
+    parse_snapmaker_slots,
+    snapmaker_active_head,
+    snapmaker_material,
+    snapmaker_query,
+    snapmaker_switch_mark,
 )
 # fh-bundle-end
 
@@ -5962,8 +5972,21 @@ def read_qidi_box_snapshot(connection):
     }
 
 
+def read_snapmaker_snapshot(connection):
+    """Read a Snapmaker U1's four heads through Moonraker, without writes."""
+    status, body, error = _moonraker_json(
+        connection, "/printer/objects/query", {"objects": snapmaker_query()}
+    )
+    if status != 200:
+        raise RuntimeError(error or "Moonraker query HTTP %s" % status)
+    result = body.get("result")
+    state = result.get("status") if isinstance(result, dict) else None
+    # The same upload as a QIDI Box: slots of a Klipper feeder that is not Happy Hare.
+    return {"qidi_slots": parse_snapmaker_slots(state)}
+
+
 def read_printer_material_snapshot(connection):
-    """Happy Hare snapshot, or {"qidi_slots": [...]} for a QIDI Box printer."""
+    """Happy Hare snapshot, or {"qidi_slots": [...]} for a QIDI Box or Snapmaker U1."""
     status, body, error = _moonraker_json(connection, "/printer/objects/list")
     result = body.get("result")
     objects = result.get("objects") if isinstance(result, dict) else None
@@ -5973,6 +5996,8 @@ def read_printer_material_snapshot(connection):
         return read_happy_hare_snapshot(connection)
     if _qidi_box_present(objects):
         return read_qidi_box_snapshot(connection)
+    if _snapmaker_present(objects):
+        return read_snapmaker_snapshot(connection)
     raise ValueError("no supported material system")
 
 
@@ -13049,9 +13074,15 @@ class MoonrakerWatchRuntime(_UsageWatchRuntime):
                     ),
                     desired,
                 )
-                if route is not None and happy_hare is not None:
+                # Happy Hare and a Snapmaker U1 count tool changes; with several
+                # gates or heads a reading without the count cannot be trusted.
+                switches = (
+                    happy_hare["gate_count"] > 1 if happy_hare is not None
+                    else is_snapmaker_status(status_map)
+                )
+                if route is not None and (happy_hare is not None or switches):
                     mark = moonraker_feed_mark(status_map)
-                    if mark is None and happy_hare["gate_count"] > 1:
+                    if mark is None and switches:
                         # Nothing tells a gate that fed all along from one
                         # left and returned to between two readings.
                         route, issue = None, {"reason": "active_slot_unknown"}

@@ -360,6 +360,59 @@ def test_a_qidi_box_print_is_charged_to_the_slot_the_box_loaded(klipper, monkeyp
     ]
 
 
+def _snapmaker_head(klipper, active, switches):
+    """A Snapmaker U1 printing with head ``active`` after ``switches`` head changes."""
+    counts = [switches, 0, 0, 0]
+    klipper.calls.extra = {
+        "print_task_config": {"filament_exist": [True] * 4},
+        "toolhead": {"extruder": ("extruder", "extruder1", "extruder2", "extruder3")[active]},
+        **{
+            name: {"switch_count": count}
+            for name, count in zip(("extruder", "extruder1", "extruder2", "extruder3"), counts)
+        },
+    }
+
+
+def test_a_snapmaker_u1_print_is_charged_to_the_head_that_prints(klipper):
+    klipper.calls.desired = {"slots": [
+        {"index": index, "usage_route_proof": "proof-%d" % index, "spool": {"id": 30 + index}}
+        for index in range(4)
+    ]}
+    klipper.link()
+
+    _snapmaker_head(klipper, 0, 0)
+    _print_job(klipper, [("printing", 100.0, 10.0), ("printing", 500.0, 100.0)])
+    # The query asks for the head and the change counts of every head.
+    objects = klipper.calls.queries[-1]["objects"]
+    assert objects["toolhead"] == ["extruder"] and "switch_count" in objects["extruder3"]
+    _snapmaker_head(klipper, 2, 1)
+    # Which head printed the stretch around the change is unknown.
+    _print_job(klipper, [("printing", 700.0, 150.0), ("printing", 1000.0, 250.0)])
+    # Head 3 prints again, but the printer went to another head and back.
+    _snapmaker_head(klipper, 2, 3)
+    _print_job(klipper, [("printing", 1500.0, 300.0)])
+    _print_job(klipper, [("complete", 1600.0, 350.0)])
+
+    assert [(item["spool_id"], item["used_length_mm"]) for item in klipper.items()] == [
+        (30, pytest.approx(400.0)), (32, pytest.approx(300.0)), (32, pytest.approx(100.0)),
+    ]
+
+
+def test_a_snapmaker_u1_without_head_change_counts_is_not_guessed_at(klipper):
+    klipper.calls.desired = {"slots": [
+        {"index": index, "usage_route_proof": "proof-%d" % index, "spool": {"id": 30 + index}}
+        for index in range(4)
+    ]}
+    klipper.link()
+    _snapmaker_head(klipper, 1, 0)
+    del klipper.calls.extra["extruder2"]
+
+    _print_job(klipper, [("printing", 100.0, 10.0), ("complete", 900.0, 400.0)])
+
+    (event,) = [event for batch in klipper.posted("usage-batches") for event in batch["events"]]
+    assert event["items"] == [] and event["skipped"] == [{"reason": "active_slot_unknown"}]
+
+
 def test_a_print_without_an_assigned_spool_says_why_nothing_was_deducted(klipper):
     klipper.calls.desired = {"slots": [{"index": 0, "spool": None}]}
     klipper.link()

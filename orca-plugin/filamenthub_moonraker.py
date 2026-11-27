@@ -363,6 +363,122 @@ def parse_qidi_box_slots(state, variables, dictionary_text):
     return slots
 
 
+# Snapmaker U1 through Moonraker: four print heads, each a slot. Pinned to
+# Snapmaker/u1-klipper 7ac453b5 (firmware 2.1.0): klippy/extras/print_task_config.py
+# (PHYSICAL_EXTRUDER_NUM = 4; per-head filament_exist, filament_type,
+# filament_sub_type, filament_color_rgba, filament_vendor, "NONE" when
+# unknown), klippy/kinematics/extruder.py (heads named extruder, extruder1..3;
+# switch_count per head) and klippy/extras/print_stats.py (filament_used sums
+# the position of every extruder, so a head change adds no jump). The type
+# names follow OrcaSlicer's own Snapmaker agent (OrcaSlicer acb0be6e,
+# src/slic3r/Utils/SnapmakerPrinterAgent.cpp:75-104, 105-226).
+SNAPMAKER_HEADS = 4
+_SNAPMAKER_EXTRUDERS = ("extruder", "extruder1", "extruder2", "extruder3")
+_SNAPMAKER_FIELDS = (
+    "filament_exist", "filament_type", "filament_sub_type", "filament_color_rgba", "filament_vendor",
+)
+_SNAPMAKER_SUB_TYPES = {
+    "CF": "-CF", "GF": "-GF", "SNAPSPEED": " HIGH SPEED", "HS": " HIGH SPEED",
+    "SILK": " SILK", "WOOD": " WOOD", "MATTE": " MATTE", "MARBLE": " MARBLE",
+}
+
+
+def _snapmaker_present(objects):
+    return "print_task_config" in objects
+
+
+def snapmaker_query():
+    """What one read of a Snapmaker U1's heads asks Moonraker for.
+
+    Only the per-head fields: the whole object is large.
+    """
+    return {"print_task_config": list(_SNAPMAKER_FIELDS), "toolhead": ["extruder"]}
+
+
+def _snapmaker_list(config, key):
+    value = config.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _snapmaker_text(values, index):
+    value = values[index] if index < len(values) else None
+    if not isinstance(value, str):
+        return ""
+    value = value.strip().upper()
+    return "" if value == "NONE" else value
+
+
+def snapmaker_material(base, sub_type):
+    """The material name the way OrcaSlicer's Snapmaker agent combines it."""
+    if not base:
+        return ""
+    return base + _SNAPMAKER_SUB_TYPES.get(sub_type, "")
+
+
+def snapmaker_active_head(status_map):
+    """The head the U1 prints with, or None when the printer does not say."""
+    toolhead = status_map.get("toolhead") if isinstance(status_map, dict) else None
+    name = toolhead.get("extruder") if isinstance(toolhead, dict) else None
+    return _SNAPMAKER_EXTRUDERS.index(name) if name in _SNAPMAKER_EXTRUDERS else None
+
+
+def snapmaker_switch_mark(status_map):
+    """How many head changes the U1 has counted, or None when a head does not say.
+
+    The count moves with every change, so a change away and back between two
+    readings still shows.
+    """
+    total = 0
+    for name in _SNAPMAKER_EXTRUDERS:
+        head = status_map.get(name) if isinstance(status_map, dict) else None
+        count = head.get("switch_count") if isinstance(head, dict) else None
+        if type(count) is not int or count < 0:
+            return None
+        total += count
+    return total
+
+
+def is_snapmaker_status(status_map):
+    """Whether a Moonraker answer comes from a Snapmaker U1."""
+    config = status_map.get("print_task_config") if isinstance(status_map, dict) else None
+    return isinstance(config, dict) and bool(config)
+
+
+def parse_snapmaker_slots(status_map):
+    """The U1's four heads as slots: filament, material, colour, which one prints."""
+    config = status_map.get("print_task_config") if isinstance(status_map, dict) else None
+    if not isinstance(config, dict):
+        raise ValueError("Snapmaker print_task_config is unavailable")
+    exist = _snapmaker_list(config, "filament_exist")
+    types = _snapmaker_list(config, "filament_type")
+    sub_types = _snapmaker_list(config, "filament_sub_type")
+    colors = _snapmaker_list(config, "filament_color_rgba")
+    active = snapmaker_active_head(status_map)
+    slots = []
+    for index in range(SNAPMAKER_HEADS):
+        present = exist[index] if index < len(exist) and isinstance(exist[index], bool) else None
+        slot = {
+            "provider_index": index,
+            "label": "Head %d" % (index + 1),
+            "kind": "slot",
+            "present": present,
+            "spool_identity_known": False,
+        }
+        if active is not None:
+            slot["active_feed"] = index == active
+        if present:
+            material = snapmaker_material(
+                _snapmaker_text(types, index), _snapmaker_text(sub_types, index)
+            )
+            if material:
+                slot["material"] = material[:80]
+            color = _snapmaker_text(colors, index).lstrip("#")
+            if re.fullmatch(r"[0-9A-F]{6}([0-9A-F]{2})?", color):
+                slot["color_hex"] = color[:6]
+        slots.append(slot)
+    return slots
+
+
 # Filament usage through Moonraker. ``happy_hare`` is a printer with that MMU;
 # ``legacy`` is any other Klipper printer.
 MOONRAKER_USAGE_PROVIDERS = ("happy_hare", "legacy")
@@ -406,15 +522,25 @@ def moonraker_usage_query(provider):
     else:
         # Where a QIDI Box says which of its slots is loaded; absent elsewhere.
         objects["save_variables"] = ["variables"]
+        # Which head a Snapmaker U1 prints with and how often heads changed;
+        # a printer without them answers these objects empty.
+        objects["print_task_config"] = ["filament_exist"]
+        objects["toolhead"] = ["extruder"]
+        objects["extruder"] = objects["extruder"] + ["switch_count"]
+        for name in _SNAPMAKER_EXTRUDERS[1:]:
+            objects[name] = ["switch_count"]
     return objects
 
 
 def moonraker_feed_mark(status_map):
-    """Happy Hare's count of tool changes in this print, or None when it gives none.
+    """A count of tool changes in this print, or None when the printer gives none.
 
+    Happy Hare counts them, and a Snapmaker U1 counts head changes per head.
     Two readings can show the same gate with a switch to another gate and back
     between them. The count tells such a stretch from one fed by a single spool.
     """
+    if is_snapmaker_status(status_map):
+        return snapmaker_switch_mark(status_map)
     mmu = status_map.get("mmu") if isinstance(status_map, dict) else None
     count = mmu.get("num_toolchanges") if isinstance(mmu, dict) else None
     return count if type(count) is int and count >= 0 else None
@@ -531,7 +657,12 @@ def moonraker_reports_usage_itself(spoolman, own_hosts):
 
 
 def moonraker_loaded_slot(status_map):
-    """The slot a printer without Happy Hare says is loaded, or None when it says nothing."""
+    """The slot a printer without Happy Hare says is loaded, or None when it says nothing.
+
+    A QIDI Box names the slot it loaded; a Snapmaker U1 the head it prints with.
+    """
+    if is_snapmaker_status(status_map):
+        return snapmaker_active_head(status_map)
     saved = status_map.get("save_variables") if isinstance(status_map, dict) else None
     return qidi_box_loaded_slot(saved.get("variables") if isinstance(saved, dict) else None)
 
