@@ -1213,7 +1213,7 @@ export interface LanBridgeResult {
 }
 export type FlashforgeBridgeResult = LanBridgeResult;
 
-type LanBridgeProvider = 'flashforge' | 'creality';
+type LanBridgeProvider = 'flashforge' | 'creality' | 'anycubic';
 
 function requestLanBridge(
   provider: LanBridgeProvider,
@@ -1326,6 +1326,32 @@ export function requestCrealityObservationRefresh(
   return requestLanBridge('creality', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
+/**
+ * Link an Anycubic printer in LAN mode through the plugin. The page sends
+ * FilamentHub IDs, the one-time pairing code and an optional opaque local
+ * reference; the printer's address is read by the plugin from its connection
+ * settings in OrcaSlicer, and the printer's own credentials never leave the
+ * plugin.
+ */
+export function configureAnycubicBridgeInPlugin(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  pairingCode: string,
+  connectionRef?: string,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('anycubic', 'setup', {
+    physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
+  });
+}
+
+/** Ask the plugin to read a linked Anycubic printer once and report it. */
+export function requestAnycubicObservationRefresh(
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('anycubic', 'refresh', { physicalPrinterId, materialSystemId });
+}
+
 export interface HappyHareAssignmentChange {
   gate: number;
   actualSpoolId: number | null;
@@ -1336,7 +1362,7 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
-  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality';
+  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | 'anycubic';
   printerModel?: string;
   source?: 'network' | 'profile' | 'saved';
 }

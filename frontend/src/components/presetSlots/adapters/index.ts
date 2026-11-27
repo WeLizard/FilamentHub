@@ -1,3 +1,4 @@
+import { anycubicAdapter } from './anycubic';
 import { bambuAdapter } from './bambu';
 import { crealityAdapter } from './creality';
 import { directFeedAdapter } from './direct';
@@ -15,6 +16,7 @@ export const FEED_ADAPTERS: FeedAdapter[] = [
   octoprintAdapter,
   flashforgeAdapter,
   crealityAdapter,
+  anycubicAdapter,
 ];
 
 export function feedAdapterFor(provider: string): FeedAdapter {
