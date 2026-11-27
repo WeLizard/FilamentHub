@@ -140,6 +140,44 @@ Edge запоминает сертификат, который принтер п
 не отправляется, а причина попадает в журнал. После замены принтера или его
 платы дайте подключению новый `id`.
 
+#### SDCP: Elegoo Centauri Carbon и другие принтеры на SDCP
+
+Принтеры на открытом протоколе SDCP подключаются по адресу, пароль не нужен.
+Edge сам узнаёт номер платы принтера.
+
+```yaml
+- id: carbon
+  name: Centauri Carbon
+  adapter: sdcp
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge передаёт состояние печати и текущее задание. С CANVAS на прошивке 1.2 или
+новее — ещё и четыре слота каждого блока: есть ли пруток, материал и цвет, как их
+видит принтер, и какой слот сейчас подаёт; без CANVAS — катушку на держателе.
+Принтеру Edge отправляет только запросы чтения. Расход принтер не считает, поэтому
+с катушек ничего не списывается.
+
+#### Elegoo Centauri Carbon 2
+
+Centauri Carbon 2 говорит не по SDCP, а по своему MQTT-интерфейсу Elegoo. Нужен
+адрес и код доступа с экрана принтера; если код не меняли, строку `access_code`
+можно не писать.
+
+```yaml
+- id: carbon2
+  name: Centauri Carbon 2
+  adapter: elegoo_mqtt
+  printer_url: 192.168.1.61
+  access_code: КОД-ДОСТУПА
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge передаёт состояние печати, текущее задание и слоты CANVAS (без CANVAS —
+материал единственной катушки). Edge только читает принтер. Расход принтер не
+считает, поэтому с катушек ничего не списывается.
+
 ### Обновлять назначения без Orca
 
 Для Happy Hare 4.2 в режиме **pull** доступна настройка `auto_refresh: true` у
@@ -334,6 +372,44 @@ before relying on spool identity. When native Spoolman is configured or unknown,
 Edge does not submit a second usage stream. Empty/unknown observations never
 erase your desired spool assignments.
 
+#### SDCP: Elegoo Centauri Carbon and other SDCP printers
+
+Printers on the open SDCP protocol connect by their address alone; there is no
+password. Edge learns the printer's mainboard ID from the printer.
+
+```yaml
+- id: carbon
+  name: Centauri Carbon
+  adapter: sdcp
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge reports the print state and the current job. With CANVAS on firmware 1.2
+or later it also reports the four slots of each unit: whether filament is
+loaded, the material and colour as the printer sees them, and which slot is
+feeding; without CANVAS, the spool on the holder. Edge sends the printer read
+requests only. The printer counts no filament, so no spool is charged.
+
+#### Elegoo Centauri Carbon 2
+
+The Centauri Carbon 2 speaks Elegoo's own MQTT interface, not SDCP. Edge needs
+its address and the access code shown on the printer; leave `access_code` out if
+the code was never changed.
+
+```yaml
+- id: carbon2
+  name: Centauri Carbon 2
+  adapter: elegoo_mqtt
+  printer_url: 192.168.1.61
+  access_code: ACCESS-CODE-FROM-PRINTER
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge reports the print state, the current job and the CANVAS slots (without
+CANVAS, the material of its single spool). Edge only reads the printer. The
+printer counts no filament, so no spool is charged.
+
 ### Update assignments without Orca
 
 For Happy Hare 4.2 in **pull** mode, optionally enable `auto_refresh: true` on a
@@ -465,6 +541,35 @@ Edge 与打印机保持一条连接，上报打印机状态、当前任务，以
 打印机不测量耗材用量。Edge 从打印机读取当前任务的文件，取得切片软件对每种耗材的估算，按层或按打印进度折算，并从分配给任务所用槽位的料盘中扣减，同时标记为估算值。取消的任务只扣减已打印的部分。打印机上找不到与任务对应的文件时，带标签的 Bambu 料盘按打印机上报的余量统计，其他料盘不扣减。Edge 启动之前或连接中断期间打印的部分不扣减。如果 OrcaSlicer 插件也在监视同一台打印机，网站只采用其中一方的上报。
 
 Edge 会记住打印机首次接受访问码时出示的证书。之后如果有其他设备在该地址应答，Edge 不会向它发送访问码，并在日志中说明原因。更换打印机或主板后，请为该连接设置新的 `id`。
+
+#### SDCP：Elegoo Centauri Carbon 及其他 SDCP 打印机
+
+使用开放 SDCP 协议的打印机只需地址即可连接，无需密码。Edge 会从打印机读取主板 ID。
+
+```yaml
+- id: carbon
+  name: Centauri Carbon
+  adapter: sdcp
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge 上报打印状态和当前任务。在固件 1.2 或更高版本上连接 CANVAS 时，还会上报每个单元的四个料槽：是否装有耗材、打印机所见的材料和颜色，以及正在送料的料槽；未连接 CANVAS 时上报料架上的料卷。Edge 只向打印机发送读取请求。打印机不统计耗材用量，因此不会扣减料卷。
+
+#### Elegoo Centauri Carbon 2
+
+Centauri Carbon 2 使用 Elegoo 自己的 MQTT 接口，而不是 SDCP。Edge 需要它的地址和打印机屏幕上显示的访问码；如果从未修改过访问码，可以省略 `access_code`。
+
+```yaml
+- id: carbon2
+  name: Centauri Carbon 2
+  adapter: elegoo_mqtt
+  printer_url: 192.168.1.61
+  access_code: 打印机访问码
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge 上报打印状态、当前任务和 CANVAS 料槽（未连接 CANVAS 时上报单卷的材料）。Edge 只读取打印机。打印机不统计耗材用量，因此不会扣减料卷。
 
 ### 无需 Orca 更新分配
 

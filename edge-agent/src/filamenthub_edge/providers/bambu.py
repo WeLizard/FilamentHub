@@ -32,7 +32,6 @@ import logging
 import math
 import re
 import secrets
-import select
 import ssl
 import struct
 import threading
@@ -60,6 +59,7 @@ from ._bambu_usage import (
     _buffer_bambu_usage_report,
     capture_bambu_usage,
 )
+from ._lan import MqttLink, mqtt_field
 from .bambu_files import READ_ERRORS, read_job_estimate
 from .bambu_tls import CertificateMemory, CertificateRejected, open_printer, resolve_printer
 from .base import ProviderSnapshot
@@ -112,68 +112,6 @@ def normalize_serial(value: str) -> str:
     if not SERIAL_PATTERN.fullmatch(serial):
         raise ValueError("invalid Bambu serial number")
     return serial.upper()
-
-
-def _remaining_length(length: int) -> bytes:
-    encoded = bytearray()
-    while True:
-        digit = length & 0x7F
-        length >>= 7
-        if length:
-            digit |= 0x80
-        encoded.append(digit)
-        if not length:
-            return bytes(encoded)
-
-
-def _field(payload: bytes) -> bytes:
-    return struct.pack("!H", len(payload)) + payload
-
-
-class _Link:
-    """MQTT framing over one socket, every read bounded by a deadline."""
-
-    def __init__(self, sock: Any) -> None:
-        self.sock = sock
-
-    def send(self, kind: int, body: bytes = b"") -> None:
-        self.sock.sendall(bytes([kind]) + _remaining_length(len(body)) + body)
-
-    def readable(self, wait: float) -> bool:
-        pending = getattr(self.sock, "pending", None)
-        if callable(pending) and pending():
-            return True
-        return bool(select.select([self.sock], [], [], wait)[0])
-
-    def _receive(self, length: int, deadline: float) -> bytes:
-        chunks = bytearray()
-        while len(chunks) < length:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Bambu MQTT timed out")
-            self.sock.settimeout(max(0.1, remaining))
-            try:
-                chunk = self.sock.recv(length - len(chunks))
-            except TimeoutError:
-                continue
-            if not chunk:
-                raise ConnectionError("Bambu MQTT connection closed")
-            chunks.extend(chunk)
-        return bytes(chunks)
-
-    def packet(self, deadline: float) -> tuple[int, bytes]:
-        header = self._receive(1, deadline)[0]
-        length = 0
-        multiplier = 1
-        for _ in range(4):
-            digit = self._receive(1, deadline)[0]
-            length += (digit & 0x7F) * multiplier
-            if length > MAX_PACKET_BYTES:
-                raise ValueError("Bambu MQTT packet exceeds the limit")
-            if not digit & 0x80:
-                return header, self._receive(length, deadline) if length else b""
-            multiplier *= 128
-        raise ValueError("invalid MQTT remaining length")
 
 
 def merge_report(previous: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -561,16 +499,16 @@ class BambuProvider:
 
     def _session(self, stop: threading.Event) -> None:
         sock = self._connect()
-        link = _Link(sock)
+        link = MqttLink(sock, name="Bambu", max_packet_bytes=MAX_PACKET_BYTES)
         try:
             deadline = time.monotonic() + self._timeout
             connect = (
-                _field(b"MQTT")
+                mqtt_field(b"MQTT")
                 + bytes([4, 0xC2])
                 + struct.pack("!H", KEEPALIVE_S)
-                + _field(("fhedge-" + secrets.token_hex(6)).encode("ascii"))
-                + _field(b"bblp")
-                + _field(self._access_code.encode("utf-8"))
+                + mqtt_field(("fhedge-" + secrets.token_hex(6)).encode("ascii"))
+                + mqtt_field(b"bblp")
+                + mqtt_field(self._access_code.encode("utf-8"))
             )
             link.send(0x10, connect)
             header, answer = link.packet(deadline)
@@ -586,7 +524,7 @@ class BambuProvider:
                     self.serial_number, bambu_certificate_fingerprint(peer(True))
                 )
             topic = f"device/{self.serial_number}/report".encode("ascii")
-            link.send(0x82, struct.pack("!H", 1) + _field(topic) + b"\x00")
+            link.send(0x82, struct.pack("!H", 1) + mqtt_field(topic) + b"\x00")
             header, answer = link.packet(deadline)
             if (header & 0xF0) != 0x90 or len(answer) < 3 or answer[2] == 0x80:
                 raise ConnectionError("Bambu MQTT subscription rejected")
@@ -595,7 +533,7 @@ class BambuProvider:
                 {"pushing": {"sequence_id": "0", "command": "pushall"}}, separators=(",", ":")
             ).encode("utf-8")
             link.send(
-                0x30, _field(f"device/{self.serial_number}/request".encode("ascii")) + request
+                0x30, mqtt_field(f"device/{self.serial_number}/request".encode("ascii")) + request
             )
             heard = pinged = time.monotonic()
             while not stop.is_set():

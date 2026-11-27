@@ -64,16 +64,24 @@ def _load_options(path: Path, *, required: bool = False) -> dict[str, Any]:
     return decoded
 
 
-def _bambu_endpoint(value: str) -> str:
-    """A Bambu printer is named by its address alone; it speaks MQTT, not HTTP."""
+# Printers named by their address alone: they speak MQTT or a WebSocket, not HTTP.
+_SOCKET_ADAPTERS = {
+    "bambu": ("mqtts", 8883, "Bambu"),
+    "sdcp": ("ws", 3030, "SDCP"),
+    "elegoo_mqtt": ("mqtt", 1883, "Elegoo"),
+}
+
+
+def _socket_endpoint(value: str, adapter: str) -> str:
+    scheme, default_port, label = _SOCKET_ADAPTERS[adapter]
     raw = value.strip()
     try:
-        parsed = urlsplit(raw if "://" in raw else f"mqtts://{raw}")
+        parsed = urlsplit(raw if "://" in raw else f"{scheme}://{raw}")
         port = parsed.port
     except ValueError as exc:
-        raise ConfigurationError("Bambu printer address has an invalid port") from exc
+        raise ConfigurationError(f"{label} printer address has an invalid port") from exc
     if (
-        parsed.scheme != "mqtts"
+        parsed.scheme != scheme
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
@@ -82,10 +90,10 @@ def _bambu_endpoint(value: str) -> str:
         or parsed.path not in {"", "/"}
     ):
         raise ConfigurationError(
-            "a Bambu printer address is its IP address or host name, for example 192.168.1.50"
+            f"a {label} printer address is its IP address or host name, for example 192.168.1.50"
         )
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-    return f"mqtts://{host}:{port or 8883}"
+    return f"{scheme}://{host}:{port or default_port}"
 
 
 def _text(value: Any, name: str, *, maximum: int = 256) -> str:
@@ -195,10 +203,12 @@ class NodeConfig:
             adapter = _text(entry.get("adapter", "moonraker"), "adapter", maximum=50)
             flashforge = adapter == "flashforge"
             bambu = adapter == "bambu"
+            # SDCP and Elegoo MQTT printers need no serial number: they report it.
+            profile_lan = adapter in {"sdcp", "elegoo_mqtt"}
             provider = _text(
                 entry.get(
                     "material_provider",
-                    "flashforge" if flashforge else "bambu" if bambu else "happy_hare",
+                    adapter if flashforge or bambu or profile_lan else "happy_hare",
                 ),
                 "material provider",
                 maximum=50,
@@ -209,7 +219,9 @@ class NodeConfig:
                 entry.get("printer_url") or entry.get("moonraker_url"), "printer URL"
             )
             endpoint = (
-                _bambu_endpoint(address) if bambu else normalize_origin(address, allow_http=True)
+                _socket_endpoint(address, adapter)
+                if adapter in _SOCKET_ADAPTERS
+                else normalize_origin(address, allow_http=True)
             )
             serial_number = _text(entry.get("serial_number", ""), "serial number", maximum=64)
             check_code = _text(entry.get("check_code", ""), "check code", maximum=64)
@@ -232,8 +244,24 @@ class NodeConfig:
                     raise ConfigurationError(
                         "Moonraker and Flashforge options do not apply to Bambu"
                     )
+            elif profile_lan:
+                if provider != adapter:
+                    raise ConfigurationError(f"the material provider of {adapter} is {adapter}")
+                if (
+                    serial_number
+                    or check_code
+                    or entry.get("moonraker_url")
+                    or entry.get("moonraker_api_key")
+                    or _as_bool(entry.get("auto_refresh"))
+                ):
+                    raise ConfigurationError(
+                        "an SDCP or Elegoo MQTT printer reports its own identity; serial_number, "
+                        "check_code and Moonraker options do not apply"
+                    )
+                if access_code and adapter != "elegoo_mqtt":
+                    raise ConfigurationError("an SDCP printer has no access code")
             elif access_code:
-                raise ConfigurationError("access_code applies only to Bambu")
+                raise ConfigurationError("access_code applies only to Bambu and Elegoo MQTT")
             if flashforge:
                 if provider != "flashforge" or not serial_number or not check_code:
                     raise ConfigurationError(
@@ -243,7 +271,7 @@ class NodeConfig:
                     raise ConfigurationError("Moonraker options do not apply to Flashforge")
                 if urlsplit(endpoint).port is None:
                     endpoint = f"{endpoint}:8898"
-            elif check_code or (serial_number and not bambu):
+            elif check_code or (serial_number and not bambu and not profile_lan):
                 raise ConfigurationError(
                     "serial_number applies only to Flashforge and Bambu, check_code only to "
                     "Flashforge"

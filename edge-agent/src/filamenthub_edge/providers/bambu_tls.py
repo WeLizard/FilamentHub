@@ -8,7 +8,6 @@ linked.
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 import re
 import socket
@@ -24,6 +23,7 @@ from ._bambu_trust import (
     bambu_certificate_fingerprint,
     bambu_certificate_serial,
 )
+from ._lan import resolve_local
 
 logger = logging.getLogger("filamenthub_edge.bambu")
 
@@ -35,26 +35,9 @@ class CertificateRejected(ProviderUnavailable):
 
 
 def resolve_printer(host: str, port: int) -> tuple[socket.AddressFamily, tuple[Any, ...]]:
-    """Resolve once and accept only an address inside the local network.
-
-    The access code is sent to whatever answers there, so it never goes to an
-    address on the public internet.
-    """
-    try:
-        candidates = socket.getaddrinfo(
-            host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
-        )
-    except (OSError, UnicodeError) as exc:
-        raise ProviderUnavailable("Bambu printer address could not be resolved") from exc
-    for family, _, _, _, sockaddr in candidates:
-        try:
-            address = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
-        except ValueError:
-            continue
-        local = address.is_private or address.is_link_local or address.is_loopback
-        if local and not (address.is_multicast or address.is_unspecified):
-            return family, sockaddr
-    raise ProviderUnavailable("Bambu printer address must be inside the local network")
+    """Resolve once and accept only an address inside the local network."""
+    family, sockaddr = resolve_local(host, port, device="Bambu printer")
+    return family, tuple(sockaddr)
 
 
 def _tls_context(

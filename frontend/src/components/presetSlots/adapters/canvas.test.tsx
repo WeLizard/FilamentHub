@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaterialSystem, PhysicalPrinter } from '../../../api/client';
 import type { Printer } from '../../../types/api';
+import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 import { elegooMqttAdapter } from './elegooMqtt';
-import { feedAdapterFor, setupAdaptersFor } from './index';
+import { feedAdapterFor, setupAdaptersFor, supportsEdgeSetup } from './index';
 import { sdcpAdapter } from './sdcp';
 
 const { issuePairingCode, status, configure, refresh } = vi.hoisted(() => ({
@@ -77,6 +78,31 @@ describe('CANVAS printers through OrcaSlicer', () => {
     for (const adapter of [sdcpAdapter, elegooMqttAdapter]) {
       expect(adapter.onboarding!.matchesModel!(elegoo('Neptune 4 Pro'))).toBe(false);
     }
+  });
+
+  it.each([
+    ['sdcp', 'AddToNodeSdcp', false],
+    ['elegoo_mqtt', 'AddToNodeElegooMqtt', true],
+  ] as const)('gives FH Edge a %s entry without any address or code of the printer', async (provider, text, code) => {
+    expect(supportsEdgeSetup(provider, 'mmu')).toBe(true);
+    expect(supportsEdgeSetup(provider, 'direct_feed')).toBe(true);
+    const system = { id: 9, name: 'CANVAS', kind: 'mmu', provider, capabilities: [], active: true,
+      declared_slot_count: null, slots: [] } as unknown as MaterialSystem;
+    const printer = { id: 7, name: 'Carbon', material_systems: [system], connectors: [] } as unknown as PhysicalPrinter;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><EdgeConnectionSetup printer={printer} system={system} /></QueryClientProvider>);
+
+    const create = await screen.findByText('presetSlots.edge.createCode');
+    await waitFor(() => expect(create.closest('button')).toBeEnabled());
+    fireEvent.click(create);
+
+    const entry = JSON.parse((await screen.findByText(/"adapter"/)).textContent ?? '{}');
+    expect(entry).toEqual({
+      id: 'printer-7', name: 'Carbon', adapter: provider, printer_url: 'PRINTER-LAN-IP',
+      ...(code ? { access_code: 'ACCESS-CODE-FROM-PRINTER' } : {}),
+      pairing_code: 'FH-ABCDE-12345',
+    });
+    expect(screen.getByText(`presetSlots.edge.${text[0].toLowerCase()}${text.slice(1)}`)).toBeInTheDocument();
   });
 
   it.each([
