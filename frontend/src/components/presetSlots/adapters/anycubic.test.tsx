@@ -21,8 +21,8 @@ vi.mock('../../../api/client', () => ({
 vi.mock('../../../utils/pluginBridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../utils/pluginBridge')>()),
   isPluginEmbed: () => true,
-  configureAnycubicBridgeInPlugin: configure,
-  requestAnycubicObservationRefresh: refresh,
+  configureProfileLanBridgeInPlugin: configure,
+  requestProfileLanObservationRefresh: refresh,
   requestPluginCapabilities: vi.fn(),
   subscribeToPluginCapabilities: vi.fn((callback) => {
     callback(new Set(['anycubic-lan-bridge']));
@@ -70,7 +70,7 @@ describe('Anycubic through OrcaSlicer', () => {
     fireEvent.click(await screen.findByText('presetSlots.anycubic.connect'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('presetSlots.anycubic.result.lan_mode');
-    expect(configure).toHaveBeenCalledWith(7, 9, 'FH-ABCDE-12345', undefined);
+    expect(configure).toHaveBeenCalledWith('anycubic', 7, 9, 'FH-ABCDE-12345', undefined);
     expect(refresh).not.toHaveBeenCalled();
   });
 });

@@ -874,7 +874,9 @@ def _slot_has_observation_facts(item: PrinterBridgeSlotSnapshot) -> bool:
 def _printer_bridge_observation_source(provider: str, transport: str) -> str:
     if provider == "bambu" and transport == "orca_plugin_lan":
         return "bambu_lan_mqtt"
-    if provider in {"flashforge", "creality", "anycubic"} and transport == "orca_plugin_lan":
+    if transport == "orca_plugin_lan" and provider in {
+        "flashforge", "creality", "sdcp", "elegoo_mqtt", "anycubic",
+    }:
         # The plugin reads the printer's own LAN API, not Moonraker.
         return f"{provider}_orca"
     return f"{provider}_{'edge' if transport == 'edge_agent' else 'moonraker'}"[:50]

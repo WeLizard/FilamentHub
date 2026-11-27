@@ -1,0 +1,68 @@
+{
+  "Id": "",
+  "Data": {
+    "Cmd": 324,
+    "Data": {
+      "Ack": 0,
+      "active_canvas_id": 0,
+      "active_tray_id": 0,
+      "auto_refill": false,
+      "canvas_list": [
+        {
+          "canvas_id": 0,
+          "connected": 1,
+          "tray_list": [
+            {
+              "tray_id": 0,
+              "brand": "ELEGOO",
+              "filament_type": "PLA",
+              "filament_name": "PLA Basic",
+              "filament_code": "0x0000",
+              "filament_color": "#FFFFFF",
+              "min_nozzle_temp": 190,
+              "max_nozzle_temp": 230,
+              "status": 2
+            },
+            {
+              "tray_id": 1,
+              "brand": "ELEGOO",
+              "filament_type": "PLA",
+              "filament_name": "PLA Basic",
+              "filament_code": "0x0000",
+              "filament_color": "#000000",
+              "min_nozzle_temp": 190,
+              "max_nozzle_temp": 230,
+              "status": 1
+            },
+            {
+              "tray_id": 2,
+              "brand": "",
+              "filament_type": "?",
+              "filament_name": "",
+              "filament_code": "",
+              "filament_color": "",
+              "min_nozzle_temp": 0,
+              "max_nozzle_temp": 0,
+              "status": 1
+            },
+            {
+              "tray_id": 3,
+              "brand": "",
+              "filament_type": "",
+              "filament_name": "",
+              "filament_code": "",
+              "filament_color": "",
+              "min_nozzle_temp": 0,
+              "max_nozzle_temp": 0,
+              "status": 0
+            }
+          ]
+        }
+      ]
+    },
+    "RequestID": "REQUEST_ID",
+    "MainboardID": "1c7319d30105041800009c0000000000",
+    "TimeStamp": 90120
+  },
+  "Topic": "sdcp/response/1c7319d30105041800009c0000000000"
+}

@@ -33,7 +33,7 @@ def klipper(plugin_module, monkeypatch, tmp_path):
         grant_status=200, provider="legacy",
         config={"spoolman_free": {}},
         stats={"state": "standby", "filename": "", "filament_used": 0.0, "print_duration": 0.0},
-        mmu=None, moonraker_status=200,
+        mmu=None, moonraker_status=200, extra={}, queries=[],
         desired={"slots": [{"index": 0, "usage_route_proof": "proof-0", "spool": {"id": 11}}]},
     )
     monkeypatch.setattr(plugin, "MOONRAKER_USAGE_CONFIG_FILE", str(tmp_path / ".fh_moonraker_usage.json"))
@@ -65,7 +65,8 @@ def klipper(plugin_module, monkeypatch, tmp_path):
             if calls.config is None:
                 return 500, {}, ""
             return 200, {"result": {"config": calls.config}}, ""
-        status = {"print_stats": dict(calls.stats)}
+        calls.queries.append(payload)
+        status = {"print_stats": dict(calls.stats), **calls.extra}
         if calls.mmu is not None:
             status["mmu"] = dict(calls.mmu)
         return 200, {"result": {"status": status}}, ""
@@ -152,6 +153,67 @@ def test_a_klipper_print_is_charged_once_to_the_assigned_spool(klipper):
     klipper.runtime.watch_once()
     klipper.plugin.MoonrakerWatchRuntime().watch_once()
     assert len(klipper.posted("usage-batches")) == len(batches)
+
+
+def test_a_klipper_print_shows_its_state_on_filamenthub(klipper):
+    assert klipper.link() == 1
+    klipper.at("printing", 100.0, 10.0)
+    klipper.calls.stats["info"] = {"total_layer": 120, "current_layer": 30}
+    klipper.calls.extra = {
+        "display_status": {"progress": 0.254},
+        "extruder": {"temperature": 214.96, "target": 215.0},
+        # A printer without a heated bed answers an empty object (webhooks.py:506).
+        "heater_bed": {},
+    }
+    klipper.runtime.watch_once()
+
+    asked = klipper.calls.queries[-1]["objects"]
+    assert asked["display_status"] == ["progress"]
+    assert {"state", "filename", "info", "filament_used"} <= set(asked["print_stats"])
+    snapshots = klipper.posted("snapshot")
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert (snapshot["provider"], snapshot["transport"], snapshot["source_instance_id"]) == (
+        "legacy", "orca_plugin_lan", SOURCE
+    )
+    assert snapshot["material_system_id"] == 9
+    # Status only: the slots of a plain Klipper are the site's, not the printer's.
+    assert "slots" not in snapshot and "capabilities" not in snapshot
+    assert snapshot["printer"] == {
+        "state": "printing",
+        "job_name": "benchy.gcode",
+        "progress_percent": 25,
+        "current_layer": 30,
+        "total_layers": 120,
+        "nozzle_temperature": 215.0,
+        "nozzle_target_temperature": 215.0,
+    }
+
+
+@pytest.mark.parametrize(("klipper_state", "shown"), [
+    ("standby", {"state": "idle"}),
+    ("complete", {"state": "finished", "job_name": "cube.gcode"}),
+    ("cancelled", {"state": "failed", "job_name": "cube.gcode"}),
+    ("error", {"state": "failed", "job_name": "cube.gcode"}),
+    ("something_new", {"state": "unknown"}),
+])
+def test_klipper_print_states_map_to_the_sites_states(plugin_module, klipper_state, shown):
+    printer = plugin_module.moonraker_printer({
+        "print_stats": {
+            "state": klipper_state, "filename": "cube.gcode",
+            # Layers stay None until the slicer's SET_PRINT_STATS_INFO.
+            "info": {"total_layer": None, "current_layer": None},
+        },
+        "display_status": {"progress": 1.0},
+    })
+    # Progress belongs to a running job only.
+    assert printer == shown
+
+
+def test_a_klipper_answer_without_print_stats_shows_no_state(plugin_module):
+    assert plugin_module.moonraker_printer({}) is None
+    assert plugin_module.moonraker_printer({"print_stats": {}}) is None
+    assert plugin_module.moonraker_printer(None) is None
 
 
 @pytest.mark.parametrize("config", [

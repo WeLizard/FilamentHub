@@ -1,0 +1,54 @@
+{
+  "error_code": 0,
+  "machine_status": {
+    "status": 2,
+    "sub_status": 2075,
+    "progress": 42,
+    "exception_status": [],
+    "sub_status_reason_code": 0
+  },
+  "print_status": {
+    "filename": "cube_4colors.gcode",
+    "uuid": "b7d2",
+    "print_duration": 1300,
+    "total_duration": 1460,
+    "remaining_time_sec": 1890,
+    "current_layer": 58,
+    "total_layer": 200
+  },
+  "extruder": {
+    "temperature": 219.8,
+    "target": 220,
+    "filament_detected": 1
+  },
+  "heater_bed": {
+    "temperature": 60.1,
+    "target": 60
+  },
+  "ztemperature_sensor": {
+    "temperature": 33.5
+  },
+  "fans": {
+    "fan": {
+      "speed": 255
+    },
+    "aux_fan": {
+      "speed": 0
+    },
+    "box_fan": {
+      "speed": 80
+    }
+  },
+  "led": {
+    "status": 1
+  },
+  "gcode_move": {
+    "x": 101.2,
+    "y": 88.4,
+    "z": 11.8,
+    "speed_mode": 1
+  },
+  "tool_head": {
+    "homed_axes": "xyz"
+  }
+}

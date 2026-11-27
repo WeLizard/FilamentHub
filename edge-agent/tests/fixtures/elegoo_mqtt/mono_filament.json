@@ -1,0 +1,12 @@
+{
+  "error_code": 0,
+  "mono_filament_info": {
+    "brand": "ELEGOO",
+    "filament_type": "PLA",
+    "filament_name": "PLA Basic",
+    "filament_code": "0x0009",
+    "filament_color": "#FFD400",
+    "min_nozzle_temp": 190,
+    "max_nozzle_temp": 230
+  }
+}

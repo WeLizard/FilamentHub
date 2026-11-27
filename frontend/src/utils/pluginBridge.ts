@@ -1213,7 +1213,7 @@ export interface LanBridgeResult {
 }
 export type FlashforgeBridgeResult = LanBridgeResult;
 
-type LanBridgeProvider = 'flashforge' | 'creality' | 'anycubic';
+type LanBridgeProvider = 'flashforge' | 'creality' | ProfileLanProvider;
 
 function requestLanBridge(
   provider: LanBridgeProvider,
@@ -1326,30 +1326,35 @@ export function requestCrealityObservationRefresh(
   return requestLanBridge('creality', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
+/** Printers the plugin finds through the connection settings of an OrcaSlicer printer profile. */
+export type ProfileLanProvider = 'sdcp' | 'elegoo_mqtt' | 'anycubic';
+
 /**
- * Link an Anycubic printer in LAN mode through the plugin. The page sends
- * FilamentHub IDs, the one-time pairing code and an optional opaque local
- * reference; the printer's address is read by the plugin from its connection
- * settings in OrcaSlicer, and the printer's own credentials never leave the
- * plugin.
+ * Link an SDCP, Elegoo MQTT or Anycubic LAN printer through the plugin. The page
+ * sends FilamentHub IDs, the one-time pairing code and an optional opaque local
+ * reference; the printer's address, and an access code where the printer has
+ * one, are read by the plugin from its connection settings in OrcaSlicer and
+ * never reach the page.
  */
-export function configureAnycubicBridgeInPlugin(
+export function configureProfileLanBridgeInPlugin(
+  provider: ProfileLanProvider,
   physicalPrinterId: number,
   materialSystemId: number,
   pairingCode: string,
   connectionRef?: string,
 ): Promise<LanBridgeResult> {
-  return requestLanBridge('anycubic', 'setup', {
+  return requestLanBridge(provider, 'setup', {
     physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
   });
 }
 
-/** Ask the plugin to read a linked Anycubic printer once and report it. */
-export function requestAnycubicObservationRefresh(
+/** Ask the plugin to read a linked SDCP, Elegoo MQTT or Anycubic printer once and report it. */
+export function requestProfileLanObservationRefresh(
+  provider: ProfileLanProvider,
   physicalPrinterId: number,
   materialSystemId: number,
 ): Promise<LanBridgeResult> {
-  return requestLanBridge('anycubic', 'refresh', { physicalPrinterId, materialSystemId });
+  return requestLanBridge(provider, 'refresh', { physicalPrinterId, materialSystemId });
 }
 
 export interface HappyHareAssignmentChange {
@@ -1362,7 +1367,7 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
-  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | 'anycubic';
+  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | ProfileLanProvider;
   printerModel?: string;
   source?: 'network' | 'profile' | 'saved';
 }

@@ -1,6 +1,6 @@
 import {
-  configureAnycubicBridgeInPlugin,
-  requestAnycubicObservationRefresh,
+  configureProfileLanBridgeInPlugin,
+  requestProfileLanObservationRefresh,
 } from '../../../utils/pluginBridge';
 import type { FeedAdapter } from './types';
 import { LanBridgeSetup } from './LanBridgeSetup';
@@ -15,8 +15,8 @@ const ROUTE: LanBridgeRoute = {
   capability: 'anycubic-lan-bridge',
   textKey: 'anycubic',
   // Looked up when used, like every other call into the plugin bridge.
-  configure: (...args) => configureAnycubicBridgeInPlugin(...args),
-  refresh: (...args) => requestAnycubicObservationRefresh(...args),
+  configure: (...args) => configureProfileLanBridgeInPlugin('anycubic', ...args),
+  refresh: (...args) => requestProfileLanObservationRefresh('anycubic', ...args),
 };
 
 // Anycubic Kobra 3, S1 and X in LAN mode: the printer reports the job and the
