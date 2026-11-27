@@ -171,7 +171,9 @@
       "flashforge": "Flashforge (5M, AD5X, Creator 5)",
       "flashforgeHint": "Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode through the OrcaSlicer plugin or FH Edge. Shows the material set on the printer and, for a material station, which slots have filament; usage is counted from the slicer's estimate while OrcaSlicer is open or FH Edge is running.",
       "creality": "Creality (K1, K2, Ender-3 V3)",
-      "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open."
+      "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open.",
+      "prusalink": "Prusa (PrusaLink)",
+      "prusalinkHint": "Prusa MK4/MK4S, MK3.5/3.9, XL, CORE One and MINI, and the MK3S with Prusa-Link, through the OrcaSlicer plugin. Shows the print state and, on a single-nozzle printer without an MMU, the material loaded. The printer does not report MMU3 slots, XL tools or the filament used."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -196,7 +198,10 @@
       "flashforgeSingle": "Single spool (Adventurer 5M / 5M Pro)",
       "crealityCfs": "CFS, 4 slots per unit (K2, K1 with CFS)",
       "crealityCfsSlots": "CFS slots",
-      "crealitySingle": "Single spool (no CFS)"
+      "crealitySingle": "Single spool (no CFS)",
+      "prusalinkSingle": "Single spool (MK4S, CORE One, MINI, MK3S)",
+      "prusalinkMmu": "MMU3, 5 slots",
+      "prusalinkTools": "Several tools (XL, INDX)"
     },
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","host_permission":"OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and check again.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_unavailable":"The printer was found, but its identity could not be confirmed yet. Try the check again. Your saved printer and assignments are kept.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Add printer",
@@ -9335,7 +9340,8 @@
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
       "flashforge": "Flashforge LAN",
-      "creality": "Creality LAN"
+      "creality": "Creality LAN",
+      "prusalink": "PrusaLink"
     },
     "edge": {
       "title": "FH Edge",
@@ -9493,6 +9499,33 @@
         "pairing": "The printer could not be linked to FilamentHub. Try again.",
         "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
         "invalid": "The printer answered unexpectedly. Check that it runs Creality's stock firmware.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+      }
+    },
+    "prusalink": {
+      "title": "Prusa through OrcaSlicer",
+      "description": "The plugin takes the address and login from this printer's connection settings in OrcaSlicer. Choose the PrusaLink host type there, enter the printer's address and either its API key or, for HTTP Digest, the user name and password.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several Prusa printers. Choose this one:",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while it is open, the plugin reports the print state. The printer does not report the filament used, so prints are not deducted.",
+      "localOnly": "The address, API key and password stay in OrcaSlicer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
+      "result": {
+        "notFound": "OrcaSlicer has no PrusaLink printer. Open the printer's connection settings in OrcaSlicer, choose the PrusaLink host type and enter the address. A PrusaConnect connection goes through Prusa's cloud and cannot be read: add a PrusaLink connection with the printer's address in your network.",
+        "credentials": "The API key, or the user name and password, are missing in the printer's connection settings in OrcaSlicer.",
+        "auth": "The printer rejected the login. Compare the API key or password with the one shown on the printer under Network → PrusaLink, or in the Prusa-Link settings.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on and in the same network.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "firmware": "This firmware does not report the printer's serial number, so the printer cannot be told apart from others. Update it: Buddy firmware 4.7.0 or later, or a current Prusa-Link.",
+        "octoprint": "OctoPrint answers at this address. Connect this printer through the FilamentHub plugin for OctoPrint instead.",
+        "identity": "The printer did not report its serial number. Update its firmware and try again.",
+        "other": "None of the PrusaLink connections in OrcaSlicer is this printer. Check the address in the connection settings and connect the printer again.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check that the address in OrcaSlicer is the printer's PrusaLink.",
         "unpaired": "The link to this card is no longer valid. Connect the printer again.",
         "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
       }

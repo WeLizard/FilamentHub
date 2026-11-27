@@ -4,6 +4,7 @@ import { directFeedAdapter } from './direct';
 import { flashforgeAdapter } from './flashforge';
 import { happyHareAdapter } from './happyHare';
 import { octoprintAdapter } from './octoprint';
+import { prusaLinkAdapter } from './prusalink';
 import type { FeedAdapter, FeedTopologyChoice } from './types';
 import type { Printer } from '../../../types/api';
 
@@ -15,6 +16,7 @@ export const FEED_ADAPTERS: FeedAdapter[] = [
   octoprintAdapter,
   flashforgeAdapter,
   crealityAdapter,
+  prusaLinkAdapter,
 ];
 
 export function feedAdapterFor(provider: string): FeedAdapter {

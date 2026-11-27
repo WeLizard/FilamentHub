@@ -1213,7 +1213,7 @@ export interface LanBridgeResult {
 }
 export type FlashforgeBridgeResult = LanBridgeResult;
 
-type LanBridgeProvider = 'flashforge' | 'creality';
+type LanBridgeProvider = 'flashforge' | 'creality' | 'prusalink';
 
 function requestLanBridge(
   provider: LanBridgeProvider,
@@ -1326,6 +1326,31 @@ export function requestCrealityObservationRefresh(
   return requestLanBridge('creality', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
+/**
+ * Link a Prusa printer through the plugin's PrusaLink route. The page sends
+ * FilamentHub IDs, the one-time pairing code and an optional opaque local
+ * reference; the address and login are read by the plugin from the printer's
+ * connection settings in OrcaSlicer and never reach the page.
+ */
+export function configurePrusaLinkBridgeInPlugin(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  pairingCode: string,
+  connectionRef?: string,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('prusalink', 'setup', {
+    physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
+  });
+}
+
+/** Ask the plugin to read a linked Prusa printer once and report it. */
+export function requestPrusaLinkObservationRefresh(
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<LanBridgeResult> {
+  return requestLanBridge('prusalink', 'refresh', { physicalPrinterId, materialSystemId });
+}
+
 export interface HappyHareAssignmentChange {
   gate: number;
   actualSpoolId: number | null;
@@ -1336,7 +1361,7 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
-  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality';
+  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | 'prusalink';
   printerModel?: string;
   source?: 'network' | 'profile' | 'saved';
 }

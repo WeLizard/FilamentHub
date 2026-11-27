@@ -171,7 +171,9 @@
       "flashforge": "闪铸（5M、AD5X、Creator 5）",
       "flashforgeHint": "通过 OrcaSlicer 插件或 FH Edge 连接局域网模式下的 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro。显示打印机上设置的材料，以及耗材站各槽位是否有耗材；OrcaSlicer 打开或 FH Edge 运行时，用量按切片软件的估算统计。",
       "creality": "Creality（K1、K2、Ender-3 V3）",
-      "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。"
+      "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。",
+      "prusalink": "Prusa（PrusaLink）",
+      "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -196,7 +198,10 @@
       "flashforgeSingle": "单卷耗材（Adventurer 5M / 5M Pro）",
       "crealityCfs": "CFS，每个单元 4 个料槽（K2、带 CFS 的 K1）",
       "crealityCfsSlots": "CFS 料槽数",
-      "crealitySingle": "单卷（无 CFS）"
+      "crealitySingle": "单卷（无 CFS）",
+      "prusalinkSingle": "单卷（MK4S、CORE One、MINI、MK3S）",
+      "prusalinkMmu": "MMU3，5 个料槽",
+      "prusalinkTools": "多个工具头（XL、INDX）"
     },
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","host_permission":"OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重新检查。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
@@ -9313,7 +9318,8 @@
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint",
       "flashforge": "闪铸局域网",
-      "creality": "Creality 局域网"
+      "creality": "Creality 局域网",
+      "prusalink": "PrusaLink"
     },
     "edge": {
       "title": "FH Edge",
@@ -9473,6 +9479,33 @@
         "invalid": "打印机的响应不符合预期。请确认它运行的是 Creality 原厂固件。",
         "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
         "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+      }
+    },
+    "prusalink": {
+      "title": "通过 OrcaSlicer 连接 Prusa",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址和登录信息。请在那里选择 PrusaLink 主机类型，填写打印机地址，以及 API 密钥或用于 HTTP Digest 的用户名和密码。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台 Prusa 打印机。请选择这一台：",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：打开期间，插件会报告打印状态。打印机不报告耗材用量，因此打印不会被扣减。",
+      "localOnly": "地址、API 密钥和密码保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有 PrusaLink 打印机。请在 OrcaSlicer 中打开打印机的连接设置，选择 PrusaLink 主机类型并填写地址。PrusaConnect 连接经由 Prusa 云端，无法读取：请添加使用打印机局域网地址的 PrusaLink 连接。",
+        "credentials": "OrcaSlicer 中打印机的连接设置缺少 API 密钥，或缺少用户名和密码。",
+        "auth": "打印机拒绝了登录。请将 API 密钥或密码与打印机“网络 → PrusaLink”中显示的内容或 Prusa-Link 设置进行核对。",
+        "unreachable": "打印机未在 OrcaSlicer 中的地址上响应。请检查它是否开机并处于同一网络。",
+        "permission": "OrcaSlicer 尚未允许插件访问打印机。请在 OrcaSlicer 中批准请求后重试。",
+        "firmware": "此固件不报告打印机序列号，因此无法与其他打印机区分。请更新：Buddy 固件 4.7.0 或更高版本，或最新的 Prusa-Link。",
+        "octoprint": "该地址上响应的是 OctoPrint。请改用 OctoPrint 的 FilamentHub 插件连接此打印机。",
+        "identity": "打印机未报告序列号。请更新固件后重试。",
+        "other": "OrcaSlicer 的 PrusaLink 连接中没有这台打印机。请检查连接设置中的地址并重新连接打印机。",
+        "linked": "此打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub。请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机返回了意外的响应。请检查 OrcaSlicer 中的地址是否指向打印机的 PrusaLink。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件未响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
       }
     },
     "bambu": {
