@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_system import PhysicalPrinterConnector
+from app.models.printer_bridge_observation import PhysicalPrinterStatusObservation
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -143,6 +144,50 @@ async def test_a_bound_orca_installation_deducts_a_klipper_print_once(
     assert replay.status_code == 200 and replay.json()["deduplicated"] is True
     await db_session.refresh(spool)
     assert spool.used_weight_g == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_a_klipper_print_state_from_orca_reaches_the_printer_card(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    printer_id, system_id, spool = await _klipper_printer(
+        auth_client, auth_user, db_session, provider="legacy"
+    )
+    granted = await auth_client.post(BRIDGE, json=_request(printer_id, system_id, ["read"]))
+    assert granted.status_code == 200, granted.text
+    headers = {"X-FilamentHub-Bridge-Token": granted.json()["bridge_token"]}
+
+    # What the plugin sends from a plain Klipper: the print, no slots.
+    reported = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            "material_system_id": system_id,
+            "provider": "legacy",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": SOURCE,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "printer": {
+                "state": "printing", "job_name": "benchy.gcode", "progress_percent": 25,
+                "current_layer": 30, "total_layers": 120,
+                "nozzle_temperature": 215.0, "nozzle_target_temperature": 215.0,
+            },
+        },
+    )
+    assert reported.status_code == 200, reported.text
+    assert reported.json()["accepted"] is True
+    status = await db_session.scalar(select(PhysicalPrinterStatusObservation))
+    assert status is not None
+    assert (status.source, status.state, status.progress_percent, status.job_name) == (
+        "legacy_moonraker", "printing", 25, "benchy.gcode"
+    )
+    # A report without slots leaves the person's spool where they put it.
+    card = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert card.status_code == 200, card.text
+    slot = card.json()["material_systems"][0]["slots"][0]
+    assert slot["assignment"]["spool_id"] == spool.id
 
 
 @pytest.mark.asyncio

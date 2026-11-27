@@ -5772,6 +5772,7 @@ def probe_printer_setup(context, connection, origin):
 from filamenthub_moonraker import (
     HAPPY_HARE_STATUS_OBJECTS,
     MOONRAKER_BYPASS_PROVIDER_INDEX,
+    MOONRAKER_STATUS_OBJECTS,
     MOONRAKER_USAGE_PROVIDERS,
     _QIDI_DICT_PATH,
     _moonraker_base_url,
@@ -5780,6 +5781,7 @@ from filamenthub_moonraker import (
     moonraker_feed_mark,
     moonraker_feed_slots,
     moonraker_loaded_slot,
+    moonraker_printer,
     moonraker_reports_usage_itself,
     moonraker_spoolman_server,
     moonraker_usage,
@@ -12723,6 +12725,7 @@ class MoonrakerWatchRuntime(_UsageWatchRuntime):
         result = body.get("result")
         status_map = result.get("status") if isinstance(result, dict) else None
         usage = moonraker_usage(status_map)
+        printer = moonraker_printer(status_map)
         happy_hare = None
         if link["provider"] == "happy_hare":
             try:
@@ -12777,7 +12780,15 @@ class MoonrakerWatchRuntime(_UsageWatchRuntime):
                     books["events"].extend(capture_counter_usage(
                         books, usage, route, observed_at, issue, "moonraker"
                     ))
-        self._settle(link, source_instance_id, path, books)
+        if self._settle(link, source_instance_id, path, books) and printer is not None:
+            self._report(link, key, {
+                "material_system_id": link["material_system_id"],
+                "provider": link["provider"],
+                "transport": "orca_plugin_lan",
+                "source_instance_id": source_instance_id,
+                "observed_at": observed_at,
+                "printer": printer,
+            }, now)
         return counting_here
 
     def _moonraker_reports_itself(self, key, connection, counting, now):
