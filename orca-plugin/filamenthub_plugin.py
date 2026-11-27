@@ -523,17 +523,34 @@ _PRESET_SAVED_EVENT = getattr(
 # The host says when it sends a print and when a printer in its device list
 # changes state. Hosts without these members leave the sets empty, and the
 # plugin goes on by its own timers.
-_PRINT_SENT_EVENT = getattr(
-    getattr(orca, "LifecycleEvent", None), "PrintJobStarted", None
+# Upload and print over a print host, and sending to a printer's storage,
+# name the file the printer will report; an upload only once it has arrived.
+_PRINT_SENT_EVENTS = frozenset(
+    event for event in (
+        getattr(getattr(orca, "LifecycleEvent", None), name, None)
+        for name in ("PrintJobStarted", "SendJobStarted", "UploadFinished")
+    ) if event is not None
 )
+_UPLOAD_FINISHED_EVENT = getattr(
+    getattr(orca, "LifecycleEvent", None), "UploadFinished", None
+)
+# OrcaSlicer 2.5 and later say when a G-code file is written, whichever process
+# preset is in use; msg is the file's path.
+_GCODE_EXPORTED_EVENT = getattr(
+    getattr(orca, "LifecycleEvent", None), "GCodeExportFinished", None
+)
+_EVENT_CODE_OK = getattr(getattr(orca, "LifecycleEvtCode", None), "Ok", None)
 _PRINTER_ACTIVITY_EVENTS = frozenset(
     event for event in (
         getattr(getattr(orca, "LifecycleEvent", None), name, None)
         for name in (
             "PrintJobStarted", "PrintJobFinished", "UploadFinished",
-            "PrintStateChanged", "DeviceOnline",
+            "PrintStateChanged", "DeviceOnline", "SendJobStarted",
         )
     ) if event is not None
+)
+_NOTED_HOST_EVENTS = _PRINTER_ACTIVITY_EVENTS | frozenset(
+    event for event in (_GCODE_EXPORTED_EVENT,) if event is not None
 )
 
 # Triggers whose result is reported through the host's native notification
@@ -16658,23 +16675,29 @@ def _cache_slice_file(path, key):
     return cached
 
 
-def _remember_slice_path(path, file_name=""):
+def _remember_slice_path(path, file_name="", copy=True):
     """Keep path and name under a key so the site can ask by key alone.
 
     The name matters on its own: a cached copy is named after the key, and a
-    calculation labelled with a hash tells a person nothing.
+    calculation labelled with a hash tells a person nothing. Without
+    ``copy`` the slice is only noted, with no file to read back.
     """
     stamp = "%s|%s" % (path, os.path.getmtime(path))
     key = hashlib.sha256(stamp.encode("utf-8")).hexdigest()
     file_name = file_name or os.path.basename(path)
+    with _SLICE_INDEX_LOCK:
+        known = _load_slice_index().get(key)
+    if isinstance(known, dict) and (not copy or slice_entry_for_key(key)):
+        # The host tells each of the plugin's capabilities about the same file.
+        return key
     # The host owns this working file, including File exports' .pp copies.
     # Keep our own bounded copy without probing the OS temporary directory.
-    path = _cache_slice_file(path, key)
-    if not path:
+    path = _cache_slice_file(path, key) if copy else ""
+    if copy and not path:
         raise OSError("Could not retain the sliced file")
     with _SLICE_INDEX_LOCK:
         index = _load_slice_index()
-        index[key] = {"path": path, "name": file_name}
+        index[key] = {"path": path, "name": file_name, "at": time.time()}
         if len(index) > _SLICE_INDEX_LIMIT:
             for stale in list(index)[: len(index) - _SLICE_INDEX_LIMIT]:
                 index.pop(stale, None)
@@ -16714,6 +16737,9 @@ def slice_path_for_key(key):
 _SENT_PRINTS_LIMIT = 16
 _SENT_PRINT_SLICES = 6
 _SENT_PRINT_MAX_AGE_S = 3 * 24 * 3600
+# A printer that reports no layer count is matched to the newest slice only
+# when the print was sent this soon after it.
+_SENT_SLICE_FRESH_S = 2 * 3600
 _SENT_PRINTS_LOCK = threading.Lock()
 
 
@@ -16902,15 +16928,37 @@ def _one_slice_profile(keys, total_layers, tolerance):
     return first
 
 
+def _sent_slice_profile(keys, total_layers, sent_at):
+    """The figures of the slice a sent print came from, newest slice first.
+
+    The host sends the slice it made last: with the printer's layer count,
+    the newest slice of that count; without one, the newest slice alone, and
+    only if it was made shortly before the print was sent.
+    """
+    for key in reversed(keys):
+        entry = slice_entry_for_key(key)
+        profile = _slice_length_profile(entry["path"]) if entry else None
+        if not total_layers:
+            with _SLICE_INDEX_LOCK:
+                kept = _load_slice_index().get(key)
+            kept_at = kept.get("at") if isinstance(kept, dict) else None
+            fresh = isinstance(kept_at, (int, float)) and 0 <= sent_at - kept_at <= _SENT_SLICE_FRESH_S
+            return profile if fresh else None
+        if profile is not None and len(profile["lengths"]) == total_layers:
+            return profile
+    return None
+
+
 def slicer_job_estimate(job_name, total_layers=None, now=None):
     """The slicer's figures for a job this OrcaSlicer sliced, from the plugin's own copy.
 
     The job is found by the name the printer reports among the slices the
     plugin kept. When none is named so, the slices kept just before the host
-    sent a print of that name are tried, and then the printer's layer count
-    must pick one. Slices of one name that disagree are left alone rather
-    than guessed between. Returns ``{"job", "layers", "lengths", "switches",
-    "total_mm"}`` or None.
+    sent a print of that name are tried: the newest of them with the
+    printer's layer count, or, from a printer that reports none, the newest
+    one if it was fresh. Slices of one name that disagree are left alone
+    rather than guessed between. Returns ``{"job", "layers", "lengths",
+    "switches", "total_mm"}`` or None.
     """
     wanted = _job_name_key(job_name)
     if not wanted:
@@ -16926,7 +16974,7 @@ def slicer_job_estimate(job_name, total_layers=None, now=None):
         profile = _one_slice_profile(named, total_layers, tolerance)
         if profile is not None:
             break
-    if profile is None and total_layers:
+    if profile is None:
         now = time.time() if now is None else now
         with _SENT_PRINTS_LOCK:
             records = _load_sent_prints()
@@ -16938,7 +16986,7 @@ def slicer_job_estimate(job_name, total_layers=None, now=None):
                 and _job_name_key(record.get("name")) == wanted
             ):
                 keys = [key for key in record.get("slice_keys") or [] if isinstance(key, str)]
-                profile = _one_slice_profile(reversed(keys), total_layers, 0)
+                profile = _sent_slice_profile(keys, total_layers, sent_at)
                 break
     if profile is None:
         return None
@@ -17016,11 +17064,56 @@ def note_host_print_event(event, ctx):
     it writes one small file and sets flags, and never raises into the host.
     """
     try:
-        if event == _PRINT_SENT_EVENT:
+        if event == _GCODE_EXPORTED_EVENT:
+            keep_exported_slice(ctx)
+            return
+        if event in _PRINT_SENT_EVENTS and _event_succeeded(event, ctx):
             remember_sent_print(getattr(ctx, "name", ""), getattr(ctx, "device_id", ""))
         hurry_usage_watchers()
     except Exception as exc:
         fh_log("host print event failed: %s" % type(exc).__name__)
+
+
+def _event_succeeded(event, ctx):
+    """Whether an event that reports an outcome reports success."""
+    if event not in (_UPLOAD_FINISHED_EVENT, _GCODE_EXPORTED_EVENT) or _EVENT_CODE_OK is None:
+        return True
+    return getattr(ctx, "code", _EVENT_CODE_OK) == _EVENT_CODE_OK
+
+
+def slicer_estimate_wanted():
+    """Whether a linked printer is charged the slicer's estimate rather than its own count."""
+    return any(
+        os.path.exists(path) for path in (
+            ANYCUBIC_CONFIG_FILE, _prusalink_config_file(),
+            SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE,
+        )
+    )
+
+
+def keep_exported_slice(ctx):
+    """Keep a copy of the G-code OrcaSlicer just wrote, for printers that count no filament.
+
+    The host says so on the slicing thread, for any process preset, so the
+    figures of a job no longer wait for the slicing step to be chosen in the
+    preset. The copy is named after the model; a binary G-code is noted
+    without one, so it is never mistaken for the slice an older one was.
+    Returns the key the slice is kept under, or None.
+    """
+    if not _event_succeeded(_GCODE_EXPORTED_EVENT, ctx) or not slicer_estimate_wanted():
+        return None
+    path = str(getattr(ctx, "msg", "") or "").split("\n", 1)[0].strip()
+    if not path.lower().endswith(".gcode") or not os.path.isfile(path):
+        return None
+    name = _print_name_stem(getattr(ctx, "name", "")) or "print"
+    try:
+        with open(path, "rb") as handle:
+            binary = handle.read(4) == b"GCDE"
+    except OSError:
+        return None
+    if binary:
+        return _remember_slice_path(path, name + ".bgcode", copy=False)
+    return _remember_slice_path(path, name + ".gcode")
 
 
 _UNCOUNTED_PRINT_TEXT = {
@@ -17693,7 +17786,7 @@ class FilamentHubCatalog(
 
     def on_lifecycle_event(self, event, ctx):
         if event != _PRESET_SAVED_EVENT:
-            if event in _PRINTER_ACTIVITY_EVENTS:
+            if event in _NOTED_HOST_EVENTS:
                 note_host_print_event(event, ctx)
             return
         self._on_preset_saved(ctx)
@@ -21208,7 +21301,7 @@ if _PAGE_CAPABILITY_BASE is not None:
 
         def on_lifecycle_event(self, event, ctx):
             if event != _PRESET_SAVED_EVENT:
-                if event in _PRINTER_ACTIVITY_EVENTS:
+                if event in _NOTED_HOST_EVENTS:
                     note_host_print_event(event, ctx)
                 return
             try:

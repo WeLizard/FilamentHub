@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -100,6 +101,118 @@ def test_binary_g_code_has_no_figures(kept):
     (kept.tmp / "slices.json").write_text(json.dumps(index), encoding="utf-8")
 
     assert kept.plugin.slicer_job_estimate("bracket.bgcode") is None
+
+
+# --------------------------------------------------------------------------- #
+# Slices kept from the host's own word that a G-code file was written
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def host(kept, monkeypatch):
+    plugin = kept.plugin
+    exported, uploaded = object(), object()
+    monkeypatch.setattr(plugin, "_GCODE_EXPORTED_EVENT", exported)
+    monkeypatch.setattr(plugin, "_UPLOAD_FINISHED_EVENT", uploaded)
+    monkeypatch.setattr(plugin, "_PRINT_SENT_EVENTS", frozenset({uploaded}))
+    monkeypatch.setattr(plugin, "_EVENT_CODE_OK", "ok")
+    monkeypatch.setattr(plugin, "hurry_usage_watchers", lambda: None)
+    linked = kept.tmp / ".fh_prusalink.json"
+    monkeypatch.setattr(plugin, "_prusalink_config_file", lambda: str(linked))
+    for name in ("ANYCUBIC_CONFIG_FILE", "SDCP_CONFIG_FILE", "ELEGOO_MQTT_CONFIG_FILE"):
+        monkeypatch.setattr(plugin, name, str(kept.tmp / ("unlinked-" + name)))
+    linked.write_text("{}", encoding="utf-8")
+    written = SimpleNamespace(count=0)
+
+    def export(model, text=None, code="ok"):
+        # The host writes each plate's G-code to one working file, again on every slice.
+        path = kept.tmp / "host" / "plate_1.gcode"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(text if isinstance(text, bytes) else (text or _gcode()).encode("utf-8"))
+        written.count += 1
+        os.utime(path, (1_000_000 + written.count, 1_000_000 + written.count))
+        plugin.note_host_print_event(exported, SimpleNamespace(name=model, code=code, msg=str(path)))
+        return path
+
+    def upload(name, code="ok"):
+        plugin.note_host_print_event(uploaded, SimpleNamespace(name=name, code=code, device_id=""))
+
+    def index():
+        path = kept.tmp / "slices.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    return SimpleNamespace(
+        plugin=plugin, linked=linked, export=export, upload=upload, index=index, tmp=kept.tmp,
+    )
+
+
+def test_a_slice_is_kept_when_the_host_writes_its_g_code_whatever_the_preset(host):
+    host.linked.unlink()
+    host.export("bracket")
+    # No printer that needs the estimate is linked: nothing is copied.
+    assert host.index() == {}
+
+    host.linked.write_text("{}", encoding="utf-8")
+    working = host.export("bracket")
+    host.export("bracket", _gcode(per_layer_mm=9.0), code="error")
+    (entry,) = host.index().values()
+    assert entry["name"] == "bracket.gcode" and entry["path"] != str(working)
+    # The host overwrites its working file on the next slice; the copy stays.
+    working.write_text("; another job\n", encoding="utf-8")
+    found = host.plugin.slicer_job_estimate("bracket.gcode", LAYERS)
+    assert found["total_mm"] == 130.0
+
+
+def test_the_same_file_told_about_twice_is_kept_once(host):
+    path = host.export("bracket")
+    # Every capability of the plugin hears the host's events.
+    host.plugin.note_host_print_event(
+        host.plugin._GCODE_EXPORTED_EVENT, SimpleNamespace(name="bracket", code="ok", msg=str(path))
+    )
+    assert len(host.index()) == 1
+    assert len(os.listdir(host.tmp / "slices")) == 1
+
+
+def test_an_upload_names_the_job_for_a_printer_that_reports_no_layers(host):
+    host.export("bracket")
+    # Sliced again with other settings: the newest slice is the one sent.
+    host.export("bracket", _gcode(per_layer_mm=1.5))
+    host.upload("bracket_PLA_35m.gcode")
+    host.upload("other_PETG.gcode", code="error")
+
+    # PrusaLink reports the file and its progress, never a layer count.
+    assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode")["total_mm"] == 195.0
+    assert host.plugin.slicer_job_estimate("other_PETG.gcode") is None
+
+
+def test_with_a_layer_count_the_newest_slice_of_that_count_is_the_one_sent(host):
+    host.export("bracket")
+    host.export("bracket", _gcode(per_layer_mm=1.5))
+    # The next plate, sliced after it, has another layer count.
+    host.export("lid", _gcode(layers=90))
+    host.upload("bracket_PLA_35m.gcode")
+
+    assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode", LAYERS)["total_mm"] == 195.0
+    assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode", 77) is None
+
+
+def test_without_a_layer_count_only_a_fresh_text_slice_is_trusted(host):
+    host.export("bracket")
+    index_path = host.tmp / "slices.json"
+    index = host.index()
+    for entry in index.values():
+        entry["at"] -= 3 * 3600
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    host.upload("bracket_PLA_35m.gcode")
+    # Sliced hours before it was sent: perhaps not the file that went.
+    assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode") is None
+
+    host.export("bracket")
+    host.export("bracket", b"GCDE\x01\x00\x00\x00" + b"\x00" * 64)
+    host.upload("bracket_PLA_35m.gcode")
+    # The newest slice is binary: it is noted, not read, and the older text one is not taken for it.
+    assert list(host.index().values())[-1]["path"] == ""
+    assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode") is None
 
 
 def test_progress_stands_in_for_the_layer_where_the_printer_reports_none(kept):

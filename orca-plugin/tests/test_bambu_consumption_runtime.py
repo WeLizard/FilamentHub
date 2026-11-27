@@ -926,7 +926,7 @@ def test_job_sent_from_orca_is_counted_from_the_kept_slice(plugin_module, tmp_pa
 def test_host_print_events_note_the_job_and_never_raise(plugin_module, tmp_path, monkeypatch):
     _kept_slice(plugin_module, tmp_path, monkeypatch)
     sent = object()
-    monkeypatch.setattr(plugin_module, "_PRINT_SENT_EVENT", sent)
+    monkeypatch.setattr(plugin_module, "_PRINT_SENT_EVENTS", frozenset({sent}))
     woken = []
     monkeypatch.setattr(plugin_module, "hurry_usage_watchers", lambda: woken.append(True))
 

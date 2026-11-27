@@ -9030,7 +9030,7 @@
         "no_spool_assigned": "No spool is assigned to any printer slot. Assign a spool to a slot and the next print will be deducted.",
         "slot_without_spool": "The print used slot {{slot}}, which has no spool assigned.",
         "print_file_unavailable": "The print file could not be read from the printer, so the weight is unknown.",
-        "print_not_sliced_here": "The printer counts no filament, and the plugin found no G-code for this print among those sliced in OrcaSlicer on this computer, so the weight is unknown. To have such prints deducted, choose FilamentHub in the “Slicing Pipeline Plugin” field of the OrcaSlicer print settings and send prints to the printer from OrcaSlicer.",
+        "print_not_sliced_here": "The printer counts no filament, and the plugin found no G-code for this print among those sliced in OrcaSlicer on this computer, so the weight is unknown. Such prints are deducted when they are sliced and sent to the printer from OrcaSlicer with the FilamentHub plugin. In OrcaSlicer before 2.5, also choose FilamentHub in the “Slicing Pipeline Plugin” field of the print settings.",
         "print_file_access_denied": "The print file on the printer is not accessible. Allow the plugin to access the printer in OrcaSlicer.",
         "slot_mapping_missing": "The printer did not report which slots the print used.",
         "tag_mismatch": "Slot {{slot}} holds a different spool from the one assigned in FilamentHub.",

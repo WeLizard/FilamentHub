@@ -362,10 +362,17 @@ OrcaSlicer's own figure for the job instead, marked as an estimate
   `.gcode` / `.gcode.3mf`. When the printer reports a layer count, a slice
   with another count is another job; slices of one name that disagree are not
   guessed between. The slices noted when the host last sent a print of that
-  name are tried next, and then the layer count must pick one.
-- A slice is kept only when the process preset runs the FilamentHub slicing
-  step ("Slicing Pipeline Plugin"). A job sliced elsewhere, or without that
-  step, ends as not counted with the reason `print_not_sliced_here`.
+  name are tried next (`PrintJobStarted`, `SendJobStarted` and a successful
+  `UploadFinished`, which names the uploaded file): the newest of them with
+  the printer's layer count or, for a printer that reports none, the newest
+  one if it was sliced within two hours before the send.
+- A slice is kept when the host reports `GCodeExportFinished` (OrcaSlicer 2.5
+  and later), whichever process preset is in use, while an Anycubic, PrusaLink,
+  SDCP or Elegoo MQTT printer is linked. The copy is named after the model; a
+  binary G-code is noted without a copy, so an older text slice is never taken
+  for it. On older hosts only the FilamentHub slicing step ("Slicing Pipeline
+  Plugin") keeps a slice. A job sliced elsewhere ends as not counted with the
+  reason `print_not_sliced_here`.
 - From the G-code's `; filament used [mm]` line and its extrusion moves the
   plugin knows the millimetres used and the tool changes made through each
   layer. A reading is charged the figure through the layer the printer is on,
