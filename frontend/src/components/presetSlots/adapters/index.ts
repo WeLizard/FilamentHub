@@ -43,6 +43,22 @@ export function adapterForConnection(provider: string | null): FeedAdapter | und
   return FEED_ADAPTERS.find((adapter) => provider && adapter.onboarding?.connectionProviders?.includes(provider));
 }
 
+// OrcaSlicer's "Octo/Klipper" host type (htOctoPrint, PrintConfig.cpp) is the
+// default physical-printer type and is stored as provider "octoprint", yet it
+// talks to OctoPrint and to Moonraker alike. The binding names a way to send
+// files, not which of the two runs on the printer.
+const OCTO_KLIPPER_ALSO = ['moonraker'];
+
+export function isOctoKlipperConnection(provider: string | null): boolean {
+  return provider === 'octoprint';
+}
+
+/** Every adapter a bound Orca connection may stand for. */
+export function adaptersForConnection(provider: string | null): FeedAdapter[] {
+  const providers = isOctoKlipperConnection(provider) ? [provider, ...OCTO_KLIPPER_ALSO] : [provider];
+  return [...new Set(providers.map(adapterForConnection).filter((item): item is FeedAdapter => Boolean(item)))];
+}
+
 export function setupTopologiesFor(provider: string, includeRelated = true): FeedTopologyChoice[] {
   const adapter = feedAdapterFor(provider);
   const connection = connectionAdapterFor(provider);

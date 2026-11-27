@@ -112,6 +112,11 @@ function BambuSetup({
     && !lastObservationAt;
   const hasReceivedData = Boolean(lastObservationAt);
   const freshData = getDeviceLinkState(lastObservationAt, now) === 'active';
+  // The plugin tells the site why its last check did not pair; show it until
+  // a new attempt is under way.
+  const setupReport = !hasReceivedData && !bridgeStatus?.paired && !(pairingStarted && pairingPending)
+    ? bridgeStatus?.last_setup_report ?? null
+    : null;
 
   useEffect(() => {
     if (!pluginEmbed) return undefined;
@@ -245,6 +250,13 @@ function BambuSetup({
       </div>
       {!hasReceivedData && <p className="mt-1 text-[11px] leading-4 text-gray-400">
         {t(awaitingFirstData ? 'presetSlots.bambu.awaitingFirstDataDescription' : 'presetSlots.bambu.description')}
+      </p>}
+      {setupReport && <p role="status" className="mt-1 text-[11px] leading-4 text-amber-200">
+        {t('presetSlots.bambu.lastAttempt', {
+          reason: t(`presetSlots.bambu.setupReasons.${setupReport.code}`, {
+            defaultValue: t('presetSlots.bambu.setupReasons.unknown'),
+          }),
+        })}
       </p>}
 
       {observation && (

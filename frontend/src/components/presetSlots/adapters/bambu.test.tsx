@@ -264,4 +264,30 @@ describe('Bambu setup', () => {
     );
     expect(screen.queryByText('presetSlots.bambu.materials.apply')).not.toBeInTheDocument();
   });
+
+  it('tells why the last setup did not connect, as the plugin reported it', async () => {
+    mocks.status.mockResolvedValue({
+      ...(await mocks.status()),
+      configured: true,
+      last_setup_report: { stage: 'auth', code: 'bambuLanAuthRejected', reported_at: '2026-11-27T10:00:00Z' },
+    });
+
+    show(false);
+
+    expect(await screen.findByText('presetSlots.bambu.lastAttempt')).toHaveAttribute('role', 'status');
+  });
+
+  it('shows no old reason once the printer is paired', async () => {
+    mocks.status.mockResolvedValue({
+      ...(await mocks.status()),
+      configured: true,
+      paired: true,
+      last_setup_report: { stage: 'auth', code: 'bambuLanAuthRejected', reported_at: '2026-11-27T10:00:00Z' },
+    });
+
+    show(false);
+
+    await screen.findByText('presetSlots.bambu.awaitingFirstData');
+    expect(screen.queryByText('presetSlots.bambu.lastAttempt')).not.toBeInTheDocument();
+  });
 });
