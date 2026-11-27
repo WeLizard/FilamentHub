@@ -267,6 +267,13 @@ def security_events(probe: dict[str, object] | None) -> list[dict[str, str]]:
     return events
 
 
+def _curl_config_quote(value: str) -> str:
+    """Quote a value for curl --config stdin so control characters or quotes cannot inject directives."""
+    cleaned = value.replace("\x00", "").replace("\\", "\\\\").replace('"', '\\"')
+    cleaned = cleaned.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    return f'"{cleaned}"'
+
+
 def notify(text: str) -> None:
     token, chat = os.environ.get("BOT_TOKEN"), os.environ.get("CHAT_ID")
     if not token or not chat:
@@ -276,18 +283,22 @@ def notify(text: str) -> None:
     # Telegram is not reachable directly from here, so the request goes through
     # the same proxy the other bot on this machine uses. curl speaks SOCKS5
     # without extra packages, and its options arrive on stdin so the token never
-    # appears in the process list.
+    # appears in the process list. Pre-encoding the form body keeps untrusted
+    # quotes, backslashes, @-prefixes, and newlines out of curl's config parser.
     proxy = os.environ.get("TELEGRAM_PROXY_URL") or os.environ.get("TELEGRAM_PROXY")
+    safe_token = urllib.parse.quote(token.strip(), safe=":")
+    encoded_body = urllib.parse.urlencode(
+        {"chat_id": chat.replace("\x00", ""), "text": text.replace("\x00", "")}
+    )
     options = [
-        f'url = "https://api.telegram.org/bot{token}/sendMessage"',
-        f'data-urlencode = "chat_id={chat}"',
-        f'data-urlencode = "text={text}"',
+        f"url = {_curl_config_quote(f'https://api.telegram.org/bot{safe_token}/sendMessage')}",
+        f'data = "{encoded_body}"',
         f"max-time = {TIMEOUT}",
         "silent",
         "show-error",
     ]
     if proxy:
-        options.append(f'proxy = "{proxy}"')
+        options.append(f"proxy = {_curl_config_quote(proxy.strip())}")
 
     try:
         result = subprocess.run(

