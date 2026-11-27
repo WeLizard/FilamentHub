@@ -24,9 +24,9 @@ schema:
     - id: match(^[a-z0-9][a-z0-9_-]{0,63}$)
       name: str?
       enabled: bool?
-      adapter: list(moonraker|flashforge|bambu|sdcp|elegoo_mqtt)?
+      adapter: list(moonraker|flashforge|bambu|sdcp|elegoo_mqtt|anycubic)?
       pairing_code: password?
-      material_provider: list(happy_hare|legacy|flashforge|bambu|sdcp|elegoo_mqtt)?
+      material_provider: list(happy_hare|legacy|flashforge|bambu|sdcp|elegoo_mqtt|anycubic)?
       moonraker_url: url?
       printer_url: str?
       serial_number: str?

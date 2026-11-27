@@ -686,6 +686,7 @@ PLUGIN_CAPABILITIES = (
     "creality-lan-bridge",
     "sdcp-lan-bridge",
     "elegoo_mqtt-lan-bridge",
+    "anycubic-lan-bridge",
     "profile-sync",
     "profile-sync-scopes-v1",
     "bambu-material-write",
@@ -1492,7 +1493,7 @@ def configure_plugin_storage():
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
     global FLASHFORGE_CONFIG_FILE, MOONRAKER_USAGE_CONFIG_FILE, CREALITY_CONFIG_FILE
-    global SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE
+    global SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE, ANYCUBIC_CONFIG_FILE
     global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE, WORKSTATION_KEY_FILE, STOCK_ALERT_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_REPORT_OUTBOX_FILE, _SLICE_CACHE_DIR
@@ -1569,6 +1570,7 @@ def configure_plugin_storage():
     CREALITY_CONFIG_FILE = os.path.join(target_root, ".fh_creality.json")
     SDCP_CONFIG_FILE = os.path.join(target_root, ".fh_sdcp.json")
     ELEGOO_MQTT_CONFIG_FILE = os.path.join(target_root, ".fh_elegoo_mqtt.json")
+    ANYCUBIC_CONFIG_FILE = os.path.join(target_root, ".fh_anycubic.json")
     MOONRAKER_USAGE_CONFIG_FILE = os.path.join(target_root, ".fh_moonraker_usage.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
@@ -1686,6 +1688,7 @@ FLASHFORGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_flashforge.json")
 CREALITY_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_creality.json")
 SDCP_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_sdcp.json")
 ELEGOO_MQTT_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_elegoo_mqtt.json")
+ANYCUBIC_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_anycubic.json")
 MOONRAKER_USAGE_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_moonraker_usage.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 WORKSTATION_KEY_FILE = os.path.join(PLUGIN_DIR, ".fh_workstation_key.json")
@@ -11436,6 +11439,8 @@ def resume_deferred_background_threads():
                     MOONRAKER_WATCH_RUNTIME.start()
                 if _load_creality_bindings():
                     CREALITY_WATCH_RUNTIME.start()
+                if _load_anycubic_bindings():
+                    ANYCUBIC_WATCH_RUNTIME.start()
             except Exception as exc:
                 fh_log("deferred background start failed: %s" % type(exc).__name__)
 
@@ -11467,6 +11472,8 @@ def start_plugin_runtime(storage_initialized=False):
             MOONRAKER_WATCH_RUNTIME.start()
         if _load_creality_bindings():
             CREALITY_WATCH_RUNTIME.start()
+        if _load_anycubic_bindings():
+            ANYCUBIC_WATCH_RUNTIME.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)
@@ -11492,6 +11499,7 @@ def stop_plugin_runtime():
     FLASHFORGE_WATCH_RUNTIME.stop()
     MOONRAKER_WATCH_RUNTIME.stop()
     CREALITY_WATCH_RUNTIME.stop()
+    ANYCUBIC_WATCH_RUNTIME.stop()
     return True
 
 
@@ -13130,6 +13138,725 @@ class MoonrakerWatchRuntime(_UsageWatchRuntime):
 
 
 MOONRAKER_WATCH_RUNTIME = MoonrakerWatchRuntime()
+
+
+# --------------------------------------------------------------------------- #
+# Anycubic Kobra 3 / S1 / X through OrcaSlicer's own printer profile
+# --------------------------------------------------------------------------- #
+# OrcaSlicer keeps the printer's address in its connection settings, under
+# whatever host type the person chose (the vendor profiles say Octo/Klipper),
+# so the printer is found by the model of its profile. With LAN mode on, the
+# printer hands out the login of its MQTT broker to a signed request; nothing
+# from that answer is kept. The plugin's private file holds only the
+# FilamentHub bridge token, the printer's serial number that selects the Orca
+# connection, and the account-scoped identity evidence.
+#
+# The printer is read when the person connects it, opens its card or syncs,
+# and while OrcaSlicer is open a watcher reports its state. The plugin only
+# reads: it sends the printer no command.
+# fh-bundle: filamenthub_anycubic
+from filamenthub_anycubic import (
+    ANYCUBIC_CAPABILITIES,
+    ANYCUBIC_EXTERNAL_INDEX,
+    ANYCUBIC_IDENTITY_KIND,
+    ANYCUBIC_INFO_PORT,
+    ANYCUBIC_MAX_BOXES,
+    ANYCUBIC_MAX_MESSAGE_BYTES,
+    ANYCUBIC_MODELS,
+    ANYCUBIC_PROVIDER,
+    ANYCUBIC_QUERIES,
+    ANYCUBIC_SLOTS_PER_BOX,
+    ANYCUBIC_TOPIC_PREFIX,
+    anycubic_aes_cbc_decrypt,
+    anycubic_ctrl_url,
+    anycubic_info,
+    anycubic_info_url,
+    anycubic_merge_boxes,
+    anycubic_printer,
+    anycubic_profile,
+    anycubic_query,
+    anycubic_report,
+    anycubic_report_filter,
+    anycubic_serial,
+    anycubic_session,
+    anycubic_sign,
+    anycubic_slots,
+)
+# fh-bundle-end
+
+MAX_ANYCUBIC_BRIDGES = 32
+ANYCUBIC_READ_TIMEOUT = 8.0
+# How long the printer is given to answer the three requests, and how much
+# longer once its state has arrived: a printer without an ACE unit never
+# answers for one, and one with a unit never answers for the spool holder.
+ANYCUBIC_REPLY_SECONDS = 4.0
+ANYCUBIC_AFTER_INFO_SECONDS = 1.5
+ANYCUBIC_CONNECTIONS_MAX_AGE_SECONDS = 300.0
+_ANYCUBIC_CONNECTIONS = {"items": None, "at": None}
+_ANYCUBIC_CONNECTIONS_LOCK = threading.Lock()
+# Which serial number answered at an address last time, so a linked printer
+# is asked first where it was found.
+_ANYCUBIC_KNOWN_HOSTS = {}
+ANYCUBIC_MESSAGES = frozenset({"configure-anycubic", "anycubic-refresh"})
+_ANYCUBIC_RESULT_TYPES = {
+    "configure-anycubic": "anycubic-setup-result",
+    "anycubic-refresh": "anycubic-refresh-result",
+}
+_ANYCUBIC_CONFIG_LOCK = threading.RLock()
+
+
+class _AnycubicNoRedirect(urllib.request.HTTPRedirectHandler):
+    """A printer's request ends at the printer: a redirect is an invalid answer."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _snapshot_local_anycubic_connections():
+    """Copy Anycubic connections from Orca's user printer presets (UI thread).
+
+    The result stays in memory: it is never written by the plugin and never
+    sent to FilamentHub.
+    """
+    connections = []
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            if not anycubic_profile(_preset_scalar(_preset_config_value(preset, "printer_model"))):
+                continue
+            # The printer's ports are fixed; only the host is taken from print_host.
+            host = creality_host(_preset_scalar(_preset_config_value(preset, "print_host")))
+            if host:
+                connections.append({"label": str(preset.name or "")[:200], "host": host})
+    except Exception as exc:
+        fh_log("local Anycubic scan failed: %s" % type(exc).__name__)
+    else:
+        # Only a completed scan replaces what the watcher works from.
+        with _ANYCUBIC_CONNECTIONS_LOCK:
+            _ANYCUBIC_CONNECTIONS["items"] = [dict(item) for item in connections]
+            _ANYCUBIC_CONNECTIONS["at"] = time.monotonic()
+    return connections
+
+
+def anycubic_printers(connections, source_instance_id):
+    """Reduce Orca presets to distinct printers with an opaque local reference."""
+    printers = {}
+    for connection in connections or []:
+        ref = "ac_" + hashlib.sha256(
+            (source_instance_id + "\0" + connection["host"].lower()).encode("utf-8")
+        ).hexdigest()[:32]
+        printers.setdefault(ref, dict(connection, connection_ref=ref))
+    return list(printers.values())
+
+
+def _load_anycubic_bindings():
+    try:
+        with open(ANYCUBIC_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            payload = json.loads(handle.read(256 * 1024))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    items = payload.get("printers")
+    if not isinstance(items, list) or len(items) > MAX_ANYCUBIC_BRIDGES:
+        return []
+    bindings = []
+    for item in items:
+        identity = item.get("device_identity") if isinstance(item, dict) else None
+        if not (
+            isinstance(item, dict)
+            and type(item.get("physical_printer_id")) is int
+            and item["physical_printer_id"] > 0
+            and type(item.get("material_system_id")) is int
+            and item["material_system_id"] > 0
+            and _valid_fresh_bridge_token(item.get("bridge_token"))
+            and anycubic_serial(item.get("serial"))
+            and isinstance(identity, dict)
+            and identity.get("kind") == ANYCUBIC_IDENTITY_KIND
+            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
+        ):
+            continue
+        bindings.append({
+            "physical_printer_id": item["physical_printer_id"],
+            "material_system_id": item["material_system_id"],
+            "bridge_token": item["bridge_token"],
+            "serial": item["serial"],
+            "device_identity": {"kind": identity["kind"], "token": identity["token"]},
+        })
+    return bindings
+
+
+def _save_anycubic_bindings(bindings):
+    write_json_atomic(
+        ANYCUBIC_CONFIG_FILE, {"version": 1, "printers": bindings}, mode=0o600
+    )
+
+
+def _forget_anycubic_binding(physical_printer_id, expected_bridge_token):
+    """Drop a link the server no longer accepts; a newer token is left alone."""
+    with _ANYCUBIC_CONFIG_LOCK:
+        bindings = _load_anycubic_bindings()
+        kept = [
+            item for item in bindings
+            if not (
+                item["physical_printer_id"] == physical_printer_id
+                and item["bridge_token"] == expected_bridge_token
+            )
+        ]
+        if len(kept) != len(bindings):
+            _save_anycubic_bindings(kept)
+
+
+def _anycubic_http_json(url, method="GET"):
+    """One request to the printer: ``(body, failure)``. Redirects are refused."""
+    request = _plugin_request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+        },
+        method=method,
+    )
+    opener = urllib.request.build_opener(_AnycubicNoRedirect)
+    try:
+        with external_operation():
+            response = opener.open(request, timeout=ANYCUBIC_READ_TIMEOUT)
+        with response:
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError:
+        return None, "invalid"
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    try:
+        return json.loads(body.decode("utf-8")), None
+    except (UnicodeDecodeError, ValueError):
+        return None, "invalid"
+
+
+def read_anycubic_info(connection):
+    """Read one printer's ``/info``; return ``(info, failure)``.
+
+    The request goes only to a private or link-local address resolved once,
+    over plain HTTP because the firmware offers nothing else. With LAN mode
+    off, ``info`` still names the serial number when the printer gave one.
+    """
+    try:
+        sockaddr = _resolved_lan_address(connection["host"], ANYCUBIC_INFO_PORT)[3]
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    body, failure = _anycubic_http_json(anycubic_info_url(sockaddr[0]))
+    if failure:
+        return None, failure
+    info, failure = anycubic_info(body)
+    if info is not None:
+        info["address"] = sockaddr[0]
+    return info, failure
+
+
+def _anycubic_publish(sock, topic, text):
+    packet = _mqtt_field(topic.encode("utf-8")) + text.encode("utf-8")
+    with external_operation():
+        sock.sendall(b"\x30" + _mqtt_len(len(packet)) + packet)
+
+
+def _anycubic_tls_context():
+    # The printer presents a certificate of its own that nothing can vouch
+    # for, and its login came over plain HTTP in the same network.
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def _anycubic_mqtt_reading(info, session):
+    """Ask the printer's broker for its state, units and holder: ``(reading, failure)``."""
+    address = info["address"]
+    try:
+        family, socktype, proto, sockaddr = _resolved_lan_address(address, session["port"])
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    deadline = time.monotonic() + ANYCUBIC_READ_TIMEOUT
+    raw = socket.socket(family, socktype, proto)
+    raw.settimeout(ANYCUBIC_READ_TIMEOUT)
+    sock = raw
+    reading = {"info": None, "boxes": None, "holder": None}
+    try:
+        with external_operation():
+            raw.connect(sockaddr)
+        with external_operation():
+            sock = _anycubic_tls_context().wrap_socket(raw, server_hostname=None)
+        client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
+        connect = (
+            _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
+            + _mqtt_field(client_id)
+            + _mqtt_field(session["username"].encode("utf-8"))
+            + _mqtt_field(session["password"].encode("utf-8"))
+        )
+        with external_operation():
+            sock.sendall(b"\x10" + _mqtt_len(len(connect)) + connect)
+        header, connack = _mqtt_read_packet(sock, deadline)
+        if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+            return None, "refused"
+        model_id, device_id = info["model_id"], session["device_id"]
+        subscribe = (
+            struct.pack("!H", 1)
+            + _mqtt_field(anycubic_report_filter(model_id, device_id).encode("utf-8"))
+            + b"\x00"
+        )
+        with external_operation():
+            sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
+        header, suback = _mqtt_read_packet(sock, deadline)
+        if (header & 0xF0) != 0x90 or len(suback) < 3 or suback[2] == 0x80:
+            return None, "invalid"
+        for report_type, action in ANYCUBIC_QUERIES:
+            _anycubic_publish(sock, *anycubic_query(
+                model_id, device_id, report_type, action,
+                uuid.uuid4().hex, int(time.time() * 1000),
+            ))
+        wait_until = min(deadline, time.monotonic() + ANYCUBIC_REPLY_SECONDS)
+        while time.monotonic() < wait_until:
+            try:
+                header, packet = _mqtt_read_packet(sock, wait_until)
+            except TimeoutError:
+                break
+            if (header & 0xF0) != 0x30 or len(packet) < 2:
+                continue
+            topic_length = struct.unpack("!H", packet[:2])[0]
+            offset = 2 + topic_length + (2 if (header >> 1) & 0x03 else 0)
+            if len(packet) < offset:
+                continue
+            report = anycubic_report(
+                packet[2:2 + topic_length].decode("utf-8", "replace"),
+                packet[offset:], model_id, device_id,
+            )
+            if report is None:
+                continue
+            report_type, data = report
+            if report_type == "info":
+                if reading["info"] is None:
+                    wait_until = min(wait_until, time.monotonic() + ANYCUBIC_AFTER_INFO_SECONDS)
+                reading["info"] = data
+            elif report_type == "multiColorBox":
+                reading["boxes"] = anycubic_merge_boxes(reading["boxes"], data)
+            elif report_type == "extfilbox":
+                reading["holder"] = data
+            if reading["info"] is not None and reading["boxes"] is not None:
+                break
+        try:
+            with external_operation():
+                sock.sendall(b"\xE0\x00")
+        except OSError:
+            pass
+    except PluginLifecycleStopped:
+        raise
+    except (OSError, ValueError) as exc:
+        return None, "permission" if _host_denied(exc) else "unreachable"
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    if reading["info"] is None:
+        return None, "invalid"
+    return reading, None
+
+
+def read_anycubic_status(connection, serial=""):
+    """Read one printer through its LAN handshake; return ``(reading, failure)``.
+
+    ``serial`` names the printer expected at this address: another one is
+    ``"other"`` and is not asked for a login. ``reading`` holds the serial
+    number, the model and the ``info``, ACE and holder reports.
+    """
+    info, failure = read_anycubic_info(connection)
+    found = (info or {}).get("serial") or ""
+    if found:
+        with _ANYCUBIC_CONNECTIONS_LOCK:
+            _ANYCUBIC_KNOWN_HOSTS[connection["host"]] = found
+    if serial and found and found != serial:
+        return None, "other"
+    if failure:
+        return None, failure
+    timestamp_ms = int(time.time() * 1000)
+    nonce = secrets.token_hex(3)
+    client_id = secrets.token_hex(16).upper()
+    body, failure = _anycubic_http_json(
+        anycubic_ctrl_url(info["address"], info, timestamp_ms, nonce, client_id), "POST"
+    )
+    if failure:
+        return None, failure
+    session, failure = anycubic_session(body, info)
+    if failure:
+        return None, failure
+    reading, failure = _anycubic_mqtt_reading(info, session)
+    if reading is None:
+        return None, failure
+    reading.update(
+        serial=info["serial"], model_id=info["model_id"], model_name=info["model_name"]
+    )
+    return reading, None
+
+
+_ANYCUBIC_FAILURE_ORDER = ("permission", "lan_mode", "refused", "unsupported", "invalid",
+                           "unreachable")
+
+
+def read_anycubic_printer(binding, connections):
+    """Read a linked printer through whichever Orca connection reaches it."""
+    with _ANYCUBIC_CONNECTIONS_LOCK:
+        known = dict(_ANYCUBIC_KNOWN_HOSTS)
+    ordered = sorted(
+        connections or [], key=lambda item: known.get(item["host"]) != binding["serial"]
+    )
+    failures = []
+    for connection in ordered:
+        reading, failure = read_anycubic_status(connection, binding["serial"])
+        if reading is not None:
+            return reading, None
+        if failure != "other":
+            failures.append(failure)
+    for failure in _ANYCUBIC_FAILURE_ORDER:
+        if failure in failures:
+            return None, failure
+    # None of the connections in OrcaSlicer is this printer.
+    return None, "credentials"
+
+
+def build_anycubic_bridge_snapshot(binding, source_instance_id, reading):
+    slots, complete = anycubic_slots(reading.get("boxes"), reading.get("holder"))
+    return {
+        "material_system_id": binding["material_system_id"],
+        "provider": ANYCUBIC_PROVIDER,
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": list(ANYCUBIC_CAPABILITIES),
+        "printer": anycubic_printer(reading["info"]),
+        "slots": slots,
+        "slot_topology_complete": complete,
+        "device_identity": binding["device_identity"],
+    }
+
+
+def observe_anycubic_binding(binding, connections, source_instance_id):
+    """Read one linked printer and report it to FilamentHub; return a result code."""
+    reading, failure = read_anycubic_printer(binding, connections)
+    if reading is None:
+        if failure != "permission":
+            # The helper is alive; say that the printer did not answer it.
+            status, _body, _retry_after = http_post_bridge_json(
+                "/printer-bridge/heartbeat",
+                binding["bridge_token"],
+                {
+                    "material_system_id": binding["material_system_id"],
+                    "provider": ANYCUBIC_PROVIDER,
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": source_instance_id,
+                    "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "provider_reachable": False,
+                },
+            )
+            if status == 401:
+                _forget_anycubic_binding(binding["physical_printer_id"], binding["bridge_token"])
+                return "unpaired"
+        return failure
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        binding["bridge_token"],
+        build_anycubic_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "unpaired":
+        _forget_anycubic_binding(binding["physical_printer_id"], binding["bridge_token"])
+    return code
+
+
+def observe_anycubic_bindings(connections, physical_printer_id=None, material_system_id=None):
+    """Report every linked printer, or one; return ``{physical_printer_id: code}``."""
+    bindings = [
+        item for item in _load_anycubic_bindings()
+        if physical_printer_id is None or (
+            item["physical_printer_id"] == physical_printer_id
+            and item["material_system_id"] == material_system_id
+        )
+    ]
+    if not bindings:
+        return {}
+    source_instance_id = plugin_source_instance_id()
+    return {
+        binding["physical_printer_id"]: observe_anycubic_binding(
+            binding, connections, source_instance_id
+        )
+        for binding in bindings
+    }
+
+
+def configure_anycubic_bridge(
+    physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+):
+    """Link one Anycubic printer known to OrcaSlicer; return the page result."""
+    source_instance_id = plugin_source_instance_id()
+    printers = anycubic_printers(connections, source_instance_id)
+    if not printers:
+        return {"ok": False, "code": "notFound"}
+    chosen = [item for item in printers if item["connection_ref"] == connection_ref]
+    if not chosen and len(printers) == 1 and not connection_ref:
+        chosen = printers
+    if len(chosen) != 1:
+        return {
+            "ok": False,
+            "code": "choose",
+            "candidates": [
+                {"connectionRef": item["connection_ref"], "label": item["label"]}
+                for item in printers[:MAX_ANYCUBIC_BRIDGES]
+            ],
+        }
+    reading, failure = read_anycubic_status(chosen[0])
+    if reading is None:
+        return {"ok": False, "code": failure}
+    serial = reading["serial"]
+    with _ANYCUBIC_CONFIG_LOCK:
+        if any(
+            item["serial"] == serial and item["physical_printer_id"] != physical_printer_id
+            for item in _load_anycubic_bindings()
+        ):
+            return {"ok": False, "code": "linked"}
+    pair_status, pair_body = http_post_json(
+        "/printer-bridge/pair",
+        "",
+        {
+            "pairing_code": pairing_code,
+            "provider": ANYCUBIC_PROVIDER,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": PLUGIN_VERSION,
+            "capabilities": list(ANYCUBIC_CAPABILITIES),
+        },
+    )
+    try:
+        paired = json.loads(pair_body.decode("utf-8")) if pair_status == 200 else None
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        paired = None
+    bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else None
+    if not _valid_fresh_bridge_token(bridge_token):
+        return {"ok": False, "code": "pairing"}
+    evidence = _printer_evidence_token(
+        paired.get("printer_discovery_key"), "device", ANYCUBIC_IDENTITY_KIND + "\0" + serial
+    )
+    if (
+        paired.get("physical_printer_id") != physical_printer_id
+        or paired.get("material_system_id") != material_system_id
+        or evidence is None
+    ):
+        # The code belonged to another printer card: give the credential back.
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    binding = {
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "bridge_token": bridge_token,
+        "serial": serial,
+        "device_identity": {"kind": ANYCUBIC_IDENTITY_KIND, "token": evidence},
+    }
+    try:
+        with _ANYCUBIC_CONFIG_LOCK:
+            bindings = [
+                item for item in _load_anycubic_bindings()
+                if item["physical_printer_id"] != physical_printer_id
+            ]
+            if len(bindings) >= MAX_ANYCUBIC_BRIDGES:
+                raise ValueError("too many Anycubic links")
+            _save_anycubic_bindings(bindings + [binding])
+    except (OSError, ValueError):
+        revoke_fresh_bridge_token(bridge_token)
+        return {"ok": False, "code": "pairing"}
+    status, body, _retry_after = http_post_bridge_json(
+        "/printer-bridge/snapshot",
+        bridge_token,
+        build_anycubic_bridge_snapshot(binding, source_instance_id, reading),
+    )
+    code = _bridge_report_code(status, body)
+    if code == "linked":
+        # FilamentHub will never accept this printer for this card: undo the link.
+        _forget_anycubic_binding(physical_printer_id, bridge_token)
+        http_delete_bridge("/printer-bridge/connection", bridge_token)
+        return {"ok": False, "code": "linked"}
+    # The link itself is saved; a failed first report is retried on refresh.
+    return {"ok": True, "code": code}
+
+
+def handle_anycubic_message(catalog, msg):
+    """Run one page request about an Anycubic printer (called on the UI thread)."""
+    msg_type = msg.get("type")
+    request_id = msg.get("requestId")
+    ids = _positive_ids(msg)
+    if not (isinstance(request_id, str) and 0 < len(request_id) <= 100 and ids):
+        return
+    # Host state is copied here, on the UI thread; the worker only does I/O.
+    connections = _snapshot_local_anycubic_connections()
+    if msg_type == "configure-anycubic":
+        pairing_code = msg.get("pairingCode")
+        connection_ref = msg.get("connectionRef") or ""
+        if not (
+            isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
+            and isinstance(connection_ref, str) and len(connection_ref) <= 120
+        ):
+            return
+
+        def job():
+            try:
+                result = configure_anycubic_bridge(
+                    ids[0], ids[1], pairing_code, connection_ref, connections
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Anycubic setup failed: %s" % type(exc).__name__)
+                result = {"ok": False, "code": "invalid"}
+            if not result.get("ok"):
+                fh_log("Anycubic setup: %s" % result.get("code"))
+            catalog._deliver("anycubic-setup-result", requestId=request_id, result=result)
+            if result.get("ok"):
+                _wake_usage_watch(ANYCUBIC_WATCH_RUNTIME)
+    else:
+        def job():
+            try:
+                code = observe_anycubic_bindings(connections, ids[0], ids[1]).get(
+                    ids[0], "unpaired"
+                )
+            except PluginLifecycleStopped:
+                raise
+            except Exception as exc:
+                fh_log("Anycubic refresh failed: %s" % type(exc).__name__)
+                code = "invalid"
+            catalog._deliver(
+                "anycubic-refresh-result",
+                requestId=request_id,
+                result={"ok": code == "ok", "code": code},
+            )
+            if code == "ok":
+                _wake_usage_watch(ANYCUBIC_WATCH_RUNTIME)
+
+    if BACKGROUND_WORKER.submit(job) is False:
+        catalog._deliver(
+            _ANYCUBIC_RESULT_TYPES[msg_type],
+            requestId=request_id,
+            result={"ok": False, "code": "unavailable"},
+        )
+
+
+def refresh_anycubic_bindings_after_sync():
+    """Re-read linked Anycubic printers alongside a page-driven sync (UI thread)."""
+    if not _load_anycubic_bindings():
+        return
+    connections = _snapshot_local_anycubic_connections()
+
+    def job():
+        try:
+            observe_anycubic_bindings(connections)
+        except PluginLifecycleStopped:
+            raise
+        except Exception as exc:
+            fh_log("Anycubic refresh failed: %s" % type(exc).__name__)
+
+    BACKGROUND_WORKER.submit(job)
+
+
+def refresh_anycubic_connections():
+    """Keep the watcher's copy of Orca's Anycubic connections current (UI thread)."""
+    now = time.monotonic()
+    with _ANYCUBIC_CONNECTIONS_LOCK:
+        checked = _ANYCUBIC_CONNECTIONS["at"]
+        if checked is not None and now - checked < ANYCUBIC_CONNECTIONS_MAX_AGE_SECONDS:
+            return
+        # Also the time of a check that found nothing linked.
+        _ANYCUBIC_CONNECTIONS["at"] = now
+    if not _load_anycubic_bindings():
+        return
+    _snapshot_local_anycubic_connections()
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            ANYCUBIC_WATCH_RUNTIME.start()
+
+
+class AnycubicWatchRuntime(_UsageWatchRuntime):
+    """Reports the state of every linked Anycubic printer while OrcaSlicer is open.
+
+    The printer's own usage figure is not understood well enough to deduct
+    filament, so this watcher keeps no books: it only reports what changed.
+    """
+
+    thread_name = "filamenthub-anycubic-watch"
+    label = "Anycubic"
+
+    def _provider(self, binding):
+        return ANYCUBIC_PROVIDER
+
+    def _forget(self, binding):
+        _forget_anycubic_binding(binding["physical_printer_id"], binding["bridge_token"])
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = _load_anycubic_bindings()
+        if not bindings:
+            return None
+        with _ANYCUBIC_CONNECTIONS_LOCK:
+            connections = _ANYCUBIC_CONNECTIONS["items"]
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return USAGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Report one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now) or not connections:
+            return False
+        reading, failure = read_anycubic_printer(binding, connections)
+        if self._stop.is_set():
+            return False
+        if reading is None:
+            if failure == "permission":
+                self._block(key, now)
+            self._log("read", failure)
+            return False
+        self._log("read", None)
+        snapshot = build_anycubic_bridge_snapshot(binding, source_instance_id, reading)
+        self._report(binding, key, snapshot, now)
+        return snapshot["printer"]["state"] in ("preparing", "printing", "paused")
+
+
+ANYCUBIC_WATCH_RUNTIME = AnycubicWatchRuntime()
+
+
+def anycubic_setup_candidates(connections):
+    """Printer-setup list entries for the Anycubic printers OrcaSlicer knows.
+
+    A printer's card is named only when the address answered with a linked
+    serial number earlier in this session; nothing is asked here.
+    """
+    linked = {item["serial"]: item["physical_printer_id"] for item in _load_anycubic_bindings()}
+    with _ANYCUBIC_CONNECTIONS_LOCK:
+        known = dict(_ANYCUBIC_KNOWN_HOSTS)
+    return [{
+        "connectionRef": item["connection_ref"], "label": item["label"] or "Anycubic",
+        "physicalPrinterId": linked.get(known.get(item["host"])),
+        "provider": ANYCUBIC_PROVIDER, "source": "profile",
+    } for item in anycubic_printers(connections, plugin_source_instance_id())]
 
 
 # --------------------------------------------------------------------------- #
@@ -18129,6 +18856,7 @@ class FilamentHubCatalog(
                     } for item in flashforge_printers(flashforge, plugin_source_instance_id()))
                 candidates.extend(creality_setup_candidates(msg.get("creality")))
                 candidates.extend(profile_lan_setup_candidates(msg.get("profile_lan")))
+                candidates.extend(anycubic_setup_candidates(msg.get("anycubic") or []))
                 fh_log("printer setup list: candidates=%d moonraker=%d discovery_complete=%s" % (
                     len(candidates), sum(item["provider"] == "moonraker" for item in candidates),
                     discovery["complete"]))
@@ -18239,6 +18967,7 @@ class FilamentHubCatalog(
         refresh_prusalink_connections()
         refresh_flashforge_connections()
         refresh_creality_connections()
+        refresh_anycubic_connections()
         denied_before = worker_denial_count()
         try:
             self._handle_message(msg)
@@ -18372,6 +19101,9 @@ class FilamentHubCatalog(
             msg["creality"] = (
                 _snapshot_local_creality_connections() if msg.get("operation") == "list" else []
             )
+            msg["anycubic"] = (
+                _snapshot_local_anycubic_connections() if msg.get("operation") == "list" else []
+            )
             msg["klipper_profiles"] = (
                 _snapshot_klipper_profile_hosts()
                 if msg.get("operation") == "list" and msg_type == "printer-setup" else []
@@ -18389,6 +19121,8 @@ class FilamentHubCatalog(
             handle_creality_message(self, msg)
         elif msg_type in PROFILE_LAN_MESSAGES and direct_message:
             handle_profile_lan_message(self, msg)
+        elif msg_type in ANYCUBIC_MESSAGES and direct_message:
+            handle_anycubic_message(self, msg)
         elif msg_type == "read-diagnostics" and plugin_setting("developer_mode"):
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=diagnostic_report_text())
@@ -18772,6 +19506,7 @@ class FilamentHubCatalog(
             refresh_flashforge_bindings_after_sync()
             refresh_creality_bindings_after_sync()
             refresh_profile_lan_bindings_after_sync()
+            refresh_anycubic_bindings_after_sync()
         elif msg_type in {
             "happy-hare-preview",
             "happy-hare-apply",

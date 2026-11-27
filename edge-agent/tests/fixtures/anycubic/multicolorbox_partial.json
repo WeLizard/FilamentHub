@@ -1,0 +1,26 @@
+{
+  "type": "multiColorBox",
+  "action": "report",
+  "timestamp": 1764240000600,
+  "msgid": "m-box-2",
+  "data": {
+    "multi_color_box": [
+      {
+        "id": 0,
+        "loaded_slot": -1,
+        "slots": [
+          {
+            "index": 1,
+            "type": "TPU",
+            "color": [
+              20,
+              20,
+              20
+            ],
+            "status": 4
+          }
+        ]
+      }
+    ]
+  }
+}

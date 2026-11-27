@@ -174,6 +174,8 @@
       "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。",
       "prusalink": "Prusa（PrusaLink）",
       "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。",
+      "anycubic": "Anycubic（Kobra 3、S1、X）",
+      "anycubicHint": "通过 OrcaSlicer 插件或 FH Edge，以局域网模式连接使用原厂固件的 Anycubic Kobra 3、S1 和 X。显示打印状态和 ACE 料槽：打印机所见的材料、颜色和剩余量。暂不扣减用量。",
       "sdcp": "SDCP（Elegoo Centauri Carbon）",
       "sdcpHint": "通过 OrcaSlicer 插件或 FH Edge 连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机不统计耗材用量，因此打印不会自动从料卷扣减。",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
@@ -206,6 +208,9 @@
       "prusalinkSingle": "单卷（MK4S、CORE One、MINI、MK3S）",
       "prusalinkMmu": "MMU3，5 个料槽",
       "prusalinkTools": "多个工具头（XL、INDX）",
+      "anycubicAce": "ACE Pro，每个单元 4 个料槽",
+      "anycubicAceSlots": "ACE 料槽数",
+      "anycubicSingle": "单卷（无 ACE）",
       "canvas": "CANVAS，每个单元 4 个料槽",
       "canvasSlots": "CANVAS 料槽数",
       "canvasSingle": "单卷（无 CANVAS）"
@@ -9330,6 +9335,7 @@
       "flashforge": "闪铸局域网",
       "creality": "Creality 局域网",
       "prusalink": "PrusaLink",
+      "anycubic": "Anycubic 局域网",
       "sdcp": "SDCP 局域网",
       "elegoo_mqtt": "Elegoo 局域网"
     },
@@ -9363,7 +9369,9 @@
       "addToNodeSdcp": "将此条目添加到 Edge 的 connections，并将 PRINTER-LAN-IP 替换为打印机地址；SDCP 打印机不需要密码。Home Assistant：应用选项 → connections；Docker/Linux：options.json。然后重启 Edge。",
       "securitySdcp": "打印机地址只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 只读取打印机，不向其发送任何命令。",
       "addToNodeElegooMqtt": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并填写打印机上显示的访问码；如果从未修改过访问码，可删除 access_code 这一行。Home Assistant：应用选项 → connections；Docker/Linux：options.json。然后重启 Edge。",
-      "securityElegooMqtt": "打印机地址和访问码只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 只读取打印机，不向其发送任何命令。"
+      "securityElegooMqtt": "打印机地址和访问码只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 只读取打印机，不向其发送任何命令。",
+      "addToNodeAnycubic": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并在打印机屏幕上开启局域网模式，无需其他设置。开启局域网模式后打印机会与 Anycubic 云账号解绑。Home Assistant：应用设置 → connections；Docker/Linux：options.json。然后重启 Edge。",
+      "securityAnycubic": "打印机地址只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 每次读取时向打印机获取局域网登录信息，且不会保存。"
     },
     "happyHare": {
       "inventoryError": "Moonraker 必须使用此 FH 打印机专属的 [spoolman] 密钥链接。请检查配置，并在空闲时重启 Moonraker。已读取槽位，但无法安全匹配料卷 ID。",
@@ -9529,6 +9537,31 @@
         "invalid": "打印机返回了意外的响应。请检查 OrcaSlicer 中的地址是否指向打印机的 PrusaLink。",
         "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
         "unavailable": "插件未响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+      }
+    },
+    "anycubic": {
+      "title": "通过 OrcaSlicer 连接 Anycubic",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址。请先在打印机屏幕上开启局域网模式。开启后打印机会与 Anycubic 云账号解绑，关闭该模式也不会恢复绑定。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台 Anycubic 打印机，请选择这一台：",
+      "onDemand": "请在 OrcaSlicer 中打开 FilamentHub 标签页：标签页打开期间，插件会跟踪打印和 ACE 料槽。暂不从料卷扣减用量。",
+      "localOnly": "打印机地址及其局域网模式登录信息保留在这台电脑上，不会发送到 FilamentHub。插件只读取打印机，不向它发送任何指令。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有 Anycubic Kobra 3、S1 或 X。请在 OrcaSlicer 中添加打印机，打开其连接设置并填写地址。",
+        "credentials": "OrcaSlicer 的连接中没有这台打印机。请检查连接设置中的地址，然后重新连接打印机。",
+        "unreachable": "打印机在 OrcaSlicer 中的地址上没有响应。请确认它已开机、处于同一网络并已开启局域网模式。",
+        "permission": "OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重试。",
+        "lan_mode": "打印机未开启局域网模式。请在打印机的网络设置中开启后重试。开启后打印机会与 Anycubic 云账号解绑。",
+        "refused": "打印机拒绝了连接。请重启打印机后重试。",
+        "unsupported": "此地址上的设备不提供 Kobra 3、S1 和 X 那样的局域网模式。请检查地址和打印机固件。",
+        "linked": "这台打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub，请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机的响应不符合预期。请确认它运行的是 Anycubic 原厂固件。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
       }
     },
     "sdcp": {

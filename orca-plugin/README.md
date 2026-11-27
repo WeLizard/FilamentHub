@@ -275,6 +275,36 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 - The page sends `configure-prusalink` / `prusalink-refresh` and receives a
   result code. Built from the firmware sources; not yet confirmed on a printer.
 
+### Anycubic in LAN mode
+
+Anycubic Kobra 3 / 3 V2 / 3 Max / S1 / S1 Max / X on stock firmware speak
+their own LAN protocol, not Moonraker. The plugin finds such a printer by the
+`printer_model` of an OrcaSlicer user preset and takes only the host from its
+`print_host`; the ports are fixed by the firmware.
+
+- `GET http://<printer>:18910/info` says whether LAN mode is on and gives the
+  token for a signed `POST /ctrl` on the same host. Its answer carries the
+  printer's MQTT login, sealed with AES-128-CBC under part of that token; the
+  plugin opens it with its own small AES decoder (no extra package).
+- The plugin then connects to the printer's broker over TLS on port 9883,
+  asks for `info`, `multiColorBox` and `extfilbox` once, collects the answers
+  for a few seconds and disconnects. The broker uses a self-signed
+  certificate, so it is not verified; the connection goes only to the address
+  the handshake used.
+- Slots are numbered unit * 4 + slot for the ACE units and 255 for the spool
+  holder. The connector claims `read` and `presence`. The job's
+  `supplies_usage` figure is not understood well enough to deduct filament,
+  so the watcher only reports what changed.
+- The private `.fh_anycubic.json` holds only the FilamentHub bridge token, the
+  printer's serial number and the account-scoped identity evidence. The LAN
+  login is asked for again on every read and never written to disk.
+- The page sends `configure-anycubic` / `anycubic-refresh` and receives a
+  result code; it never receives an address, serial number or login.
+- Written from open LAN clients for these printers and checked against
+  hand-made fixtures in `edge-agent/tests/fixtures/anycubic/`; not yet
+  confirmed on a printer. A printer running Rinkhals answers through
+  Moonraker and is set up as a Klipper printer instead.
+
 ### SDCP and Elegoo MQTT through OrcaSlicer's own connection
 
 An adapter here is a way of talking to a printer, not a brand. Two of them read
@@ -321,6 +351,7 @@ still developed as separate source files next to `filamenthub_plugin.py`:
 (PrusaLink of Prusa's Buddy firmware and Prusa-Link), `filamenthub_sdcp.py`
 (the SDCP protocol), `filamenthub_elegoo_mqtt.py` (Elegoo's MQTT interface of
 the Centauri Carbon 2), `filamenthub_canvas.py` (CANVAS slots, shared by the two),
+`filamenthub_anycubic.py` (Anycubic LAN mode and ACE slots),
 `filamenthub_moonraker.py`
 (Happy Hare, QIDI Box and filament usage through Moonraker's printer objects),
 `filamenthub_usage_books.py` (charging a printer's running filament counter to

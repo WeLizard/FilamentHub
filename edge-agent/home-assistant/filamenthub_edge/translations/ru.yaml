@@ -20,19 +20,19 @@ configuration:
         description: Выключите для паузы только этого подключения. По умолчанию включено; очередь событий сохраняется.
       adapter:
         name: Адаптер
-        description: moonraker — принтеры на Klipper; flashforge — Flashforge Adventurer 5M / 5M Pro, AD5X и Creator 5 / 5 Pro в режиме LAN; bambu — принтеры Bambu Lab; sdcp — принтеры на протоколе SDCP, например Elegoo Centauri Carbon; elegoo_mqtt — Elegoo Centauri Carbon 2. Если не указан, используется moonraker.
+        description: moonraker — принтеры на Klipper; flashforge — Flashforge Adventurer 5M / 5M Pro, AD5X и Creator 5 / 5 Pro в режиме LAN; bambu — принтеры Bambu Lab; sdcp — принтеры на протоколе SDCP, например Elegoo Centauri Carbon; elegoo_mqtt — Elegoo Centauri Carbon 2; anycubic — Anycubic Kobra 3, S1 и X в режиме LAN. Если не указан, используется moonraker.
       pairing_code:
         name: Код подключения
         description: Одноразовый код из FilamentHub для этого принтера. Удалите код после успешного подключения.
       material_provider:
         name: Система подачи
-        description: happy_hare — MMU Happy Hare; legacy — прямая подача Klipper; flashforge, bambu, sdcp и elegoo_mqtt выбираются автоматически для одноимённых адаптеров.
+        description: happy_hare — MMU Happy Hare; legacy — прямая подача Klipper; flashforge, bambu, sdcp, elegoo_mqtt и anycubic выбираются автоматически для одноимённых адаптеров.
       moonraker_url:
         name: Адрес Moonraker
         description: Локальный HTTP(S)-адрес принтера, доступный из HA, например http://192.168.1.20:7125. Не адрес самого HA.
       printer_url:
         name: Адрес принтера
-        description: "Локальный адрес принтера, доступный из HA. Flashforge: например http://192.168.1.40 (если порт не указан, используется 8898). Bambu Lab, SDCP и Elegoo Centauri Carbon 2: только IP-адрес, например 192.168.1.50."
+        description: "Локальный адрес принтера, доступный из HA. Flashforge: например http://192.168.1.40 (если порт не указан, используется 8898). Bambu Lab, SDCP, Elegoo Centauri Carbon 2 и Anycubic: только IP-адрес, например 192.168.1.50."
       serial_number:
         name: Серийный номер
         description: Для Flashforge и Bambu Lab. Серийный номер из настроек принтера.

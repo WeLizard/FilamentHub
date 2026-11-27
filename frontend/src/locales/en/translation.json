@@ -174,6 +174,8 @@
       "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open.",
       "prusalink": "Prusa (PrusaLink)",
       "prusalinkHint": "Prusa MK4/MK4S, MK3.5/3.9, XL, CORE One and MINI, and the MK3S with Prusa-Link, through the OrcaSlicer plugin. Shows the print state and, on a single-nozzle printer without an MMU, the material loaded. The printer does not report MMU3 slots, XL tools or the filament used.",
+      "anycubic": "Anycubic (Kobra 3, S1, X)",
+      "anycubicHint": "Anycubic Kobra 3, S1 and X on stock firmware in LAN mode, through the OrcaSlicer plugin or FH Edge. Shows the print state and the ACE slots: material, colour and what is left, as the printer sees them. Filament use is not deducted yet.",
       "sdcp": "SDCP (Elegoo Centauri Carbon)",
       "sdcpHint": "Printers on the open SDCP protocol, such as the Elegoo Centauri Carbon, through the OrcaSlicer plugin or FH Edge. Shows the print state and, with CANVAS on recent firmware, its slots with material and colour as the printer sees them. These printers count no filament used, so a print is not deducted from a spool automatically.",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
@@ -206,6 +208,9 @@
       "prusalinkSingle": "Single spool (MK4S, CORE One, MINI, MK3S)",
       "prusalinkMmu": "MMU3, 5 slots",
       "prusalinkTools": "Several tools (XL, INDX)",
+      "anycubicAce": "ACE Pro, 4 slots per unit",
+      "anycubicAceSlots": "ACE slots",
+      "anycubicSingle": "Single spool (no ACE)",
       "canvas": "CANVAS, 4 slots per unit",
       "canvasSlots": "CANVAS slots",
       "canvasSingle": "Single spool (no CANVAS)"
@@ -9352,6 +9357,7 @@
       "flashforge": "Flashforge LAN",
       "creality": "Creality LAN",
       "prusalink": "PrusaLink",
+      "anycubic": "Anycubic LAN",
       "sdcp": "SDCP LAN",
       "elegoo_mqtt": "Elegoo LAN"
     },
@@ -9385,7 +9391,9 @@
       "addToNodeSdcp": "Add this entry to your Edge connections and replace PRINTER-LAN-IP with the printer's address; an SDCP printer needs no password. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
       "securitySdcp": "The printer address stays on the Edge device and is never sent to FilamentHub. Edge only reads the printer and sends it no commands.",
       "addToNodeElegooMqtt": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address and enter the access code shown on the printer; remove the access_code line if the code was never changed. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
-      "securityElegooMqtt": "The printer address and access code stay on the Edge device and are never sent to FilamentHub. Edge only reads the printer and sends it no commands."
+      "securityElegooMqtt": "The printer address and access code stay on the Edge device and are never sent to FilamentHub. Edge only reads the printer and sends it no commands.",
+      "addToNodeAnycubic": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address and turn on LAN mode on the printer's screen; nothing else is needed. In LAN mode the printer leaves your Anycubic cloud account. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
+      "securityAnycubic": "The printer address stays on the Edge device and is never sent to FilamentHub. Edge asks the printer for its LAN login on every read and never stores it."
     },
     "happyHare": {
       "inventoryError": "Moonraker must use this FH printer's keyed [spoolman] URL. Check the setting and restart Moonraker while idle. Gates were read, but spool IDs cannot be safely matched.",
@@ -9549,6 +9557,31 @@
         "pairing": "The printer could not be linked to FilamentHub. Try again.",
         "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
         "invalid": "The printer answered unexpectedly. Check that the address in OrcaSlicer is the printer's PrusaLink.",
+        "unpaired": "The link to this card is no longer valid. Connect the printer again.",
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+      }
+    },
+    "anycubic": {
+      "title": "Anycubic through OrcaSlicer",
+      "description": "The plugin takes the printer's address from its connection settings in OrcaSlicer. Turn on LAN mode on the printer's screen first. In LAN mode the printer leaves your Anycubic cloud account, and turning the mode off does not link it back.",
+      "connect": "Connect",
+      "reconnect": "Connect again",
+      "refresh": "Refresh data",
+      "choose": "OrcaSlicer has several Anycubic printers. Choose this one:",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while it is open, the plugin follows the print and the ACE slots. Filament use is not deducted from spools yet.",
+      "localOnly": "The printer's address and its LAN mode login stay on this computer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
+      "result": {
+        "notFound": "OrcaSlicer has no Anycubic Kobra 3, S1 or X. Add the printer in OrcaSlicer, open its connection settings and enter the address.",
+        "credentials": "None of the connections in OrcaSlicer is this printer. Check the address in the connection settings and connect the printer again.",
+        "unreachable": "The printer does not answer at the address from OrcaSlicer. Check that it is on, in the same network and in LAN mode.",
+        "permission": "OrcaSlicer has not allowed the plugin to reach the printer yet. Approve the request in OrcaSlicer and try again.",
+        "lan_mode": "LAN mode is off on the printer. Turn it on in the printer's network settings and try again. In LAN mode the printer leaves your Anycubic cloud account.",
+        "refused": "The printer declined the connection. Restart the printer and try again.",
+        "unsupported": "The device at this address does not offer LAN mode as the Kobra 3, S1 and X do. Check the address and the printer's firmware.",
+        "linked": "This printer is already linked to another printer card in FilamentHub.",
+        "pairing": "The printer could not be linked to FilamentHub. Try again.",
+        "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
+        "invalid": "The printer answered unexpectedly. Check that it runs Anycubic's stock firmware.",
         "unpaired": "The link to this card is no longer valid. Connect the printer again.",
         "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
       }

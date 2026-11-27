@@ -17,6 +17,8 @@ MAX_OPTIONS_BYTES = 64 * 1024
 MAX_CONNECTIONS = 32
 CONNECTION_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 BAMBU_SERIAL = re.compile(r"[A-Za-z0-9._-]{4,64}\Z")
+# The port of an Anycubic printer's LAN-mode handshake.
+ANYCUBIC_INFO_PORT = 18910
 
 
 def _as_bool(value: Any, *, default: bool = False) -> bool:
@@ -94,6 +96,31 @@ def _socket_endpoint(value: str, adapter: str) -> str:
         )
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
     return f"{scheme}://{host}:{port or default_port}"
+
+
+def _anycubic_endpoint(value: str) -> str:
+    """An Anycubic printer is named by its address; the firmware fixes the ports."""
+    raw = value.strip()
+    try:
+        parsed = urlsplit(raw if "://" in raw else f"http://{raw}")
+        port = parsed.port
+    except ValueError as exc:
+        raise ConfigurationError("Anycubic printer address has an invalid port") from exc
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or port not in {None, ANYCUBIC_INFO_PORT}
+    ):
+        raise ConfigurationError(
+            "an Anycubic printer address is its IP address or host name, for example 192.168.1.60"
+        )
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    return f"http://{host}:{ANYCUBIC_INFO_PORT}"
 
 
 def _text(value: Any, name: str, *, maximum: int = 256) -> str:
@@ -203,12 +230,13 @@ class NodeConfig:
             adapter = _text(entry.get("adapter", "moonraker"), "adapter", maximum=50)
             flashforge = adapter == "flashforge"
             bambu = adapter == "bambu"
+            anycubic = adapter == "anycubic"
             # SDCP and Elegoo MQTT printers need no serial number: they report it.
             profile_lan = adapter in {"sdcp", "elegoo_mqtt"}
             provider = _text(
                 entry.get(
                     "material_provider",
-                    adapter if flashforge or bambu or profile_lan else "happy_hare",
+                    adapter if flashforge or bambu or profile_lan or anycubic else "happy_hare",
                 ),
                 "material provider",
                 maximum=50,
@@ -221,6 +249,8 @@ class NodeConfig:
             endpoint = (
                 _socket_endpoint(address, adapter)
                 if adapter in _SOCKET_ADAPTERS
+                else _anycubic_endpoint(address)
+                if anycubic
                 else normalize_origin(address, allow_http=True)
             )
             serial_number = _text(entry.get("serial_number", ""), "serial number", maximum=64)
@@ -262,6 +292,15 @@ class NodeConfig:
                     raise ConfigurationError("an SDCP printer has no access code")
             elif access_code:
                 raise ConfigurationError("access_code applies only to Bambu and Elegoo MQTT")
+            if anycubic:
+                if provider != "anycubic":
+                    raise ConfigurationError("an Anycubic connection reports as anycubic")
+                if (
+                    entry.get("moonraker_url")
+                    or entry.get("moonraker_api_key")
+                    or _as_bool(entry.get("auto_refresh"))
+                ):
+                    raise ConfigurationError("Moonraker options do not apply to Anycubic")
             if flashforge:
                 if provider != "flashforge" or not serial_number or not check_code:
                     raise ConfigurationError(

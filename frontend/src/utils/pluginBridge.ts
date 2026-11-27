@@ -1378,10 +1378,10 @@ export function requestCrealityObservationRefresh(
 }
 
 /** Printers the plugin finds through the connection settings of an OrcaSlicer printer profile. */
-export type ProfileLanProvider = 'sdcp' | 'elegoo_mqtt';
+export type ProfileLanProvider = 'sdcp' | 'elegoo_mqtt' | 'anycubic';
 
 /**
- * Link an SDCP printer or an Elegoo MQTT printer through the plugin. The page
+ * Link an SDCP, Elegoo MQTT or Anycubic LAN printer through the plugin. The page
  * sends FilamentHub IDs, the one-time pairing code and an optional opaque local
  * reference; the printer's address, and an access code where the printer has
  * one, are read by the plugin from its connection settings in OrcaSlicer and
@@ -1399,7 +1399,7 @@ export function configureProfileLanBridgeInPlugin(
   });
 }
 
-/** Ask the plugin to read a linked SDCP or Elegoo MQTT printer once and report it. */
+/** Ask the plugin to read a linked SDCP, Elegoo MQTT or Anycubic printer once and report it. */
 export function requestProfileLanObservationRefresh(
   provider: ProfileLanProvider,
   physicalPrinterId: number,

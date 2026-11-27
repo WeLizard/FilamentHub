@@ -19,6 +19,7 @@ const LAN_PRINTER_TEXT = {
   elegoo_mqtt: {
     add: 'presetSlots.edge.addToNodeElegooMqtt', security: 'presetSlots.edge.securityElegooMqtt',
   },
+  anycubic: { add: 'presetSlots.edge.addToNodeAnycubic', security: 'presetSlots.edge.securityAnycubic' },
 } as const;
 type LanPrinter = keyof typeof LAN_PRINTER_TEXT;
 const isLanPrinter = (provider: string): provider is LanPrinter => provider in LAN_PRINTER_TEXT;
@@ -145,6 +146,12 @@ export function EdgeConnectionSetup({
     printer_url: 'PRINTER-LAN-IP',
     serial_number: 'SERIAL-FROM-PRINTER',
     access_code: 'ACCESS-CODE-FROM-PRINTER',
+    pairing_code: pairingCode,
+  } : edgeProvider === 'anycubic' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'anycubic',
+    printer_url: 'PRINTER-LAN-IP',
     pairing_code: pairingCode,
   } : edgeProvider === 'flashforge' ? {
     id: `printer-${printer.id}`,

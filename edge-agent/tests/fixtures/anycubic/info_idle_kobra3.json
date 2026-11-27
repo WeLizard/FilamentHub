@@ -1,0 +1,25 @@
+{
+  "type": "info",
+  "action": "query",
+  "timestamp": 1764240100000,
+  "msgid": "m-info-2",
+  "state": "done",
+  "code": 200,
+  "msg": "done",
+  "data": {
+    "model": "Anycubic Kobra 3",
+    "version": "2.4.6.7",
+    "state": "free",
+    "temp": {
+      "curr_hotbed_temp": 23,
+      "curr_nozzle_temp": 24,
+      "target_hotbed_temp": 0,
+      "target_nozzle_temp": 0
+    },
+    "last_project": {
+      "progress": 100,
+      "state": "finished",
+      "filename": "cube.gcode"
+    }
+  }
+}
