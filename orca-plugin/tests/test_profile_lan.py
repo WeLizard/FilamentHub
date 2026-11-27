@@ -298,6 +298,7 @@ def test_the_single_spool_says_the_material_set_on_the_printer(plugin_module):
     assert slots == [{
         "provider_index": 255, "label": "Spool holder", "kind": "external", "present": None,
         "spool_identity_known": False, "material": "PLA", "color_hex": "FFD400",
+        "active_feed": True,
     }]
 
 
@@ -328,7 +329,8 @@ def test_connections_come_from_the_presets_a_protocol_can_reach(plugin_module, m
         lambda: SimpleNamespace(printers=printers),
     )
 
-    assert plugin_module._snapshot_profile_lan_connections() == {
+    monkeypatch.setitem(plugin_module._PROFILE_LAN_CONNECTIONS, "items", None)
+    expected = {
         "sdcp": [
             {"label": "CC 0.4", "host": "192.168.1.139", "route": "known"},
             {"label": "CC as Moonraker", "host": "192.168.1.143", "route": "probe"},
@@ -337,6 +339,9 @@ def test_connections_come_from_the_presets_a_protocol_can_reach(plugin_module, m
             {"label": "CC2 0.4", "host": "192.168.1.140", "access_code": "123456"},
         ],
     }
+    assert plugin_module._snapshot_profile_lan_connections() == expected
+    # The background watchers work from this copy, taken on the UI thread.
+    assert plugin_module._PROFILE_LAN_CONNECTIONS["items"] == expected
 
 
 def test_adding_a_printer_offers_what_answers_sdcp(setup_flow, monkeypatch):
@@ -755,6 +760,8 @@ def linked(request, plugin_module, monkeypatch, tmp_path):
         return 200, b"{}", None
 
     monkeypatch.setattr(plugin, "read_profile_lan_status", status)
+    # The watcher asks the site which spools are in the slots; nothing is assigned.
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (200, b'{"slots": []}'))
     monkeypatch.setattr(plugin, "http_post_json", pair)
     monkeypatch.setattr(plugin, "http_post_bridge_json", post)
     monkeypatch.setattr(plugin, "revoke_fresh_bridge_token", calls.revoked.append)
@@ -772,7 +779,7 @@ def test_linking_reports_the_printer_and_keeps_no_address_or_access_code(linked)
 
     assert path == "/printer-bridge/snapshot"
     assert (linked.calls.pair["provider"], linked.calls.pair["capabilities"]) == (
-        linked.provider, ["read", "presence"],
+        linked.provider, ["read", "presence", "consumption"],
     )
     assert (snapshot["provider"], snapshot["transport"]) == (linked.provider, "orca_plugin_lan")
     assert snapshot["printer"]["state"] == "printing"
@@ -783,6 +790,23 @@ def test_linking_reports_the_printer_and_keeps_no_address_or_access_code(linked)
     stored = linked.stored.read_text(encoding="utf-8")
     assert linked.calls.device_id in stored
     assert linked.connection["host"] not in stored and ACCESS_CODE not in stored
+
+
+def test_the_watcher_follows_the_print_and_offers_to_count_it(linked, monkeypatch):
+    plugin = linked.plugin
+    linked.calls.posted.clear()
+    runtime = plugin.ProfileLanWatchRuntime(linked.provider)
+    monkeypatch.setitem(plugin._PROFILE_LAN_CONNECTIONS, "items", None)
+    # Nothing copied from OrcaSlicer yet: nothing is read.
+    assert runtime.watch_once() == plugin.USAGE_WATCH_IDLE_SECONDS
+    assert linked.calls.posted == []
+
+    monkeypatch.setitem(
+        plugin._PROFILE_LAN_CONNECTIONS, "items", {linked.provider: [linked.connection]}
+    )
+    assert runtime.watch_once() == plugin.USAGE_WATCH_PRINTING_SECONDS
+    path, _token, snapshot = linked.calls.posted[-1]
+    assert path == "/printer-bridge/snapshot" and "consumption" in snapshot["capabilities"]
 
 
 def test_a_refresh_reports_the_linked_printer_again(linked):

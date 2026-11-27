@@ -270,7 +270,9 @@ def test_one_spool_is_claimed_only_where_one_feeds_for_certain(plugin_module):
     version, info = _fixture("buddy_version.json"), _fixture("buddy_info.json")
 
     slots, complete = plugin.prusalink_slots(version, info, _fixture("buddy_printer.json"))
-    assert complete is True and plugin.prusalink_capabilities(slots) == ["read", "presence"]
+    assert complete is True and plugin.prusalink_capabilities(slots) == [
+        "read", "presence", "consumption",
+    ]
     assert slots == [{
         "provider_index": 0, "label": "Spool", "kind": "external", "present": True,
         "spool_identity_known": False, "active_feed": True, "material": "PLA",
@@ -313,6 +315,8 @@ def linked(printer, monkeypatch, tmp_path):
     monkeypatch.setattr(plugin, "http_post_json", pair)
     monkeypatch.setattr(plugin, "http_post_bridge_json", post)
     monkeypatch.setattr(plugin, "revoke_fresh_bridge_token", calls.revoked.append)
+    # The watcher asks the site which spools are in the slots; nothing is assigned.
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (200, b'{"slots": []}'))
 
     result = plugin.configure_prusalink_bridge(7, 9, "FH-AAAAA-BBBBB", "", [connection])
     assert result == {"ok": True, "code": "ok"}
@@ -324,7 +328,7 @@ def linked(printer, monkeypatch, tmp_path):
 
 def test_linking_reports_the_printer_and_keeps_no_address_or_login(linked):
     assert linked.calls.pair["provider"] == "prusalink"
-    assert linked.calls.pair["capabilities"] == ["read", "presence"]
+    assert linked.calls.pair["capabilities"] == ["read", "presence", "consumption"]
     path, _token, snapshot = linked.calls.posted[0]
     assert path == "/printer-bridge/snapshot"
     assert snapshot["printer"]["state"] == "printing"

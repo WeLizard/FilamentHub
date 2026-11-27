@@ -9471,6 +9471,11 @@ _WEIGHT_VECTOR_RE = re.compile(
     rb"^\s*;\s*filament\s+(?:used|weight)\s*\[g\]\s*[:=]\s*([^\r\n;]+)",
     re.IGNORECASE | re.MULTILINE,
 )
+# The same summary line in millimetres, which a counter of length is kept in.
+_LENGTH_VECTOR_RE = re.compile(
+    rb"^\s*;\s*filament\s+used\s*\[mm\]\s*[:=]\s*([^\r\n;]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
 _LAYER_CHANGE_RE = re.compile(
     rb"^\s*;\s*(?:(?:CHANGE_LAYER|LAYER_CHANGE)\b|layer\s+num/total_layer_count\s*:)",
     re.IGNORECASE,
@@ -9489,8 +9494,8 @@ def _finite_positive(value: str) -> float | None:
     return parsed if math.isfinite(parsed) and parsed > 0 else None
 
 
-def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
-    match = _WEIGHT_VECTOR_RE.search(data)
+def _weights_from_gcode(data: bytes, pattern=_WEIGHT_VECTOR_RE) -> dict[int, float] | None:
+    match = pattern.search(data)
     if match is None:
         return None
     values: dict[int, float] = {}
@@ -9501,39 +9506,50 @@ def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
     return values or None
 
 
-def _weights_from_gcode_stream(stream) -> dict[int, float] | None:
+def _weights_from_gcode_stream(stream, pattern=_WEIGHT_VECTOR_RE) -> dict[int, float] | None:
     scanned = 0
     for line in stream:
         scanned += len(line)
-        match = _WEIGHT_VECTOR_RE.match(line)
+        match = pattern.match(line)
         if match is not None:
-            return _weights_from_gcode(line)
+            return _weights_from_gcode(line, pattern)
         if scanned >= _MAX_GCODE:
             break
     return None
 
 
-def _weights_from_gcode_path(path: str) -> dict[int, float] | None:
+def _weights_from_gcode_path(path: str, pattern=_WEIGHT_VECTOR_RE) -> dict[int, float] | None:
+    """The per-tool vector of one summary line (grams by default) of a text G-code."""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as stream:
             stream.seek(max(0, size - _MAX_METADATA))
             tail = stream.read(_MAX_METADATA)
-            weights = _weights_from_gcode(tail)
+            weights = _weights_from_gcode(tail, pattern)
             if weights is not None:
                 return weights
             stream.seek(0)
-            return _weights_from_gcode_stream(stream)
+            return _weights_from_gcode_stream(stream, pattern)
     except OSError:
         return None
 
 
-def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[int, list[float]]:
-    """Distribute declared slicer weights over layers using net E advance."""
+def _layer_weights_from_gcode_stream(
+    stream, weights: dict[int, float], switches: list | None = None
+) -> dict[int, list[float]]:
+    """Distribute declared slicer weights over layers using net E advance.
+
+    The totals may be grams or millimetres: they are only shared out. When
+    ``switches`` is a list it receives, for each layer, how many times the
+    tool changed from the start through the end of that layer.
+    """
     if not weights:
         return {}
     only_tool = next(iter(weights)) if len(weights) == 1 else None
     active_tool = only_tool
+    selected_tool = None
+    changes = 0
+    changes_by_layer: dict[int, int] = {}
     relative_extrusion = True
     absolute_e: dict[int, float] = {}
     layer_index = 0
@@ -9567,6 +9583,10 @@ def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[
         tool_match = _TOOL_COMMAND_RE.match(command)
         if tool_match is not None:
             candidate = int(tool_match.group(1))
+            if selected_tool is not None and candidate != selected_tool:
+                changes += 1
+                changes_by_layer[layer_index] = changes
+            selected_tool = candidate
             active_tool = candidate if candidate in weights else only_tool
             continue
         extrusion_match = _EXTRUSION_RE.search(command)
@@ -9598,6 +9618,11 @@ def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[
     if not per_layer:
         return {}
     layer_count = max(per_layer) + 1
+    if switches is not None:
+        running = 0
+        for layer in range(layer_count):
+            running = changes_by_layer.get(layer, running)
+            switches.append(running)
     result: dict[int, list[float]] = {}
     for logical, total_weight in weights.items():
         cumulative = 0.0
@@ -11466,6 +11491,9 @@ def resume_deferred_background_threads():
                     CREALITY_WATCH_RUNTIME.start()
                 if _load_anycubic_bindings():
                     ANYCUBIC_WATCH_RUNTIME.start()
+                for provider, runtime in PROFILE_LAN_WATCH_RUNTIMES.items():
+                    if _load_profile_lan_bindings(provider):
+                        runtime.start()
             except Exception as exc:
                 fh_log("deferred background start failed: %s" % type(exc).__name__)
 
@@ -11499,6 +11527,9 @@ def start_plugin_runtime(storage_initialized=False):
             CREALITY_WATCH_RUNTIME.start()
         if _load_anycubic_bindings():
             ANYCUBIC_WATCH_RUNTIME.start()
+        for provider, runtime in PROFILE_LAN_WATCH_RUNTIMES.items():
+            if _load_profile_lan_bindings(provider):
+                runtime.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)
@@ -11525,6 +11556,8 @@ def stop_plugin_runtime():
     MOONRAKER_WATCH_RUNTIME.stop()
     CREALITY_WATCH_RUNTIME.stop()
     ANYCUBIC_WATCH_RUNTIME.stop()
+    for runtime in PROFILE_LAN_WATCH_RUNTIMES.values():
+        runtime.stop()
     return True
 
 
@@ -12773,6 +12806,132 @@ def _wake_usage_watch(runtime):
         return True
 
 
+def _with_estimated_usage(capabilities):
+    """A printer that counts no filament is charged the slicer's estimate by the plugin."""
+    return list(capabilities) + ["consumption"]
+
+
+class _SlicerEstimateWatchRuntime(_UsageWatchRuntime):
+    """Follows printers that count no filament: a job is charged the slicer's estimate.
+
+    A subclass names the links it follows (``_bindings``), the OrcaSlicer
+    connections it works from (``_connections``, None until they are copied),
+    how one printer is read into a bridge report (``_read``) and where its
+    books are kept (``_books_config``, ``books_folder``). The figures come
+    from the plugin's own copy of the job's G-code, so only a job sliced in
+    this OrcaSlicer is charged; another one ends as not counted, with the
+    reason. A printer whose report does not offer "consumption" is only
+    reported.
+    """
+
+    books_folder = "usage"
+    job_prefix = "job"
+
+    def watch_once(self):
+        """Read every linked printer once; return the wait before the next round."""
+        bindings = self._bindings()
+        if not bindings:
+            return None
+        connections = self._connections()
+        if connections is None:
+            # Not copied from OrcaSlicer yet in this session.
+            return USAGE_WATCH_IDLE_SECONDS
+        source_instance_id = plugin_source_instance_id()
+        printing = False
+        for binding in bindings:
+            if self._stop.is_set():
+                break
+            if self._watch(binding, connections, source_instance_id):
+                printing = True
+        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+
+    def _watch(self, binding, connections, source_instance_id):
+        """Follow one printer; return whether it is in the middle of a job."""
+        key = (binding["physical_printer_id"], binding["material_system_id"])
+        now = time.monotonic()
+        if self._blocked(key, now) or not connections:
+            return False
+        path = _usage_journal(self._books_config(), self.books_folder, binding, source_instance_id)
+        observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        # Books that cannot be read stop the counting, not the reports.
+        books = self._open_books(path, observed_at)
+        snapshot, failure = self._read(binding, connections, source_instance_id)
+        if self._stop.is_set():
+            return False
+        if snapshot is None:
+            if failure == "permission":
+                self._block(key, now)
+            self._log("read", failure)
+            if books is not None:
+                self._lost_reading(books, observed_at)
+                self._settle(binding, source_instance_id, path, books)
+            return False
+        self._log("read", None)
+        printer = snapshot["printer"]
+        in_job = printer.get("state") in ("preparing", "printing", "paused")
+        if books is not None and "consumption" in snapshot["capabilities"]:
+            if not self._count(binding, books, printer, snapshot["slots"], observed_at):
+                return False
+            if not self._settle(binding, source_instance_id, path, books):
+                return in_job
+        self._report(binding, key, snapshot, now)
+        return in_job
+
+    def _job_estimate(self, books, printer):
+        """The slicer's figures for the job on the printer, kept in its books once found."""
+        job = printer.get("job_name")
+        if not job or printer.get("state") not in _SLICER_ESTIMATE_STATES or printer["state"] == "idle":
+            return None
+        kept = books.get("estimate")
+        tracker = books.get("tracker")
+        if (
+            isinstance(kept, dict)
+            and kept.get("job") == job
+            and kept.get("layers") == printer.get("total_layers")
+            and isinstance(kept.get("lengths"), list) and kept["lengths"]
+            and isinstance(kept.get("switches"), list)
+            and len(kept["switches"]) == len(kept["lengths"])
+            and isinstance(tracker, dict) and not tracker.get("terminal")
+            and tracker.get("file_name") == job
+        ):
+            # The same job goes on: its figures stay even if the copy of its
+            # G-code has made way for newer slices since.
+            return kept
+        estimate = slicer_job_estimate(job, printer.get("total_layers"))
+        if estimate is None:
+            books.pop("estimate", None)
+        else:
+            books["estimate"] = estimate
+        return estimate
+
+    def _count(self, binding, books, printer, slots, observed_at):
+        """Advance one printer's books; False when the site no longer knows the link."""
+        tracker = books.get("tracker")
+        estimate = self._job_estimate(books, printer)
+        usage, mark = slicer_estimate_usage(printer, estimate, tracker)
+        in_job = usage is not None and usage["state"] in ("printing", "paused")
+        if not (in_job or (isinstance(tracker, dict) and not tracker.get("terminal"))):
+            capture_counter_usage(books, usage, None, observed_at, job_prefix=self.job_prefix)
+            return True
+        desired, linked = self._desired(binding)
+        if not linked:
+            return False
+        if desired is None or len(books["events"]) >= USAGE_WATCH_QUEUE_LIMIT:
+            # Without the site's assignments no spool can be named.
+            capture_counter_usage(books, None, None, observed_at)
+            return True
+        if estimate is None:
+            route, issue = None, {"reason": "print_not_sliced_here"}
+        else:
+            route, issue = counter_usage_route(slots, desired)
+            if route is not None:
+                route = dict(route, feed_mark=mark)
+        books["events"].extend(capture_counter_usage(
+            books, usage, route, observed_at, issue, self.job_prefix
+        ))
+        return True
+
+
 # --------------------------------------------------------------------------- #
 # Filament usage of a Klipper printer, through Moonraker
 # --------------------------------------------------------------------------- #
@@ -13567,7 +13726,7 @@ def build_anycubic_bridge_snapshot(binding, source_instance_id, reading):
         "transport": "orca_plugin_lan",
         "source_instance_id": source_instance_id,
         "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "capabilities": list(ANYCUBIC_CAPABILITIES),
+        "capabilities": _with_estimated_usage(ANYCUBIC_CAPABILITIES),
         "printer": anycubic_printer(reading["info"]),
         "slots": slots,
         "slot_topology_complete": complete,
@@ -13667,7 +13826,7 @@ def configure_anycubic_bridge(
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": PLUGIN_VERSION,
-            "capabilities": list(ANYCUBIC_CAPABILITIES),
+            "capabilities": _with_estimated_usage(ANYCUBIC_CAPABILITIES),
         },
     )
     try:
@@ -13816,15 +13975,17 @@ def refresh_anycubic_connections():
             ANYCUBIC_WATCH_RUNTIME.start()
 
 
-class AnycubicWatchRuntime(_UsageWatchRuntime):
-    """Reports the state of every linked Anycubic printer while OrcaSlicer is open.
+class AnycubicWatchRuntime(_SlicerEstimateWatchRuntime):
+    """Follows every linked Anycubic printer while OrcaSlicer is open.
 
     The printer's own usage figure is not understood well enough to deduct
-    filament, so this watcher keeps no books: it only reports what changed.
+    filament; the slicer's estimate of the job is charged instead.
     """
 
     thread_name = "filamenthub-anycubic-watch"
     label = "Anycubic"
+    books_folder = "anycubic_usage"
+    job_prefix = "anycubic"
 
     def _provider(self, binding):
         return ANYCUBIC_PROVIDER
@@ -13832,43 +13993,21 @@ class AnycubicWatchRuntime(_UsageWatchRuntime):
     def _forget(self, binding):
         _forget_anycubic_binding(binding["physical_printer_id"], binding["bridge_token"])
 
-    def watch_once(self):
-        """Read every linked printer once; return the wait before the next round."""
-        bindings = _load_anycubic_bindings()
-        if not bindings:
-            return None
-        with _ANYCUBIC_CONNECTIONS_LOCK:
-            connections = _ANYCUBIC_CONNECTIONS["items"]
-        if connections is None:
-            # Not copied from OrcaSlicer yet in this session.
-            return USAGE_WATCH_IDLE_SECONDS
-        source_instance_id = plugin_source_instance_id()
-        printing = False
-        for binding in bindings:
-            if self._stop.is_set():
-                break
-            if self._watch(binding, connections, source_instance_id):
-                printing = True
-        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+    def _bindings(self):
+        return _load_anycubic_bindings()
 
-    def _watch(self, binding, connections, source_instance_id):
-        """Report one printer; return whether it is in the middle of a job."""
-        key = (binding["physical_printer_id"], binding["material_system_id"])
-        now = time.monotonic()
-        if self._blocked(key, now) or not connections:
-            return False
+    def _connections(self):
+        with _ANYCUBIC_CONNECTIONS_LOCK:
+            return _ANYCUBIC_CONNECTIONS["items"]
+
+    def _books_config(self):
+        return ANYCUBIC_CONFIG_FILE
+
+    def _read(self, binding, connections, source_instance_id):
         reading, failure = read_anycubic_printer(binding, connections)
-        if self._stop.is_set():
-            return False
         if reading is None:
-            if failure == "permission":
-                self._block(key, now)
-            self._log("read", failure)
-            return False
-        self._log("read", None)
-        snapshot = build_anycubic_bridge_snapshot(binding, source_instance_id, reading)
-        self._report(binding, key, snapshot, now)
-        return snapshot["printer"]["state"] in ("preparing", "printing", "paused")
+            return None, failure
+        return build_anycubic_bridge_snapshot(binding, source_instance_id, reading), None
 
 
 ANYCUBIC_WATCH_RUNTIME = AnycubicWatchRuntime()
@@ -14509,15 +14648,18 @@ def refresh_prusalink_connections():
             PRUSALINK_WATCH_RUNTIME.start()
 
 
-class PrusaLinkWatchRuntime(_UsageWatchRuntime):
-    """Reports the state of every linked Prusa printer while OrcaSlicer is open.
+class PrusaLinkWatchRuntime(_SlicerEstimateWatchRuntime):
+    """Follows every linked Prusa printer while OrcaSlicer is open.
 
-    The printer counts no filament, so there are no usage books here: only the
-    state, sent when it changes.
+    The printer counts no filament: a single-spool printer is charged the
+    slicer's estimate of the job by its progress. An MMU or an XL names no
+    feeding slot, so it is only reported.
     """
 
     thread_name = "filamenthub-prusalink-watch"
     label = "PrusaLink"
+    books_folder = "prusalink_usage"
+    job_prefix = "prusalink"
 
     def _provider(self, binding):
         return PRUSALINK_PROVIDER
@@ -14525,43 +14667,21 @@ class PrusaLinkWatchRuntime(_UsageWatchRuntime):
     def _forget(self, binding):
         _forget_prusalink_binding(binding["physical_printer_id"], binding["bridge_token"])
 
-    def watch_once(self):
-        """Read every linked printer once; return the wait before the next round."""
-        bindings = _load_prusalink_bindings()
-        if not bindings:
-            return None
-        with _PRUSALINK_CONNECTIONS_LOCK:
-            connections = _PRUSALINK_CONNECTIONS["items"]
-        if connections is None:
-            # Not copied from OrcaSlicer yet in this session.
-            return USAGE_WATCH_IDLE_SECONDS
-        source_instance_id = plugin_source_instance_id()
-        printing = False
-        for binding in bindings:
-            if self._stop.is_set():
-                break
-            if self._watch(binding, connections, source_instance_id):
-                printing = True
-        return USAGE_WATCH_PRINTING_SECONDS if printing else USAGE_WATCH_IDLE_SECONDS
+    def _bindings(self):
+        return _load_prusalink_bindings()
 
-    def _watch(self, binding, connections, source_instance_id):
-        """Read one printer; return whether it is in the middle of a job."""
-        key = (binding["physical_printer_id"], binding["material_system_id"])
-        now = time.monotonic()
-        if self._blocked(key, now) or not connections:
-            return False
+    def _connections(self):
+        with _PRUSALINK_CONNECTIONS_LOCK:
+            return _PRUSALINK_CONNECTIONS["items"]
+
+    def _books_config(self):
+        return _prusalink_config_file()
+
+    def _read(self, binding, connections, source_instance_id):
         reading, failure = read_prusalink_printer(binding, connections)
-        if self._stop.is_set():
-            return False
         if reading is None:
-            if failure == "permission":
-                self._block(key, now)
-            self._log("reading", failure)
-            return False
-        self._log("reading", None)
-        snapshot = build_prusalink_bridge_snapshot(binding, source_instance_id, reading)
-        self._report(binding, key, snapshot, now)
-        return snapshot["printer"]["state"] in ("printing", "paused")
+            return None, failure
+        return build_prusalink_bridge_snapshot(binding, source_instance_id, reading), None
 
 
 PRUSALINK_WATCH_RUNTIME = PrusaLinkWatchRuntime()
@@ -15418,6 +15538,11 @@ _PROFILE_LAN_FAILURE_ORDER = (
     "permission", "auth", "access_code", "busy", "identity", "invalid", "unreachable",
 )
 _PROFILE_LAN_CONFIG_LOCK = threading.RLock()
+# The watchers' copy of OrcaSlicer's connections, per protocol; read again
+# when a page message arrives and the copy is older than this.
+PROFILE_LAN_CONNECTIONS_MAX_AGE_SECONDS = 300.0
+_PROFILE_LAN_CONNECTIONS = {"items": None, "at": None}
+_PROFILE_LAN_CONNECTIONS_LOCK = threading.Lock()
 
 
 def _profile_lan_config_file(provider):
@@ -15429,7 +15554,9 @@ def _profile_lan_identity_kind(provider):
 
 
 def _profile_lan_capabilities(provider):
-    return list(SDCP_CAPABILITIES if provider == SDCP_PROVIDER else ELEGOO_MQTT_CAPABILITIES)
+    return _with_estimated_usage(
+        SDCP_CAPABILITIES if provider == SDCP_PROVIDER else ELEGOO_MQTT_CAPABILITIES
+    )
 
 
 def _profile_lan_device_id(provider, value):
@@ -15476,6 +15603,13 @@ def _snapshot_profile_lan_connections():
                 connections[SDCP_PROVIDER].append({"label": label, "host": host, "route": route})
     except Exception as exc:
         fh_log("local SDCP and Elegoo MQTT scan failed: %s" % type(exc).__name__)
+    else:
+        # Only a completed scan replaces what the watchers work from.
+        with _PROFILE_LAN_CONNECTIONS_LOCK:
+            _PROFILE_LAN_CONNECTIONS["items"] = {
+                provider: [dict(item) for item in items] for provider, items in connections.items()
+            }
+            _PROFILE_LAN_CONNECTIONS["at"] = time.monotonic()
     return connections
 
 
@@ -16149,6 +16283,8 @@ def handle_profile_lan_message(catalog, msg):
                 fh_log("%s setup failed: %s" % (provider, type(exc).__name__))
                 result = {"ok": False, "code": "invalid"}
             catalog._deliver(result_type, requestId=request_id, result=result)
+            if result.get("ok"):
+                _wake_usage_watch(PROFILE_LAN_WATCH_RUNTIMES[provider])
     else:
         def job():
             try:
@@ -16163,6 +16299,8 @@ def handle_profile_lan_message(catalog, msg):
             catalog._deliver(
                 result_type, requestId=request_id, result={"ok": code == "ok", "code": code}
             )
+            if code == "ok":
+                _wake_usage_watch(PROFILE_LAN_WATCH_RUNTIMES[provider])
 
     if BACKGROUND_WORKER.submit(job) is False:
         catalog._deliver(
@@ -16187,6 +16325,73 @@ def refresh_profile_lan_bindings_after_sync():
                 fh_log("%s refresh failed: %s" % (provider, type(exc).__name__))
 
     BACKGROUND_WORKER.submit(job)
+
+
+def refresh_profile_lan_connections():
+    """Keep the watchers' copy of Orca's SDCP and Elegoo MQTT connections current (UI thread)."""
+    now = time.monotonic()
+    with _PROFILE_LAN_CONNECTIONS_LOCK:
+        checked = _PROFILE_LAN_CONNECTIONS["at"]
+        if checked is not None and now - checked < PROFILE_LAN_CONNECTIONS_MAX_AGE_SECONDS:
+            return
+        # Also the time of a check that found nothing linked.
+        _PROFILE_LAN_CONNECTIONS["at"] = now
+    linked = [provider for provider in PROFILE_LAN_PROVIDERS if _load_profile_lan_bindings(provider)]
+    if not linked:
+        return
+    _snapshot_profile_lan_connections()
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            for provider in linked:
+                PROFILE_LAN_WATCH_RUNTIMES[provider].start()
+
+
+class ProfileLanWatchRuntime(_SlicerEstimateWatchRuntime):
+    """Follows every linked printer of one protocol, SDCP or Elegoo MQTT.
+
+    Neither protocol reports the filament a job uses; the slicer's estimate
+    of the job is charged while OrcaSlicer is open.
+    """
+
+    def __init__(self, provider):
+        super().__init__()
+        self.provider = provider
+        self.thread_name = "filamenthub-%s-watch" % provider.replace("_", "-")
+        self.label = "SDCP" if provider == SDCP_PROVIDER else "Elegoo MQTT"
+        self.books_folder = provider + "_usage"
+        self.job_prefix = provider
+
+    def _provider(self, binding):
+        return self.provider
+
+    def _forget(self, binding):
+        _forget_profile_lan_binding(
+            self.provider, binding["physical_printer_id"], binding["bridge_token"]
+        )
+
+    def _bindings(self):
+        return _load_profile_lan_bindings(self.provider)
+
+    def _connections(self):
+        with _PROFILE_LAN_CONNECTIONS_LOCK:
+            items = _PROFILE_LAN_CONNECTIONS["items"]
+        return None if items is None else items.get(self.provider) or []
+
+    def _books_config(self):
+        return _profile_lan_config_file(self.provider)
+
+    def _read(self, binding, connections, source_instance_id):
+        reading, failure = read_profile_lan_printer(self.provider, binding, connections)
+        if reading is None:
+            return None, failure
+        return build_profile_lan_bridge_snapshot(
+            self.provider, binding, source_instance_id, reading
+        ), None
+
+
+PROFILE_LAN_WATCH_RUNTIMES = {
+    provider: ProfileLanWatchRuntime(provider) for provider in PROFILE_LAN_PROVIDERS
+}
 
 
 class _PluginRuntimeLifecycleMixin:
@@ -16615,9 +16820,192 @@ def bambu_estimate_from_sent_print(config, report, now=None):
     return None
 
 
+# A printer that counts no filament itself (Anycubic, Elegoo, Prusa) is charged
+# the slicer's figure for the job it prints, read from the plugin's own copy of
+# that job's G-code. The figures of a few kept slices stay in memory.
+_SLICE_PROFILES = {}
+_SLICE_PROFILES_LIMIT = 8
+_SLICE_PROFILES_LOCK = threading.Lock()
+# The figures are kept in the printer's usage books; a job with more layers
+# than this is not counted rather than made to fill them.
+SLICER_ESTIMATE_MAX_LAYERS = 20000
+_SLICER_ESTIMATE_STATES = {
+    "idle": "standby", "preparing": "printing", "printing": "printing",
+    "paused": "paused", "finished": "complete", "failed": "error",
+}
+
+
+def _job_name_key(value):
+    """A job name as both a printer and OrcaSlicer may spell it."""
+    return "_".join(_print_name_stem(value).lower().split())
+
+
+def _slice_length_profile(path):
+    """Millimetres used and tool changes made through each layer of one text G-code.
+
+    Returns ``{"lengths", "switches", "total_mm"}`` or None: a binary G-code,
+    or one without OrcaSlicer's length summary, has no figures to give.
+    """
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    cache_key = (path, info.st_mtime, info.st_size)
+    with _SLICE_PROFILES_LOCK:
+        if cache_key in _SLICE_PROFILES:
+            return _SLICE_PROFILES[cache_key]
+    profile = None
+    totals = _weights_from_gcode_path(path, _LENGTH_VECTOR_RE) if 0 < info.st_size <= _MAX_GCODE else None
+    if totals:
+        switches = []
+        try:
+            with open(path, "rb") as stream:
+                curves = _layer_weights_from_gcode_stream(stream, totals, switches)
+        except OSError:
+            curves = {}
+        layers = len(switches)
+        if curves and 0 < layers <= SLICER_ESTIMATE_MAX_LAYERS:
+            lengths = [
+                round(sum(curve[layer] for curve in curves.values()), 1)
+                for layer in range(layers)
+            ]
+            profile = {
+                "lengths": lengths, "switches": switches, "total_mm": lengths[-1],
+            }
+    with _SLICE_PROFILES_LOCK:
+        _SLICE_PROFILES[cache_key] = profile
+        while len(_SLICE_PROFILES) > _SLICE_PROFILES_LIMIT:
+            _SLICE_PROFILES.pop(next(iter(_SLICE_PROFILES)))
+    return profile
+
+
+def _one_slice_profile(keys, total_layers, tolerance):
+    """The figures the slices behind ``keys`` agree on, or None."""
+    found = []
+    for key in keys:
+        entry = slice_entry_for_key(key)
+        profile = _slice_length_profile(entry["path"]) if entry else None
+        if profile is None:
+            continue
+        if total_layers and abs(len(profile["lengths"]) - total_layers) > tolerance:
+            continue
+        found.append(profile)
+    if not found:
+        return None
+    first = found[0]
+    for other in found[1:]:
+        # The same name sliced again with other settings: which one prints is unknown.
+        if len(other["lengths"]) != len(first["lengths"]) or abs(
+            other["total_mm"] - first["total_mm"]
+        ) > max(1.0, first["total_mm"] * 0.001):
+            return None
+    return first
+
+
+def slicer_job_estimate(job_name, total_layers=None, now=None):
+    """The slicer's figures for a job this OrcaSlicer sliced, from the plugin's own copy.
+
+    The job is found by the name the printer reports among the slices the
+    plugin kept. When none is named so, the slices kept just before the host
+    sent a print of that name are tried, and then the printer's layer count
+    must pick one. Slices of one name that disagree are left alone rather
+    than guessed between. Returns ``{"job", "layers", "lengths", "switches",
+    "total_mm"}`` or None.
+    """
+    wanted = _job_name_key(job_name)
+    if not wanted:
+        return None
+    with _SLICE_INDEX_LOCK:
+        index = _load_slice_index()
+    named = [
+        key for key, item in reversed(list(index.items()))
+        if isinstance(item, dict) and _job_name_key(item.get("name")) == wanted
+    ]
+    profile = None
+    for tolerance in ((0, 1) if total_layers else (0,)):
+        profile = _one_slice_profile(named, total_layers, tolerance)
+        if profile is not None:
+            break
+    if profile is None and total_layers:
+        now = time.time() if now is None else now
+        with _SENT_PRINTS_LOCK:
+            records = _load_sent_prints()
+        for record in reversed(records):
+            sent_at = record.get("at")
+            if (
+                isinstance(sent_at, (int, float))
+                and 0 <= now - sent_at <= _SENT_PRINT_MAX_AGE_S
+                and _job_name_key(record.get("name")) == wanted
+            ):
+                keys = [key for key in record.get("slice_keys") or [] if isinstance(key, str)]
+                profile = _one_slice_profile(reversed(keys), total_layers, 0)
+                break
+    if profile is None:
+        return None
+    return dict(profile, job=job_name, layers=total_layers)
+
+
+def slicer_estimate_usage(printer, estimate, tracker=None):
+    """One reading for the usage books of a printer that counts no filament.
+
+    ``printer`` is the provider-neutral state a bridge report carries and
+    ``estimate`` what :func:`slicer_job_estimate` found for its job. The
+    figure is the slicer's through the layer the printer is on, the job's
+    total by progress where no layer is reported, and all of it once the job
+    is finished. Returns ``(usage, feed_mark)``: ``feed_mark`` counts the tool
+    changes the G-code has made by then, so a stretch with a change in it is
+    charged to nobody. Without an estimate the job is still followed, with
+    nothing to charge, so that its end says why.
+    """
+    printer = printer if isinstance(printer, dict) else {}
+    state = _SLICER_ESTIMATE_STATES.get(printer.get("state"))
+    if state is None:
+        return None, None
+    if state == "standby":
+        return {"state": state, "filament_used_mm": 0.0}, None
+    job = printer.get("job_name")
+    if not job:
+        return None, None
+    usage = {"state": state, "file_name": job, "filament_used_mm": 0.0}
+    if estimate is None:
+        return usage, None
+    usage["estimate_source"] = "slicer_gcode"
+    lengths, switches = estimate["lengths"], estimate["switches"]
+    count = len(lengths)
+    layer = printer.get("current_layer")
+    total_layers = printer.get("total_layers")
+    progress = printer.get("progress_percent")
+    if state == "complete":
+        position = count - 1
+    elif type(layer) is int and layer >= 0:
+        if layer == 0:
+            return usage, 0
+        if type(total_layers) is int and total_layers > 0 and total_layers != count:
+            layer = round(layer * count / total_layers)
+        position = min(max(layer, 1), count) - 1
+    elif isinstance(progress, (int, float)) and 0 <= progress <= 100:
+        used = estimate["total_mm"] * progress / 100.0
+        usage["filament_used_mm"] = used
+        reached = next((index for index, value in enumerate(lengths) if value >= used), count - 1)
+        return usage, switches[reached]
+    elif isinstance(tracker, dict) and tracker.get("file_name") == job:
+        # A job that stopped without saying where: what was charged stands.
+        usage["filament_used_mm"] = tracker["counter_mm"]
+        route = tracker.get("route")
+        return usage, route.get("feed_mark") if isinstance(route, dict) else None
+    else:
+        return None, None
+    usage["filament_used_mm"] = float(lengths[position])
+    return usage, switches[position]
+
+
 def hurry_usage_watchers():
     """Have the running usage watchers look now instead of at their next round."""
-    for runtime in (BAMBU_BRIDGE_RUNTIME, FLASHFORGE_WATCH_RUNTIME, MOONRAKER_WATCH_RUNTIME):
+    for runtime in (
+        BAMBU_BRIDGE_RUNTIME, FLASHFORGE_WATCH_RUNTIME, MOONRAKER_WATCH_RUNTIME,
+        CREALITY_WATCH_RUNTIME, ANYCUBIC_WATCH_RUNTIME, PRUSALINK_WATCH_RUNTIME,
+        *PROFILE_LAN_WATCH_RUNTIMES.values(),
+    ):
         runtime._wake.set()
 
 
@@ -18999,6 +19387,7 @@ class FilamentHubCatalog(
         refresh_flashforge_connections()
         refresh_creality_connections()
         refresh_anycubic_connections()
+        refresh_profile_lan_connections()
         denied_before = worker_denial_count()
         try:
             self._handle_message(msg)

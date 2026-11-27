@@ -1,5 +1,6 @@
 """A Flashforge, Creality, Prusa, SDCP, Elegoo MQTT or Anycubic printer linked through the OrcaSlicer plugin."""
 
+import math
 from datetime import datetime, timezone
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_system import PhysicalPrinterConnector
 from app.models.printer_bridge_observation import MaterialSlotObservation
+from app.models.user_spool import UserSpool
 
 
 async def _system(auth_client: AsyncClient, provider: str) -> tuple[int, int]:
@@ -192,7 +194,7 @@ async def test_anycubic_ace_reports_through_the_orca_plugin_bridge(
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.3.0",
-            # The plugin only reads an Anycubic printer and counts no usage yet.
+            # The plugin charges the slicer's estimate and sets no slot.
             "capabilities": ["read", "presence", "consumption", "write", "tag_read"],
         },
     )
@@ -204,7 +206,7 @@ async def test_anycubic_ace_reports_through_the_orca_plugin_bridge(
         )
     )
     assert connector is not None and connector.provider == "anycubic"
-    assert sorted(connector.capabilities) == ["presence", "read"]
+    assert sorted(connector.capabilities) == ["consumption", "presence", "read"]
 
     snapshot = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",
@@ -262,7 +264,7 @@ async def test_prusa_printer_reports_its_state_and_one_spool_through_the_orca_pl
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.3.0",
-            # PrusaLink counts no filament and the plugin sets nothing on it.
+            # The plugin charges the slicer's estimate and sets nothing on the printer.
             "capabilities": ["read", "presence", "consumption", "write"],
         },
     )
@@ -274,7 +276,7 @@ async def test_prusa_printer_reports_its_state_and_one_spool_through_the_orca_pl
         )
     )
     assert connector is not None and connector.provider == "prusalink"
-    assert sorted(connector.capabilities) == ["presence", "read"]
+    assert sorted(connector.capabilities) == ["consumption", "presence", "read"]
 
     snapshot = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",
@@ -330,7 +332,7 @@ async def test_canvas_reports_through_the_orca_plugin_bridge(
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.3.0",
-            # The printer counts no filament used, so a claim to count it is trimmed.
+            # The plugin charges the slicer's estimate and sets no CANVAS slot.
             "capabilities": ["read", "presence", "consumption", "write"],
         },
     )
@@ -342,7 +344,7 @@ async def test_canvas_reports_through_the_orca_plugin_bridge(
         )
     )
     assert connector is not None and connector.provider == provider
-    assert sorted(connector.capabilities) == ["presence", "read"]
+    assert sorted(connector.capabilities) == ["consumption", "presence", "read"]
 
     snapshot = await auth_client.post(
         "/api/v1/printer-bridge/snapshot",
@@ -393,3 +395,76 @@ async def test_orca_bridge_pairing_stays_closed_to_providers_without_that_path(
 
     assert pairing.status_code == 409
     assert pairing.json()["detail"]["code"] == "ERR_PRINTER_BRIDGE_WRONG_PROVIDER"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["anycubic", "sdcp", "elegoo_mqtt", "prusalink"])
+async def test_a_printer_that_counts_no_filament_is_charged_the_slicer_estimate(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    provider: str,
+) -> None:
+    printer_id, system_id = await _system(auth_client, provider)
+    source_instance_id = "orca-desktop-instance-05"
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+    )
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": provider,
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.3.0",
+            "capabilities": ["read", "presence", "consumption"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    slot = printer["material_systems"][0]["slots"][0]
+    spool_id = (await auth_client.post("/api/v1/spools", json={"initial_weight_g": 1000})).json()["id"]
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot['id']}",
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool_id,
+        },
+    )
+    assert assigned.status_code == 200, assigned.text
+    route = (await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)).json()[
+        "slots"
+    ][0]
+    now = datetime.now(timezone.utc).isoformat()
+    job = {"job_id": f"{provider}:job-1", "observed_at": now, "started_at": now,
+           "file_name": "bracket.gcode"}
+    events = [
+        {**job, "contract_version": 2, "event_id": f"{provider}:job-1:1", "segment_sequence": 1,
+         "event_type": "checkpoint", "reasons": ["paused"], "items": [{
+             "slot_index": route["index"], "spool_id": spool_id, "used_length_mm": 1000,
+             "usage_route_proof": route["usage_route_proof"], "evidence": "route_proof",
+             "consumption_kind": "estimated", "estimate_source": "slicer_gcode",
+         }]},
+        # A second job sliced outside this OrcaSlicer: nothing to charge, and why.
+        {"job_id": f"{provider}:job-2", "observed_at": now, "started_at": now,
+         "contract_version": 2, "event_id": f"{provider}:job-2:1", "segment_sequence": 1,
+         "event_type": "terminal", "reasons": ["terminal"], "outcome": "completed",
+         "items": [], "skipped": [{"reason": "print_not_sliced_here"}]},
+    ]
+    accepted = await auth_client.post(
+        "/api/v1/printer-bridge/usage-batches",
+        headers=headers,
+        json={
+            "material_system_id": system_id, "provider": provider,
+            "transport": "orca_plugin_lan", "source_instance_id": source_instance_id,
+            "sequence": 1, "events": events,
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    charged = accepted.json()["events"][0]["consumed_weight_g"]
+    # One metre of 1.75 mm filament at PLA's density.
+    assert charged == pytest.approx(math.pi * (1.75 / 2) ** 2 * 1.24, rel=0.01)
+    spool = await db_session.scalar(select(UserSpool).where(UserSpool.id == spool_id))
+    assert spool.remaining_weight_g == pytest.approx(1000 - charged)

@@ -73,8 +73,8 @@ def _finite_positive(value: str) -> float | None:
     return parsed if math.isfinite(parsed) and parsed > 0 else None
 
 
-def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
-    match = _WEIGHT_VECTOR_RE.search(data)
+def _weights_from_gcode(data: bytes, pattern=_WEIGHT_VECTOR_RE) -> dict[int, float] | None:
+    match = pattern.search(data)
     if match is None:
         return None
     values: dict[int, float] = {}
@@ -85,24 +85,34 @@ def _weights_from_gcode(data: bytes) -> dict[int, float] | None:
     return values or None
 
 
-def _weights_from_gcode_stream(stream) -> dict[int, float] | None:
+def _weights_from_gcode_stream(stream, pattern=_WEIGHT_VECTOR_RE) -> dict[int, float] | None:
     scanned = 0
     for line in stream:
         scanned += len(line)
-        match = _WEIGHT_VECTOR_RE.match(line)
+        match = pattern.match(line)
         if match is not None:
-            return _weights_from_gcode(line)
+            return _weights_from_gcode(line, pattern)
         if scanned >= _MAX_GCODE:
             break
     return None
 
 
-def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[int, list[float]]:
-    """Distribute declared slicer weights over layers using net E advance."""
+def _layer_weights_from_gcode_stream(
+    stream, weights: dict[int, float], switches: list | None = None
+) -> dict[int, list[float]]:
+    """Distribute declared slicer weights over layers using net E advance.
+
+    The totals may be grams or millimetres: they are only shared out. When
+    ``switches`` is a list it receives, for each layer, how many times the
+    tool changed from the start through the end of that layer.
+    """
     if not weights:
         return {}
     only_tool = next(iter(weights)) if len(weights) == 1 else None
     active_tool = only_tool
+    selected_tool = None
+    changes = 0
+    changes_by_layer: dict[int, int] = {}
     relative_extrusion = True
     absolute_e: dict[int, float] = {}
     layer_index = 0
@@ -136,6 +146,10 @@ def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[
         tool_match = _TOOL_COMMAND_RE.match(command)
         if tool_match is not None:
             candidate = int(tool_match.group(1))
+            if selected_tool is not None and candidate != selected_tool:
+                changes += 1
+                changes_by_layer[layer_index] = changes
+            selected_tool = candidate
             active_tool = candidate if candidate in weights else only_tool
             continue
         extrusion_match = _EXTRUSION_RE.search(command)
@@ -167,6 +181,11 @@ def _layer_weights_from_gcode_stream(stream, weights: dict[int, float]) -> dict[
     if not per_layer:
         return {}
     layer_count = max(per_layer) + 1
+    if switches is not None:
+        running = 0
+        for layer in range(layer_count):
+            running = changes_by_layer.get(layer, running)
+            switches.append(running)
     result: dict[int, list[float]] = {}
     for logical, total_weight in weights.items():
         cumulative = 0.0

@@ -173,13 +173,13 @@
       "creality": "Creality (K1, K2, Ender-3 V3)",
       "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open.",
       "prusalink": "Prusa (PrusaLink)",
-      "prusalinkHint": "Prusa MK4/MK4S, MK3.5/3.9, XL, CORE One and MINI, and the MK3S with Prusa-Link, through the OrcaSlicer plugin. Shows the print state and, on a single-nozzle printer without an MMU, the material loaded. The printer does not report MMU3 slots, XL tools or the filament used.",
+      "prusalinkHint": "Prusa MK4/MK4S, MK3.5/3.9, XL, CORE One and MINI, and the MK3S with Prusa-Link, through the OrcaSlicer plugin. Shows the print state and, on a single-nozzle printer without an MMU, the material loaded. The printer does not report MMU3 slots or XL tools. On a single-spool printer, a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer and saved as plain, not binary, G-code.",
       "anycubic": "Anycubic (Kobra 3, S1, X)",
-      "anycubicHint": "Anycubic Kobra 3, S1 and X on stock firmware in LAN mode, through the OrcaSlicer plugin or FH Edge. Shows the print state and the ACE slots: material, colour and what is left, as the printer sees them. Filament use is not deducted yet.",
+      "anycubicHint": "Anycubic Kobra 3, S1 and X on stock firmware in LAN mode, through the OrcaSlicer plugin or FH Edge. Shows the print state and the ACE slots: material, colour and what is left, as the printer sees them. Through the plugin, filament use is deducted by the slicer's estimate for prints sliced in this OrcaSlicer.",
       "sdcp": "SDCP (Elegoo Centauri Carbon)",
-      "sdcpHint": "Printers on the open SDCP protocol, such as the Elegoo Centauri Carbon, through the OrcaSlicer plugin or FH Edge. Shows the print state and, with CANVAS on recent firmware, its slots with material and colour as the printer sees them. These printers count no filament used, so a print is not deducted from a spool automatically.",
+      "sdcpHint": "Printers on the open SDCP protocol, such as the Elegoo Centauri Carbon, through the OrcaSlicer plugin or FH Edge. Shows the print state and, with CANVAS on recent firmware, its slots with material and colour as the printer sees them. The printers count no filament used; through the plugin, a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer.",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
-      "elegooMqttHint": "Elegoo Centauri Carbon 2 through the OrcaSlicer plugin or FH Edge. Shows the print state and the CANVAS slots with material and colour, as the printer sees them. The printer counts no filament used, so a print is not deducted from a spool automatically."
+      "elegooMqttHint": "Elegoo Centauri Carbon 2 through the OrcaSlicer plugin or FH Edge. Shows the print state and the CANVAS slots with material and colour, as the printer sees them. The printer counts no filament used; through the plugin, a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer."
     },
     "feed": {
       "hidesWhenEmpty": "Hides once it is empty",
@@ -9030,6 +9030,7 @@
         "no_spool_assigned": "No spool is assigned to any printer slot. Assign a spool to a slot and the next print will be deducted.",
         "slot_without_spool": "The print used slot {{slot}}, which has no spool assigned.",
         "print_file_unavailable": "The print file could not be read from the printer, so the weight is unknown.",
+        "print_not_sliced_here": "The printer counts no filament, and the plugin found no G-code for this print among those sliced in OrcaSlicer on this computer, so the weight is unknown. To have such prints deducted, choose FilamentHub in the “Slicing Pipeline Plugin” field of the OrcaSlicer print settings and send prints to the printer from OrcaSlicer.",
         "print_file_access_denied": "The print file on the printer is not accessible. Allow the plugin to access the printer in OrcaSlicer.",
         "slot_mapping_missing": "The printer did not report which slots the print used.",
         "tag_mismatch": "Slot {{slot}} holds a different spool from the one assigned in FilamentHub.",
@@ -9541,7 +9542,7 @@
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several Prusa printers. Choose this one:",
-      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while it is open, the plugin reports the print state. The printer does not report the filament used, so prints are not deducted.",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: from then on, while OrcaSlicer is open, the plugin follows the print. On a single-spool printer, a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer and saved as plain, not binary, G-code.",
       "localOnly": "The address, API key and password stay in OrcaSlicer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
       "result": {
         "notFound": "OrcaSlicer has no PrusaLink printer. Open the printer's connection settings in OrcaSlicer, choose the PrusaLink host type and enter the address. A PrusaConnect connection goes through Prusa's cloud and cannot be read: add a PrusaLink connection with the printer's address in your network.",
@@ -9568,7 +9569,7 @@
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several Anycubic printers. Choose this one:",
-      "onDemand": "Open the FilamentHub tab in OrcaSlicer: while it is open, the plugin follows the print and the ACE slots. Filament use is not deducted from spools yet.",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: from then on, while OrcaSlicer is open, the plugin follows the print and the ACE slots and deducts filament use by the slicer's estimate. Prints sliced in this OrcaSlicer are deducted.",
       "localOnly": "The printer's address and its LAN mode login stay on this computer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
       "result": {
         "notFound": "OrcaSlicer has no Anycubic Kobra 3, S1 or X. Add the printer in OrcaSlicer, open its connection settings and enter the address.",
@@ -9593,7 +9594,7 @@
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several SDCP printers. Choose this one:",
-      "onDemand": "Open the FilamentHub tab in OrcaSlicer to refresh the print state and slots. The printer does not count used filament, so a print is not deducted from a spool automatically.",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: from then on, while OrcaSlicer is open, the plugin follows the print and the slots. The printer does not count used filament, so a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer.",
       "localOnly": "The printer's address stays in OrcaSlicer and is never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
       "result": {
         "notFound": "OrcaSlicer has no SDCP printer. Open the printer's connection settings in OrcaSlicer, choose the ElegooLink host type and enter the address.",
@@ -9616,7 +9617,7 @@
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several Centauri Carbon 2 printers. Choose this one:",
-      "onDemand": "Open the FilamentHub tab in OrcaSlicer to refresh the print state and slots. The printer does not count used filament, so a print is not deducted from a spool automatically.",
+      "onDemand": "Open the FilamentHub tab in OrcaSlicer: from then on, while OrcaSlicer is open, the plugin follows the print and the slots. The printer does not count used filament, so a print is deducted by the slicer's estimate if it was sliced in this OrcaSlicer.",
       "localOnly": "The printer's address and access code stay in OrcaSlicer and are never sent to FilamentHub. The plugin only reads the printer and sends it no commands.",
       "result": {
         "notFound": "OrcaSlicer has no Centauri Carbon 2. Open the printer's connection settings in OrcaSlicer, choose the ElegooLink host type and enter the address.",

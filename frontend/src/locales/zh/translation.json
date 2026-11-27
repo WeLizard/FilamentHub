@@ -173,13 +173,13 @@
       "creality": "Creality（K1、K2、Ender-3 V3）",
       "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。",
       "prusalink": "Prusa（PrusaLink）",
-      "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。",
+      "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽和 XL 工具头。对于单料卷打印机，在此 OrcaSlicer 中切片并保存为普通（非二进制）G 代码的打印会按切片软件的估算扣减。",
       "anycubic": "Anycubic（Kobra 3、S1、X）",
-      "anycubicHint": "通过 OrcaSlicer 插件或 FH Edge，以局域网模式连接使用原厂固件的 Anycubic Kobra 3、S1 和 X。显示打印状态和 ACE 料槽：打印机所见的材料、颜色和剩余量。暂不扣减用量。",
+      "anycubicHint": "通过 OrcaSlicer 插件或 FH Edge，以局域网模式连接使用原厂固件的 Anycubic Kobra 3、S1 和 X。显示打印状态和 ACE 料槽：打印机所见的材料、颜色和剩余量。通过插件，在此 OrcaSlicer 中切片的打印会按切片软件的估算扣减用量。",
       "sdcp": "SDCP（Elegoo Centauri Carbon）",
-      "sdcpHint": "通过 OrcaSlicer 插件或 FH Edge 连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机不统计耗材用量，因此打印不会自动从料卷扣减。",
+      "sdcpHint": "通过 OrcaSlicer 插件或 FH Edge 连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机本身不统计耗材用量；通过插件，在此 OrcaSlicer 中切片的打印会按切片软件的估算扣减。",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
-      "elegooMqttHint": "通过 OrcaSlicer 插件或 FH Edge 连接 Elegoo Centauri Carbon 2。显示打印状态，以及打印机所见的 CANVAS 料槽材料和颜色。打印机不统计耗材用量，因此打印不会自动从料卷扣减。"
+      "elegooMqttHint": "通过 OrcaSlicer 插件或 FH Edge 连接 Elegoo Centauri Carbon 2。显示打印状态，以及打印机所见的 CANVAS 料槽材料和颜色。打印机本身不统计耗材用量；通过插件，在此 OrcaSlicer 中切片的打印会按切片软件的估算扣减。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -9011,6 +9011,7 @@
         "no_spool_assigned": "打印机的任何槽位都未绑定料卷。请为槽位绑定料卷，下次打印即可扣除。",
         "slot_without_spool": "打印使用了槽位 {{slot}}，但该槽位未绑定料卷。",
         "print_file_unavailable": "无法从打印机读取打印文件，因此重量未知。",
+        "print_not_sliced_here": "打印机不统计耗材用量，且插件在本机 OrcaSlicer 切片的文件中未找到此打印的 G 代码，因此重量未知。要扣减此类打印，请在 OrcaSlicer 打印设置的“Slicing Pipeline Plugin”字段中选择 FilamentHub，并从 OrcaSlicer 向打印机发送打印。",
         "print_file_access_denied": "无法访问打印机上的打印文件。请在 OrcaSlicer 中允许插件访问打印机。",
         "slot_mapping_missing": "打印机未上报打印使用了哪些槽位。",
         "tag_mismatch": "槽位 {{slot}} 中的料卷与 FilamentHub 中绑定的不一致。",
@@ -9519,7 +9520,7 @@
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台 Prusa 打印机。请选择这一台：",
-      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：打开期间，插件会报告打印状态。打印机不报告耗材用量，因此打印不会被扣减。",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：此后只要 OrcaSlicer 保持打开，插件就会跟踪打印。对于单料卷打印机，在此 OrcaSlicer 中切片并保存为普通（非二进制）G 代码的打印会按切片软件的估算扣减。",
       "localOnly": "地址、API 密钥和密码保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
       "result": {
         "notFound": "OrcaSlicer 中没有 PrusaLink 打印机。请在 OrcaSlicer 中打开打印机的连接设置，选择 PrusaLink 主机类型并填写地址。PrusaConnect 连接经由 Prusa 云端，无法读取：请添加使用打印机局域网地址的 PrusaLink 连接。",
@@ -9546,7 +9547,7 @@
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台 Anycubic 打印机，请选择这一台：",
-      "onDemand": "请在 OrcaSlicer 中打开 FilamentHub 标签页：标签页打开期间，插件会跟踪打印和 ACE 料槽。暂不从料卷扣减用量。",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：此后只要 OrcaSlicer 保持打开，插件就会跟踪打印和 ACE 料槽，并按切片软件的估算扣减用量。在此 OrcaSlicer 中切片的打印会被扣减。",
       "localOnly": "打印机地址及其局域网模式登录信息保留在这台电脑上，不会发送到 FilamentHub。插件只读取打印机，不向它发送任何指令。",
       "result": {
         "notFound": "OrcaSlicer 中没有 Anycubic Kobra 3、S1 或 X。请在 OrcaSlicer 中添加打印机，打开其连接设置并填写地址。",
@@ -9571,7 +9572,7 @@
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台 SDCP 打印机。请选择这一台：",
-      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页即可刷新打印状态和料槽。打印机不统计已用耗材，因此打印不会自动从料卷扣减。",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：此后只要 OrcaSlicer 保持打开，插件就会跟踪打印和料槽。打印机不统计已用耗材，因此在此 OrcaSlicer 中切片的打印会按切片软件的估算扣减。",
       "localOnly": "打印机地址保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
       "result": {
         "notFound": "OrcaSlicer 中没有 SDCP 打印机。请在 OrcaSlicer 中打开打印机的连接设置，选择 ElegooLink 主机类型并输入地址。",
@@ -9594,7 +9595,7 @@
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台 Centauri Carbon 2。请选择这一台：",
-      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页即可刷新打印状态和料槽。打印机不统计已用耗材，因此打印不会自动从料卷扣减。",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页：此后只要 OrcaSlicer 保持打开，插件就会跟踪打印和料槽。打印机不统计已用耗材，因此在此 OrcaSlicer 中切片的打印会按切片软件的估算扣减。",
       "localOnly": "打印机地址和访问码保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
       "result": {
         "notFound": "OrcaSlicer 中没有 Centauri Carbon 2。请在 OrcaSlicer 中打开打印机的连接设置，选择 ElegooLink 主机类型并输入地址。",

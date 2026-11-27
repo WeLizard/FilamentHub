@@ -490,6 +490,8 @@ def linked(plugin_module, monkeypatch, tmp_path):
         return 200, b"{}", None
 
     monkeypatch.setattr(plugin, "read_anycubic_status", status)
+    # The watcher asks the site which spools are in the slots; nothing is assigned.
+    monkeypatch.setattr(plugin, "http_get_bridge_json", lambda *_args: (200, b'{"slots": []}'))
     monkeypatch.setattr(plugin, "http_post_json", pair)
     monkeypatch.setattr(plugin, "http_post_bridge_json", post)
     monkeypatch.setattr(plugin, "revoke_fresh_bridge_token", calls.revoked.append)
@@ -506,7 +508,7 @@ def linked(plugin_module, monkeypatch, tmp_path):
 
 def test_linking_reports_the_printer_and_keeps_no_address_or_login(linked):
     assert linked.calls.pair["provider"] == "anycubic"
-    assert linked.calls.pair["capabilities"] == ["read", "presence"]
+    assert linked.calls.pair["capabilities"] == ["read", "presence", "consumption"]
     assert linked.first["provider"] == "anycubic"
     assert linked.first["transport"] == "orca_plugin_lan"
     assert linked.first["printer"]["state"] == "printing"

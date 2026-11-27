@@ -258,20 +258,22 @@ OrcaSlicer connection, and the account-scoped identity evidence.
   told apart from another printer and is not linked; the person is asked to
   update. An OctoPrint answering at the address is sent to the OctoPrint
   plugin. The printer's serial number is its identity (`prusalink_serial`).
-- The connector claims `read`, and `presence` when a slot is shown. Only a
-  Buddy printer with one nozzle and no MMU reports its loaded material (from
-  `/api/printer`), so only it gets one slot. The local API reports no MMU3
-  slots, no XL tool materials and no filament used, so such printers send the
-  state alone, prints are not deducted, and nothing is ever written to the
-  printer.
+- The connector claims `read`, and `presence` and `consumption` when a slot
+  is shown. Only a Buddy printer with one nozzle and no MMU reports its loaded
+  material (from `/api/printer`), so only it gets one slot, and only it is
+  charged the slicer's estimate (see below) by the job's progress: the API
+  reports no layer. It reports no MMU3 slots, no XL tool materials and no
+  filament used, so an MMU or an XL sends the state alone and is not
+  deducted. Nothing is ever written to the printer. A job sent as binary
+  G-code (`.bgcode`) has no figures the plugin can read.
 - PrusaConnect is Prusa's cloud. The plugin does not read it: that would mean
   acting as a cloud client. The page asks for a PrusaLink connection with the
   printer's local address instead.
 - The request goes only to a private or link-local address, resolved once,
   over plain HTTP as the firmware offers it. While OrcaSlicer is open, one
-  watcher thread follows every linked printer and reports the state when it
-  changes, from the copy of the connection settings taken the last time the
-  FilamentHub tab was used in this session.
+  watcher thread follows every linked printer, reports the state when it
+  changes and keeps its usage books, from the copy of the connection settings
+  taken the last time the FilamentHub tab was used in this session.
 - The page sends `configure-prusalink` / `prusalink-refresh` and receives a
   result code. Built from the firmware sources; not yet confirmed on a printer.
 
@@ -292,9 +294,12 @@ their own LAN protocol, not Moonraker. The plugin finds such a printer by the
   certificate, so it is not verified; the connection goes only to the address
   the handshake used.
 - Slots are numbered unit * 4 + slot for the ACE units and 255 for the spool
-  holder. The connector claims `read` and `presence`. The job's
-  `supplies_usage` figure is not understood well enough to deduct filament,
-  so the watcher only reports what changed.
+  holder. The connector claims `read`, `presence` and `consumption`. The
+  job's `supplies_usage` figure is not understood well enough to deduct
+  filament, so the watcher charges the slicer's estimate (see below) by the
+  layer the printer reports, to the ACE slot it names as loaded. The spool
+  holder is the feeding slot only when the printer answers that it has no
+  ACE.
 - The private `.fh_anycubic.json` holds only the FilamentHub bridge token, the
   printer's serial number and the account-scoped identity evidence. The LAN
   login is asked for again on every read and never written to disk.
@@ -337,9 +342,38 @@ what no source confirms is marked there.
   A different printer answering at the saved address is not reported. The
   private `.fh_sdcp.json` and `.fh_elegoo_mqtt.json` keep the pairing and that
   identity, never the address or access code.
-- Neither counts used filament, so there is no usage watcher. The page sends
+- Neither counts used filament. While OrcaSlicer is open one watcher thread
+  per protocol follows the linked printers and charges the slicer's estimate
+  (see below) by the layer the printer reports: to the CANVAS slot that is
+  loaded, or to the spool holder of a printer without CANVAS. The page sends
   `configure-sdcp` / `sdcp-refresh` or `configure-elegoo_mqtt` /
   `elegoo_mqtt-refresh` and receives a result code.
+
+### The slicer's estimate for printers that count no filament
+
+Anycubic, SDCP, Elegoo MQTT and single-spool Prusa printers report a job's
+name, layer or progress, never the filament it used. Their watchers charge
+OrcaSlicer's own figure for the job instead, marked as an estimate
+(`estimate_source` `slicer_gcode`):
+
+- The job is found by the name the printer reports among the slices the
+  plugin kept (`.fh_slices.json`, the newest few copies in `slices/`). A
+  printer's spelling is matched with spaces as underscores and without
+  `.gcode` / `.gcode.3mf`. When the printer reports a layer count, a slice
+  with another count is another job; slices of one name that disagree are not
+  guessed between. The slices noted when the host last sent a print of that
+  name are tried next, and then the layer count must pick one.
+- A slice is kept only when the process preset runs the FilamentHub slicing
+  step ("Slicing Pipeline Plugin"). A job sliced elsewhere, or without that
+  step, ends as not counted with the reason `print_not_sliced_here`.
+- From the G-code's `; filament used [mm]` line and its extrusion moves the
+  plugin knows the millimetres used and the tool changes made through each
+  layer. A reading is charged the figure through the layer the printer is on,
+  or the job's total by progress where no layer is reported, and all of it
+  when the job finishes. A stretch with a tool change in it is charged to
+  nobody, as for Klipper. The figures are kept in the printer's usage books
+  once found, so a copy pushed out by newer slices mid-print does not stop the
+  count.
 
 ### Adapter modules
 

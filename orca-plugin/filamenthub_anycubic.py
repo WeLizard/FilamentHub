@@ -592,6 +592,10 @@ def anycubic_slots(boxes, holder=None):
             present is not False,
         )
         slot["present"] = present
+        if isinstance(units, list) and not units:
+            # The printer says it has no ACE: the holder is the only way
+            # filament reaches the head. No answer about ACE proves nothing.
+            slot["active_feed"] = True
         slots.append(slot)
     slots.sort(key=lambda slot: slot["provider_index"])
     return slots, complete and bool(slots)

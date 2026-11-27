@@ -336,5 +336,9 @@ def prusalink_slots(version, info, legacy_printer):
 
 
 def prusalink_capabilities(slots):
-    """What this printer's connection can do; presence only where a spool is shown."""
-    return list(PRUSALINK_CAPABILITIES) if slots else ["read"]
+    """What this printer's connection can do; presence only where a spool is shown.
+
+    The plugin charges a single-spool printer the slicer's estimate of a job;
+    an MMU or an XL names no feeding slot, so nothing is charged there.
+    """
+    return list(PRUSALINK_CAPABILITIES) + ["consumption"] if slots else ["read"]

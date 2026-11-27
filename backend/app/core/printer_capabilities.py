@@ -74,21 +74,24 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # Creality's stock firmware reports its CFS slots and the length of filament
     # a job has used, and takes no spool identity. The plugin only reads it.
     ("creality", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
+    # The printers below count no filament a job uses. While OrcaSlicer is open
+    # the plugin charges a job the slicer's estimate, taken from its own copy of
+    # the job's G-code; a job sliced elsewhere is reported as not counted.
     # PrusaLink, the local HTTP API of Buddy firmware and of Prusa-Link, gives the
     # printer's state and, on a single-nozzle printer without an MMU, the material
-    # loaded. It names no MMU slot or XL tool and counts no filament. The plugin
-    # only reads it.
-    ("prusalink", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    # loaded. It names no MMU slot or XL tool; such a printer reports neither
+    # presence nor consumption.
+    ("prusalink", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     # SDCP (Chitu's open protocol; the Elegoo Centauri Carbon speaks it) and
     # Elegoo's MQTT API (the Centauri Carbon 2) report the print and the CANVAS
-    # slots, and count no filament a job uses. The plugin and Edge only read them.
-    ("sdcp", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    # slots. Edge only reads them.
+    ("sdcp", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     ("sdcp", "edge_agent"): frozenset({"read", "presence"}),
-    ("elegoo_mqtt", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    ("elegoo_mqtt", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     ("elegoo_mqtt", "edge_agent"): frozenset({"read", "presence"}),
     # Anycubic's LAN mode reports the job and the ACE slots over the printer's
-    # own MQTT broker. The plugin only reads it and claims no usage yet.
-    ("anycubic", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    # own MQTT broker.
+    ("anycubic", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
     # Edge reads the same LAN mode with a copy of the plugin's protocol code.
     ("anycubic", "edge_agent"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
@@ -158,13 +161,14 @@ _KLIPPER_NAMES_NO_SPOOL = (
     "Klipper names no spool; the assignment made on the site is the only link.",
 )
 _KLIPPER_NO_READER = ("device", "A Klipper printer without an MMU has no tag reader.")
+# Edge has no copy of the job's G-code to take the slicer's estimate from.
+_EDGE_NO_ESTIMATE = (
+    "planned",
+    "The printer reports no filament used. The plugin charges the slicer's estimate from "
+    "its own copy of the job's G-code; Edge has no such copy yet.",
+)
 # What SDCP and Elegoo's MQTT API lack alike: both carry the same CANVAS slots.
-_CANVAS_READ_ONLY: dict[str, tuple[GapKind, str]] = {
-    "consumption": (
-        "planned",
-        "The printer reports no filament used; counting the slicer's estimate by "
-        "progress, as for Flashforge, is not built yet.",
-    ),
+_CANVAS_GAPS: dict[str, tuple[GapKind, str]] = {
     "write": (
         "planned",
         "The plugin and Edge only read; setting a CANVAS slot's material is not built yet.",
@@ -178,14 +182,10 @@ _CANVAS_READ_ONLY: dict[str, tuple[GapKind, str]] = {
         "FilamentHub reads no spool tag from these printers yet.",
     ),
 }
+_CANVAS_EDGE_GAPS = {**_CANVAS_GAPS, "consumption": _EDGE_NO_ESTIMATE}
 
 # Anycubic's LAN mode lacks the same needs whether the plugin or Edge reads it.
 _ANYCUBIC_LAN_GAPS: dict[str, tuple[GapKind, str]] = {
-    "consumption": (
-        "planned",
-        "The printer reports a job's filament use, but its unit is not confirmed; neither "
-        "the plugin nor Edge counts it yet.",
-    ),
     "write": (
         "planned",
         "Whether the printer takes a slot's material over LAN mode is not confirmed; the "
@@ -199,6 +199,14 @@ _ANYCUBIC_LAN_GAPS: dict[str, tuple[GapKind, str]] = {
         "planned",
         "An ACE reports the product code of an Anycubic spool it recognised; FilamentHub "
         "does not match that to a spool yet.",
+    ),
+}
+_ANYCUBIC_EDGE_GAPS = {
+    **_ANYCUBIC_LAN_GAPS,
+    "consumption": (
+        "planned",
+        "The printer reports a job's filament use, but its unit is not confirmed, and Edge "
+        "has no copy of the job's G-code for the slicer's estimate the plugin charges.",
     ),
 }
 ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] = {
@@ -259,19 +267,14 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
             "device",
             "The printer knows at most the material type loaded, never which spool.",
         ),
-        "consumption": (
-            "planned",
-            "The printer reports no filament length. The slicer's estimate scaled by the "
-            "job's progress could be counted, as for Flashforge; it is not built.",
-        ),
         "tag_read": ("device", "The local API reports no spool tag."),
     },
-    ("sdcp", "orca_plugin_lan"): _CANVAS_READ_ONLY,
-    ("sdcp", "edge_agent"): _CANVAS_READ_ONLY,
-    ("elegoo_mqtt", "orca_plugin_lan"): _CANVAS_READ_ONLY,
-    ("elegoo_mqtt", "edge_agent"): _CANVAS_READ_ONLY,
+    ("sdcp", "orca_plugin_lan"): _CANVAS_GAPS,
+    ("sdcp", "edge_agent"): _CANVAS_EDGE_GAPS,
+    ("elegoo_mqtt", "orca_plugin_lan"): _CANVAS_GAPS,
+    ("elegoo_mqtt", "edge_agent"): _CANVAS_EDGE_GAPS,
     ("anycubic", "orca_plugin_lan"): _ANYCUBIC_LAN_GAPS,
-    ("anycubic", "edge_agent"): _ANYCUBIC_LAN_GAPS,
+    ("anycubic", "edge_agent"): _ANYCUBIC_EDGE_GAPS,
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
 }

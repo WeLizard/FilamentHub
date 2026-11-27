@@ -142,8 +142,13 @@ def canvas_slots(canvas_info):
 
 
 def canvas_single_spool(mono_info):
-    """The printer's own spool holder, with the material set on the printer if known."""
-    return _canvas_slot(
+    """The printer's own spool holder, with the material set on the printer if known.
+
+    It is the only feed a printer without CANVAS has.
+    """
+    slot = _canvas_slot(
         mono_info if isinstance(mono_info, dict) else None,
         CANVAS_EXTERNAL_INDEX, "Spool holder", "external", False,
     )
+    slot["active_feed"] = True
+    return slot

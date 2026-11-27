@@ -165,14 +165,19 @@ def canvas_slots(canvas_info: Any) -> tuple[list[dict[str, Any]], bool]:
 
 
 def single_spool(mono_info: Any) -> dict[str, Any]:
-    """The printer's own spool holder, with the material set on the printer if known."""
-    return _slot(
+    """The printer's own spool holder, with the material set on the printer if known.
+
+    It is the only feed a printer without CANVAS has.
+    """
+    slot = _slot(
         mono_info if isinstance(mono_info, dict) else None,
         SPOOL_HOLDER_INDEX,
         "Spool holder",
         "external",
         False,
     )
+    slot["active_feed"] = True
+    return slot
 
 
 def feed(
