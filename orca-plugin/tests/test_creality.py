@@ -121,6 +121,52 @@ def test_mac_address_and_host_are_read_strictly(plugin_module):
     assert plugin_module.creality_host("192.168.1.50/secret?x=1") == ""
 
 
+@pytest.mark.parametrize(("host_type", "agent", "model", "route"), [
+    ("crealityprint", "crealityprint", "Creality K2 Plus", "known"),
+    # OrcaSlicer 2.5 profiles: type Octo/Klipper, agent CrealityPrint.
+    ("octoprint", "crealityprint", "Creality K1C", "known"),
+    # Saved before OrcaSlicer knew CrealityPrint: the default type, no agent.
+    ("octoprint", "", "Creality K1C", "probe"),
+    ("moonraker", "", "Creality K1 Max_CFS-C", "probe"),
+    ("octoprint", "", "Creality SPARKX i7", "probe"),
+    # OrcaSlicer does not reach these models through CrealityPrint.
+    ("octoprint", "", "Creality Ender-3 V3 KE", ""),
+    ("octoprint", "", "Creality Hi", ""),
+    ("prusalink", "", "Creality K1C", ""),
+])
+def test_a_profile_says_how_a_creality_printer_is_reached(plugin_module, host_type, agent, model, route):
+    assert plugin_module.creality_profile_route(host_type, agent, model) == route
+
+
+def test_a_creality_profile_of_another_type_is_offered_only_when_the_printer_answers(
+    plugin_module, monkeypatch,
+):
+    answers = {"192.168.1.60": ({"mac": "fc:ee:28:a1:f6:be"}, None),
+               "192.168.1.61": (None, "unreachable"),
+               # A rooted K1 serving something else at /info is not a stock Creality.
+               "192.168.1.62": ({"result": {}}, None)}
+    asked = []
+
+    def read_info(connection):
+        asked.append(connection["host"])
+        return answers[connection["host"]]
+
+    monkeypatch.setattr(plugin_module, "read_creality_info", read_info)
+    candidates = plugin_module.creality_setup_candidates([
+        {"label": "K2 Plus", "host": "192.168.1.50", "route": "known"},
+        {"label": "K1C old profile", "host": "192.168.1.60", "route": "probe"},
+        {"label": "K1 off", "host": "192.168.1.61", "route": "probe"},
+        {"label": "K1 rooted", "host": "192.168.1.62", "route": "probe"},
+        # Two nozzle presets of one printer; one of them names it Creality.
+        {"label": "K1 0.6", "host": "192.168.1.63", "route": "probe"},
+        {"label": "K1 0.4", "host": "192.168.1.63", "route": "known"},
+    ])
+    assert [item["label"] for item in candidates] == ["K2 Plus", "K1C old profile", "K1 0.6"]
+    assert {item["provider"] for item in candidates} == {"creality"}
+    # A printer known from its profile is not asked; only the uncertain ones are.
+    assert asked == ["192.168.1.60", "192.168.1.61", "192.168.1.62"]
+
+
 def _server_frame(payload, opcode=1):
     data = payload.encode("utf-8") if isinstance(payload, str) else payload
     if len(data) < 126:

@@ -169,7 +169,10 @@ def test_klipper_profile_scan_takes_only_types_that_hide_moonraker(plugin_module
         # Its own SDCP search asks a Centauri; it runs no Moonraker.
         ("Centauri Carbon", "192.168.1.75", "elegoolink", "", "Elegoo Centauri Carbon"),
         ("Qidi X-Plus 5", "192.168.1.72", "octoprint", "qidi"),  # already a Moonraker connection
-        ("Creality K1C", "192.168.1.73", "octoprint", "crealityprint"),  # Creality adapter
+        # Also a Creality adapter candidate; a rooted K1 runs Moonraker, so the answer decides.
+        ("Creality K1C", "192.168.1.73", "octoprint", "crealityprint"),
+        # Saved by an OrcaSlicer that had no CrealityPrint type: default type, no agent.
+        ("Old K1", "192.168.1.76:7125", "octoprint", "", "Creality K1"),
         ("Prusa MK4", "192.168.1.74", "prusalink", ""),
         ("No address", "", "octoprint", ""),
     ]
@@ -197,7 +200,11 @@ def test_klipper_profile_scan_takes_only_types_that_hide_moonraker(plugin_module
                         lambda: type("Bundle", (), {"printers": collection})(), raising=False)
 
     assert [item["label"] for item in plugin_module._snapshot_klipper_profile_hosts()] == [
-        "Generic Klipper", "Neptune 4",
+        "Generic Klipper", "Neptune 4", "Creality K1C", "Old K1",
+    ]
+    assert [(item["label"], item["host"], item["route"])
+            for item in plugin_module._snapshot_local_creality_connections()] == [
+        ("Creality K1C", "192.168.1.73", "known"), ("Old K1", "192.168.1.76", "probe"),
     ]
     connections, error = plugin_module._snapshot_local_moonraker_connections()
     assert error is None and [name for name, _host, _key in connections] == ["Qidi X-Plus 5"]

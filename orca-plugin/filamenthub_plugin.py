@@ -5532,7 +5532,6 @@ def _snapshot_klipper_profile_hosts():
             if (
                 host_type in KLIPPER_CANDIDATE_HOST_TYPES
                 and printer_agent not in MOONRAKER_PRINTER_AGENTS
-                and printer_agent != CREALITY_HOST_TYPE
                 # A Centauri runs no Moonraker: its own SDCP or MQTT search asks it.
                 and not model.startswith("Elegoo Centauri")
             ):
@@ -12891,8 +12890,11 @@ from filamenthub_creality import (
     CREALITY_MAX_FRAME_BYTES,
     CREALITY_MAX_JOB_LENGTH_MM,
     CREALITY_PROVIDER,
+    CREALITY_ROUTE_KNOWN,
+    CREALITY_ROUTE_PROBE,
     CREALITY_SLOT_QUERY,
     CREALITY_SLOTS_PER_BOX,
+    CREALITY_STOCK_MODEL_PREFIXES,
     CREALITY_WS_PORT,
     creality_host,
     creality_info_url,
@@ -12900,6 +12902,7 @@ from filamenthub_creality import (
     creality_mac,
     creality_message,
     creality_printer,
+    creality_profile_route,
     creality_slots,
     creality_usage,
     creality_ws_accepted,
@@ -12945,15 +12948,17 @@ def _snapshot_local_creality_connections():
                     continue
             except Exception:
                 continue
-            kinds = {
-                _preset_scalar(_preset_config_value(preset, key)).lower()
-                for key in ("host_type", "printer_agent")
-            }
-            if CREALITY_HOST_TYPE not in kinds:
+            route = creality_profile_route(*(
+                _preset_scalar(_preset_config_value(preset, key))
+                for key in ("host_type", "printer_agent", "printer_model")
+            ))
+            if not route:
                 continue
             host = creality_host(_preset_scalar(_preset_config_value(preset, "print_host")))
             if host:
-                connections.append({"label": str(preset.name or "")[:200], "host": host})
+                connections.append({
+                    "label": str(preset.name or "")[:200], "host": host, "route": route,
+                })
     except Exception as exc:
         fh_log("local Creality scan failed: %s" % type(exc).__name__)
     else:
@@ -12976,8 +12981,32 @@ def creality_printers(connections, source_instance_id):
         ref = "cr_" + hashlib.sha256(
             (source_instance_id + "\0" + connection["host"].lower()).encode("utf-8")
         ).hexdigest()[:32]
+        if ref in printers and connection.get("route") == CREALITY_ROUTE_KNOWN:
+            # Another preset of the same address says it is a Creality printer.
+            printers[ref]["route"] = CREALITY_ROUTE_KNOWN
         printers.setdefault(ref, dict(connection, connection_ref=ref))
     return list(printers.values())
+
+
+def creality_setup_candidates(connections):
+    """Creality printers to offer when a printer is added on the site (worker).
+
+    A profile of another connection type is offered only if the printer
+    answers ``/info`` with a MAC address, as the stock firmware does. Which
+    card a printer is linked to is known only after asking it for that MAC
+    address, so it is not said here.
+    """
+    candidates = []
+    for item in creality_printers(connections, plugin_source_instance_id()):
+        if item.get("route") == CREALITY_ROUTE_PROBE:
+            info, _failure = read_creality_info(item)
+            if not creality_mac(info):
+                continue
+        candidates.append({
+            "connectionRef": item["connection_ref"], "label": item["label"] or "Creality",
+            "physicalPrinterId": None, "provider": "creality", "source": "profile",
+        })
+    return candidates
 
 
 def _load_creality_bindings():
@@ -17022,12 +17051,7 @@ class FilamentHubCatalog(
                         "physicalPrinterId": linked.get(item["serial"]),
                         "provider": "flashforge", "source": "profile",
                     } for item in flashforge_printers(msg["flashforge"], plugin_source_instance_id()))
-                # Which card a Creality printer is linked to is known only after
-                # asking the printer for its MAC address, so it is not said here.
-                candidates.extend({
-                    "connectionRef": item["connection_ref"], "label": item["label"] or "Creality",
-                    "physicalPrinterId": None, "provider": "creality", "source": "profile",
-                } for item in creality_printers(msg.get("creality") or [], plugin_source_instance_id()))
+                candidates.extend(creality_setup_candidates(msg.get("creality")))
                 candidates.extend(profile_lan_setup_candidates(msg.get("profile_lan")))
                 fh_log("printer setup list: candidates=%d moonraker=%d discovery_complete=%s" % (
                     len(candidates), sum(item["provider"] == "moonraker" for item in candidates),

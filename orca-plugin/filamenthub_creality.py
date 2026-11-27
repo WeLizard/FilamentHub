@@ -52,6 +52,17 @@ _CREALITY_WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _CREALITY_MAC = re.compile(r"[0-9A-F]{12}")
 _CREALITY_COLOR = re.compile(r"#?[0-9A-Fa-f]?([0-9A-Fa-f]{6})")
 # What the usage books understand; other states carry no usage evidence.
+# OrcaSlicer 7cdc829a gives host type and printer agent "crealityprint" to the
+# profiles of these models only (resources/profiles/Creality/machine): the K1
+# and K2 families with their CFS-C variants, and the SPARKX i7.
+CREALITY_STOCK_MODEL_PREFIXES = ("Creality K1", "Creality K2", "Creality SPARKX i7")
+# A profile saved before OrcaSlicer knew "crealityprint" has no type of its own
+# and so the default "octoprint" (src/libslic3r/PrintConfig.cpp:6024); a person
+# may also have chosen Moonraker. Such a printer may run the stock firmware or
+# Moonraker, so its own answer decides.
+_CREALITY_OTHER_HOST_TYPES = frozenset({"octoprint", "moonraker"})
+CREALITY_ROUTE_KNOWN = "known"
+CREALITY_ROUTE_PROBE = "probe"
 _CREALITY_USAGE_STATES = {1: "printing", 5: "paused", 2: "complete", 3: "error", 4: "cancelled"}
 _CREALITY_STATES = {1: "printing", 5: "paused", 2: "finished", 3: "failed", 4: "failed"}
 
@@ -78,6 +89,24 @@ def creality_host(print_host):
     if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@ "):
         return ""
     return host
+
+
+def creality_profile_route(host_type, printer_agent, printer_model):
+    """How an OrcaSlicer profile reaches the stock firmware: ``"known"``, ``"probe"`` or ``""``.
+
+    A profile of type or agent "crealityprint" is a Creality printer outright.
+    A K1, K2 or SPARKX i7 profile of another type is offered only once the
+    printer answers ``/info`` as a Creality printer.
+    """
+    kinds = {str(value or "").strip().lower() for value in (host_type, printer_agent)}
+    if CREALITY_HOST_TYPE in kinds:
+        return CREALITY_ROUTE_KNOWN
+    if (
+        str(host_type or "").strip().lower() in _CREALITY_OTHER_HOST_TYPES
+        and str(printer_model or "").startswith(CREALITY_STOCK_MODEL_PREFIXES)
+    ):
+        return CREALITY_ROUTE_PROBE
+    return ""
 
 
 def creality_info_url(address):
