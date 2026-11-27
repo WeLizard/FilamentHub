@@ -275,6 +275,42 @@ OrcaSlicer connection, and the account-scoped identity evidence.
 - The page sends `configure-prusalink` / `prusalink-refresh` and receives a
   result code. Built from the firmware sources; not yet confirmed on a printer.
 
+### SDCP and Elegoo MQTT through OrcaSlicer's own connection
+
+An adapter here is a way of talking to a printer, not a brand. Two of them read
+printers whose address sits in a user printer preset, found the way
+OrcaSlicer's own `ElegooLink` host finds them. Every message and field the
+adapters read is listed with its source (file and commit) at the top of
+`filamenthub_sdcp.py`, `filamenthub_elegoo_mqtt.py` and `filamenthub_canvas.py`;
+what no source confirms is marked there.
+
+- Which presets are looked at: host type `elegoolink`, `moonraker` or
+  `octoprint`. A `printer_model` of an Elegoo Centauri other than the Carbon 2
+  with host type `elegoolink` is an SDCP printer outright. Any other model with
+  `elegoolink`, or a Centauri set up as `moonraker` or `octoprint`, is offered
+  only if the address answers the SDCP attribute request when the person adds a
+  printer on the site; Moonraker printers are left to their own search. A
+  Centauri Carbon 2 with any of the three host types goes to Elegoo MQTT.
+- SDCP: v3 over `ws://<host>:3030/websocket`, no password. The plugin sends the
+  attribute request (Cmd 1) and the status request (Cmd 0), and, when the
+  firmware is newer than 1.1, the CANVAS request (Cmd 324) with the mainboard
+  ID. Nothing else is sent: an unknown command can stop the printer's daemon
+  during a print. Any brand that speaks SDCP works the same way.
+- Elegoo MQTT (Centauri Carbon 2): MQTT 3.1.1 on TCP 1883, user `elegoo`,
+  password the access code from `printhost_apikey` (empty means the printer's
+  default code). The serial number comes from `GET /system/info` with the code
+  in `X-Token`; then the plugin registers a client and asks only for status
+  (1002), CANVAS slots (2005) and, without CANVAS, the single spool (1061).
+- CANVAS slots read alike from both: slot index `unit * 4 + place`, the spool
+  holder at 255. A spool the printer did not recognise has no material.
+- The printer is recognised by its mainboard ID (SDCP) or serial number (MQTT).
+  A different printer answering at the saved address is not reported. The
+  private `.fh_sdcp.json` and `.fh_elegoo_mqtt.json` keep the pairing and that
+  identity, never the address or access code.
+- Neither counts used filament, so there is no usage watcher. The page sends
+  `configure-sdcp` / `sdcp-refresh` or `configure-elegoo_mqtt` /
+  `elegoo_mqtt-refresh` and receives a result code.
+
 ### Adapter modules
 
 The installable plugin is one file, because OrcaSlicer installs a local plugin
@@ -282,7 +318,10 @@ from a single `.py` or a wheel with one entry module. Provider adapters are
 still developed as separate source files next to `filamenthub_plugin.py`:
 `filamenthub_flashforge.py` (Flashforge LAN API), `filamenthub_creality.py`
 (Creality's status channel and CFS slots), `filamenthub_prusalink.py`
-(PrusaLink of Prusa's Buddy firmware and Prusa-Link), `filamenthub_moonraker.py`
+(PrusaLink of Prusa's Buddy firmware and Prusa-Link), `filamenthub_sdcp.py`
+(the SDCP protocol), `filamenthub_elegoo_mqtt.py` (Elegoo's MQTT interface of
+the Centauri Carbon 2), `filamenthub_canvas.py` (CANVAS slots, shared by the two),
+`filamenthub_moonraker.py`
 (Happy Hare, QIDI Box and filament usage through Moonraker's printer objects),
 `filamenthub_usage_books.py` (charging a printer's running filament counter to
 spools, shared by Flashforge and Klipper),

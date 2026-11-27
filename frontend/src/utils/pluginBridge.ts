@@ -1213,7 +1213,7 @@ export interface LanBridgeResult {
 }
 export type FlashforgeBridgeResult = LanBridgeResult;
 
-type LanBridgeProvider = 'flashforge' | 'creality' | 'prusalink';
+type LanBridgeProvider = 'flashforge' | 'creality' | 'prusalink' | ProfileLanProvider;
 
 function requestLanBridge(
   provider: LanBridgeProvider,
@@ -1326,6 +1326,37 @@ export function requestCrealityObservationRefresh(
   return requestLanBridge('creality', 'refresh', { physicalPrinterId, materialSystemId });
 }
 
+/** Printers the plugin finds through the connection settings of an OrcaSlicer printer profile. */
+export type ProfileLanProvider = 'sdcp' | 'elegoo_mqtt';
+
+/**
+ * Link an SDCP printer or an Elegoo MQTT printer through the plugin. The page
+ * sends FilamentHub IDs, the one-time pairing code and an optional opaque local
+ * reference; the printer's address, and an access code where the printer has
+ * one, are read by the plugin from its connection settings in OrcaSlicer and
+ * never reach the page.
+ */
+export function configureProfileLanBridgeInPlugin(
+  provider: ProfileLanProvider,
+  physicalPrinterId: number,
+  materialSystemId: number,
+  pairingCode: string,
+  connectionRef?: string,
+): Promise<LanBridgeResult> {
+  return requestLanBridge(provider, 'setup', {
+    physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
+  });
+}
+
+/** Ask the plugin to read a linked SDCP or Elegoo MQTT printer once and report it. */
+export function requestProfileLanObservationRefresh(
+  provider: ProfileLanProvider,
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<LanBridgeResult> {
+  return requestLanBridge(provider, 'refresh', { physicalPrinterId, materialSystemId });
+}
+
 /**
  * Link a Prusa printer through the plugin's PrusaLink route. The page sends
  * FilamentHub IDs, the one-time pairing code and an optional opaque local
@@ -1361,7 +1392,8 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
-  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | 'prusalink';
+  provider?: 'bambu' | 'moonraker' | 'octoprint' | 'flashforge' | 'creality' | 'prusalink'
+    | ProfileLanProvider;
   printerModel?: string;
   source?: 'network' | 'profile' | 'saved';
 }

@@ -173,7 +173,11 @@
       "creality": "Creality（K1、K2、Ender-3 V3）",
       "crealityHint": "通过 OrcaSlicer 插件连接使用原厂固件的 Creality 打印机。显示打印状态和 CFS 料槽：打印机所见的材料、颜色和剩余量。OrcaSlicer 打开期间，按打印机自己统计的长度扣减用量。",
       "prusalink": "Prusa（PrusaLink）",
-      "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。"
+      "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。",
+      "sdcp": "SDCP（Elegoo Centauri Carbon）",
+      "sdcpHint": "通过 OrcaSlicer 插件连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机不统计耗材用量，因此打印不会自动从料卷扣减。",
+      "elegooMqtt": "Elegoo Centauri Carbon 2",
+      "elegooMqttHint": "通过 OrcaSlicer 插件连接 Elegoo Centauri Carbon 2。显示打印状态，以及打印机所见的 CANVAS 料槽材料和颜色。打印机不统计耗材用量，因此打印不会自动从料卷扣减。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -201,7 +205,10 @@
       "crealitySingle": "单卷（无 CFS）",
       "prusalinkSingle": "单卷（MK4S、CORE One、MINI、MK3S）",
       "prusalinkMmu": "MMU3，5 个料槽",
-      "prusalinkTools": "多个工具头（XL、INDX）"
+      "prusalinkTools": "多个工具头（XL、INDX）",
+      "canvas": "CANVAS，每个单元 4 个料槽",
+      "canvasSlots": "CANVAS 料槽数",
+      "canvasSingle": "单卷（无 CANVAS）"
     },
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","host_permission":"OrcaSlicer 尚未允许插件连接打印机。请在 OrcaSlicer 中确认请求后重新检查。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_unavailable":"已找到打印机，但暂时无法确认其设备标识。请重新检查。已保存的打印机和耗材分配将保留。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "添加打印机",
@@ -9319,7 +9326,9 @@
       "octoprint": "OctoPrint",
       "flashforge": "闪铸局域网",
       "creality": "Creality 局域网",
-      "prusalink": "PrusaLink"
+      "prusalink": "PrusaLink",
+      "sdcp": "SDCP 局域网",
+      "elegoo_mqtt": "Elegoo 局域网"
     },
     "edge": {
       "title": "FH Edge",
@@ -9506,6 +9515,55 @@
         "invalid": "打印机返回了意外的响应。请检查 OrcaSlicer 中的地址是否指向打印机的 PrusaLink。",
         "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
         "unavailable": "插件未响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+      }
+    },
+    "sdcp": {
+      "title": "通过 OrcaSlicer 连接 SDCP 打印机",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址。对于 Elegoo Centauri Carbon，请在那里选择 ElegooLink 主机类型并输入地址；打印机不需要密码。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台 SDCP 打印机。请选择这一台：",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页即可刷新打印状态和料槽。打印机不统计已用耗材，因此打印不会自动从料卷扣减。",
+      "localOnly": "打印机地址保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有 SDCP 打印机。请在 OrcaSlicer 中打开打印机的连接设置，选择 ElegooLink 主机类型并输入地址。",
+        "credentials": "OrcaSlicer 中没有任何连接指向这台打印机。请检查连接设置中的地址并重新连接打印机。",
+        "unreachable": "打印机在 OrcaSlicer 中的地址上没有响应。请检查它是否已开机并处于同一网络。",
+        "permission": "OrcaSlicer 尚未允许插件访问打印机。请在 OrcaSlicer 中批准请求后重试。",
+        "identity": "打印机没有报告主板 ID，因此无法可靠地与其他打印机区分。请更新打印机固件后重试。",
+        "linked": "这台打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub。请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机的响应异常。请确认它使用 SDCP 协议，例如运行 Elegoo 原厂固件的 Centauri Carbon。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+      }
+    },
+    "elegooMqtt": {
+      "title": "通过 OrcaSlicer 连接 Elegoo Centauri Carbon 2",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址和访问码。请在那里选择 ElegooLink 主机类型并输入地址；如果从未在打印机上修改过访问码，访问码可以留空。",
+      "connect": "连接",
+      "reconnect": "重新连接",
+      "refresh": "刷新数据",
+      "choose": "OrcaSlicer 中有多台 Centauri Carbon 2。请选择这一台：",
+      "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页即可刷新打印状态和料槽。打印机不统计已用耗材，因此打印不会自动从料卷扣减。",
+      "localOnly": "打印机地址和访问码保留在 OrcaSlicer 中，不会发送到 FilamentHub。插件只读取打印机，不向其发送任何命令。",
+      "result": {
+        "notFound": "OrcaSlicer 中没有 Centauri Carbon 2。请在 OrcaSlicer 中打开打印机的连接设置，选择 ElegooLink 主机类型并输入地址。",
+        "credentials": "OrcaSlicer 中没有任何连接指向这台打印机。请检查连接设置中的地址并重新连接打印机。",
+        "access_code": "OrcaSlicer 中该打印机连接设置里的访问码无效。请输入打印机上显示的访问码，或留空以使用默认访问码。",
+        "auth": "打印机拒绝了访问码。请与打印机屏幕上的访问码核对，并在 OrcaSlicer 中更正。",
+        "busy": "连接到打印机的应用已达到其上限。请关闭另一个已连接的应用或切片软件后重试。",
+        "unreachable": "打印机在 OrcaSlicer 中的地址上没有响应。请检查它是否已开机并处于同一网络。",
+        "permission": "OrcaSlicer 尚未允许插件访问打印机。请在 OrcaSlicer 中批准请求后重试。",
+        "identity": "打印机没有报告序列号，因此无法可靠地与其他打印机区分。请更新打印机固件后重试。",
+        "linked": "这台打印机已关联到 FilamentHub 中的另一张打印机卡片。",
+        "pairing": "无法将打印机关联到 FilamentHub。请重试。",
+        "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
+        "invalid": "打印机的响应异常。请确认它是运行 Elegoo 原厂固件的 Centauri Carbon 2。",
+        "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
       }
     },
     "bambu": {
