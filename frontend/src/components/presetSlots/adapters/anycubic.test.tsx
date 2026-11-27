@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaterialSystem, PhysicalPrinter } from '../../../api/client';
 import { anycubicAdapter } from './anycubic';
-import { feedAdapterFor } from './index';
+import { feedAdapterFor, supportsEdgeSetup } from './index';
+import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 
 const { issuePairingCode, status, configure, refresh } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
@@ -13,7 +14,7 @@ const { issuePairingCode, status, configure, refresh } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../api/client', () => ({
-  printerBridgeAPI: { issuePairingCode, status },
+  printerBridgeAPI: { issuePairingCode, status, revoke: vi.fn() },
   // Other adapters in the registry import these; this test never calls them.
   spoolAPI: {}, presetSlotAPI: {}, physicalPrinterAPI: {}, edgeAPI: {}, octoprintBridgeAPI: {},
 }));
@@ -72,5 +73,29 @@ describe('Anycubic through OrcaSlicer', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('presetSlots.anycubic.result.lan_mode');
     expect(configure).toHaveBeenCalledWith('anycubic', 7, 9, 'FH-ABCDE-12345', undefined);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('is set up for FH Edge with the printer address alone', async () => {
+    vi.stubEnv('VITE_ENABLE_EDGE_UI', 'true');
+    expect(supportsEdgeSetup('anycubic', 'mmu')).toBe(true);
+    expect(anycubicAdapter.onboarding!.methods).toContain('edge');
+    status.mockResolvedValue({ paired: false, last_observation_at: null, provider: 'anycubic' });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}>
+      <EdgeConnectionSetup printer={printer} system={system} collapsible={false} />
+    </QueryClientProvider>);
+
+    const create = await screen.findByText('presetSlots.edge.createCode');
+    await waitFor(() => expect(create).not.toBeDisabled());
+    fireEvent.click(create);
+
+    expect(await screen.findByText('presetSlots.edge.addToNodeAnycubic')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.securityAnycubic')).toBeInTheDocument();
+    const entry = screen.getByText(/"adapter": "anycubic"/).textContent ?? '';
+    expect(entry).toContain('"printer_url": "PRINTER-LAN-IP"');
+    // The printer hands out its own login: no serial number or code is asked for.
+    expect(entry).not.toMatch(/serial_number|check_code|access_code/);
+    expect(issuePairingCode).toHaveBeenCalledWith(7, 9, 'edge_agent');
+    vi.unstubAllEnvs();
   });
 });

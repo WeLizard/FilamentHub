@@ -173,7 +173,7 @@
       "creality": "Creality (K1, K2, Ender-3 V3)",
       "crealityHint": "Creality printers on stock firmware through the OrcaSlicer plugin. Shows the print state and the CFS slots: material, colour and what is left, as the printer sees them. Usage is deducted by the length the printer itself counts while OrcaSlicer is open.",
       "anycubic": "Anycubic (Kobra 3, S1, X)",
-      "anycubicHint": "Anycubic Kobra 3, S1 and X on stock firmware in LAN mode, through the OrcaSlicer plugin. Shows the print state and the ACE slots: material, colour and what is left, as the printer sees them. Filament use is not deducted yet.",
+      "anycubicHint": "Anycubic Kobra 3, S1 and X on stock firmware in LAN mode, through the OrcaSlicer plugin or FH Edge. Shows the print state and the ACE slots: material, colour and what is left, as the printer sees them. Filament use is not deducted yet.",
       "sdcp": "SDCP (Elegoo Centauri Carbon)",
       "sdcpHint": "Printers on the open SDCP protocol, such as the Elegoo Centauri Carbon, through the OrcaSlicer plugin. Shows the print state and, with CANVAS on recent firmware, its slots with material and colour as the printer sees them. These printers count no filament used, so a print is not deducted from a spool automatically.",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
@@ -9378,7 +9378,9 @@
       "addToNodeFlashforge": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address, and enter the serial number and the check code from the printer's network screen (enable LAN mode first). Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
       "securityFlashforge": "The printer address, serial number and check code stay on the Edge device and are never sent to FilamentHub.",
       "addToNodeBambu": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address, and enter the serial number and the access code: both are shown on the printer's screen, in the network settings. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
-      "securityBambu": "The printer address, serial number and access code stay on the Edge device and are never sent to FilamentHub."
+      "securityBambu": "The printer address, serial number and access code stay on the Edge device and are never sent to FilamentHub.",
+      "addToNodeAnycubic": "Add this entry to your Edge connections. Replace PRINTER-LAN-IP with the printer's address and turn on LAN mode on the printer's screen; nothing else is needed. In LAN mode the printer leaves your Anycubic cloud account. Home Assistant: app options → connections; Docker/Linux: options.json. Then restart Edge.",
+      "securityAnycubic": "The printer address stays on the Edge device and is never sent to FilamentHub. Edge asks the printer for its LAN login on every read and never stores it."
     },
     "happyHare": {
       "inventoryError": "Moonraker must use this FH printer's keyed [spoolman] URL. Check the setting and restart Moonraker while idle. Gates were read, but spool IDs cannot be safely matched.",

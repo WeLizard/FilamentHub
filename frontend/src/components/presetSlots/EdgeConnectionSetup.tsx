@@ -15,6 +15,7 @@ const EDGE_TRANSPORT = 'edge_agent' as const;
 const LAN_PRINTER_TEXT = {
   flashforge: { add: 'presetSlots.edge.addToNodeFlashforge', security: 'presetSlots.edge.securityFlashforge' },
   bambu: { add: 'presetSlots.edge.addToNodeBambu', security: 'presetSlots.edge.securityBambu' },
+  anycubic: { add: 'presetSlots.edge.addToNodeAnycubic', security: 'presetSlots.edge.securityAnycubic' },
 } as const;
 
 export function edgePairingRefetchInterval(
@@ -131,8 +132,8 @@ export function EdgeConnectionSetup({
   };
 
   const edgeProvider = status?.provider ?? system.provider;
-  const lanPrinter = edgeProvider === 'flashforge' || edgeProvider === 'bambu'
-    ? LAN_PRINTER_TEXT[edgeProvider] : null;
+  const lanPrinter = edgeProvider in LAN_PRINTER_TEXT
+    ? LAN_PRINTER_TEXT[edgeProvider as keyof typeof LAN_PRINTER_TEXT] : null;
   const connectionOptions = JSON.stringify(edgeProvider === 'bambu' ? {
     id: `printer-${printer.id}`,
     name: printer.name,
@@ -140,6 +141,12 @@ export function EdgeConnectionSetup({
     printer_url: 'PRINTER-LAN-IP',
     serial_number: 'SERIAL-FROM-PRINTER',
     access_code: 'ACCESS-CODE-FROM-PRINTER',
+    pairing_code: pairingCode,
+  } : edgeProvider === 'anycubic' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'anycubic',
+    printer_url: 'PRINTER-LAN-IP',
     pairing_code: pairingCode,
   } : edgeProvider === 'flashforge' ? {
     id: `printer-${printer.id}`,
