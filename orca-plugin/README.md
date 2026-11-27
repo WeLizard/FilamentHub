@@ -264,8 +264,9 @@ OrcaSlicer connection, and the account-scoped identity evidence.
   charged the slicer's estimate (see below) by the job's progress: the API
   reports no layer. It reports no MMU3 slots, no XL tool materials and no
   filament used, so an MMU or an XL sends the state alone and is not
-  deducted. Nothing is ever written to the printer. A job sent as binary
-  G-code (`.bgcode`) has no figures the plugin can read.
+  deducted. Nothing is ever written to the printer. OrcaSlicer writes no
+  binary G-code, so a `.bgcode` job comes from another slicer and is not
+  deducted.
 - PrusaConnect is Prusa's cloud. The plugin does not read it: that would mean
   acting as a cloud client. The page asks for a PrusaLink connection with the
   printer's local address instead.
@@ -368,9 +369,10 @@ OrcaSlicer's own figure for the job instead, marked as an estimate
   one if it was sliced within two hours before the send.
 - A slice is kept when the host reports `GCodeExportFinished` (OrcaSlicer 2.5
   and later), whichever process preset is in use, while an Anycubic, PrusaLink,
-  SDCP or Elegoo MQTT printer is linked. The copy is named after the model; a
-  binary G-code is noted without a copy, so an older text slice is never taken
-  for it. On older hosts only the FilamentHub slicing step ("Slicing Pipeline
+  SDCP, Elegoo MQTT or Bambu printer is linked (a Bambu job falls back on the
+  copies when its file cannot be read back from the printer, matched to the
+  newest slice of its name and layer count). The copy is named after the
+  model. On older hosts only the FilamentHub slicing step ("Slicing Pipeline
   Plugin") keeps a slice. A job sliced elsewhere ends as not counted with the
   reason `print_not_sliced_here`.
 - From the G-code's `; filament used [mm]` line and its extrusion moves the

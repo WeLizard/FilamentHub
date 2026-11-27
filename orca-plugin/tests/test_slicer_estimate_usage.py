@@ -210,8 +210,7 @@ def test_without_a_layer_count_only_a_fresh_text_slice_is_trusted(host):
     host.export("bracket")
     host.export("bracket", b"GCDE\x01\x00\x00\x00" + b"\x00" * 64)
     host.upload("bracket_PLA_35m.gcode")
-    # The newest slice is binary: it is noted, not read, and the older text one is not taken for it.
-    assert list(host.index().values())[-1]["path"] == ""
+    # The newest slice has no figures to read; the older text one is not taken for it.
     assert host.plugin.slicer_job_estimate("bracket_PLA_35m.gcode") is None
 
 

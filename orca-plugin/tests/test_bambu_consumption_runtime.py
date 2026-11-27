@@ -923,6 +923,27 @@ def test_job_sent_from_orca_is_counted_from_the_kept_slice(plugin_module, tmp_pa
         config, report, now=1000.0 + 4 * 24 * 3600) is None
 
 
+def test_a_job_sliced_again_before_it_was_sent_is_counted_from_the_newest_slice(
+    plugin_module, tmp_path, monkeypatch
+):
+    """OrcaSlicer keeps every slice now; the host sends the one it made last."""
+    _kept_slice(plugin_module, tmp_path, monkeypatch)
+    newer = tmp_path / "plate_1_again.gcode"
+    newer.write_text(
+        "M83\n" + "; CHANGE_LAYER\nG1 X1 E1\n" * 3 + "; filament used [g] = 15.00\n",
+        encoding="utf-8",
+    )
+    key = plugin_module._remember_slice_path(str(newer))
+    assert plugin_module.remember_sent_print("Bracket", "01P00A000000001", now=1000.0)
+    report = {"subtask_name": "Bracket", "gcode_file": "Bracket.gcode.3mf", "total_layer_num": 3}
+
+    estimate = plugin_module.bambu_estimate_from_sent_print(
+        {"serial": "01P00A000000001"}, report, now=1600.0
+    )
+    assert estimate["weights"] == {0: pytest.approx(15.0)}
+    assert estimate["layer_source_key"] == key
+
+
 def test_host_print_events_note_the_job_and_never_raise(plugin_module, tmp_path, monkeypatch):
     _kept_slice(plugin_module, tmp_path, monkeypatch)
     sent = object()

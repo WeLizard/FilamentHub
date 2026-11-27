@@ -16675,25 +16675,24 @@ def _cache_slice_file(path, key):
     return cached
 
 
-def _remember_slice_path(path, file_name="", copy=True):
+def _remember_slice_path(path, file_name=""):
     """Keep path and name under a key so the site can ask by key alone.
 
     The name matters on its own: a cached copy is named after the key, and a
-    calculation labelled with a hash tells a person nothing. Without
-    ``copy`` the slice is only noted, with no file to read back.
+    calculation labelled with a hash tells a person nothing.
     """
     stamp = "%s|%s" % (path, os.path.getmtime(path))
     key = hashlib.sha256(stamp.encode("utf-8")).hexdigest()
     file_name = file_name or os.path.basename(path)
     with _SLICE_INDEX_LOCK:
         known = _load_slice_index().get(key)
-    if isinstance(known, dict) and (not copy or slice_entry_for_key(key)):
+    if isinstance(known, dict) and slice_entry_for_key(key):
         # The host tells each of the plugin's capabilities about the same file.
         return key
     # The host owns this working file, including File exports' .pp copies.
     # Keep our own bounded copy without probing the OS temporary directory.
-    path = _cache_slice_file(path, key) if copy else ""
-    if copy and not path:
+    path = _cache_slice_file(path, key)
+    if not path:
         raise OSError("Could not retain the sliced file")
     with _SLICE_INDEX_LOCK:
         index = _load_slice_index()
@@ -16795,9 +16794,10 @@ def bambu_estimate_from_sent_print(config, report, now=None):
     """The filament of a job this OrcaSlicer sent, from the plugin's own copy of its G-code.
 
     For a job whose file cannot be read back from the printer. The job must
-    carry the name the host sent to this printer, and exactly one of the
-    slices noted then must have the layer count the printer reports; anything
-    less certain is left uncounted rather than guessed.
+    carry the name the host sent to this printer, and it is the newest of the
+    slices noted then with the layer count the printer reports: the host
+    sends the slice it made last. Without such a slice the job is left
+    uncounted rather than guessed.
     """
     total_layers = _bambu_int(report.get("total_layer_num"))
     names = {
@@ -16817,8 +16817,7 @@ def bambu_estimate_from_sent_print(config, report, now=None):
         device = _normalized_bambu_serial(record.get("device_id"))
         if record.get("name") not in names or (device and serial and device != serial):
             continue
-        matches = []
-        for key in record.get("slice_keys") or []:
+        for key in reversed(record.get("slice_keys") or []):
             path = slice_path_for_key(key) if isinstance(key, str) else None
             if not path:
                 continue
@@ -16834,15 +16833,14 @@ def bambu_estimate_from_sent_print(config, report, now=None):
                         digest.update(block)
             except OSError:
                 continue
-            if curves and max(len(curve) for curve in curves.values()) == total_layers:
-                matches.append((key, weights, curves, digest.hexdigest()))
-        if len(matches) != 1:
-            return None
-        key, weights, curves, sha256 = matches[0]
-        return {
-            "source": "orca_slice", "weights": weights, "layer_weights": curves,
-            "layer_source_key": key, "sha256": sha256,
-        }
+            if not curves or max(len(curve) for curve in curves.values()) != total_layers:
+                continue
+            return {
+                "source": "orca_slice", "weights": weights, "layer_weights": curves,
+                "layer_source_key": key, "sha256": digest.hexdigest(),
+            }
+        # The newest print sent under this name is the job; an older one is not.
+        return None
     return None
 
 
@@ -17082,11 +17080,15 @@ def _event_succeeded(event, ctx):
 
 
 def slicer_estimate_wanted():
-    """Whether a linked printer is charged the slicer's estimate rather than its own count."""
+    """Whether a linked printer may be charged the slicer's estimate.
+
+    Anycubic, Elegoo and Prusa count no filament; a Bambu job whose file
+    cannot be read back from the printer falls back on the same copies.
+    """
     return any(
         os.path.exists(path) for path in (
             ANYCUBIC_CONFIG_FILE, _prusalink_config_file(),
-            SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE,
+            SDCP_CONFIG_FILE, ELEGOO_MQTT_CONFIG_FILE, BAMBU_CONFIG_FILE,
         )
     )
 
@@ -17096,9 +17098,8 @@ def keep_exported_slice(ctx):
 
     The host says so on the slicing thread, for any process preset, so the
     figures of a job no longer wait for the slicing step to be chosen in the
-    preset. The copy is named after the model; a binary G-code is noted
-    without one, so it is never mistaken for the slice an older one was.
-    Returns the key the slice is kept under, or None.
+    preset. The copy is named after the model. Returns the key the slice is
+    kept under, or None.
     """
     if not _event_succeeded(_GCODE_EXPORTED_EVENT, ctx) or not slicer_estimate_wanted():
         return None
@@ -17106,13 +17107,6 @@ def keep_exported_slice(ctx):
     if not path.lower().endswith(".gcode") or not os.path.isfile(path):
         return None
     name = _print_name_stem(getattr(ctx, "name", "")) or "print"
-    try:
-        with open(path, "rb") as handle:
-            binary = handle.read(4) == b"GCDE"
-    except OSError:
-        return None
-    if binary:
-        return _remember_slice_path(path, name + ".bgcode", copy=False)
     return _remember_slice_path(path, name + ".gcode")
 
 
