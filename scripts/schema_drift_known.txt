@@ -50,8 +50,3 @@ index-only-in-model:ix_printer_profiles_is_official
 index-only-in-model:ix_printer_profiles_owner_user_id
 index-only-in-model:ix_printer_profiles_printer_id
 
-# Model DateTime() is timezone-naive, database is timestamptz, and brands.py:385 assigns an aware datetime: probable asyncpg DataError on PostgreSQL. Fix: DateTime(timezone=True) on the model.
-type:brands.name_corrected_at
-
-# Database column is the native enum printerrequeststatus, model is String(20): probable 'column is of type printerrequeststatus but expression is of type character varying' on insert/update on PostgreSQL. Needs an owner decision (migration to VARCHAR or Enum type in the model).
-type:printer_requests.status

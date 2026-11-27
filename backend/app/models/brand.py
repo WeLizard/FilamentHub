@@ -66,7 +66,9 @@ class Brand(Base):
     name_correction_available: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
-    name_corrected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    name_corrected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
