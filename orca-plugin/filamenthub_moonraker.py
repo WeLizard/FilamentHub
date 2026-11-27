@@ -17,6 +17,7 @@ to the plugin. ``build_package.py`` merges it into the single installable
 plugin file, where every name below becomes a plugin global.
 """
 
+import math
 import re
 import urllib.parse
 
@@ -373,11 +374,33 @@ _MOONRAKER_USAGE_STATES = frozenset(
 _MOONRAKER_MAX_JOB_LENGTH_MM = 10_000_000.0
 
 
+# What a reading asks for to show the printer's state on FilamentHub. Sources,
+# Klipper 7558e8c2: print_stats.py:113 (state, filename, info layers),
+# display_status.py:22 (progress 0..1), heaters.py:153 and heater_bed.py:12
+# (temperature, target), kinematics/extruder.py:192 (an extruder reports its
+# heater). An object the printer lacks comes back empty (webhooks.py:506).
+MOONRAKER_STATUS_OBJECTS = {
+    "print_stats": ["state", "filename", "info"],
+    "display_status": ["progress"],
+    "extruder": ["temperature", "target"],
+    "heater_bed": ["temperature", "target"],
+}
+# Klipper's print_stats.py sets exactly these states. The bridge contract has no
+# "cancelled"; it is a job that did not finish, as for Creality.
+_MOONRAKER_PRINTER_STATES = {
+    "standby": "idle",
+    "printing": "printing",
+    "paused": "paused",
+    "complete": "finished",
+    "cancelled": "failed",
+    "error": "failed",
+}
+
+
 def moonraker_usage_query(provider):
-    """What one usage reading asks Moonraker for."""
-    objects = {
-        "print_stats": ["state", "filename", "filament_used", "print_duration"],
-    }
+    """What one reading asks Moonraker for: the print's filament and its state."""
+    objects = {name: list(fields) for name, fields in MOONRAKER_STATUS_OBJECTS.items()}
+    objects["print_stats"] += ["filament_used", "print_duration"]
     if provider == "happy_hare":
         objects["mmu"] = list(HAPPY_HARE_STATUS_OBJECTS["mmu"]) + ["num_toolchanges"]
     else:
@@ -423,6 +446,51 @@ def moonraker_usage(status_map):
     ):
         usage["duration_s"] = float(duration)
     return usage
+
+
+def _moonraker_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def moonraker_printer(status_map):
+    """The printer's state in the provider-neutral bridge contract, or None.
+
+    Klipper does not say how long a print has left, so no remaining time is
+    sent rather than an estimate.
+    """
+    stats = status_map.get("print_stats") if isinstance(status_map, dict) else None
+    if not isinstance(stats, dict) or "state" not in stats:
+        return None
+    state = _MOONRAKER_PRINTER_STATES.get(str(stats.get("state") or "").strip().lower(), "unknown")
+    printer: dict = {"state": state}
+    job = stats.get("filename")
+    if state not in {"idle", "unknown"} and isinstance(job, str) and job.strip():
+        printer["job_name"] = job.strip()[:300]
+    if state in {"printing", "paused"}:
+        display = status_map.get("display_status")
+        progress = _moonraker_number(display.get("progress")) if isinstance(display, dict) else None
+        if progress is not None and 0 <= progress <= 1:
+            printer["progress_percent"] = round(progress * 100)
+        info = stats.get("info")
+        if isinstance(info, dict):
+            for key, field in (("current_layer", "current_layer"), ("total_layers", "total_layer")):
+                value = info.get(field)
+                # Klipper keeps None until a slicer's SET_PRINT_STATS_INFO says otherwise.
+                if type(value) is int and 0 <= value <= 10_000_000:
+                    printer[key] = value
+    for key, name, field, low, high in (
+        ("nozzle_temperature", "extruder", "temperature", -50, 600),
+        ("nozzle_target_temperature", "extruder", "target", 0, 600),
+        ("bed_temperature", "heater_bed", "temperature", -50, 250),
+        ("bed_target_temperature", "heater_bed", "target", 0, 250),
+    ):
+        source = status_map.get(name)
+        value = _moonraker_number(source.get(field)) if isinstance(source, dict) else None
+        if value is not None and low <= value <= high:
+            printer[key] = round(value, 1)
+    return printer
 
 
 def moonraker_spoolman_server(server_config):
