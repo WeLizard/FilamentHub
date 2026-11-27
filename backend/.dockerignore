@@ -1,3 +1,54 @@
+# Secrets and local environment files must never enter an image layer.
+.env
+.env.*
+
+# Version control and local virtual environments / toolchains
+.git/
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+
+# Python bytecode, build artifacts, caches and coverage reports
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tmp/
+.coverage
+htmlcov/
+
+# Tests, ad-hoc local helpers and documentation outside runtime needs
+tests/
+dev_scripts/
+README.md
+DEPLOY_FULL.md
+Dockerfile
+Dockerfile.prod
+start_local.ps1
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.tmp
+
+# Runtime / host bind-mounted directories (mounted from host/volumes in compose)
+logs/
+uploads/
+distributions/
+wiki_content/
+inbound_mail/
+backups/
+data/geoip/
+data/uploaded_bundles/
+
 # The accepted Orca source is a runtime artifact published separately from code.
 # Production mounts it read-only from the host, so ordinary image builds must not
 # accidentally bake a stale workstation copy into the backend image.

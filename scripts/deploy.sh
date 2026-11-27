@@ -60,7 +60,7 @@ Options:
   --rebuild-all     Rebuild both images even if their code is unchanged, e.g.
                     after changing VITE_* build arguments in the server .env.
   --rollback        Put the images kept before the last release back in service.
-                    Code only: a migration that already ran stays applied.
+                    Code only: refused when the last release applied migrations.
   --status          Show container, migration and public health status.
   --backup-only     Create and verify an encrypted database backup, then exit.
   --prune-build-cache
@@ -476,8 +476,8 @@ schema_revision() {
 }
 
 record_deploy_state() {
-    printf 'previous_revision=%s\ntarget_revision=%s\nmigrations_applied=%s\n' \
-        "$PREVIOUS_REVISION" "$TARGET_REVISION" "$1" > "$DEPLOY_STATE_FILE"
+    printf 'previous_revision=%s\ntarget_revision=%s\nmigrations_applied=%s\nbackup_file=%s\n' \
+        "$PREVIOUS_REVISION" "$TARGET_REVISION" "$1" "$LATEST_BACKUP" > "$DEPLOY_STATE_FILE"
 }
 
 wait_for_container() {
@@ -552,8 +552,25 @@ verify_release() {
 }
 
 rollback_release() {
-    local service answer
+    local service recorded_backup recorded_prev
     local missing=false
+
+    if grep -qx 'migrations_applied=true' "$DEPLOY_STATE_FILE" 2>/dev/null; then
+        recorded_backup="$(sed -n 's/^backup_file=//p' "$DEPLOY_STATE_FILE" 2>/dev/null | head -n 1)"
+        recorded_prev="$(sed -n 's/^previous_revision=//p' "$DEPLOY_STATE_FILE" 2>/dev/null | head -n 1)"
+        warn "Automatic --rollback is blocked because the last deployment applied database migrations."
+        warn "Switching back to filamenthub-backend:${PREVIOUS_IMAGE_TAG} would crash-loop on the Alembic head check in docker-entrypoint.sh."
+        [[ -n "$recorded_prev" ]] && warn "Previous code revision: $recorded_prev"
+        if [[ -n "$recorded_backup" ]]; then
+            warn "Encrypted pre-deploy backup: $recorded_backup"
+        else
+            warn "Encrypted pre-deploy backups directory: $BACKUP_DIR"
+        fi
+        warn "Recovery options:"
+        warn "  1. Forward-fix (preferred): deploy a fixed commit on top of the current schema (bash scripts/deploy.sh --revision <sha>)."
+        warn "  2. Full database + code restore: decrypt and restore the pre-deploy backup into filamenthub_postgres_prod, verify alembic current matches the previous image, then switch images manually."
+        fail "Rollback aborted to prevent a backend crash-loop."
+    fi
 
     for service in backend frontend; do
         docker image inspect "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}" >/dev/null 2>&1 && continue
@@ -562,16 +579,6 @@ rollback_release() {
     done
     [[ "$missing" == false ]] \
         || fail "Nothing to put back. Deploy a fixed revision the normal way instead."
-
-    if grep -qx 'migrations_applied=true' "$DEPLOY_STATE_FILE" 2>/dev/null; then
-        warn "The last deployment applied migrations, and they stay applied."
-        warn "The previous code will meet a newer schema than it was built against."
-        if [[ "$ASSUME_YES" != true ]]; then
-            printf 'Type ROLLBACK to continue: '
-            read -r answer
-            [[ "$answer" == "ROLLBACK" ]] || fail "Rollback cancelled."
-        fi
-    fi
 
     info "Putting the kept images back in service..."
     for service in backend frontend; do
@@ -639,7 +646,12 @@ deploy() {
         warn "Deployment verification failed. Automatic schema rollback is intentionally disabled."
         warn "Previous revision: $PREVIOUS_REVISION"
         warn "Pre-deploy backup: $LATEST_BACKUP"
-        warn "Put the previous code back: bash scripts/deploy.sh --rollback"
+        if [[ "$schema_before" == "$schema_after" ]]; then
+            warn "Put the previous code back: bash scripts/deploy.sh --rollback"
+        else
+            warn "Schema changed ($schema_before -> $schema_after); image-only --rollback is blocked because the previous image lacks the new Alembic head."
+            warn "Deploy a forward-fix revision, or restore $LATEST_BACKUP before switching back to the previous image."
+        fi
         warn "Inspect immediately: docker compose ps && docker compose logs --tail=200 backend frontend"
         exit 1
     fi

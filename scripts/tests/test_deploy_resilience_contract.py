@@ -246,6 +246,95 @@ try {
             bulk = commit(*(f"backend/app/m{i}.py" for i in range(3000)))
             self.assertEqual(planned(bulk, compose, compose), ["backend"])
 
+    def test_backend_dockerignore_excludes_secrets_tests_and_host_mounts(self) -> None:
+        raw_lines = (ROOT / "backend/.dockerignore").read_text(encoding="utf-8").splitlines()
+        patterns = {
+            line.strip()
+            for line in raw_lines
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        for required in (
+            ".env",
+            ".env.*",
+            ".git/",
+            ".venv/",
+            "tests/",
+            "logs/",
+            "uploads/",
+            "distributions/",
+            "wiki_content/",
+            "inbound_mail/",
+            "backups/",
+            "data/catalog_sources/orca/bundle.zip",
+        ):
+            self.assertIn(required, patterns)
+        # Runtime code, migrations, and source-lock.json must remain unignored.
+        for must_keep in ("app/", "alembic/", "data/", "data/catalog_sources/", "legal_content/"):
+            self.assertNotIn(must_keep, patterns)
+            self.assertNotIn(must_keep.rstrip("/"), patterns)
+
+    def test_rollback_is_refused_fail_closed_when_migrations_applied(self) -> None:
+        bash = _git_bash()
+        if bash is None:
+            self.skipTest("needs Git Bash")
+        worker = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
+        functions = "\n".join(
+            _shell_function(worker, name)
+            for name in ("record_deploy_state", "rollback_release")
+        )
+        prelude = """
+set -Eeuo pipefail
+RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''
+PREVIOUS_IMAGE_TAG="previous"
+ASSUME_YES=true
+info() { printf 'INFO:%s\\n' "$*"; }
+success() { printf 'OK:%s\\n' "$*"; }
+warn() { printf 'WARN:%s\\n' "$*" >&2; }
+fail() { printf 'FAIL:%s\\n' "$*" >&2; exit 1; }
+docker() {
+    printf 'DOCKER:%s\\n' "$*" >> "$DOCKER_LOG"
+    return 0
+}
+git() { printf 'deadbeef'; }
+verify_release() { return 0; }
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = Path(tmp, ".last-deploy-state")
+            docker_log = Path(tmp, "docker.log")
+            docker_log.write_text("", encoding="utf-8")
+            env = {
+                **os.environ,
+                "DEPLOY_STATE_FILE": str(state_file).replace("\\", "/"),
+                "BACKUP_DIR": str(Path(tmp, "backups")).replace("\\", "/"),
+                "DOCKER_LOG": str(docker_log).replace("\\", "/"),
+                "PREVIOUS_REVISION": "1111111",
+                "TARGET_REVISION": "2222222",
+                "LATEST_BACKUP": "/srv/backups/backup_20261127.sql.gz.gpg",
+            }
+            blocked = subprocess.run(
+                [bash, "-c", f"{prelude}\n{functions}\nrecord_deploy_state true\nrollback_release"],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("Rollback aborted to prevent a backend crash-loop", blocked.stderr)
+            self.assertIn("/srv/backups/backup_20261127.sql.gz.gpg", blocked.stderr)
+            self.assertIn("1111111", blocked.stderr)
+            self.assertEqual(docker_log.read_text(encoding="utf-8"), "")
+
+            allowed = subprocess.run(
+                [bash, "-c", f"{prelude}\n{functions}\nrecord_deploy_state false\nrollback_release"],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
+            logged = docker_log.read_text(encoding="utf-8")
+            self.assertIn("DOCKER:tag filamenthub-backend:previous filamenthub-backend:latest", logged)
+            self.assertIn("DOCKER:tag filamenthub-frontend:previous filamenthub-frontend:latest", logged)
+            self.assertIn("DOCKER:compose up -d --no-build --remove-orphans", logged)
+
 
 def _shell_function(source: str, name: str) -> str:
     match = re.search(rf"^{name}\(\) \{{.*?^\}}$", source, re.S | re.M)
