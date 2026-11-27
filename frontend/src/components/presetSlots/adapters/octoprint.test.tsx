@@ -69,4 +69,19 @@ describe('OctoPrint bridge setup', () => {
     expect(await screen.findByText('NEW-CODE-2')).toBeInTheDocument();
     expect(screen.queryByText('presetSlots.octoprint.codeExpired')).not.toBeInTheDocument();
   });
+
+  it('shows how long a live code lasts and lets the person take a new one', async () => {
+    mocks.issuePairingCode
+      .mockResolvedValueOnce({ pairing_code: 'LIVE-CODE-1', expires_at: '2999-01-01T00:00:00Z' })
+      .mockResolvedValueOnce({ pairing_code: 'LIVE-CODE-2', expires_at: '2999-01-01T00:10:00Z' });
+    show();
+
+    fireEvent.click(await screen.findByRole('button', { name: /presetSlots\.octoprint\.issueCodeInstalled/ }));
+
+    expect(await screen.findByText('LIVE-CODE-1')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.octoprint.codeExpires')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /presetSlots\.octoprint\.newCode/ }));
+    expect(await screen.findByText('LIVE-CODE-2')).toBeInTheDocument();
+    expect(mocks.issuePairingCode).toHaveBeenCalledTimes(2);
+  });
 });

@@ -8436,8 +8436,15 @@ _SETUP_REPORT_STAGES = {
     "bambuSerialRequired": "report",
     "bambuPairingFailed": "pair",
     "bambuPairingExpired": "pair",
+    "bambuPairingRenewFailed": "pair",
     "bambuRepairRequired": "snapshot",
 }
+
+# How long a pairing that got 401 waits for the open site page to issue a new
+# code. The page answers with one API call; past this the person sees the
+# ordinary "code expired" message.
+PAIRING_RENEW_TIMEOUT_SECONDS = 20
+_PAIRING_RENEWAL_LOCK = threading.Lock()
 
 
 def _setup_report_platform():
@@ -14425,9 +14432,85 @@ class FilamentHubCatalog(
                 context["pairingCode"], "bambu", "orca_plugin_lan", "dialog", "cancelled",
             )
 
+    def _request_fresh_pairing_code(self, physical_printer_id, material_system_id):
+        """Ask the open site page for a new pairing code; None when it cannot give one.
+
+        Only the page the person is connecting from may issue it: the main
+        window must be open and the local setup window must belong to this
+        printer. Nothing is issued in the background.
+        """
+        context = getattr(self, "_local_dialog_context", None) or {}
+        if (
+            self.win is None
+            or getattr(self, "_local_window", None) is None
+            or context.get("provider") != "bambu"
+            or context.get("physicalPrinterId") != physical_printer_id
+            or context.get("materialSystemId") != material_system_id
+        ):
+            fh_log("bambu_pairing_renew_skipped: reason=no_setup_page")
+            return None
+        request_id = secrets.token_urlsafe(16)
+        waiter = {
+            "event": threading.Event(),
+            "code": None,
+            "physicalPrinterId": physical_printer_id,
+            "materialSystemId": material_system_id,
+        }
+        with _PAIRING_RENEWAL_LOCK:
+            renewals = self.__dict__.setdefault("_pairing_renewals", {})
+            renewals[request_id] = waiter
+        try:
+            delivered = self._deliver(
+                "bambu-pairing-code-needed",
+                requestId=request_id,
+                physicalPrinterId=physical_printer_id,
+                materialSystemId=material_system_id,
+            )
+            if delivered is False:
+                fh_log("bambu_pairing_renew_skipped: reason=page_closed")
+                return None
+            if not waiter["event"].wait(PAIRING_RENEW_TIMEOUT_SECONDS):
+                fh_log("bambu_pairing_renew_skipped: reason=no_answer")
+                return None
+        finally:
+            with _PAIRING_RENEWAL_LOCK:
+                self.__dict__.get("_pairing_renewals", {}).pop(request_id, None)
+        if not waiter["code"]:
+            fh_log("bambu_pairing_renew_skipped: reason=page_declined")
+            return None
+        context = getattr(self, "_local_dialog_context", None)
+        if isinstance(context, dict) and context.get("physicalPrinterId") == physical_printer_id:
+            # A later "window closed" report must name the code that is alive.
+            context["pairingCode"] = waiter["code"]
+        return waiter["code"]
+
+    def _accept_fresh_pairing_code(self, msg):
+        request_id = msg.get("requestId")
+        if not isinstance(request_id, str):
+            return
+        with _PAIRING_RENEWAL_LOCK:
+            waiter = self.__dict__.get("_pairing_renewals", {}).get(request_id)
+            if waiter is None or waiter["event"].is_set():
+                return
+            if (
+                msg.get("physicalPrinterId") != waiter["physicalPrinterId"]
+                or msg.get("materialSystemId") != waiter["materialSystemId"]
+            ):
+                return
+            code = msg.get("pairingCode")
+            if isinstance(code, str) and 8 <= len(code) <= 32:
+                waiter["code"] = code
+            waiter["event"].set()
+
+    def _cancel_pairing_renewals(self):
+        with _PAIRING_RENEWAL_LOCK:
+            for waiter in self.__dict__.get("_pairing_renewals", {}).values():
+                waiter["event"].set()
+
     def _on_local_dialog_close(self):
         if self._local_window is None:
             return
+        self._cancel_pairing_renewals()
         self._local_window = None
         self._local_dialog_session = ""
         self._report_local_dialog_state(False, "cancelled")
@@ -14725,6 +14808,7 @@ class FilamentHubCatalog(
         return orca.ExecutionResult.success(ui_text("catalogOpened"))
 
     def on_close(self):
+        self._cancel_pairing_renewals()
         self._close_local_dialog()
         if _slice_delivery_target() is self:
             _set_slice_delivery_target(None)
@@ -15175,24 +15259,44 @@ class FilamentHubCatalog(
             if not can_queue_fresh_bambu_revoke():
                 finish("bambuPairingFailed", "error")
                 return
-            pair_status, pair_body = http_post_json(
-                "/printer-bridge/pair",
-                "",
-                {
-                    "pairing_code": pairing_code,
-                    "provider": "bambu",
-                    "transport": "orca_plugin_lan",
-                    "source_instance_id": local["source_instance_id"],
-                    "plugin_version": PLUGIN_VERSION,
-                    "capabilities": _bambu_capabilities(report),
-                },
-            )
+            def pair(code):
+                return http_post_json(
+                    "/printer-bridge/pair",
+                    "",
+                    {
+                        "pairing_code": code,
+                        "provider": "bambu",
+                        "transport": "orca_plugin_lan",
+                        "source_instance_id": local["source_instance_id"],
+                        "plugin_version": PLUGIN_VERSION,
+                        "capabilities": _bambu_capabilities(report),
+                    },
+                )
+
+            pair_status, pair_body = pair(pairing_code)
             fh_log("Bambu setup: pairing request returned HTTP %s" % pair_status)
+            renewed = False
+            if pair_status == 401:
+                # 401 means the code ran out or was already spent
+                # (pair_printer_bridge). The printer check took the person
+                # minutes; ask the open page for a new code and try once more,
+                # so they do not have to start over.
+                fh_log("bambu_pairing_rejected: attempt=1")
+                fresh_code = self._request_fresh_pairing_code(
+                    physical_printer_id, material_system_id
+                )
+                if fresh_code:
+                    renewed = True
+                    pairing_code = fresh_code
+                    pair_status, pair_body = pair(pairing_code)
+                    fh_log("Bambu setup: renewed pairing returned HTTP %s" % pair_status)
+                    if pair_status == 401:
+                        fh_log("bambu_pairing_rejected: attempt=2")
             if pair_status != 200:
-                # 401 is the server's answer for an unknown or expired code
-                # (pair_printer_bridge); 0 means the site was not reached.
+                # 0 means the site was not reached.
                 finish(
-                    "bambuPairingExpired" if pair_status == 401
+                    ("bambuPairingRenewFailed" if renewed else "bambuPairingExpired")
+                    if pair_status == 401
                     else "bambuSiteUnreachable" if pair_status == 0
                     else "bambuPairingFailed",
                     "error",
@@ -16447,6 +16551,10 @@ class FilamentHubCatalog(
             return
         if direct_message and msg_type in {"configure-bambu", "printer-setup-manual"}:
             self._open_local_dialog(msg)
+            return
+        if direct_message and msg_type == "bambu-pairing-code":
+            # The page's answer to bambu-pairing-code-needed; a worker waits for it.
+            self._accept_fresh_pairing_code(msg)
             return
         if local_message and msg_type in {"prepare-bambu-local", "configure-bambu-local"}:
             fh_log("Bambu setup message received: %s" % msg_type)

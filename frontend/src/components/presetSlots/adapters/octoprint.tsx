@@ -553,6 +553,17 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
               })}
             </span>
           )}
+          {/* OctoPrint answers an expired or spent code with 401 and cannot ask
+              the site for another one: the person takes a new code here. */}
+          <button
+            type="button"
+            onClick={issueCode}
+            disabled={issuing}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-amber-200 transition hover:bg-white/10 hover:text-amber-100 disabled:opacity-40"
+          >
+            {issuing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {t('presetSlots.octoprint.newCode')}
+          </button>
         </div>
       ) : (
         <>

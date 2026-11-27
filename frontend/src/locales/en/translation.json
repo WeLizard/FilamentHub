@@ -9525,6 +9525,7 @@
         "bambuNoReportSerial": "the printer took the code but sent no data. Enter the printer's serial number, then turn on LAN Only Mode and Developer Mode.",
         "bambuSerialRequired": "the printer did not give its serial number. Enter it in the connection window.",
         "bambuPairingExpired": "the connection code expired. Press Connect again.",
+        "bambuPairingRenewFailed": "the site turned down the connection code twice, even a new one. Reload the page and press Connect again.",
         "bambuPairingFailed": "the printer answered, but the site did not accept the connection. Press Connect again.",
         "bambuRepairRequired": "the connection needs to be restored. Press Connect again.",
         "cancelled": "the connection window was closed before the printer was checked. Press Connect and enter the address and access code.",

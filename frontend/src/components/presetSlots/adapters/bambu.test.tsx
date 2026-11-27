@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   configure: vi.fn(),
   requestRefresh: vi.fn(),
   requestAssignment: vi.fn(),
+  answerCode: vi.fn(),
+  codeRequest: undefined as undefined | ((request: {
+    requestId: string; physicalPrinterId: number; materialSystemId: number;
+  }) => void),
   localSetup: undefined as undefined | ((state: {
     open: boolean;
     provider: 'bambu' | 'moonraker';
@@ -38,6 +42,11 @@ vi.mock('../../../utils/pluginBridge', () => ({
   configureBambuBridgeInPlugin: mocks.configure,
   requestBambuObservationRefresh: mocks.requestRefresh,
   requestBambuSlotAssignment: mocks.requestAssignment,
+  answerBambuPairingCodeRequest: mocks.answerCode,
+  subscribeToBambuPairingCodeRequests: (callback: NonNullable<typeof mocks.codeRequest>) => {
+    mocks.codeRequest = callback;
+    return () => { if (mocks.codeRequest === callback) mocks.codeRequest = undefined; };
+  },
   subscribeToLocalPrinterSetup: (callback: NonNullable<typeof mocks.localSetup>) => {
     mocks.localSetup = callback;
     return () => { if (mocks.localSetup === callback) mocks.localSetup = undefined; };
@@ -79,6 +88,7 @@ describe('Bambu setup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.localSetup = undefined;
+    mocks.codeRequest = undefined;
     mocks.requestRefresh.mockResolvedValue({
       ok: true,
       operation: 'refresh',
@@ -289,5 +299,42 @@ describe('Bambu setup', () => {
 
     await screen.findByText('presetSlots.bambu.awaitingFirstData');
     expect(screen.queryByText('presetSlots.bambu.lastAttempt')).not.toBeInTheDocument();
+  });
+
+  it('gives the plugin one new code while its setup window from this card is open', async () => {
+    show(true, 'opaque-bambu-ref');
+    await waitFor(() => expect(mocks.configure).toHaveBeenCalledTimes(1));
+    mocks.issuePairingCode.mockResolvedValueOnce({
+      pairing_code: 'FH-NEWER-67890', expires_at: '2026-09-01T22:10:00Z',
+    });
+    const request = { requestId: 'renew-request-1', physicalPrinterId: 11, materialSystemId: 21 };
+
+    await act(async () => { mocks.codeRequest?.(request); });
+
+    await waitFor(() => expect(mocks.answerCode).toHaveBeenCalledWith(request, 'FH-NEWER-67890'));
+    expect(mocks.issuePairingCode).toHaveBeenCalledTimes(2);
+  });
+
+  it('issues no code for a plugin request when no setup window is open from this card', async () => {
+    show(false);
+    await waitFor(() => expect(mocks.status).toHaveBeenCalled());
+
+    await act(async () => {
+      mocks.codeRequest?.({ requestId: 'renew-request-2', physicalPrinterId: 11, materialSystemId: 21 });
+    });
+    expect(mocks.issuePairingCode).not.toHaveBeenCalled();
+    expect(mocks.answerCode).not.toHaveBeenCalled();
+
+    // After the window from this card was closed, the card stays out of it too.
+    show(true, 'opaque-bambu-ref');
+    await waitFor(() => expect(mocks.configure).toHaveBeenCalledTimes(1));
+    act(() => mocks.localSetup?.({
+      open: false, provider: 'bambu', physicalPrinterId: 11, materialSystemId: 21, outcome: 'cancelled',
+    }));
+    await act(async () => {
+      mocks.codeRequest?.({ requestId: 'renew-request-3', physicalPrinterId: 11, materialSystemId: 21 });
+    });
+    expect(mocks.issuePairingCode).toHaveBeenCalledTimes(1);
+    expect(mocks.answerCode).not.toHaveBeenCalled();
   });
 });

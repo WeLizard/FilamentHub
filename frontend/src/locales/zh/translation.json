@@ -9503,6 +9503,7 @@
         "bambuNoReportSerial": "打印机接受了访问码，但没有发送数据。请填写打印机序列号，然后开启“仅局域网”模式和开发者模式。",
         "bambuSerialRequired": "打印机没有提供序列号。请在连接窗口中填写。",
         "bambuPairingExpired": "连接码已过期。请再次点击“连接”。",
+        "bambuPairingRenewFailed": "网站两次拒绝了连接码，新码也未被接受。请刷新页面后再次点击“连接”。",
         "bambuPairingFailed": "打印机已响应，但网站未接受连接。请再次点击“连接”。",
         "bambuRepairRequired": "需要恢复连接。请再次点击“连接”。",
         "cancelled": "在检查打印机之前关闭了连接窗口。请点击“连接”并填写地址和访问码。",

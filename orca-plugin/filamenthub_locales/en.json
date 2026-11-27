@@ -147,5 +147,6 @@
   "bambuNoReport": "The printer accepted the access code but sent no data. Check the serial number or clear it so the plugin finds it. If that does not help, turn on LAN Only Mode and Developer Mode on the printer.",
   "bambuNoReportSerial": "The printer accepted the access code but sent no data. Enter the printer's serial number below and try again. If that does not help, turn on LAN Only Mode and Developer Mode on the printer.",
   "bambuPairingExpired": "The printer answered, but the setup code from the site has expired. Close this window and start the printer connection on the site again.",
+  "bambuPairingRenewFailed": "The printer answered, but the site turned down the setup code twice, even after issuing a new one. Close this window, reload the FilamentHub page and start the printer connection again.",
   "bambuSiteUnreachable": "The printer answered, but the FilamentHub site did not. Check the internet connection and try again."
 }

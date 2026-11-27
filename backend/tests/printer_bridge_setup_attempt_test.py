@@ -155,3 +155,38 @@ async def test_paired_printer_shows_no_old_failure(auth_client: AsyncClient):
     status = await _status(auth_client, printer_id, system_id)
     assert status["paired"] is True
     assert status["last_setup_report"] is None
+
+
+def _pair_body(code: str) -> dict:
+    return {
+        "pairing_code": code,
+        "provider": "bambu",
+        "transport": "orca_plugin_lan",
+        "source_instance_id": SOURCE,
+        "plugin_version": "0.3.0",
+        "capabilities": ["read"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_renewed_code_retires_the_one_it_replaces(auth_client: AsyncClient, db_session: AsyncSession):
+    # The plugin asks the open page for a new code after a 401; the new code
+    # must not leave the old one alive next to it.
+    printer_id, system_id, old_code = await _issued(auth_client)
+    renewed = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    assert renewed.status_code == 200
+    new_code = renewed.json()["pairing_code"]
+    assert new_code != old_code
+
+    live = (await db_session.scalars(
+        select(PrinterBridgeCredential).where(PrinterBridgeCredential.pairing_code_hash.is_not(None))
+    )).all()
+    assert len(live) == 1
+
+    pair_url = "/api/v1/printer-bridge/pair"
+    assert (await auth_client.post(pair_url, json=_pair_body(old_code))).status_code == 401
+    assert (await auth_client.post(pair_url, json=_pair_body(new_code))).status_code == 200
+    # Spent once, the code is gone: a second pairing with it is the same 401.
+    assert (await auth_client.post(pair_url, json=_pair_body(new_code))).status_code == 401
