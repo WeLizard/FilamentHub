@@ -65,6 +65,39 @@ class PrinterBridgeKlipperLinkResponse(BaseModel):
     provider: str
 
 
+# Steps of a local printer check, as the plugin names them when it reports why
+# a setup ended without pairing. "dialog" is the window closed without a try.
+PrinterBridgeSetupStage = Literal[
+    "address", "connect", "tls", "auth", "subscribe", "report",
+    "pair", "snapshot", "local", "repair", "dialog", "unknown",
+]
+
+
+class PrinterBridgeSetupAttemptRequest(BaseModel):
+    """Why one setup with this pairing code ended without pairing.
+
+    Content-free on purpose: no address, serial or access code, only the step
+    and the plugin's message key.
+    """
+
+    pairing_code: str = Field(min_length=8, max_length=32)
+    provider: str = Field(min_length=1, max_length=50)
+    transport: PrinterBridgeTransport
+    source_instance_id: str = Field(min_length=16, max_length=100)
+    stage: PrinterBridgeSetupStage
+    code: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+    plugin_version: str = Field(min_length=1, max_length=50)
+    platform: Literal["windows", "macos", "linux", "other"]
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+
+class PrinterBridgeSetupReport(BaseModel):
+    stage: str
+    code: str
+    reported_at: datetime
+
+
 class PrinterBridgeStatusResponse(BaseModel):
     configured: bool
     paired: bool
@@ -78,6 +111,8 @@ class PrinterBridgeStatusResponse(BaseModel):
     provider: str
     transport: PrinterBridgeTransport
     capabilities: list[str]
+    # The last reason a setup ended without pairing; only while not paired.
+    last_setup_report: PrinterBridgeSetupReport | None = None
 
 
 class PrinterBridgeHeartbeatRequest(BaseModel):

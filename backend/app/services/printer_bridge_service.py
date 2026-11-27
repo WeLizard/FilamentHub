@@ -33,6 +33,8 @@ from app.schemas.printer_bridge import (
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
+    PrinterBridgeSetupAttemptRequest,
+    PrinterBridgeSetupReport,
     PrinterBridgeStatusResponse,
     PrinterBridgeTransport,
     PrinterBridgeUsageBatchRequest,
@@ -58,6 +60,9 @@ ORCA_BRIDGE_PROVIDERS = frozenset(
     {BAMBU_PROVIDER, "flashforge", "creality", "sdcp", "elegoo_mqtt"}
 )
 BATCH_RECEIPT_KIND = "usage_batch"
+# One row per pairing code and workstation: the last reason that setup failed.
+# Receipts keep it without a migration; audit_events allows only fixed actions.
+SETUP_ATTEMPT_KIND = "setup_attempt"
 PRINT_JOB_SOURCE = "printer_bridge"
 
 
@@ -291,13 +296,15 @@ async def get_printer_bridge_status(
     credential = await db.scalar(
         select(PrinterBridgeCredential).where(PrinterBridgeCredential.connector_id == connector.id)
     )
+    paired = (
+        credential is not None
+        and credential.token_hash is not None
+        and credential.revoked_at is None
+    )
     return PrinterBridgeStatusResponse(
         configured=credential is not None,
-        paired=(
-            credential is not None
-            and credential.token_hash is not None
-            and credential.revoked_at is None
-        ),
+        paired=paired,
+        last_setup_report=None if paired else await _last_setup_report(db, connector.id),
         pairing_expires_at=credential.pairing_expires_at if credential else None,
         last_seen_at=connector.last_seen_at,
         last_observation_at=connector.last_observation_at,
@@ -309,6 +316,86 @@ async def get_printer_bridge_status(
         transport=transport,
         capabilities=list(connector.capabilities),
     )
+
+
+async def _last_setup_report(db: AsyncSession, connector_id: int) -> PrinterBridgeSetupReport | None:
+    receipt = await db.scalar(
+        select(PrinterBridgeReceipt)
+        .where(
+            PrinterBridgeReceipt.connector_id == connector_id,
+            PrinterBridgeReceipt.receipt_kind == SETUP_ATTEMPT_KIND,
+        )
+        .order_by(PrinterBridgeReceipt.created_at.desc(), PrinterBridgeReceipt.id.desc())
+        .limit(1)
+    )
+    report = receipt.response_payload if receipt is not None else None
+    if receipt is None or not isinstance(report, dict):
+        return None
+    return PrinterBridgeSetupReport(
+        stage=str(report.get("stage") or "unknown"),
+        code=str(report.get("code") or "unknown"),
+        reported_at=receipt.created_at,
+    )
+
+
+async def record_printer_bridge_setup_attempt(
+    db: AsyncSession, payload: PrinterBridgeSetupAttemptRequest
+) -> None:
+    """Keep the last reason a setup with this pairing code did not pair.
+
+    An expired code is still accepted here: running out of time is one of the
+    reasons worth knowing. Unknown codes are dropped without an answer, so the
+    call cannot be used to probe which codes exist.
+    """
+    code_digest = _digest(_normalize_pairing_code(payload.pairing_code))
+    credential = await db.scalar(
+        select(PrinterBridgeCredential).where(PrinterBridgeCredential.pairing_code_hash == code_digest)
+    )
+    if credential is None:
+        return
+    connector = await db.get(PhysicalPrinterConnector, credential.connector_id)
+    if (
+        connector is None
+        or connector.provider != payload.provider
+        or connector.transport != payload.transport
+    ):
+        return
+    receipt = await db.scalar(
+        select(PrinterBridgeReceipt)
+        .where(
+            PrinterBridgeReceipt.connector_id == connector.id,
+            PrinterBridgeReceipt.source_instance_id == payload.source_instance_id,
+            PrinterBridgeReceipt.receipt_kind == SETUP_ATTEMPT_KIND,
+            PrinterBridgeReceipt.receipt_id == code_digest,
+        )
+        .with_for_update()
+    )
+    previous = receipt.response_payload if receipt is not None else None
+    if (
+        payload.stage == "dialog"
+        and isinstance(previous, dict)
+        and previous.get("stage") != "dialog"
+    ):
+        # Closing the window after a failed check: the failure is the reason.
+        return
+    report = {
+        "stage": payload.stage,
+        "code": payload.code,
+        "plugin_version": payload.plugin_version,
+        "platform": payload.platform,
+    }
+    if receipt is None:
+        receipt = PrinterBridgeReceipt(
+            connector_id=connector.id,
+            source_instance_id=payload.source_instance_id,
+            receipt_kind=SETUP_ATTEMPT_KIND,
+            receipt_id=code_digest,
+        )
+        db.add(receipt)
+    receipt.payload_hash = _payload_digest(report)
+    receipt.response_payload = report
+    receipt.created_at = _now()
+    await db.commit()
 
 
 async def _connector_for_source(

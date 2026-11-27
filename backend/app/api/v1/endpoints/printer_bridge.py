@@ -22,6 +22,7 @@ from app.schemas.printer_bridge import (
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
+    PrinterBridgeSetupAttemptRequest,
     PrinterBridgeStatusResponse,
     PrinterBridgeTransport,
     PrinterBridgeUsageBatchRequest,
@@ -37,6 +38,7 @@ from app.services.printer_bridge_service import (
     issue_printer_bridge_pairing_code,
     pair_printer_bridge,
     record_printer_bridge_heartbeat,
+    record_printer_bridge_setup_attempt,
     record_printer_bridge_usage_batch,
     require_printer_bridge_capability,
     require_printer_bridge_token,
@@ -126,6 +128,21 @@ async def pair(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterBridgePairResponse:
     return await pair_printer_bridge(db, payload)
+
+
+@router.post("/setup-attempt", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/minute")
+async def setup_attempt(
+    request: Request,
+    payload: PrinterBridgeSetupAttemptRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Record why a local setup with a pairing code ended without pairing.
+
+    Always 204: the answer must not tell which pairing codes exist.
+    """
+    await record_printer_bridge_setup_attempt(db, payload)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/klipper-usage-link", response_model=PrinterBridgeKlipperLinkResponse)

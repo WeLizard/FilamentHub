@@ -343,6 +343,26 @@ def plugin_module():
         else:
             sys.modules["orca"] = previous
 
+@pytest.fixture(autouse=True)
+def setup_attempt_reports(request, monkeypatch):
+    """Keep failure reports to the site inside the test.
+
+    A failed printer check reports its reason over HTTP; without this a test
+    of an error path would reach the real site with a fixture pairing code.
+    Tests of the report itself call ``plugin.real_report_setup_attempt``.
+    """
+    reports = []
+    if "plugin_module" not in request.fixturenames:
+        yield reports
+        return
+    plugin = request.getfixturevalue("plugin_module")
+    monkeypatch.setattr(plugin, "real_report_setup_attempt",
+                        plugin.report_printer_bridge_setup_attempt, raising=False)
+    monkeypatch.setattr(plugin, "report_printer_bridge_setup_attempt",
+                        lambda *args: reports.append(args) or 204)
+    yield reports
+
+
 @pytest.fixture
 def setup_flow(plugin_module, monkeypatch, tmp_path):
     plugin = plugin_module

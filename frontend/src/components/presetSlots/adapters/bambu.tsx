@@ -11,12 +11,14 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
+  answerBambuPairingCodeRequest,
   configureBambuBridgeInPlugin,
   isPluginEmbed,
   requestBambuObservationRefresh,
   requestBambuSlotAssignment,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
+  subscribeToBambuPairingCodeRequests,
   subscribeToLocalPrinterSetup,
 } from '../../../utils/pluginBridge';
 import { printerBridgeAPI } from '../../../api/client';
@@ -63,6 +65,9 @@ function BambuSetup({
   const [dataPollDeadline, setDataPollDeadline] = useState(() => Date.now() + 60_000);
   const [pairingBaselineLastSeen, setPairingBaselineLastSeen] = useState<string | null>(null);
   const autoConnectAttempted = useRef(false);
+  // True while the plugin's setup window opened from this card is open: only
+  // then may the plugin ask this page for a replacement pairing code.
+  const setupOpenHere = useRef(false);
   const now = useNow();
   const connector = (printer.connectors ?? []).find(
     (item) => item.provider === 'bambu'
@@ -112,6 +117,11 @@ function BambuSetup({
     && !lastObservationAt;
   const hasReceivedData = Boolean(lastObservationAt);
   const freshData = getDeviceLinkState(lastObservationAt, now) === 'active';
+  // The plugin tells the site why its last check did not pair; show it until
+  // a new attempt is under way.
+  const setupReport = !hasReceivedData && !bridgeStatus?.paired && !(pairingStarted && pairingPending)
+    ? bridgeStatus?.last_setup_report ?? null
+    : null;
 
   useEffect(() => {
     if (!pluginEmbed) return undefined;
@@ -127,11 +137,31 @@ function BambuSetup({
     return subscribeToLocalPrinterSetup((state) => {
       if (state.provider !== 'bambu' || state.open || state.physicalPrinterId !== printer.id
         || state.materialSystemId !== system.id) return;
+      setupOpenHere.current = false;
       if (state.outcome !== 'saved') setPairingStarted(false);
       void queryClient.invalidateQueries({ queryKey: ['printer-bridge-status', printer.id, system.id] });
       void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
     });
   }, [pluginEmbed, printer.id, queryClient, system.id]);
+
+  useEffect(() => {
+    if (!pluginEmbed) return;
+    return subscribeToBambuPairingCodeRequests((request) => {
+      if (request.physicalPrinterId !== printer.id || request.materialSystemId !== system.id) return;
+      if (!setupOpenHere.current) return;
+      void (async () => {
+        try {
+          // Issuing replaces the old code on the server, so only one is alive.
+          const pairing = await printerBridgeAPI.issuePairingCode(printer.id, system.id);
+          setPairingStarted(true);
+          setDataPollDeadline(Date.parse(pairing.expires_at));
+          answerBambuPairingCodeRequest(request, pairing.pairing_code);
+        } catch {
+          answerBambuPairingCodeRequest(request, null);
+        }
+      })();
+    });
+  }, [pluginEmbed, printer.id, system.id]);
 
   useEffect(() => {
     const lastSeenAt = bridgeStatus?.last_seen_at;
@@ -176,6 +206,7 @@ function BambuSetup({
       setPairingBaselineLastSeen(refreshed.data?.last_seen_at ?? null);
       setPairingStarted(true);
       setDataPollDeadline(Date.parse(pairing.expires_at));
+      setupOpenHere.current = true;
       configureBambuBridgeInPlugin(
         printer.id,
         system.id,
@@ -245,6 +276,13 @@ function BambuSetup({
       </div>
       {!hasReceivedData && <p className="mt-1 text-[11px] leading-4 text-gray-400">
         {t(awaitingFirstData ? 'presetSlots.bambu.awaitingFirstDataDescription' : 'presetSlots.bambu.description')}
+      </p>}
+      {setupReport && <p role="status" className="mt-1 text-[11px] leading-4 text-amber-200">
+        {t('presetSlots.bambu.lastAttempt', {
+          reason: t(`presetSlots.bambu.setupReasons.${setupReport.code}`, {
+            defaultValue: t('presetSlots.bambu.setupReasons.unknown'),
+          }),
+        })}
       </p>}
 
       {observation && (

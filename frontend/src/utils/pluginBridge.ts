@@ -970,6 +970,52 @@ export function subscribeToLocalPrinterSetup(
   return () => window.removeEventListener('message', handler);
 }
 
+export interface BambuPairingCodeRequest {
+  requestId: string;
+  physicalPrinterId: number;
+  materialSystemId: number;
+}
+
+/**
+ * The plugin's printer check outlived the pairing code (the site answered
+ * 401). It asks the page the setup was started from for one new code and
+ * tries once more; nothing issues codes without such a page.
+ */
+export function subscribeToBambuPairingCodeRequests(
+  onRequest: (request: BambuPairingCodeRequest) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'bambu-pairing-code-needed') return;
+    if (typeof data.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(data.requestId)) return;
+    if (!Number.isSafeInteger(data.physicalPrinterId) || data.physicalPrinterId < 1
+      || !Number.isSafeInteger(data.materialSystemId) || data.materialSystemId < 1) return;
+    onRequest({
+      requestId: data.requestId,
+      physicalPrinterId: data.physicalPrinterId,
+      materialSystemId: data.materialSystemId,
+    });
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
+/** Answer a code request; without a code the plugin stops waiting and says the code expired. */
+export function answerBambuPairingCodeRequest(
+  request: BambuPairingCodeRequest,
+  pairingCode: string | null,
+): void {
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'bambu-pairing-code',
+    requestId: request.requestId,
+    physicalPrinterId: request.physicalPrinterId,
+    materialSystemId: request.materialSystemId,
+    ...(pairingCode ? { pairingCode } : {}),
+  });
+}
+
 export function configureBambuBridgeInPlugin(
   physicalPrinterId: number,
   materialSystemId: number,

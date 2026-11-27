@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   OctoPrintBridgeStatus,
@@ -164,6 +164,7 @@ vi.mock('../api/client', () => ({
     revoke: vi.fn(),
   },
   downloadsAPI: { getPluginDownloads: vi.fn() },
+  edgeNodesAPI: { list: vi.fn(async () => []) },
   printerBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn() },
   presetsAPI: { list: vi.fn(), get: vi.fn() },
   spoolsAPI: { list: vi.fn() },
@@ -477,11 +478,12 @@ describe('PresetSlotsPanel', () => {
       name: 'presetSlots.octoprint.bridgeDocs',
     }));
 
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('downloadPage.octoInstall1')).toBeInTheDocument();
-    expect(screen.getByText('downloadPage.octoInstall2')).toBeInTheDocument();
-    expect(screen.getByText('downloadPage.octoInstall3')).toBeInTheDocument();
-    const download = screen.getByRole('link', {
+    // The card shows the first steps too; the guide holds all of them.
+    const guide = within(screen.getByRole('dialog'));
+    expect(guide.getByText('downloadPage.octoInstall1')).toBeInTheDocument();
+    expect(guide.getByText('downloadPage.octoInstall2')).toBeInTheDocument();
+    expect(guide.getByText('downloadPage.octoInstall3')).toBeInTheDocument();
+    const download = guide.getByRole('link', {
       name: 'downloadPage.octoDownload',
     });
     expect(download).toHaveAttribute(

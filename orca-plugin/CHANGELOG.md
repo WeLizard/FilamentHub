@@ -27,6 +27,9 @@ Newest first. The numbered entry matching the plugin version is used for release
 - Bambu: a print the plugin saw only at its very start and then already finished is now charged in full. Before, the rest of such a print was not deducted.
 - The plugin looks at your printers as soon as OrcaSlicer sends a print or reports a change of printer state, instead of waiting for its next scheduled check.
 - When a finished print deducted nothing, OrcaSlicer shows a notice with the reason, for example that no spool is assigned to the printer's slots.
+- Bambu LAN setup says what went wrong and what to do next: an address outside the local network, no answer at the address, a device that is not a Bambu printer, a refused access code, a printer that took the code but sends no data (turn on LAN Only Mode and Developer Mode, or enter the serial number), an expired setup code, or the site not answering. The same reason appears on the printer's card on FilamentHub; only the step and the reason are sent, never the address, serial number or access code.
+- The Bambu setup window searches the local network by itself on first use, says where the printer screen shows the IP address and access code, and opens the serial number field when the search finds nothing.
+- If the setup code from the site runs out while the Bambu printer is being checked, the plugin asks the open FilamentHub page for a new code and finishes the connection on its own, once. If the site turns that code down too, the window says so; no code is ever issued without the page you started from.
 - Requires the matching website update: install this version after the site is updated.
 
 ## 0.2.10

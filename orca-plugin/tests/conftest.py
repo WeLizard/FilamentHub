@@ -1,3 +1,3 @@
 """Shared fixtures for the OrcaSlicer plugin test modules."""
 
-from .filamenthub_plugin_test_support import plugin_module, setup_flow  # noqa: F401
+from .filamenthub_plugin_test_support import plugin_module, setup_attempt_reports, setup_flow  # noqa: F401

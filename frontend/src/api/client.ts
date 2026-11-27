@@ -5067,6 +5067,15 @@ export interface PrinterBridgeStatus {
   provider: string;
   transport: PrinterBridgeTransport;
   capabilities: string[];
+  /** Why the last setup ended without pairing, as the plugin reported it. */
+  last_setup_report?: PrinterBridgeSetupReport | null;
+}
+
+export interface PrinterBridgeSetupReport {
+  stage: string;
+  /** The plugin's message key, e.g. bambuLanAuthRejected, or "cancelled". */
+  code: string;
+  reported_at: string;
 }
 
 export type PrinterBridgeTransport = 'orca_plugin_lan' | 'edge_agent';

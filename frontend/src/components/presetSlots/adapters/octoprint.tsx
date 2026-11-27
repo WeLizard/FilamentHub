@@ -31,6 +31,7 @@ import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
 import { ordinaryTopologies } from './topology';
 import { isPairingAccessDenied, retryPairingStatusQuery } from '../pairingPolling';
+import { useNow } from '../../../utils/deviceLink';
 
 export function octoPrintPairingRefetchInterval(
   error: unknown,
@@ -415,6 +416,10 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
   const [issuing, setIssuing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const now = useNow(15_000);
+  // A code lives ten minutes (PAIRING_TTL); after that the card must offer a
+  // new one instead of showing a code the server no longer accepts.
+  const codeExpired = Boolean(pairingCode && pairingExpiresAt && Date.parse(pairingExpiresAt) <= now);
 
   const statusQuery = useQuery({
     queryKey: ['octoprint-bridge-status', printer.id, system.id],
@@ -436,7 +441,7 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
   const downloadsQuery = useQuery({
     queryKey: ['plugin-downloads'],
     queryFn: () => downloadsAPI.getPluginDownloads(),
-    enabled: guideOpen,
+    enabled: guideOpen || !pairingCode,
     staleTime: 5 * 60_000,
   });
   const bridgeWheel = downloadsQuery.data?.packages.find(
@@ -509,7 +514,23 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
         {t('presetSlots.octoprint.setupDescription')}
       </p>
 
-      {pairingCode ? (
+      {pairingCode && codeExpired ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <code className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm font-semibold tracking-wider text-gray-500 line-through">
+            {pairingCode}
+          </code>
+          <span className="text-[11px] text-amber-100">{t('presetSlots.octoprint.codeExpired')}</span>
+          <button
+            type="button"
+            onClick={issueCode}
+            disabled={issuing}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-300/15 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-300/25 disabled:opacity-40"
+          >
+            {issuing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {t('presetSlots.octoprint.newCode')}
+          </button>
+        </div>
+      ) : pairingCode ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <code className="rounded-lg border border-amber-300/20 bg-black/30 px-3 py-1.5 text-sm font-semibold tracking-wider text-white">
             {pairingCode}
@@ -532,17 +553,51 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
               })}
             </span>
           )}
+          {/* OctoPrint answers an expired or spent code with 401 and cannot ask
+              the site for another one: the person takes a new code here. */}
+          <button
+            type="button"
+            onClick={issueCode}
+            disabled={issuing}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-amber-200 transition hover:bg-white/10 hover:text-amber-100 disabled:opacity-40"
+          >
+            {issuing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {t('presetSlots.octoprint.newCode')}
+          </button>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={issueCode}
-          disabled={issuing}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-300/15 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-300/25 disabled:opacity-40"
-        >
-          {issuing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-          {t('presetSlots.octoprint.issueCode')}
-        </button>
+        <>
+          <ol className="mt-2 space-y-1 text-[11px] leading-4 text-amber-100/80">
+            <li className="flex gap-2">
+              <span className="font-mono text-amber-300">01</span>
+              <span>
+                {t('downloadPage.octoInstall1')}
+                {bridgeWheel && (
+                  <>
+                    {' '}
+                    <a href={bridgeWheel.download_url} download={bridgeWheel.filename} className="inline-flex items-center gap-1 underline">
+                      <Download className="h-3 w-3" />
+                      {t('downloadPage.octoDownload', { version: bridgeWheel.version })}
+                    </a>
+                  </>
+                )}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-mono text-amber-300">02</span>
+              <span>{t('presetSlots.octoprint.afterInstall')}</span>
+            </li>
+          </ol>
+          <button
+            type="button"
+            onClick={issueCode}
+            disabled={issuing}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-300/15 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-300/25 disabled:opacity-40"
+          >
+            {issuing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+            {t('presetSlots.octoprint.issueCodeInstalled')}
+          </button>
+        </>
       )}
 
       {guideOpen && (

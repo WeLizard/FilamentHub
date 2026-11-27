@@ -4,14 +4,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Check, ChevronRight, Loader2, Plus, RefreshCw, X } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { devicesAPI, physicalPrintersAPI, printersAPI } from '../api/client';
+import { devicesAPI, edgeNodesAPI, physicalPrintersAPI, printersAPI } from '../api/client';
 import type { MaterialSystem, PhysicalPrinter } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
 import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
 import { Dropdown } from './Dropdown';
-import { adapterForConnection, connectionAdapterFor, feedAdapterFor, setupAdaptersFor, setupTopologiesFor, supportsEdgeSetup } from './presetSlots/adapters';
+import {
+  adapterForConnection, adaptersForConnection, connectionAdapterFor, feedAdapterFor, isOctoKlipperConnection,
+  setupAdaptersFor, setupTopologiesFor, supportsEdgeSetup,
+} from './presetSlots/adapters';
+import { EDGE_NODES_QUERY_KEY } from './edge/EdgeNodesPanel';
 import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { TopologyEditor } from './presetSlots/TopologyEditor';
 import { initialTopology, topologyFromSystem, topologyPayload } from './presetSlots/adapters/topology';
@@ -42,11 +46,14 @@ const control = 'w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 t
 const button = 'rounded-lg border border-white/20 px-3 py-2 text-sm text-white hover:bg-white/10 disabled:opacity-40';
 
 /** The route offered first. A provider paired by the plugin connects through
- *  OrcaSlicer only from inside it; elsewhere its other route is the usable one. */
-function defaultRouteFor(adapter?: FeedAdapter): PrinterSetupRoute {
+ *  OrcaSlicer only from inside it; elsewhere its other route is the usable one.
+ *  FH Edge is that other route only for someone who already runs an Edge:
+ *  offered to everyone, it sent people without one to a code nothing reads. */
+function defaultRouteFor(adapter?: FeedAdapter, hasEdgeNode = false): PrinterSetupRoute {
   const methods = adapter?.onboarding?.methods ?? [];
   if (adapter?.orcaBridge && methods.length > 1 && !isPluginEmbed()) {
-    return methods.find((method) => method !== 'orca') ?? 'manual';
+    return methods.find((method) => method !== 'orca' && (method !== 'edge' || hasEdgeNode))
+      ?? methods[0] ?? 'manual';
   }
   return methods[0] ?? 'manual';
 }
@@ -122,6 +129,12 @@ export function PrinterSetupWizard({
     queryFn: ({ signal }) => physicalPrintersAPI.listBindings(signal),
     enabled: printers.length > 0,
   });
+  // Whether this account already runs an FH Edge: only then is Edge a sensible default.
+  const { data: edgeNodes } = useQuery({
+    queryKey: EDGE_NODES_QUERY_KEY, queryFn: edgeNodesAPI.list, retry: false,
+  });
+  const hasEdgeNode = (edgeNodes?.length ?? 0) > 0;
+  const routeFor = (item?: FeedAdapter) => defaultRouteFor(item, hasEdgeNode);
   const { data: models } = useQuery({
     queryKey: ['printers', 'add-printer-picker', debouncedSearch],
     queryFn: () => printersAPI.list({ page: 1, size: 50, active_only: true,
@@ -149,7 +162,7 @@ export function PrinterSetupWizard({
       const suggested = setupAdaptersFor(modelDetail).find((item) => item.onboarding?.matchesModel?.(modelDetail));
       if (suggested) {
         setProvider(suggested.id); setConnectionChosen(true);
-        if (!manualSettings) setMode(defaultRouteFor(suggested));
+        if (!manualSettings) setMode(routeFor(suggested));
         setTopology(initialTopology(setupTopologiesFor(suggested.id, false)[0]));
       }
     }
@@ -197,7 +210,7 @@ export function PrinterSetupWizard({
     if (!discoveredAdapter) return false;
     const knownConnections = new Set(bindings
       .filter((binding) => binding.physical_printer_id === targetId && binding.status !== 'conflict')
-      .map((binding) => adapterForConnection(binding.provider)?.id).filter(Boolean));
+      .flatMap((binding) => adaptersForConnection(binding.provider).map((item) => item.id)));
     if (existingSystem && existingSystem.provider !== 'manual') {
       knownConnections.add(connectionAdapterFor(existingSystem.provider).id);
     }
@@ -211,10 +224,16 @@ export function PrinterSetupWizard({
   const compatibleUnboundCandidates = (candidates ?? []).filter(
     (candidate) => candidate.physicalPrinterId == null && isCompatibleCandidate(candidate),
   );
+  // The Orca profile says "Octo/Klipper": the printer may run either one.
+  const octoKlipper = targetId > 0 && bindings.some((binding) => binding.physical_printer_id === targetId
+    && binding.status !== 'conflict' && isOctoKlipperConnection(binding.provider));
   // A server-owned physical binding outranks model compatibility. Unbound
-  // discoveries are always presented for an explicit choice.
+  // discoveries are always presented for an explicit choice; next to an
+  // "Octo/Klipper" binding too, since that one does not say which it is.
   const setupCandidates = targetId > 0
-    ? (exactCandidates.length > 0 ? exactCandidates : compatibleUnboundCandidates)
+    ? (exactCandidates.length > 0
+      ? (octoKlipper ? [...exactCandidates, ...compatibleUnboundCandidates] : exactCandidates)
+      : compatibleUnboundCandidates)
     : newCandidates;
   const visibleSetupCandidates = hideSetupCandidates ? [] : setupCandidates;
   useEffect(() => {
@@ -223,13 +242,17 @@ export function PrinterSetupWizard({
     const named = existingAdapter?.id === existingSystem?.provider ? existingAdapter : undefined;
     const choices = new Set(bindings.filter((binding) => binding.physical_printer_id === targetId && binding.status !== 'conflict')
       .map((binding) => adapterForConnection(binding.provider)?.id).filter(Boolean));
-    const found = named ?? (choices.size === 1 ? feedAdapterFor([...choices][0]!) : undefined);
+    const ambiguous = bindings.some((binding) => binding.physical_printer_id === targetId
+      && binding.status !== 'conflict' && isOctoKlipperConnection(binding.provider));
+    // "Octo/Klipper" names no protocol: picking the OctoPrint bridge for it sent
+    // Klipper printers to a plugin they cannot run. Let the person choose.
+    const found = named ?? (choices.size === 1 && !ambiguous ? feedAdapterFor([...choices][0]!) : undefined);
     if (!found) return;
     autoPrepared.current = targetId;
     setProvider(found.id); setConnectionChosen(true);
     setTopology(topologyFromSystem(setupTopologiesFor(found.id, false), existingSystem));
     setMode(found.onboarding?.orcaProbe ? (isPluginEmbed() ? 'orca' : found.onboarding.methods.includes('native') ? 'native' : 'manual')
-      : defaultRouteFor(found));
+      : routeFor(found));
   }, [targetId, selected, bindings, existingSystem, pending, saved, manualSettings]);
 
   useEffect(() => {
@@ -430,7 +453,7 @@ export function PrinterSetupWizard({
     const nextProvider = suggested?.id ?? 'manual';
     changeProvider(nextProvider, Boolean(connectionRef)
       && connectionAdapterFor(nextProvider).id === connectionAdapter.id);
-    if (suggested && !manualSettings) setMode(defaultRouteFor(suggested));
+    if (suggested && !manualSettings) setMode(routeFor(suggested));
     setConnectionChosen(Boolean(suggested));
     if (model && (!name.trim() || name === selectedModel?.name)) setName(model.name);
   };
@@ -460,7 +483,7 @@ export function PrinterSetupWizard({
     }
     setProbe(null);
     setConnectionRef(candidate.connectionRef);
-    setMode(defaultRouteFor(discoveredAdapter));
+    setMode(routeFor(discoveredAdapter));
   };
   useEffect(() => {
     if (step !== 'setup' || customized.current || pending || saved || probe || !pluginReady || busyRef.current || exactCandidates.length !== 1
@@ -632,6 +655,7 @@ export function PrinterSetupWizard({
                   {t(probe.provider === 'happy_hare' ? 'printerSetup.detectedHappyHare' : 'printerSetup.probeConnected', { count: probe.gateCount ?? 0 })}
                   {probe.provider === 'happy_hare' && <p className="mt-1 text-xs text-gray-300">{t('printerSetup.inventoryNext')}</p>}
                 </div> : <>
+                  {octoKlipper && !connectionChosen && <p className="rounded-lg bg-sky-500/10 p-3 text-sm text-sky-100">{t('printerSetup.octoKlipperHint')}</p>}
                   {connectionChosen && connectionAdapter.onboarding && <p className="text-sm text-gray-300">{t(connectionAdapter.onboarding.connectionHintKey)}</p>}
                   {!hideSetupCandidates && loadingConnections && <p role="status" className="text-xs text-gray-400">{t(discoveryReady ? 'printerSetup.searchingPrinters' : 'printerSetup.loadingConnections')}</p>}
                   {!hideSetupCandidates && scanNotice && <p role="status" className="text-xs text-amber-100">{scanNotice}</p>}
@@ -664,7 +688,7 @@ export function PrinterSetupWizard({
                         if (!keepFeed) changeProvider(String(value));
                         setConnectionChosen(true);
                         if (!keepFeed && existingSystem && value !== existingSystem.provider) { setEditTopology(true); setTopologyBase(existingSystem); }
-                        if (!keepFeed || !connectionChosen) setMode(defaultRouteFor(feedAdapterFor(keepFeed ? provider : String(value)))); }} />
+                        if (!keepFeed || !connectionChosen) setMode(routeFor(feedAdapterFor(keepFeed ? provider : String(value)))); }} />
                     {selectedModel && !otherConnection && <button type="button" className="text-xs text-gray-400 underline"
                       onClick={() => setOtherConnection(true)}>{t('printerSetup.otherConnection')}</button>}
                   </>}
@@ -679,6 +703,10 @@ export function PrinterSetupWizard({
                   </div>
                   {mode === 'manual' && <p className="text-xs text-gray-400">{t('printerSetup.manualHint')}</p>}
                   {mode === 'edge' && <p className="text-xs text-gray-400">{t('printerSetup.edgeHint')}</p>}
+                  {mode === 'edge' && edgeNodes && !hasEdgeNode && <p className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-100">
+                    {t('printerSetup.edgeNeedsInstall')}{' '}
+                    <a className="underline" href="/download/edge#edge-install" target="_blank" rel="noreferrer">{t('printerSetup.edgeInstallLink')}</a>
+                  </p>}
                   {mode === 'native' && <p className="text-xs text-gray-400">{t('printerSetup.nativeHint')}</p>}
                   {mode === 'orca' && adapter.onboarding?.orcaProbe && <div className="space-y-2 rounded-lg border border-white/10 p-3">
                     {!pluginReady ? <p className="text-sm text-amber-200">{t('printerSetup.pluginUnavailable')}</p> : <>

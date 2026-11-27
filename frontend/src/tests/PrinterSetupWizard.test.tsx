@@ -7,15 +7,16 @@ import type { PhysicalPrinter } from '../api/client';
 const mocks = vi.hoisted(() => ({
   create: vi.fn(), setup: vi.fn(), plugin: vi.fn(), key: vi.fn(), embed: false,
   printers: vi.fn(), models: vi.fn(), model: vi.fn(), installed: vi.fn(),
-  capabilities: ['printer-setup-v1'], adapterSetup: vi.fn(),
+  capabilities: ['printer-setup-v1'], adapterSetup: vi.fn(), edgeNodes: vi.fn(), bindings: vi.fn(),
   localSetup: undefined as undefined | ((state: { open: boolean }) => void),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { create: mocks.create, setupConnection: mocks.setup,
-    list: mocks.printers, listInstalledCandidates: mocks.installed, listBindings: async () => [] },
+    list: mocks.printers, listInstalledCandidates: mocks.installed, listBindings: mocks.bindings },
   printersAPI: { list: mocks.models, get: mocks.model }, devicesAPI: { regenerateKey: mocks.key },
+  edgeNodesAPI: { list: mocks.edgeNodes },
 }));
 vi.mock('../utils/pluginBridge', () => ({
   isPluginEmbed: () => mocks.embed, requestPrinterSetup: mocks.plugin,
@@ -69,6 +70,9 @@ describe('PrinterSetupWizard', () => {
     mocks.create.mockResolvedValue(saved); mocks.setup.mockResolvedValue(saved);
     mocks.printers.mockResolvedValue([]); mocks.models.mockResolvedValue({ items: [] }); mocks.installed.mockResolvedValue([]);
     mocks.model.mockResolvedValue(null);
+    // Most flows below are for someone who already runs an FH Edge.
+    mocks.edgeNodes.mockResolvedValue([{ id: 1, name: 'Workshop Edge' }]);
+    mocks.bindings.mockResolvedValue([]);
   });
   it('creates a usable manual printer and feed system without a plugin or Edge', async () => {
     show();
@@ -469,6 +473,49 @@ describe('PrinterSetupWizard', () => {
     }) }));
     expect(mocks.plugin).not.toHaveBeenCalled();
     expect(screen.queryByTestId('adapter-setup')).not.toBeInTheDocument();
+  });
+
+  it('offers OrcaSlicer first to someone without an FH Edge and says what Edge needs', async () => {
+    mocks.edgeNodes.mockResolvedValue([]);
+    mocks.models.mockResolvedValue({ items: [{ id: 11, name: 'Flashforge Creator 5 Pro', manufacturer: 'Flashforge' }] });
+    show(); fireEvent.click(screen.getByText('printerSetup.newDevice'));
+    await waitFor(() => expect(mocks.edgeNodes).toHaveBeenCalled());
+    fireEvent.focus(screen.getByLabelText('printerSetup.model'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Flashforge Creator 5 Pro' }));
+    fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+
+    expect(screen.getByText('printerSetup.routes.orca')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('printerSetup.edgeNeedsInstall')).not.toBeInTheDocument();
+    // Edge stays selectable: the first Edge is paired from this very screen.
+    fireEvent.click(screen.getByText('printerSetup.routes.edge'));
+    expect(screen.getByText('printerSetup.edgeNeedsInstall')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'printerSetup.edgeInstallLink' })).toHaveAttribute('href', '/download/edge#edge-install');
+  });
+
+  it('does not take an Octo/Klipper profile for OctoPrint and shows the Klipper found behind it', async () => {
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.printers.mockResolvedValue([saved]);
+    mocks.bindings.mockResolvedValue([{
+      id: 3, physical_printer_id: 7, provider: 'octoprint', status: 'bound',
+      connection_ref: 'opaque-octo-ref', preset_name: 'Snapmaker U1', display_endpoint: 'u1.local',
+    }]);
+    mocks.plugin.mockResolvedValue({ ok: true, discoveryComplete: true, candidates: [{
+      label: 'Snapmaker U1 profile', connectionRef: 'opaque-octo-ref', physicalPrinterId: 7,
+      provider: 'octoprint', source: 'orca',
+    }, {
+      label: 'Snapmaker U1 Klipper', connectionRef: 'local-u1', physicalPrinterId: null,
+      provider: 'moonraker', printerModel: 'Snapmaker U1', source: 'profile',
+    }] });
+
+    show(saved);
+
+    expect(await screen.findByText('Snapmaker U1 Klipper')).toBeInTheDocument();
+    expect(screen.getByText('Snapmaker U1 profile')).toBeInTheDocument();
+    expect(screen.getByText('printerSetup.octoKlipperHint')).toBeInTheDocument();
+    // Nothing was chosen for the person: the OctoPrint bridge is not preselected.
+    fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+    expect(screen.queryByText('printerSetup.routes.native')).not.toBeInTheDocument();
   });
 
   it('creates a Flashforge station for Edge so pairing uses the Flashforge provider', async () => {
