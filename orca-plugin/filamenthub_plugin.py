@@ -5470,36 +5470,85 @@ def observe_local_moonraker_connections(observations):
 # their agent instead. Creality's agent has its own adapter and is left out.
 MOONRAKER_PRINTER_AGENTS = frozenset({"moonraker", "qidi", "snapmaker"})
 
+# Connection types that may front a Klipper printer without saying so:
+# "Octo/Klipper" (Moonraker's OctoPrint emulation, also a real OctoPrint) and
+# ElegooLink (Neptune 4 series run Moonraker; Centauri Carbon speaks SDCP).
+# Only the printer's own answer tells them apart.
+KLIPPER_CANDIDATE_HOST_TYPES = frozenset({"octoprint", "elegoolink"})
+KLIPPER_PROFILE_PROBE_LIMIT = 8
+
+
+def _user_printer_connections():
+    """Yield ``(name, host, host_type, printer_agent, api_key)`` per user printer preset (UI thread)."""
+    printers = orca.host.preset_bundle().printers
+    for index in range(printers.size()):
+        preset = printers.preset(index)
+        try:
+            if not bool(preset.is_user()):
+                continue
+        except Exception:
+            continue
+        host = _preset_scalar(_preset_config_value(preset, "print_host"))
+        if not host:
+            continue
+        yield (
+            str(preset.name or ""), host,
+            _preset_scalar(_preset_config_value(preset, "host_type")).lower(),
+            _preset_scalar(_preset_config_value(preset, "printer_agent")).lower(),
+            _preset_scalar(_preset_config_value(preset, "printhost_apikey")),
+        )
+
 
 def _snapshot_local_moonraker_connections():
     connections = []
     try:
-        printers = orca.host.preset_bundle().printers
-        for index in range(printers.size()):
-            preset = printers.preset(index)
-            try:
-                if not bool(preset.is_user()):
-                    continue
-            except Exception:
-                continue
-            host = _preset_scalar(_preset_config_value(preset, "print_host"))
-            host_type = _preset_scalar(
-                _preset_config_value(preset, "host_type")
-            ).lower()
-            printer_agent = _preset_scalar(
-                _preset_config_value(preset, "printer_agent")
-            ).lower()
-            if not host or not (
-                host_type == "moonraker" or printer_agent in MOONRAKER_PRINTER_AGENTS
-            ):
-                continue
-            connections.append((
-                str(preset.name or ""), host,
-                _preset_scalar(_preset_config_value(preset, "printhost_apikey")),
-            ))
+        for name, host, host_type, printer_agent, api_key in _user_printer_connections():
+            if host_type == "moonraker" or printer_agent in MOONRAKER_PRINTER_AGENTS:
+                connections.append((name, host, api_key))
     except Exception as exc:
         return connections, str(exc)
     return connections, None
+
+
+def _snapshot_klipper_profile_hosts():
+    """User presets whose connection may be Moonraker behind another type (UI thread).
+
+    The list stays in memory for one printer-setup request and is never sent
+    to FilamentHub.
+    """
+    hosts = []
+    try:
+        for name, host, host_type, printer_agent, api_key in _user_printer_connections():
+            if (
+                host_type in KLIPPER_CANDIDATE_HOST_TYPES
+                and printer_agent not in MOONRAKER_PRINTER_AGENTS
+                and printer_agent != CREALITY_HOST_TYPE
+            ):
+                hosts.append({"label": name[:200], "print_host": host, "api_key": api_key})
+    except Exception as exc:
+        fh_log("local Klipper profile scan failed: %s" % type(exc).__name__)
+    return hosts
+
+
+def _moonraker_answer(connection):
+    """Classify one short read of ``/server/info`` without the address or body.
+
+    ``"moonraker"``: Moonraker answered. ``"moonraker_auth"``: it refused without
+    a key. Anything else is a reason the address is not offered as Klipper.
+
+    Sources: Moonraker b559b9a8 registers ``/server/info`` with ``klippy_state``
+    and ``moonraker_version`` (moonraker/server.py:119, :526, :532) and refuses
+    an unauthenticated request with 401 (components/authorization.py:926).
+    OctoPrint fd4f9478 has no such route and no catch-all (server/views.py), so
+    a real OctoPrint answers 404; its API refuses access with 403.
+    """
+    status, body, error = _moonraker_json(connection, "/server/info", timeout=3)
+    result = body.get("result") if status == 200 and isinstance(body, dict) else None
+    if isinstance(result, dict) and ("klippy_state" in result or "moonraker_version" in result):
+        return "moonraker"
+    if status == 401:
+        return "moonraker_auth"
+    return "status_%s" % status if status else _network_error_kind(error)
 
 
 def _resolve_local_moonraker_connections(observations, connections, error):
@@ -15975,6 +16024,58 @@ class FilamentHubCatalog(
             observationUploaded=True,
         )
 
+    def _klipper_profile_connections(self, context, local, profiles=None):
+        """Moonraker found behind an Orca profile of another connection type (worker thread).
+
+        ``profiles`` comes from a user-started list: each address not already
+        known is asked once whether it is Moonraker. Without it, the answer of
+        the last list (ten minutes) serves the probe and activation that follow.
+        Accepted connections continue as manual ones: activation keeps them in
+        the local connection store, like an address typed in by hand.
+        """
+        cached = getattr(self, "_klipper_profiles", {})
+        if cached.get("account_scope") != context["account_scope"] or cached.get("expires", 0) <= time.monotonic():
+            cached = {"items": {}}
+
+        def base(item):
+            try:
+                return _moonraker_base_url(item.get("print_host"))
+            except ValueError:
+                return None
+
+        known = {base(item) for item in local}
+        if profiles is None:
+            return [dict(item) for item in cached["items"].values() if base(item) not in known]
+        previous = {base(item): item["connection_ref"] for item in cached["items"].values()}
+        items = {}
+        answers = []
+        for profile in profiles:
+            endpoint = base(profile)
+            if not endpoint or endpoint in known:
+                continue
+            if len(answers) >= KLIPPER_PROFILE_PROBE_LIMIT:
+                break
+            known.add(endpoint)
+            connection = {
+                "print_host": profile["print_host"], "api_key": profile.get("api_key") or "",
+                "label": profile.get("label") or "Moonraker", "source": "profile",
+                "klipper_profile": True,
+            }
+            answer = _moonraker_answer(connection)
+            answers.append(answer)
+            if answer not in {"moonraker", "moonraker_auth"}:
+                continue
+            connection["connection_ref"] = previous.get(endpoint) or "local-" + uuid.uuid4().hex
+            items[connection["connection_ref"]] = connection
+        self._klipper_profiles = {
+            "account_scope": context["account_scope"],
+            "expires": time.monotonic() + 600, "items": items,
+        }
+        if answers:
+            fh_log("printer setup Klipper profiles: asked=%d found=%d answers=%s" % (
+                len(answers), len(items), ",".join(sorted(set(answers)))))
+        return [dict(item) for item in items.values()]
+
     def _do_printer_setup(self, msg, token, local_connections, observations=()):
         request_id = msg["requestId"]
 
@@ -15986,6 +16087,9 @@ class FilamentHubCatalog(
             local = list({item["connection_ref"]: item for item in
                           list(local_connections) + local_setup_connections(context)}.values())
             operation = msg.get("operation")
+            local.extend(self._klipper_profile_connections(
+                context, local, msg.get("klipper_profiles") if operation == "list" else None,
+            ))
             discovery = None
             if operation == "list":
                 discovery = (self._setup_discovery(context, observations, refresh=True)
@@ -16067,7 +16171,8 @@ class FilamentHubCatalog(
                     if len(matches) != 1:
                         raise ValueError("connection_not_found")
                     connection = matches[0]
-                    origin = "local_manual" if connection.get("account_scope") else "orca_profile"
+                    origin = ("local_manual" if connection.get("account_scope") or connection.get("klipper_profile")
+                              else "orca_profile")
                 try:
                     evidence, snapshot = probe_printer_setup(context, connection, origin)
                 except ValueError as exc:
@@ -16265,6 +16370,10 @@ class FilamentHubCatalog(
             )
             msg["creality"] = (
                 _snapshot_local_creality_connections() if msg.get("operation") == "list" else []
+            )
+            msg["klipper_profiles"] = (
+                _snapshot_klipper_profile_hosts()
+                if msg.get("operation") == "list" and msg_type == "printer-setup" else []
             )
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)

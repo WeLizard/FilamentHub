@@ -107,6 +107,100 @@ def test_discovered_moonraker_uses_existing_probe_binding_and_activation(setup_f
     catalog._do_printer_setup({"operation": "probe", "requestId": "stale", "connectionRef": ref}, "token", [])
     assert results[-1]["code"] == "connection_not_found"
 
+def test_klipper_behind_octo_klipper_profile_is_offered_and_kept_after_activation(setup_flow, monkeypatch):
+    plugin, catalog, context, results, uploads = setup_flow
+    asked = []
+
+    def printer(connection, path, payload=None, timeout=None, raw_text=False):
+        host = connection["print_host"]
+        if path == "/server/info":
+            asked.append(host)
+            if host == "192.168.1.60":  # Klipper behind "Octo/Klipper"
+                return 200, {"result": {"klippy_state": "ready", "moonraker_version": "v0.9.3"}}, ""
+            if host == "192.168.1.61":  # Moonraker that wants a key
+                return 401, {"error": {"code": 401, "message": "Unauthorized"}}, ""
+            return 404, {}, ""  # a real OctoPrint has no such route
+        return 200, {"result": {"objects": ["mmu", "print_stats"]}}, ""
+
+    monkeypatch.setattr(plugin, "_moonraker_json", printer)
+    profiles = [
+        {"label": "Voron - Workshop", "print_host": "192.168.1.60", "api_key": "profile-key"},
+        {"label": "Neptune 4 Pro - Garage", "print_host": "192.168.1.61", "api_key": ""},
+        {"label": "Ender-3 V2 - OctoPi", "print_host": "192.168.1.62", "api_key": "octo-key"},
+        {"label": "Voron - copy", "print_host": "http://192.168.1.60/", "api_key": "profile-key"},
+    ]
+    catalog._do_printer_setup({"operation": "list", "requestId": "list", "klipper_profiles": profiles},
+                              "token", [])
+    listed = results[-1]
+    assert sorted(asked) == ["192.168.1.60", "192.168.1.61", "192.168.1.62"]
+    assert [(item["label"], item["provider"], item["source"]) for item in listed["candidates"]] == [
+        ("Voron - Workshop", "moonraker", "profile"),
+        ("Neptune 4 Pro - Garage", "moonraker", "profile"),
+    ]
+    assert "192.168" not in json.dumps(listed) and "profile-key" not in json.dumps(listed)
+    ref = listed["candidates"][0]["connectionRef"]
+
+    # The same address keeps its reference between two lists.
+    catalog._do_printer_setup({"operation": "list", "requestId": "list-2", "klipper_profiles": profiles},
+                              "token", [])
+    assert results[-1]["candidates"][0]["connectionRef"] == ref
+
+    catalog._do_printer_setup({"operation": "probe", "requestId": "probe", "connectionRef": ref}, "token", [])
+    probe = results[-1]
+    assert probe["ok"] and probe["connection"]["origin"] == "local_manual"
+    setup_bind_and_activate(catalog, context, probe)
+    assert results[-1]["ok"] and uploads
+    stored = plugin.local_setup_connections(context)
+    assert [(item["print_host"], item["api_key"], item["label"]) for item in stored] == [
+        ("192.168.1.60", "profile-key", "Voron - Workshop"),
+    ]
+
+    # Once saved, the address is a known connection and is not asked again.
+    asked.clear()
+    catalog._do_printer_setup({"operation": "list", "requestId": "list-3", "klipper_profiles": profiles},
+                              "token", [])
+    assert "192.168.1.60" not in asked
+
+
+def test_klipper_profile_scan_takes_only_types_that_hide_moonraker(plugin_module, monkeypatch):
+    presets = [
+        ("Generic Klipper", "192.168.1.70", "octoprint", ""),
+        ("Neptune 4", "192.168.1.71", "elegoolink", ""),
+        ("Qidi X-Plus 5", "192.168.1.72", "octoprint", "qidi"),  # already a Moonraker connection
+        ("Creality K1C", "192.168.1.73", "octoprint", "crealityprint"),  # Creality adapter
+        ("Prusa MK4", "192.168.1.74", "prusalink", ""),
+        ("No address", "", "octoprint", ""),
+    ]
+
+    class Preset:
+        def __init__(self, name, host, host_type, agent):
+            self.name = name
+            self._values = {"print_host": host, "host_type": host_type, "printer_agent": agent,
+                            "printhost_apikey": "key-" + name}
+
+        @staticmethod
+        def is_user():
+            return True
+
+        def config_keys(self):
+            return list(self._values)
+
+        def config_value(self, key):
+            return self._values.get(key)
+
+    items = [Preset(*preset) for preset in presets]
+    collection = type("Collection", (), {"size": lambda self: len(items),
+                                         "preset": lambda self, index: items[index]})()
+    monkeypatch.setattr(plugin_module.orca.host, "preset_bundle",
+                        lambda: type("Bundle", (), {"printers": collection})(), raising=False)
+
+    assert [item["label"] for item in plugin_module._snapshot_klipper_profile_hosts()] == [
+        "Generic Klipper", "Neptune 4",
+    ]
+    connections, error = plugin_module._snapshot_local_moonraker_connections()
+    assert error is None and [name for name, _host, _key in connections] == ["Qidi X-Plus 5"]
+
+
 def test_bambu_advertisement_does_not_follow_foreign_locations(plugin_module):
     packet = (b"NOTIFY * HTTP/1.1\r\nNT: urn:bambulab-com:device:3dprinter:1\r\n"
               b"DevName.bambu.com: Workshop P2S\r\nUSN: SERIAL-42\r\nLocation: 192.168.1.42\r\n\r\n")
