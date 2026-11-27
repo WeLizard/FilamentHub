@@ -9461,15 +9461,15 @@
     },
     "flashforge": {
       "title": "Flashforge through OrcaSlicer",
-      "description": "The plugin takes the address, serial number and check code from this printer's connection settings in OrcaSlicer. Enable LAN mode on the printer and fill those fields in OrcaSlicer.",
+      "description": "The plugin takes the address from this printer's connection settings in OrcaSlicer and asks the printer itself for its serial number on the network. Enable LAN mode on the printer.",
       "connect": "Connect",
       "reconnect": "Connect again",
       "refresh": "Refresh data",
       "choose": "OrcaSlicer has several Flashforge printers. Choose this one:",
       "onDemand": "Open the FilamentHub tab in OrcaSlicer: while OrcaSlicer is running, the plugin follows the print and counts usage from the slicer's estimate. With OrcaSlicer closed, FH Edge does.",
-      "localOnly": "The address, serial number and check code stay in OrcaSlicer and are never sent to FilamentHub.",
+      "localOnly": "The address, serial number and check code stay on this computer and are never sent to FilamentHub.",
       "result": {
-        "notFound": "OrcaSlicer has no Flashforge printer. Open the printer's connection settings in OrcaSlicer, choose the Flashforge host type and enter the address.",
+        "notFound": "OrcaSlicer has no Flashforge printer. Add a Flashforge printer in OrcaSlicer and enter its address in the connection settings.",
         "credentials": "The serial number or check code is missing in the printer's connection settings in OrcaSlicer.",
         "auth": "The printer rejected the serial number or check code. Compare them with the printer's network screen.",
         "lan_mode": "LAN mode is off on the printer. Enable it in the printer's network settings.",
@@ -9480,7 +9480,14 @@
         "server": "The printer was read, but FilamentHub did not accept the data. Refresh later.",
         "invalid": "The printer answered unexpectedly. Check its firmware and LAN mode.",
         "unpaired": "The link to this card is no longer valid. Connect the printer again.",
-        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again."
+        "unavailable": "The plugin did not answer. Reopen FilamentHub in OrcaSlicer and try again.",
+        "serial": "The printer did not answer on the network, and OrcaSlicer has no serial number for it. Check that the printer is on, LAN mode is enabled and it is in the same network as this computer.",
+        "check_code": "Enter the check code from the printer's network screen."
+      },
+      "secret": {
+        "label": "Check code",
+        "submit": "Connect",
+        "hint": "The code is shown on the printer's network screen. Enter it once: it is kept on this computer only."
       }
     },
     "creality": {

@@ -16,7 +16,7 @@ import type { AdapterViewContext } from './types';
 import { retryPairingStatusQuery } from '../pairingPolling';
 
 // Outcomes that leave the one-time code unused, so a retry may send it again.
-const KEEPS_PAIRING_CODE = new Set(['choose', 'permission']);
+const KEEPS_PAIRING_CODE = new Set(['choose', 'permission', 'check_code']);
 
 export interface LanBridgeRoute {
   /** Stored on the connector as its provider. */
@@ -29,13 +29,26 @@ export interface LanBridgeRoute {
     physicalPrinterId: number, materialSystemId: number, pairingCode: string, connectionRef?: string,
   ) => Promise<LanBridgeResult>;
   refresh: (physicalPrinterId: number, materialSystemId: number) => Promise<LanBridgeResult>;
+  /**
+   * A code only the person knows, asked on this card when the plugin cannot
+   * find it and says so with one of `outcomes`. It goes to the plugin only.
+   */
+  secret?: {
+    outcomes: ReadonlySet<string>;
+    maxLength: number;
+    configure: (
+      physicalPrinterId: number, materialSystemId: number, pairingCode: string,
+      connectionRef: string | undefined, secret: string,
+    ) => Promise<LanBridgeResult>;
+  };
 }
 
 /**
  * The OrcaSlicer route of a printer the plugin reads over the local network.
  * The plugin takes what it needs from the printer's connection settings in
- * OrcaSlicer, so this card asks for nothing: it issues a pairing code and
- * reports what the plugin answered. The card asks for a reading on connect and
+ * OrcaSlicer and from the printer itself, so this card asks for nothing but a
+ * code only the person knows, and only when the plugin found none: it issues a
+ * pairing code and reports what the plugin answered. The card asks for a reading on connect and
  * when it opens. While OrcaSlicer is open the plugin also follows the printer on
  * its own to count a job's filament.
  */
@@ -55,7 +68,10 @@ export function LanBridgeSetup({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [choices, setChoices] = useState<NonNullable<LanBridgeResult['candidates']>>([]);
+  const [secret, setSecret] = useState('');
   const pairing = useRef<{ code: string; expiresAt: number } | null>(null);
+  // The printer last tried, so a code typed after a choice goes to the same one.
+  const lastRef = useRef<string | undefined>(undefined);
   const autoConnectAttempted = useRef(false);
   const refreshedOnOpen = useRef(false);
   const now = useNow();
@@ -99,6 +115,7 @@ export function LanBridgeSetup({
   const settle = async (result: LanBridgeResult) => {
     setOutcome(result.ok && result.code === 'ok' ? null : result.code);
     setChoices(result.code === 'choose' ? result.candidates ?? [] : []);
+    if (result.ok) setSecret('');
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['printer-bridge-status', printer.id, system.id] }),
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
@@ -122,15 +139,17 @@ export function LanBridgeSetup({
     }
   };
 
-  const connect = (chosenRef?: string) => run(async () => {
+  const connect = (chosenRef?: string, typed?: string) => run(async () => {
     let current = pairing.current;
     if (!current || current.expiresAt - Date.now() < 15_000) {
       const issued = await printerBridgeAPI.issuePairingCode(printer.id, system.id);
       current = { code: issued.pairing_code, expiresAt: Date.parse(issued.expires_at) };
     }
-    const result = await route.configure(
-      printer.id, system.id, current.code, chosenRef ?? connectionRef,
-    );
+    const target = chosenRef ?? (typed ? lastRef.current : undefined) ?? connectionRef;
+    lastRef.current = target;
+    const result = typed && route.secret
+      ? await route.secret.configure(printer.id, system.id, current.code, target, typed)
+      : await route.configure(printer.id, system.id, current.code, target);
     pairing.current = KEEPS_PAIRING_CODE.has(result.code) ? current : null;
     return result;
   });
@@ -204,6 +223,38 @@ export function LanBridgeSetup({
             defaultValue: t(`${text}.result.invalid`),
           })}
         </p>
+      )}
+      {canAct && route.secret && outcome && route.secret.outcomes.has(outcome) && (
+        <form
+          className="mt-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const typed = secret.trim();
+            if (typed) void connect(undefined, typed);
+          }}
+        >
+          <label htmlFor={`lan-secret-${system.id}`} className="block text-[11px] leading-4 text-gray-300">
+            {t(`${text}.secret.label`)}
+          </label>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {/* Room for the printer's eight-character code, not the whole row. */}
+            <input
+              id={`lan-secret-${system.id}`}
+              type="text"
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              maxLength={route.secret.maxLength}
+              autoComplete="off"
+              spellCheck={false}
+              className="w-[14ch] rounded-lg border border-white/10 bg-black/20 px-2 py-1 font-mono text-xs text-gray-100 focus:border-white/30 focus:outline-none"
+            />
+            <button type="submit" disabled={busy || !secret.trim()} className={button}>
+              {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings2 className="h-3 w-3" />}
+              {t(`${text}.secret.submit`)}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] leading-4 text-gray-500">{t(`${text}.secret.hint`)}</p>
+        </form>
       )}
       {choices.length > 0 && (
         <div className="mt-2">

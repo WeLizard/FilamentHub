@@ -9439,15 +9439,15 @@
     },
     "flashforge": {
       "title": "通过 OrcaSlicer 连接闪铸",
-      "description": "插件会从 OrcaSlicer 中该打印机的连接设置读取地址、序列号和校验码。请在打印机上启用局域网模式，并在 OrcaSlicer 中填写这些字段。",
+      "description": "插件从 OrcaSlicer 中该打印机的连接设置读取地址，并在网络中直接向打印机获取序列号。请在打印机上启用局域网模式。",
       "connect": "连接",
       "reconnect": "重新连接",
       "refresh": "刷新数据",
       "choose": "OrcaSlicer 中有多台闪铸打印机，请选择：",
       "onDemand": "在 OrcaSlicer 中打开 FilamentHub 标签页后，只要 OrcaSlicer 在运行，插件就会跟踪打印并按切片软件的估算统计用量。OrcaSlicer 关闭时由 FH Edge 负责。",
-      "localOnly": "地址、序列号和校验码保留在 OrcaSlicer 中，不会发送到 FilamentHub。",
+      "localOnly": "地址、序列号和校验码只保留在这台电脑上，不会发送到 FilamentHub。",
       "result": {
-        "notFound": "OrcaSlicer 中没有闪铸打印机。请在 OrcaSlicer 中打开打印机连接设置，选择 Flashforge 主机类型并填写地址。",
+        "notFound": "OrcaSlicer 中没有闪铸打印机。请在 OrcaSlicer 中添加闪铸打印机，并在连接设置中填写其地址。",
         "credentials": "OrcaSlicer 的打印机连接设置中缺少序列号或校验码。",
         "auth": "打印机拒绝了序列号或校验码。请与打印机网络界面核对。",
         "lan_mode": "打印机未启用局域网模式。请在打印机网络设置中启用。",
@@ -9458,7 +9458,14 @@
         "server": "已读取打印机，但 FilamentHub 未接受数据。请稍后刷新。",
         "invalid": "打印机返回了意外的响应。请检查固件和局域网模式。",
         "unpaired": "与此卡片的关联已失效。请重新连接打印机。",
-        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。"
+        "unavailable": "插件没有响应。请在 OrcaSlicer 中重新打开 FilamentHub 后重试。",
+        "serial": "打印机未在网络中响应，OrcaSlicer 中也没有它的序列号。请确认打印机已开机、已启用局域网模式，并与这台电脑处于同一网络。",
+        "check_code": "请输入打印机网络界面上显示的校验码。"
+      },
+      "secret": {
+        "label": "校验码",
+        "submit": "连接",
+        "hint": "校验码显示在打印机的网络界面上。只需输入一次：它只保存在这台电脑上。"
       }
     },
     "creality": {

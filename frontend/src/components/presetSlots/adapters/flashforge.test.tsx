@@ -68,11 +68,37 @@ describe('Flashforge through OrcaSlicer', () => {
     fireEvent.click(await screen.findByText('presetSlots.flashforge.connect'));
     fireEvent.click(await screen.findByText('AD5X'));
 
-    // The printer's own refusal is explained; nothing is asked of the person here.
+    // The printer's own refusal is explained, and the check code can be typed again.
     expect(await screen.findByRole('alert')).toHaveTextContent('presetSlots.flashforge.result.auth');
+    expect(screen.getByLabelText('presetSlots.flashforge.secret.label')).toBeInTheDocument();
     expect(issuePairingCode).toHaveBeenCalledTimes(1);
     expect(configure).toHaveBeenNthCalledWith(1, 7, 9, 'FH-ABCDE-12345', undefined);
     expect(configure).toHaveBeenNthCalledWith(2, 7, 9, 'FH-ABCDE-12345', 'ff_b');
+  });
+
+  it('asks only for the check code the plugin could not find, for the same printer and code', async () => {
+    configure
+      .mockResolvedValueOnce({ ok: false, code: 'choose', candidates: [
+        { connectionRef: 'ff_a', label: 'Creator 5 Pro 0.4' },
+        { connectionRef: 'ff_b', label: 'AD5X' },
+      ] })
+      .mockResolvedValueOnce({ ok: false, code: 'check_code' })
+      .mockResolvedValueOnce({ ok: true, code: 'ok' });
+    show();
+
+    fireEvent.click(await screen.findByText('presetSlots.flashforge.connect'));
+    fireEvent.click(await screen.findByText('AD5X'));
+    const field = await screen.findByLabelText('presetSlots.flashforge.secret.label');
+    // Nothing to send until something is typed.
+    expect(screen.getByText('presetSlots.flashforge.secret.submit').closest('button')).toBeDisabled();
+    fireEvent.change(field, { target: { value: ' 9f8e7d6c ' } });
+    fireEvent.click(screen.getByText('presetSlots.flashforge.secret.submit'));
+
+    await waitFor(() => expect(configure).toHaveBeenCalledTimes(3));
+    expect(configure).toHaveBeenNthCalledWith(3, 7, 9, 'FH-ABCDE-12345', 'ff_b', '9f8e7d6c');
+    // The one-time code was not spent by the missing check code.
+    expect(issuePairingCode).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByLabelText('presetSlots.flashforge.secret.label')).toBeNull());
   });
 
   it('reads a linked printer once when the card opens and never on a timer', async () => {

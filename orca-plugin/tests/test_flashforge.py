@@ -33,8 +33,19 @@ def _connection(label="Creator 5 Pro 0.4", serial=SERIAL, check_code=CHECK_CODE)
 def bridge(plugin_module, monkeypatch, tmp_path):
     """The plugin with its private storage, the printer and the site faked."""
     plugin = plugin_module
-    calls = SimpleNamespace(paired=[], posted=[], revoked=[], reads=[], pair_ids=(7, 9))
+    calls = SimpleNamespace(
+        paired=[], posted=[], revoked=[], reads=[], pair_ids=(7, 9), found={}, searches=0,
+    )
     monkeypatch.setattr(plugin, "FLASHFORGE_CONFIG_FILE", str(tmp_path / ".fh_flashforge.json"))
+    monkeypatch.setattr(plugin, "_FLASHFORGE_DISCOVERY", {"found": {}, "at": None})
+
+    def search(duration=None):
+        calls.searches += 1
+        plugin._remember_flashforge_answers(dict(calls.found))
+        return [], True
+
+    # The person's printer search hears only what a test says is on the network.
+    monkeypatch.setattr(plugin, "discover_lan_printers", search)
     monkeypatch.setattr(plugin, "plugin_source_instance_id", lambda: "desktop-source-instance")
 
     def read(connection):
@@ -90,6 +101,12 @@ def test_connections_come_from_orcas_flashforge_printer_presets(plugin_module, m
         preset("Voron", True, host_type="moonraker", print_host="192.168.1.50",
                printhost_apikey="moonraker-key"),
         preset("Flashforge stock", False, host_type="flashforge", print_host="192.168.1.41"),
+        # OrcaSlicer's own AD5X profile comes with the Octo/Klipper type.
+        preset("AD5X 0.4", True, host_type="octoprint", print_host="192.168.1.42",
+               printer_model="Flashforge AD5X"),
+        # An older Flashforge that has no LAN API.
+        preset("Adventurer 3", True, host_type="octoprint", print_host="192.168.1.43",
+               printer_model="Flashforge Adventurer 3 Series"),
     ]
     printers = SimpleNamespace(size=lambda: len(presets), preset=lambda index: presets[index])
     set_host_attr(
@@ -98,8 +115,10 @@ def test_connections_come_from_orcas_flashforge_printer_presets(plugin_module, m
     )
 
     assert plugin_module._snapshot_local_flashforge_connections() == [
-        {"label": "Creator 5 Pro 0.4", "host": "192.168.1.40", "serial": SERIAL,
-         "check_code": CHECK_CODE},
+        {"label": "Creator 5 Pro 0.4", "host": "192.168.1.40", "route": "known",
+         "serial": SERIAL, "check_code": CHECK_CODE},
+        {"label": "AD5X 0.4", "host": "192.168.1.42", "route": "probe",
+         "serial": "", "check_code": ""},
     ]
 
 
@@ -145,16 +164,85 @@ def test_linking_asks_which_printer_before_using_the_one_time_code(bridge):
     assert calls.reads[0]["serial"] == "SNADXA0000042"
 
 
-def test_linking_stops_before_pairing_when_orca_lacks_the_credentials(bridge):
+def test_linking_stops_before_pairing_when_nothing_tells_the_credentials(bridge):
     plugin, calls, _store = bridge
 
+    # Only the person knows the check code: the page asks for it.
     assert plugin.configure_flashforge_bridge(
         7, 9, "FH-ABCDE-12345", "", [_connection(check_code="")]
-    ) == {"ok": False, "code": "credentials"}
+    ) == {"ok": False, "code": "check_code"}
+    # The printer did not answer the search, and the profile has no serial number.
+    assert plugin.configure_flashforge_bridge(
+        7, 9, "FH-ABCDE-12345", "", [_connection(serial="")]
+    ) == {"ok": False, "code": "serial"}
     assert plugin.configure_flashforge_bridge(7, 9, "FH-ABCDE-12345", "", []) == {
         "ok": False, "code": "notFound",
     }
     assert not calls.reads and not calls.paired
+
+
+def test_the_serial_number_a_profile_lacks_comes_from_the_printer_on_the_network(bridge):
+    plugin, calls, _store = bridge
+    calls.found = {"192.168.1.40": SERIAL}
+
+    result = plugin.configure_flashforge_bridge(
+        7, 9, "FH-ABCDE-12345", "", [_connection(serial="")]
+    )
+
+    assert result == {"ok": True, "code": "ok"}
+    assert calls.reads[0]["serial"] == SERIAL and calls.searches == 1
+    # After OrcaSlicer restarts nothing has been heard, and the watcher does not
+    # search: the link finds its profile by the address's fingerprint.
+    plugin._FLASHFORGE_DISCOVERY.update(found={}, at=None)
+    assert plugin.observe_flashforge_bindings([_connection(serial="")]) == {7: "ok"}
+    assert calls.reads[-1]["serial"] == SERIAL and calls.searches == 1
+    assert "192.168.1.40" not in _store.read_text(encoding="utf-8")
+
+
+def test_a_profile_of_another_type_is_offered_only_once_the_printer_answers(bridge):
+    plugin, calls, _store = bridge
+    profile = dict(_connection(serial="", check_code=""), route="probe")
+
+    # Nothing was heard: an Octo/Klipper profile is not taken for a Flashforge printer.
+    assert plugin._flashforge_offered([profile]) == []
+    assert plugin.configure_flashforge_bridge(7, 9, "FH-ABCDE-12345", "", [profile]) == {
+        "ok": False, "code": "notFound",
+    }
+    assert calls.searches == 1
+    # Asked again within half a minute: the last search stands.
+    calls.found = {"192.168.1.40": SERIAL}
+    plugin.configure_flashforge_bridge(7, 9, "FH-ABCDE-12345", "", [profile])
+    assert calls.searches == 1
+
+    plugin._remember_flashforge_answers(calls.found)
+    offered = plugin._flashforge_offered([profile])
+    assert [(item["serial"], item["route"]) for item in offered] == [(SERIAL, "probe")]
+
+
+def test_a_check_code_typed_on_the_page_is_kept_here_and_never_sent(bridge):
+    plugin, calls, store = bridge
+    profile = _connection(check_code="")
+
+    assert plugin.configure_flashforge_bridge(
+        7, 9, "FH-ABCDE-12345", "", [profile], check_code=" 9f8e7d6c "
+    ) == {"ok": True, "code": "ok"}
+    assert calls.reads[0]["check_code"] == "9f8e7d6c"
+    # OrcaSlicer does not have it, so the link keeps it, on this computer only.
+    assert "9f8e7d6c" in store.read_text(encoding="utf-8")
+    sent = json.dumps([payload for _path, _token, payload in calls.paired + calls.posted])
+    assert "9f8e7d6c" not in sent
+
+    assert plugin.observe_flashforge_bindings([profile]) == {7: "ok"}
+    assert calls.reads[-1]["check_code"] == "9f8e7d6c"
+
+
+def test_the_search_answer_is_read_as_orcaslicer_reads_it(plugin_module):
+    answer = bytearray(0xC4)
+    answer[0:9] = b"AD5X-Shop"
+    answer[0x92:0x92 + len(SERIAL)] = SERIAL.encode("ascii")
+    assert plugin_module.flashforge_discovery_serial(bytes(answer)) == SERIAL
+    assert plugin_module.flashforge_discovery_serial(bytes(answer[:0xC3])) == ""
+    assert plugin_module.flashforge_discovery_serial(bytes(0xC4)) == ""
 
 
 def test_a_code_issued_for_another_printer_card_is_given_back(bridge):
@@ -556,3 +644,56 @@ def test_a_saved_assignment_reaches_the_slot_and_a_stale_one_does_not(station, b
     revision["value"] = 5
     assert assign() == {"ok": False, "code": "stale_assignment"}
     assert len(printer.commands) == 1
+
+
+def test_the_printer_search_asks_flashforge_printers_as_orcaslicer_does(plugin_module, monkeypatch):
+    plugin = plugin_module
+    answer = bytearray(0xC4)
+    answer[0x92:0x92 + len(SERIAL)] = SERIAL.encode("ascii")
+    opened = []
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            self.sent, self.inbox, self.bound = [], [], None
+            opened.append(self)
+
+        def setsockopt(self, *_args):
+            pass
+
+        def bind(self, address):
+            self.bound = address
+
+        def setblocking(self, _flag):
+            pass
+
+        def sendto(self, data, address):
+            self.sent.append((data, address))
+            if address[1] == plugin.FLASHFORGE_DISCOVERY_PORT and address[0] == "192.168.1.255":
+                self.inbox.append((bytes(answer), ("192.168.1.40", 48899)))
+
+        def recvfrom(self, _size):
+            if self.inbox:
+                return self.inbox.pop(0)
+            raise BlockingIOError
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(plugin.socket, "socket", FakeSocket)
+    monkeypatch.setattr(
+        plugin.socket, "getaddrinfo",
+        lambda *_args, **_kwargs: [(2, 2, 17, "", ("192.168.1.10", 0))],
+    )
+    monkeypatch.setattr(
+        plugin.select, "select", lambda read, _w, _x, _t: ([item for item in read if item.inbox], [], [])
+    )
+    monkeypatch.setattr(plugin, "_FLASHFORGE_DISCOVERY", {"found": {}, "at": None})
+
+    plugin.discover_lan_printers(0.3)
+
+    listener = next(item for item in opened if item.bound == ("", plugin.FLASHFORGE_DISCOVERY_LISTEN_PORT))
+    assert {data for data, _address in listener.sent} == {plugin.FLASHFORGE_DISCOVERY_MESSAGE}
+    assert {address for _data, address in listener.sent} == {
+        ("255.255.255.255", 48899), ("192.168.0.255", 48899), ("192.168.1.255", 48899),
+    }
+    assert plugin._FLASHFORGE_DISCOVERY["found"] == {"192.168.1.40": SERIAL}

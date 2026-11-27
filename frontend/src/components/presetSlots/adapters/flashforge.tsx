@@ -9,9 +9,10 @@ import { LanBridgeSetup } from './LanBridgeSetup';
 import type { LanBridgeRoute } from './LanBridgeSetup';
 
 const STATION_SLOTS = 4;
-// The plugin reads the printer's address, serial number and check code from its
-// connection settings in OrcaSlicer. FH Edge is the route for watching without
-// OrcaSlicer.
+// The plugin reads the printer's address and check code from its connection
+// settings in OrcaSlicer and its serial number from the printer on the network.
+// Only a check code the profile lacks, or one the printer refused, is asked for
+// here. FH Edge is the route for watching without OrcaSlicer.
 const ROUTE: LanBridgeRoute = {
   provider: 'flashforge',
   capability: 'flashforge-lan-bridge',
@@ -19,6 +20,11 @@ const ROUTE: LanBridgeRoute = {
   // Looked up when used, like every other call into the plugin bridge.
   configure: (...args) => configureFlashforgeBridgeInPlugin(...args),
   refresh: (...args) => requestFlashforgeObservationRefresh(...args),
+  secret: {
+    outcomes: new Set(['check_code', 'auth']),
+    maxLength: 64,
+    configure: (...args) => configureFlashforgeBridgeInPlugin(...args),
+  },
 };
 
 // Flashforge printers on the LAN API (port 8898): the AD5X and Creator 5 /

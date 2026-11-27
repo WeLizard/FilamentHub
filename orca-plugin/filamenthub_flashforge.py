@@ -74,6 +74,29 @@ FLASHFORGE_STATION_PIDS = frozenset({38, 40, 41})  # AD5X, Creator 5, Creator 5 
 FLASHFORGE_AUTH_FAILED = 1
 FLASHFORGE_LAN_MODE_OFF = -2
 _FLASHFORGE_SERIAL = re.compile(r"[A-Za-z0-9_-]{4,64}")
+# OrcaSlicer 7cdc829a ships the AD5X, Creator 5 and Creator 5 Pro profiles with
+# host type "octoprint" and the Adventurer 5M ones with none, which is the
+# default "octoprint" (resources/profiles/Flashforge/machine,
+# src/libslic3r/PrintConfig.cpp:6024). Only a person picks "flashforge". So a
+# profile of these models under another type is the usual case, and the
+# printer's own answer on the network decides.
+FLASHFORGE_LAN_MODEL_PREFIXES = (
+    "Flashforge Adventurer 5M", "Flashforge AD5X", "Flashforge Creator 5",
+)
+_FLASHFORGE_OTHER_HOST_TYPES = frozenset({"octoprint", "moonraker"})
+FLASHFORGE_ROUTE_KNOWN = "known"
+FLASHFORGE_ROUTE_PROBE = "probe"
+# The search OrcaSlicer runs for these printers (src/slic3r/Utils/Flashforge.cpp
+# l. 63-91 and 244-327): a 20-byte UDP broadcast to port 48899, sent from port
+# 18007. A printer answers with at least 0xC4 bytes: its name in the first 32
+# and its serial number in the 32 from 0x92, each ended by a NUL byte.
+FLASHFORGE_DISCOVERY_PORT = 48899
+FLASHFORGE_DISCOVERY_LISTEN_PORT = 18007
+FLASHFORGE_DISCOVERY_MESSAGE = bytes(
+    (0x77, 0x77, 0x77, 0x2E, 0x75, 0x73, 0x72, 0x22, 0x65, 0x36, 0xC0) + (0,) * 9
+)
+_FLASHFORGE_DISCOVERY_MIN_BYTES = 0xC4
+_FLASHFORGE_DISCOVERY_SERIAL_AT = 0x92
 _FLASHFORGE_CHECK_CODE = re.compile(r"[\x21-\x7e]{1,64}")
 _FLASHFORGE_COLOR = re.compile(r"#?([0-9A-Fa-f]{6})")
 _FLASHFORGE_STATES = {
@@ -104,6 +127,26 @@ def flashforge_serial(value):
     """Return the canonical serial number, or an empty string when unusable."""
     serial = str(value or "").strip()
     return serial.upper() if _FLASHFORGE_SERIAL.fullmatch(serial) else ""
+
+
+def flashforge_profile_route(host_type, printer_model):
+    """How an OrcaSlicer profile reaches the LAN API: ``"known"``, ``"probe"`` or ``""``."""
+    kind = str(host_type or "").strip().lower()
+    if kind == FLASHFORGE_HOST_TYPE:
+        return FLASHFORGE_ROUTE_KNOWN
+    if kind in _FLASHFORGE_OTHER_HOST_TYPES and str(printer_model or "").startswith(
+        FLASHFORGE_LAN_MODEL_PREFIXES
+    ):
+        return FLASHFORGE_ROUTE_PROBE
+    return ""
+
+
+def flashforge_discovery_serial(packet):
+    """The serial number in a printer's answer to the search, or ``""``."""
+    if not isinstance(packet, (bytes, bytearray)) or len(packet) < _FLASHFORGE_DISCOVERY_MIN_BYTES:
+        return ""
+    field = bytes(packet[_FLASHFORGE_DISCOVERY_SERIAL_AT:_FLASHFORGE_DISCOVERY_SERIAL_AT + 32])
+    return flashforge_serial(field.split(b"\0", 1)[0].decode("ascii", "ignore"))
 
 
 def flashforge_check_code(value):

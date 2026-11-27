@@ -5370,7 +5370,7 @@ def _mdns_candidates(records):
 
 def discover_lan_printers(duration=4.0):
     """One bounded local search; no subnet sweep, credentials or device commands."""
-    sockets, records, found = [], {}, {}
+    sockets, records, found, flashforge = [], {}, {}, {}
     record_count = 0
     complete = True
     deadline = time.monotonic() + min(5.0, max(0.1, duration))
@@ -5394,6 +5394,27 @@ def discover_lan_printers(duration=4.0):
                 ) if _discovery_address(item[4][0])})[:8]
         except OSError:
             interfaces = []
+        try:
+            with external_operation():
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sockets.append((sock, "flashforge"))
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    sock.bind(("", FLASHFORGE_DISCOVERY_LISTEN_PORT))
+                except OSError:
+                    # OrcaSlicer may be searching at this moment; any port receives the answer.
+                    sock.bind(("", 0))
+                sock.setblocking(False)
+                for address in _flashforge_broadcast_addresses(interfaces):
+                    try:
+                        sock.sendto(FLASHFORGE_DISCOVERY_MESSAGE, (address, FLASHFORGE_DISCOVERY_PORT))
+                    except OSError:
+                        continue
+        except OSError:
+            complete = False
+            if sockets and sockets[-1][1] == "flashforge":
+                sockets.pop()[0].close()
         for interface in interfaces or ["0.0.0.0"]:
             sock = None
             try:
@@ -5422,7 +5443,12 @@ def discover_lan_printers(duration=4.0):
                     continue
                 if not _discovery_address(sender[0]):
                     continue
-                if next(kind for candidate, kind in sockets if candidate is sock) == "bambu":
+                kind = next(kind for candidate, kind in sockets if candidate is sock)
+                if kind == "flashforge":
+                    serial = flashforge_discovery_serial(packet)
+                    if serial and len(flashforge) < MAX_FLASHFORGE_BRIDGES * 2:
+                        flashforge[sender[0]] = serial
+                elif kind == "bambu":
                     item = _bambu_announcement(packet, sender[0])
                     if item and len(found) < _DISCOVERY_LIMIT:
                         found[(item["provider"], item["serial"] or item["host"])] = item
@@ -5461,6 +5487,8 @@ def discover_lan_printers(duration=4.0):
     finally:
         for sock, _kind in sockets:
             sock.close()
+        # What Flashforge printers answered fills in serial numbers their profiles lack.
+        _remember_flashforge_answers(flashforge)
 
 
 def observe_local_moonraker_connections(observations):
@@ -11368,12 +11396,18 @@ from filamenthub_flashforge import (
     FLASHFORGE_API_PORT,
     FLASHFORGE_AUTH_FAILED,
     FLASHFORGE_CAPABILITIES,
+    FLASHFORGE_DISCOVERY_LISTEN_PORT,
+    FLASHFORGE_DISCOVERY_MESSAGE,
+    FLASHFORGE_DISCOVERY_PORT,
     FLASHFORGE_HOST_TYPE,
     FLASHFORGE_IDENTITY_KIND,
     FLASHFORGE_LAN_MODE_OFF,
+    FLASHFORGE_LAN_MODEL_PREFIXES,
     FLASHFORGE_MAX_JOB_LENGTH_MM,
     FLASHFORGE_MAX_SLOTS,
     FLASHFORGE_PROVIDER,
+    FLASHFORGE_ROUTE_KNOWN,
+    FLASHFORGE_ROUTE_PROBE,
     FLASHFORGE_SINGLE_SPOOL_PIDS,
     FLASHFORGE_STATION_PIDS,
     flashforge_can_set_slots,
@@ -11384,11 +11418,13 @@ from filamenthub_flashforge import (
     flashforge_detail_body,
     flashforge_detail_result,
     flashforge_detail_url,
+    flashforge_discovery_serial,
     flashforge_host,
     flashforge_material_name,
     flashforge_palette_color,
     flashforge_printer,
     flashforge_product_id,
+    flashforge_profile_route,
     flashforge_serial,
     flashforge_slot_command,
     flashforge_slot_settings,
@@ -11404,6 +11440,15 @@ FLASHFORGE_READ_TIMEOUT = 8
 # refreshed when older than this, and never written anywhere.
 FLASHFORGE_CONNECTIONS_MAX_AGE_SECONDS = 300.0
 _FLASHFORGE_CONNECTIONS = {"items": None, "at": None}
+# The person's printer search also asks Flashforge printers for their serial
+# numbers: that fills in what a profile lacks and tells a Flashforge printer
+# behind another connection type. Linking runs it again only when the last one
+# is older than this. What it heard is kept in memory for this session only;
+# a link remembers its printer's serial number and address fingerprint.
+FLASHFORGE_DISCOVERY_SECONDS = 2.0
+FLASHFORGE_DISCOVERY_ASKED_SECONDS = 30.0
+_FLASHFORGE_DISCOVERY = {"found": {}, "at": None}
+_FLASHFORGE_DISCOVERY_LOCK = threading.Lock()
 _FLASHFORGE_CONNECTIONS_LOCK = threading.Lock()
 FLASHFORGE_MESSAGES = frozenset({
     "configure-flashforge", "flashforge-refresh", "flashforge-assign",
@@ -11435,8 +11480,11 @@ def _snapshot_local_flashforge_connections():
                     continue
             except Exception:
                 continue
-            host_type = _preset_scalar(_preset_config_value(preset, "host_type"))
-            if host_type.lower() != FLASHFORGE_HOST_TYPE:
+            route = flashforge_profile_route(
+                _preset_scalar(_preset_config_value(preset, "host_type")),
+                _preset_scalar(_preset_config_value(preset, "printer_model")),
+            )
+            if not route:
                 continue
             host = flashforge_host(_preset_scalar(_preset_config_value(preset, "print_host")))
             if not host:
@@ -11444,6 +11492,7 @@ def _snapshot_local_flashforge_connections():
             connections.append({
                 "label": str(preset.name or "")[:200],
                 "host": host,
+                "route": route,
                 "serial": flashforge_serial(_preset_scalar(
                     _preset_config_value(preset, "flashforge_serial_number")
                 )),
@@ -11508,13 +11557,19 @@ def _load_flashforge_bindings():
             and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("token") or ""))
         ):
             continue
-        bindings.append({
+        binding = {
             "physical_printer_id": item["physical_printer_id"],
             "material_system_id": item["material_system_id"],
             "bridge_token": item["bridge_token"],
             "serial": item["serial"],
             "device_identity": {"kind": identity["kind"], "token": identity["token"]},
-        })
+        }
+        check_code = flashforge_check_code(item.get("check_code"))
+        if check_code:
+            binding["check_code"] = check_code
+        if re.fullmatch(r"[0-9a-f]{32}", str(item.get("host_ref") or "")):
+            binding["host_ref"] = item["host_ref"]
+        bindings.append(binding)
     return bindings
 
 
@@ -11544,6 +11599,96 @@ def _host_denied(exc):
     return isinstance(exc, PermissionError) or isinstance(
         getattr(exc, "reason", None), PermissionError
     )
+
+
+def _flashforge_broadcast_addresses(interfaces):
+    """Where the search is sent: the addresses OrcaSlicer uses and this computer's /24."""
+    addresses = {"255.255.255.255", "192.168.0.255", "192.168.1.255"}
+    for local in interfaces:
+        if _discovery_address(local):
+            addresses.add(local.rsplit(".", 1)[0] + ".255")
+    return sorted(addresses)
+
+
+def _remember_flashforge_answers(answers):
+    with _FLASHFORGE_DISCOVERY_LOCK:
+        _FLASHFORGE_DISCOVERY["found"].update(answers)
+        _FLASHFORGE_DISCOVERY["at"] = time.monotonic()
+
+
+def _flashforge_host_ref(host):
+    """A local fingerprint of a printer's address, so a link can find its profile again."""
+    return hashlib.sha256(
+        (plugin_source_instance_id() + "\0flashforge-host\0" + host.lower()).encode("utf-8")
+    ).hexdigest()[:32]
+
+
+def _flashforge_address(host):
+    try:
+        return _resolved_lan_address(host, FLASHFORGE_API_PORT)[3][0]
+    except (OSError, ValueError):
+        return ""
+
+
+def _flashforge_with_serials(connections):
+    """Profiles with the serial numbers Flashforge printers told this session (worker).
+
+    ``seen`` says the printer at the profile's address answered the search.
+    """
+    with _FLASHFORGE_DISCOVERY_LOCK:
+        found = dict(_FLASHFORGE_DISCOVERY["found"])
+    items = []
+    for connection in connections or []:
+        item = dict(connection)
+        serial = found.get(_flashforge_address(item["host"])) if found else None
+        item["seen"] = serial is not None
+        if serial and not item["serial"]:
+            item["serial"] = serial
+        items.append(item)
+    return items
+
+
+def _flashforge_offered(connections):
+    """Profiles a person may link: Flashforge by type, or by the printer's own answer (worker)."""
+    return [
+        item for item in _flashforge_with_serials(connections)
+        if item.get("route", FLASHFORGE_ROUTE_KNOWN) != FLASHFORGE_ROUTE_PROBE or item["seen"]
+    ]
+
+
+def _flashforge_search_if_needed(connections):
+    """Run the person's printer search once when a profile lacks what only it can tell (worker)."""
+    with _FLASHFORGE_DISCOVERY_LOCK:
+        last = _FLASHFORGE_DISCOVERY["at"]
+    if last is not None and time.monotonic() - last < FLASHFORGE_DISCOVERY_ASKED_SECONDS:
+        return
+    if any(
+        not item["serial"] or (item.get("route") == FLASHFORGE_ROUTE_PROBE and not item["seen"])
+        for item in _flashforge_with_serials(connections)
+    ):
+        try:
+            discover_lan_printers(FLASHFORGE_DISCOVERY_SECONDS)
+        except OSError as exc:
+            fh_log("Flashforge search failed: %s" % type(exc).__name__)
+
+
+def _flashforge_binding_connection(binding, connections):
+    """How a linked printer is reached, with what its link remembers.
+
+    The serial number comes from the profile, from this session's search, or,
+    for a profile without one, from the link that remembers the address's
+    fingerprint. The check code typed on the page stands in for one the
+    profile lacks. Nothing is searched for here.
+    """
+    for item in _flashforge_with_serials(connections):
+        if item["serial"] != binding["serial"] and not (
+            not item["serial"] and binding.get("host_ref") == _flashforge_host_ref(item["host"])
+        ):
+            continue
+        check_code = item["check_code"] or binding.get("check_code", "")
+        if check_code:
+            return dict(item, serial=binding["serial"], check_code=check_code)
+    return None
 
 
 def read_flashforge_detail(connection):
@@ -11619,13 +11764,7 @@ def _bridge_report_code(status, body):
 
 def observe_flashforge_binding(binding, connections, source_instance_id):
     """Read one linked printer and report it to FilamentHub; return a result code."""
-    connection = next(
-        (
-            item for item in connections or []
-            if item["serial"] == binding["serial"] and item["check_code"]
-        ),
-        None,
-    )
+    connection = _flashforge_binding_connection(binding, connections)
     if connection is None:
         detail, failure = None, "credentials"
     else:
@@ -11683,11 +11822,17 @@ def observe_flashforge_bindings(connections, physical_printer_id=None, material_
 
 
 def configure_flashforge_bridge(
-    physical_printer_id, material_system_id, pairing_code, connection_ref, connections
+    physical_printer_id, material_system_id, pairing_code, connection_ref, connections,
+    check_code="",
 ):
-    """Link one Flashforge printer known to OrcaSlicer; return the page result."""
+    """Link one Flashforge printer known to OrcaSlicer; return the page result.
+
+    ``check_code`` is what the person typed on the page when the profile has
+    none, or a wrong one; it is kept on this computer with the link.
+    """
     source_instance_id = plugin_source_instance_id()
-    printers = flashforge_printers(connections, source_instance_id)
+    _flashforge_search_if_needed(connections)
+    printers = flashforge_printers(_flashforge_offered(connections), source_instance_id)
     if not printers:
         return {"ok": False, "code": "notFound"}
     chosen = [item for item in printers if item["connection_ref"] == connection_ref]
@@ -11702,16 +11847,24 @@ def configure_flashforge_bridge(
                 for item in printers[:MAX_FLASHFORGE_BRIDGES]
             ],
         }
-    connection = chosen[0]
-    if not connection["serial"] or not connection["check_code"]:
-        return {"ok": False, "code": "credentials"}
+    connection = dict(chosen[0])
+    if not connection["serial"]:
+        # Neither the profile nor the printer's answer on the network said it.
+        return {"ok": False, "code": "serial"}
     with _FLASHFORGE_CONFIG_LOCK:
-        if any(
-            item["serial"] == connection["serial"]
-            and item["physical_printer_id"] != physical_printer_id
-            for item in _load_flashforge_bindings()
-        ):
-            return {"ok": False, "code": "linked"}
+        bindings = _load_flashforge_bindings()
+    if any(
+        item["serial"] == connection["serial"] and item["physical_printer_id"] != physical_printer_id
+        for item in bindings
+    ):
+        return {"ok": False, "code": "linked"}
+    stored = next(
+        (item.get("check_code", "") for item in bindings if item["serial"] == connection["serial"]), ""
+    )
+    profile_code = connection["check_code"]
+    connection["check_code"] = flashforge_check_code(check_code) or profile_code or stored
+    if not connection["check_code"]:
+        return {"ok": False, "code": "check_code"}
     detail, failure = read_flashforge_detail(connection)
     if detail is None:
         return {"ok": False, "code": failure}
@@ -11754,6 +11907,12 @@ def configure_flashforge_bridge(
         "serial": connection["serial"],
         "device_identity": {"kind": FLASHFORGE_IDENTITY_KIND, "token": evidence},
     }
+    if connection["check_code"] != profile_code:
+        # Typed on the page: OrcaSlicer does not have it, so the link keeps it.
+        binding["check_code"] = connection["check_code"]
+    if connection["seen"]:
+        # The profile may never hold the serial number: find it again by its address.
+        binding["host_ref"] = _flashforge_host_ref(connection["host"])
     try:
         with _FLASHFORGE_CONFIG_LOCK:
             bindings = [
@@ -11883,13 +12042,7 @@ def assign_flashforge_slot(
         ),
         None,
     )
-    connection = None if binding is None else next(
-        (
-            item for item in connections or []
-            if item["serial"] == binding["serial"] and item["check_code"]
-        ),
-        None,
-    )
+    connection = None if binding is None else _flashforge_binding_connection(binding, connections)
     if connection is None:
         return failed("connection_not_found")
     if time.monotonic() > deadline:
@@ -11974,16 +12127,18 @@ def handle_flashforge_message(catalog, msg):
     if msg_type == "configure-flashforge":
         pairing_code = msg.get("pairingCode")
         connection_ref = msg.get("connectionRef") or ""
+        check_code = msg.get("checkCode") or ""
         if not (
             isinstance(pairing_code, str) and 8 <= len(pairing_code) <= 32
             and isinstance(connection_ref, str) and len(connection_ref) <= 120
+            and isinstance(check_code, str) and len(check_code) <= 64
         ):
             return
 
         def job():
             try:
                 result = configure_flashforge_bridge(
-                    ids[0], ids[1], pairing_code, connection_ref, connections
+                    ids[0], ids[1], pairing_code, connection_ref, connections, check_code
                 )
             except PluginLifecycleStopped:
                 raise
@@ -12396,13 +12551,7 @@ class FlashforgeWatchRuntime(_UsageWatchRuntime):
         now = time.monotonic()
         if self._blocked(key, now):
             return False
-        connection = next(
-            (
-                item for item in connections
-                if item["serial"] == binding["serial"] and item["check_code"]
-            ),
-            None,
-        )
+        connection = _flashforge_binding_connection(binding, connections)
         if connection is None:
             return False
         path = _usage_journal(
@@ -17043,14 +17192,15 @@ class FilamentHubCatalog(
                     "physicalPrinterId": item.get("physical_printer_id"), "provider": item["provider"],
                     "source": item["source"], "printerModel": item.get("printer_model", ""),
                 } for item in discovery["items"] if item["provider"] != "moonraker" and item["connection_ref"] not in detached)
-                if msg.get("flashforge"):
+                flashforge = _flashforge_offered(msg.get("flashforge"))
+                if flashforge:
                     linked = {item["serial"]: item["physical_printer_id"]
                               for item in _load_flashforge_bindings()}
                     candidates.extend({
                         "connectionRef": item["connection_ref"], "label": item["label"] or "Flashforge",
                         "physicalPrinterId": linked.get(item["serial"]),
                         "provider": "flashforge", "source": "profile",
-                    } for item in flashforge_printers(msg["flashforge"], plugin_source_instance_id()))
+                    } for item in flashforge_printers(flashforge, plugin_source_instance_id()))
                 candidates.extend(creality_setup_candidates(msg.get("creality")))
                 candidates.extend(profile_lan_setup_candidates(msg.get("profile_lan")))
                 fh_log("printer setup list: candidates=%d moonraker=%d discovery_complete=%s" % (

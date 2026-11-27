@@ -1263,18 +1263,23 @@ function requestLanBridge(
 
 /**
  * Link a Flashforge printer through the plugin. The page sends FilamentHub IDs,
- * the one-time pairing code and an optional opaque local reference; the
- * address, serial number and check code are read by the plugin from the
- * printer's connection settings in OrcaSlicer and never reach the page.
+ * the one-time pairing code and an optional opaque local reference. The
+ * plugin reads the address from the printer's connection settings in
+ * OrcaSlicer and the serial number from the printer on the network; neither
+ * reaches the page. A check code the profile lacks is typed by the person and
+ * handed straight to the plugin, which keeps it on this computer.
  */
 export function configureFlashforgeBridgeInPlugin(
   physicalPrinterId: number,
   materialSystemId: number,
   pairingCode: string,
   connectionRef?: string,
+  checkCode?: string,
 ): Promise<LanBridgeResult> {
   return requestLanBridge('flashforge', 'setup', {
-    physicalPrinterId, materialSystemId, pairingCode, ...(connectionRef ? { connectionRef } : {}),
+    physicalPrinterId, materialSystemId, pairingCode,
+    ...(connectionRef ? { connectionRef } : {}),
+    ...(checkCode ? { checkCode } : {}),
   });
 }
 
