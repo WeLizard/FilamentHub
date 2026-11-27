@@ -231,6 +231,60 @@ def test_without_canvas_the_printer_feeds_its_own_spool(plugin_module, provider,
     assert ([slot["provider_index"] for slot in slots], complete) == expected
 
 
+@pytest.fixture
+def edge_providers(monkeypatch):
+    """FH Edge's readers of the same protocols, imported from its source tree."""
+    import importlib
+    import sys
+
+    monkeypatch.syspath_prepend(str(PLUGIN_ROOT.parent / "edge-agent" / "src"))
+    for name in [name for name in sys.modules if name.startswith("filamenthub_edge")]:
+        monkeypatch.delitem(sys.modules, name)
+    return SimpleNamespace(
+        sdcp=importlib.import_module("filamenthub_edge.providers.sdcp"),
+        mqtt=importlib.import_module("filamenthub_edge.providers.elegoo_mqtt"),
+        canvas=importlib.import_module("filamenthub_edge.providers._canvas"),
+    )
+
+
+def _states(status, edits):
+    for machine, code in edits:
+        changed = json.loads(json.dumps(status))
+        changed["CurrentStatus"] = machine
+        changed["PrintInfo"]["Status"] = code
+        yield changed
+
+
+def test_the_plugin_and_edge_read_the_shared_fixtures_alike(plugin_module, edge_providers):
+    """One printer must look the same on the site whichever of the two reads it."""
+    sdcp_statuses = [_status("sdcp/status_idle.json"), _status("sdcp/status_printing.json")]
+    sdcp_statuses += list(_states(_status("sdcp/status_printing.json"), [
+        ([1], code) for code in range(0, 30)
+    ]))
+    sdcp_statuses += list(_states(_status("sdcp/status_printing.json"), [
+        ([2, 1], 13), ([2], 0), ([9], 1), ([0], 0), ([], 0),
+    ]))
+    for status in sdcp_statuses:
+        assert plugin_module.sdcp_printer(status) == edge_providers.sdcp.build_printer(status)
+
+    cc2 = _fixture("elegoo_mqtt/status_printing.json")
+    for code, sub_status in [(1, 0), (2, 2075), (2, 2501), (2, 2077), (14, 0), (15, 0), (3, 0)]:
+        changed = json.loads(json.dumps(cc2))
+        changed["machine_status"].update(status=code, sub_status=sub_status)
+        assert plugin_module.elegoo_mqtt_printer(changed) == edge_providers.mqtt.build_printer(changed)
+
+    for info in (
+        _fixture("elegoo_mqtt/canvas.json")["canvas_info"],
+        _fixture("sdcp/canvas_response.json")["Data"]["Data"],
+        {"canvas_list": []},
+        None,
+    ):
+        assert plugin_module.canvas_slots(info) == edge_providers.canvas.canvas_slots(info)
+    mono = _fixture("elegoo_mqtt/mono_filament.json")["mono_filament_info"]
+    for value in (mono, None):
+        assert plugin_module.canvas_single_spool(value) == edge_providers.canvas.single_spool(value)
+
+
 def test_the_single_spool_says_the_material_set_on_the_printer(plugin_module):
     reading = {
         "status": _fixture("elegoo_mqtt/status_printing.json"),
@@ -591,6 +645,10 @@ def test_a_centauri_carbon_2_is_read_after_registering_with_its_access_code(mqtt
     assert reading["device_id"] == SERIAL
     _printer, slots, complete = plugin.profile_lan_observation("elegoo_mqtt", reading)
     assert complete is True and len(slots) == 4
+    # The next reading registers the same client again, as Elegoo's library does.
+    again = use(_FakeBroker())
+    assert plugin.read_elegoo_mqtt(_mqtt())[1] is None
+    assert again.login[0] == client
 
 
 def test_without_canvas_the_centauri_carbon_2_is_asked_for_its_single_spool(mqtt_wire):

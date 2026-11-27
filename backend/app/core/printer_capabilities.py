@@ -81,9 +81,11 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     ("prusalink", "orca_plugin_lan"): frozenset({"read", "presence"}),
     # SDCP (Chitu's open protocol; the Elegoo Centauri Carbon speaks it) and
     # Elegoo's MQTT API (the Centauri Carbon 2) report the print and the CANVAS
-    # slots, and count no filament a job uses. The plugin only reads them.
+    # slots, and count no filament a job uses. The plugin and Edge only read them.
     ("sdcp", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    ("sdcp", "edge_agent"): frozenset({"read", "presence"}),
     ("elegoo_mqtt", "orca_plugin_lan"): frozenset({"read", "presence"}),
+    ("elegoo_mqtt", "edge_agent"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -160,7 +162,7 @@ _CANVAS_READ_ONLY: dict[str, tuple[GapKind, str]] = {
     ),
     "write": (
         "planned",
-        "The plugin only reads; setting a CANVAS slot's material is not built yet.",
+        "The plugin and Edge only read; setting a CANVAS slot's material is not built yet.",
     ),
     "spool_identity": (
         "device",
@@ -238,7 +240,9 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
         "tag_read": ("device", "The local API reports no spool tag."),
     },
     ("sdcp", "orca_plugin_lan"): _CANVAS_READ_ONLY,
+    ("sdcp", "edge_agent"): _CANVAS_READ_ONLY,
     ("elegoo_mqtt", "orca_plugin_lan"): _CANVAS_READ_ONLY,
+    ("elegoo_mqtt", "edge_agent"): _CANVAS_READ_ONLY,
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
 }

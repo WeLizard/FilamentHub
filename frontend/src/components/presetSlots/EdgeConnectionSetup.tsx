@@ -15,7 +15,13 @@ const EDGE_TRANSPORT = 'edge_agent' as const;
 const LAN_PRINTER_TEXT = {
   flashforge: { add: 'presetSlots.edge.addToNodeFlashforge', security: 'presetSlots.edge.securityFlashforge' },
   bambu: { add: 'presetSlots.edge.addToNodeBambu', security: 'presetSlots.edge.securityBambu' },
+  sdcp: { add: 'presetSlots.edge.addToNodeSdcp', security: 'presetSlots.edge.securitySdcp' },
+  elegoo_mqtt: {
+    add: 'presetSlots.edge.addToNodeElegooMqtt', security: 'presetSlots.edge.securityElegooMqtt',
+  },
 } as const;
+type LanPrinter = keyof typeof LAN_PRINTER_TEXT;
+const isLanPrinter = (provider: string): provider is LanPrinter => provider in LAN_PRINTER_TEXT;
 
 export function edgePairingRefetchInterval(
   error: unknown,
@@ -131,8 +137,7 @@ export function EdgeConnectionSetup({
   };
 
   const edgeProvider = status?.provider ?? system.provider;
-  const lanPrinter = edgeProvider === 'flashforge' || edgeProvider === 'bambu'
-    ? LAN_PRINTER_TEXT[edgeProvider] : null;
+  const lanPrinter = isLanPrinter(edgeProvider) ? LAN_PRINTER_TEXT[edgeProvider] : null;
   const connectionOptions = JSON.stringify(edgeProvider === 'bambu' ? {
     id: `printer-${printer.id}`,
     name: printer.name,
@@ -148,6 +153,19 @@ export function EdgeConnectionSetup({
     printer_url: 'http://PRINTER-LAN-IP',
     serial_number: 'SERIAL-FROM-PRINTER',
     check_code: 'CHECK-CODE-FROM-PRINTER',
+    pairing_code: pairingCode,
+  } : edgeProvider === 'sdcp' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'sdcp',
+    printer_url: 'PRINTER-LAN-IP',
+    pairing_code: pairingCode,
+  } : edgeProvider === 'elegoo_mqtt' ? {
+    id: `printer-${printer.id}`,
+    name: printer.name,
+    adapter: 'elegoo_mqtt',
+    printer_url: 'PRINTER-LAN-IP',
+    access_code: 'ACCESS-CODE-FROM-PRINTER',
     pairing_code: pairingCode,
   } : {
     id: `printer-${printer.id}`,

@@ -21,21 +21,23 @@ const ROUTE: LanBridgeRoute = {
 // Elegoo's own MQTT API, spoken by the Centauri Carbon 2 (not SDCP). The
 // printer tells the print state and lists its CANVAS slots, or its spool holder
 // without one, with material and colour. It counts no filament used and names
-// no spool, and the plugin sends it nothing, so an assignment is saved on the
-// site only.
+// no spool, and neither the plugin nor FH Edge sends it anything, so an
+// assignment is saved on the site only.
 export const elegooMqttAdapter: FeedAdapter = {
   id: 'elegoo_mqtt',
   onboarding: {
     connectionProviders: ['elegoo_mqtt'],
     connectionLabelKey: 'printerSetup.connections.elegooMqtt',
     connectionHintKey: 'printerSetup.connections.elegooMqttHint',
-    methods: ['orca'],
+    methods: ['orca', 'edge'],
     matchesModel: (model) => centauriGeneration(model) === 2,
     topologies: CANVAS_TOPOLOGIES,
   },
   labelKey: 'presetSlots.feedSystem.elegoo_mqtt',
   fixedSlots: null,
   capabilities: ['read', 'presence'],
+  supportsEdge: true,
+  edgeKinds: ['mmu', 'direct_feed'],
   orcaBridge: true,
   link: null,
   renderSetup: (context) => <LanBridgeSetup route={ROUTE} {...context} />,

@@ -302,6 +302,58 @@ access code. If another device later answers at that address, it does not
 receive the access code and the log says why. After replacing the printer or its
 mainboard, reset the connection (`--reset-connection`) or give it a new `id`.
 
+### SDCP printers (Elegoo Centauri Carbon)
+
+Edge reads printers on the open SDCP protocol over their WebSocket
+(`ws://<printer>:3030/websocket`). The adapter is the protocol, not a brand: the
+Elegoo Centauri Carbon is the known device, and any other printer that speaks
+SDCP connects the same way. There is no password.
+
+```json
+{
+  "id": "carbon",
+  "name": "Centauri Carbon",
+  "adapter": "sdcp",
+  "pairing_code": "FH-ZZZZZ-ZZZZZ",
+  "printer_url": "192.168.1.60"
+}
+```
+
+Each reading asks for the attributes (command 1), the status (command 0) and,
+on firmware 1.2 or later, the CANVAS slots (command 324), and nothing else: a
+command the firmware does not know may stop its daemon. Edge reports the print
+state and, with CANVAS, the four slots of each unit with the material and colour
+the printer sees and the slot that feeds; without CANVAS, the spool holder. The
+printer is recognised by the mainboard ID it reports. It counts no filament, so
+no spool is charged.
+
+### Elegoo Centauri Carbon 2
+
+The Centauri Carbon 2 speaks Elegoo's own MQTT interface, not SDCP. Edge asks
+`GET /system/info` (port 80) for the serial number with the access code, then
+connects to the printer's broker on port 1883 as user `elegoo`, registers one
+client and asks for the status (method 1002), the CANVAS slots (2005) and,
+without CANVAS, the single spool (1061). Leave `access_code` out if it was never
+changed: the printer's default code is used, as Elegoo's own apps do.
+
+```json
+{
+  "id": "carbon2",
+  "name": "Centauri Carbon 2",
+  "adapter": "elegoo_mqtt",
+  "pairing_code": "FH-ZZZZZ-ZZZZZ",
+  "printer_url": "192.168.1.61",
+  "access_code": "ACCESS-CODE-FROM-PRINTER"
+}
+```
+
+Edge keeps one client id for the printer and registers it again on every
+reading, as Elegoo's library does on reconnecting, so its readings never take
+another app's place. The printer counts no filament, so no spool is charged.
+Both readers are held to the fixtures in `tests/fixtures/sdcp` and
+`tests/fixtures/elegoo_mqtt`, shared with the OrcaSlicer plugin, and are not yet
+confirmed on a printer.
+
 In OrcaSlicer, use **Check printer** for a fresh local comparison and explicit
 adopt/apply actions. Without Orca, the optional refresh below lets website spool,
 gate preset, metadata and registered-tag changes reach Happy Hare automatically.

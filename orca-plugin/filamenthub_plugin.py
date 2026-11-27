@@ -14646,6 +14646,11 @@ PROFILE_LAN_MAX_MESSAGE_BYTES = 1024 * 1024
 # What each address answered as this session, per protocol: the printer's own identifier.
 _PROFILE_LAN_KNOWN_HOSTS = {}
 _PROFILE_LAN_KNOWN_HOSTS_LOCK = threading.Lock()
+# One Elegoo MQTT client for the plugin's whole run, as Elegoo's own library
+# keeps one per printer (elegooofficial/elegoo-link @ ec2d2269,
+# elegoo_fdm_cc2_protocol.cpp l. 15-17, mqtt_protocol.cpp l. 236-247): a
+# reading registers it again rather than taking another client's place.
+_ELEGOO_MQTT_CLIENT_ID = "1_PC_%04d" % (1000 + secrets.randbelow(9000))
 PROFILE_LAN_MESSAGES = frozenset(
     message for provider in PROFILE_LAN_PROVIDERS
     for message in ("configure-" + provider, provider + "-refresh")
@@ -15019,7 +15024,7 @@ def read_elegoo_mqtt(connection):
     serial, failure = read_elegoo_mqtt_serial(connection, sockaddr)
     if not serial:
         return None, failure
-    client_id = "1_PC_%04d" % (1000 + secrets.randbelow(9000))
+    client_id = _ELEGOO_MQTT_CLIENT_ID
     topics = elegoo_mqtt_topics(serial, client_id)
     answers = {}
     registered = False

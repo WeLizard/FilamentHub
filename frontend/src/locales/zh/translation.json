@@ -175,9 +175,9 @@
       "prusalink": "Prusa（PrusaLink）",
       "prusalinkHint": "通过 OrcaSlicer 插件连接 Prusa MK4/MK4S、MK3.5/3.9、XL、CORE One 和 MINI，以及使用 Prusa-Link 的 MK3S。显示打印状态；单喷嘴且无 MMU 的打印机还显示已装载的材料。打印机不报告 MMU3 料槽、XL 工具头和耗材用量。",
       "sdcp": "SDCP（Elegoo Centauri Carbon）",
-      "sdcpHint": "通过 OrcaSlicer 插件连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机不统计耗材用量，因此打印不会自动从料卷扣减。",
+      "sdcpHint": "通过 OrcaSlicer 插件或 FH Edge 连接使用开放 SDCP 协议的打印机，例如 Elegoo Centauri Carbon。显示打印状态；在较新固件上连接 CANVAS 时，还会显示打印机所见的料槽材料和颜色。这些打印机不统计耗材用量，因此打印不会自动从料卷扣减。",
       "elegooMqtt": "Elegoo Centauri Carbon 2",
-      "elegooMqttHint": "通过 OrcaSlicer 插件连接 Elegoo Centauri Carbon 2。显示打印状态，以及打印机所见的 CANVAS 料槽材料和颜色。打印机不统计耗材用量，因此打印不会自动从料卷扣减。"
+      "elegooMqttHint": "通过 OrcaSlicer 插件或 FH Edge 连接 Elegoo Centauri Carbon 2。显示打印状态，以及打印机所见的 CANVAS 料槽材料和颜色。打印机不统计耗材用量，因此打印不会自动从料卷扣减。"
     },
     "feed": {
       "hidesWhenEmpty": "清空后将隐藏",
@@ -9359,7 +9359,11 @@
       "addToNodeFlashforge": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并填写序列号和打印机网络界面上的校验码（请先启用局域网模式）。Home Assistant：应用设置 → connections；Docker/Linux：options.json。然后重启 Edge。",
       "securityFlashforge": "打印机地址、序列号和校验码只保存在 Edge 设备上，不会发送到 FilamentHub。",
       "addToNodeBambu": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并填写序列号和访问码：两者都显示在打印机屏幕的网络设置中。Home Assistant：应用设置 → connections；Docker/Linux：options.json。然后重启 Edge。",
-      "securityBambu": "打印机地址、序列号和访问码只保存在 Edge 设备上，不会发送到 FilamentHub。"
+      "securityBambu": "打印机地址、序列号和访问码只保存在 Edge 设备上，不会发送到 FilamentHub。",
+      "addToNodeSdcp": "将此条目添加到 Edge 的 connections，并将 PRINTER-LAN-IP 替换为打印机地址；SDCP 打印机不需要密码。Home Assistant：应用选项 → connections；Docker/Linux：options.json。然后重启 Edge。",
+      "securitySdcp": "打印机地址只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 只读取打印机，不向其发送任何命令。",
+      "addToNodeElegooMqtt": "将此条目添加到 Edge 的 connections。将 PRINTER-LAN-IP 替换为打印机地址，并填写打印机上显示的访问码；如果从未修改过访问码，可删除 access_code 这一行。Home Assistant：应用选项 → connections；Docker/Linux：options.json。然后重启 Edge。",
+      "securityElegooMqtt": "打印机地址和访问码只保存在 Edge 设备上，不会发送到 FilamentHub。Edge 只读取打印机，不向其发送任何命令。"
     },
     "happyHare": {
       "inventoryError": "Moonraker 必须使用此 FH 打印机专属的 [spoolman] 密钥链接。请检查配置，并在空闲时重启 Moonraker。已读取槽位，但无法安全匹配料卷 ID。",

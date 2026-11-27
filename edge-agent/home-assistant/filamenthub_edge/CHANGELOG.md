@@ -7,6 +7,9 @@
 - Local pairing credentials, persistent per-printer queues and shared node identity.
 - Flashforge printers over their LAN API and Bambu Lab printers over LAN MQTT, next to
   Klipper. Both are charged the slicer's estimate for the job.
+- Printers on the open SDCP protocol (Elegoo Centauri Carbon) and the Elegoo Centauri
+  Carbon 2 over Elegoo's MQTT interface: print state and CANVAS slots, read only. These
+  printers count no filament, so nothing is charged. Not yet confirmed on a printer.
 - Transparent FilamentHub icon and logo, with app introduction, instructions and configuration
   labels in Russian, English and Chinese.
 - Private Supervisor options, unprivileged runtime and graceful shutdown.

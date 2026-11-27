@@ -18,8 +18,10 @@ from .config import CONNECTION_ID, MAX_CONNECTIONS, EdgeConfig, NodeConfig
 from .errors import AuthenticationError, ConfigurationError, EdgeError, PairingRequired, StateError
 from .providers.bambu import MQTT_PORT, BambuProvider
 from .providers.base import EdgeProvider
+from .providers.elegoo_mqtt import ElegooMqttProvider
 from .providers.flashforge import FlashforgeProvider
 from .providers.moonraker import MoonrakerProvider
+from .providers.sdcp import SdcpProvider
 from .runtime import EdgeRuntime
 from .state import EdgeState, StateStore
 from .storage import JsonStateFile
@@ -59,6 +61,20 @@ def _build_provider(config: EdgeConfig) -> EdgeProvider:
             config.moonraker_url,
             serial_number=config.serial_number,
             check_code=config.check_code,
+            timeout=config.request_timeout,
+        )
+    if config.adapter == "sdcp" and config.material_provider == "sdcp":
+        endpoint = urlsplit(config.moonraker_url)
+        return SdcpProvider(
+            endpoint.hostname or "", port=endpoint.port or 3030, timeout=config.request_timeout
+        )
+    if config.adapter == "elegoo_mqtt" and config.material_provider == "elegoo_mqtt":
+        endpoint = urlsplit(config.moonraker_url)
+        return ElegooMqttProvider(
+            endpoint.hostname or "",
+            port=endpoint.port or 1883,
+            # Empty means the printer's default code, as Elegoo's own apps assume.
+            access_code=config.access_code,
             timeout=config.request_timeout,
         )
     if config.adapter != "moonraker" or config.material_provider not in {"happy_hare", "legacy"}:
