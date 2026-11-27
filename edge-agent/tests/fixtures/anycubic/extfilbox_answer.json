@@ -1,0 +1,17 @@
+{
+  "type": "extfilbox",
+  "action": "reportInfo",
+  "timestamp": 1764240100500,
+  "msgid": "m-ext-1",
+  "data": {
+    "type": "PLA",
+    "color": [
+      255,
+      165,
+      0
+    ],
+    "loaded": 0,
+    "status_type": -1,
+    "current_status": -1
+  }
+}

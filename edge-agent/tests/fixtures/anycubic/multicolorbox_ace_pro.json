@@ -1,0 +1,84 @@
+{
+  "type": "multiColorBox",
+  "action": "getInfo",
+  "timestamp": 1764240000500,
+  "msgid": "m-box-1",
+  "state": "done",
+  "code": 200,
+  "msg": "done",
+  "data": {
+    "multi_color_box": [
+      {
+        "id": 0,
+        "status": 1,
+        "model_id": 40002,
+        "auto_feed": 1,
+        "loaded_slot": 2,
+        "feed_status": {
+          "code": 200,
+          "type": -1,
+          "current_status": -1,
+          "slot_index": -1
+        },
+        "temp": 31,
+        "humidity": 38,
+        "drying_status": {
+          "status": 0,
+          "target_temp": 0,
+          "duration": 0,
+          "remain_time": 0
+        },
+        "slots": [
+          {
+            "index": 0,
+            "type": "PLA",
+            "color": [
+              255,
+              255,
+              255
+            ],
+            "status": 4,
+            "sku": "",
+            "consumables_percent": 80
+          },
+          {
+            "index": 1,
+            "type": "",
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "status": 0,
+            "sku": "",
+            "consumables_percent": 0
+          },
+          {
+            "index": 2,
+            "type": "PETG",
+            "color": [
+              26,
+              115,
+              232
+            ],
+            "status": 5,
+            "sku": "AHPETG-101",
+            "consumables_percent": 55
+          },
+          {
+            "index": 3,
+            "type": "PLA",
+            "color": [
+              230,
+              57,
+              70
+            ],
+            "status": 4,
+            "sku": "",
+            "consumables_percent": 100
+          }
+        ]
+      }
+    ]
+  }
+}

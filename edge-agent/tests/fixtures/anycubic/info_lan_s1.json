@@ -1,0 +1,10 @@
+{
+  "deviceType": "fdm",
+  "modelName": "Anycubic Kobra S1",
+  "modelId": "20025",
+  "cn": "KS1SN0000000001",
+  "usn": "uuid:fdm:02-00-00-00-00-01",
+  "ctrlType": "lan",
+  "token": "Q7mZp2Lx9VbT4kRw8nHc3JdF6sYg1aUe",
+  "ctrlInfoUrl": "http://192.168.1.60:18910/ctrl"
+}
