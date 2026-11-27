@@ -105,6 +105,28 @@ Edge передаёт состояние принтера и текущее за
 сейчас подаёт, с пометкой «оценка». Если подающий слот под сомнением или оценки
 нет, ничего не списывается.
 
+#### Anycubic Kobra 3, Kobra S1, Kobra X
+
+Включите на экране принтера режим LAN. В этом режиме принтер отвязывается от
+облачной учётной записи Anycubic, и выключение режима привязку не возвращает.
+Больше ничего вводить не нужно: логин своего брокера принтер выдаёт сам, Edge
+спрашивает его заново при каждом чтении и нигде не сохраняет.
+
+```yaml
+- id: kobra-s1
+  name: Kobra S1
+  adapter: anycubic
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge передаёт состояние принтера и текущее задание, а с ACE Pro — слоты блоков:
+есть ли пруток, материал, цвет, остаток и какой слот подаёт. Принтер на прошивке
+Rinkhals подключайте как принтер на Klipper (`adapter: moonraker`).
+
+Расход Edge пока не списывает: смысл числа, которое принтер сообщает о задании,
+не подтверждён. На живом принтере это подключение ещё не проверено.
+
 #### Bambu Lab
 
 На экране принтера откройте настройки сети и запишите код доступа и IP-адрес;
@@ -290,6 +312,29 @@ job. Edge scales that estimate by the print progress and debits the spool
 assigned to the slot that is feeding, marking the amount as an estimate. Nothing
 is charged when the feeding slot is in doubt or the printer gives no estimate.
 
+#### Anycubic Kobra 3, Kobra S1, Kobra X
+
+Turn on LAN mode on the printer's screen. In LAN mode the printer leaves your
+Anycubic cloud account, and turning the mode off does not link it back.
+Nothing else has to be entered: the printer hands out the login of its own
+broker, and Edge asks for it again on every read and never stores it.
+
+```yaml
+- id: kobra-s1
+  name: Kobra S1
+  adapter: anycubic
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge reports the printer state and current job and, with an ACE Pro, the slots
+of each unit: whether filament is loaded, the material, colour, what is left and
+which slot is feeding. A printer running Rinkhals connects as a Klipper printer
+(`adapter: moonraker`).
+
+Edge does not deduct usage yet: the meaning of the job figure the printer
+reports is not confirmed. This connection has not been tried on a printer yet.
+
 #### Bambu Lab
 
 On the printer's screen, open the network settings and note the access code and
@@ -445,6 +490,22 @@ Spoolman 集成；请先完成
 Edge 上报打印机状态和当前任务。AD5X 和 Creator 5 上报耗材站的四个槽位：是否装有耗材，以及打印机上设置的材料和颜色；Adventurer 5M / 5M Pro 上报单卷耗材在打印机上设置的材料（需要 2.x 或更高版本固件）。
 
 打印机不测量耗材用量，只上报切片软件对整个任务的估算。Edge 按打印进度折算，并从分配给当前供料槽位的料盘中扣减，同时标记为估算值。当前供料槽位不确定或没有估算时，不扣减。
+
+#### Anycubic Kobra 3、Kobra S1、Kobra X
+
+请在打印机屏幕上开启局域网模式。开启后打印机会与 Anycubic 云账号解绑，关闭该模式也不会恢复绑定。无需填写其他内容：打印机会自行提供其代理服务器的登录信息，Edge 每次读取时重新获取，且不会保存。
+
+```yaml
+- id: kobra-s1
+  name: Kobra S1
+  adapter: anycubic
+  printer_url: 192.168.1.60
+  pairing_code: FH-ZZZZZ-ZZZZZ
+```
+
+Edge 上报打印机状态和当前任务；连接 ACE Pro 时还上报各单元的料槽：是否装有耗材、材料、颜色、剩余量以及当前供料槽位。运行 Rinkhals 固件的打印机请按 Klipper 打印机连接（`adapter: moonraker`）。
+
+Edge 暂不扣减用量：打印机上报的任务数值含义尚未确认。此连接尚未在真实打印机上验证。
 
 #### Bambu Lab
 

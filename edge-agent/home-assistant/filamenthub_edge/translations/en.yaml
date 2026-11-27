@@ -20,19 +20,19 @@ configuration:
         description: Disabled by default. Requires pull mode and manual installation of the Klipper guard; changes wait while printing or paused.
       adapter:
         name: Adapter
-        description: moonraker for Klipper printers; flashforge for Flashforge Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode; bambu for Bambu Lab printers. Defaults to moonraker.
+        description: moonraker for Klipper printers; flashforge for Flashforge Adventurer 5M / 5M Pro, AD5X and Creator 5 / 5 Pro in LAN mode; bambu for Bambu Lab printers; anycubic for Anycubic Kobra 3, S1 and X in LAN mode. Defaults to moonraker.
       pairing_code:
         name: Pairing code
         description: One-time code from FilamentHub for this printer. Remove it after successful pairing.
       material_provider:
         name: Material system
-        description: happy_hare for a Happy Hare MMU; legacy for direct Klipper feed; flashforge and bambu are set automatically for the adapters of the same name.
+        description: happy_hare for a Happy Hare MMU; legacy for direct Klipper feed; flashforge, bambu and anycubic are set automatically for the adapters of the same name.
       moonraker_url:
         name: Moonraker address
         description: The printer's local HTTP(S) address reachable from HA, for example http://192.168.1.20:7125. Not the HA address.
       printer_url:
         name: Printer address
-        description: "The printer's local address reachable from HA. Flashforge: for example http://192.168.1.40 (port 8898 is used when omitted). Bambu Lab: the IP address alone, for example 192.168.1.50."
+        description: "The printer's local address reachable from HA. Flashforge: for example http://192.168.1.40 (port 8898 is used when omitted). Bambu Lab and Anycubic: the IP address alone, for example 192.168.1.50."
       serial_number:
         name: Serial number
         description: Flashforge and Bambu Lab. The serial number shown in the printer's settings.

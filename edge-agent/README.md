@@ -306,6 +306,35 @@ In OrcaSlicer, use **Check printer** for a fresh local comparison and explicit
 adopt/apply actions. Without Orca, the optional refresh below lets website spool,
 gate preset, metadata and registered-tag changes reach Happy Hare automatically.
 
+### Anycubic Kobra 3, Kobra S1, Kobra X
+
+Edge reads the printer's LAN mode: a signed handshake over HTTP on port 18910
+hands out the login of the printer's own MQTT broker (TLS, port 9883). Turn on
+LAN mode on the printer's screen; in LAN mode the printer leaves your Anycubic
+cloud account, and turning the mode off does not link it back. Nothing else is
+entered.
+
+```json
+{
+  "id": "kobra-s1",
+  "name": "Kobra S1",
+  "adapter": "anycubic",
+  "pairing_code": "FH-ZZZZZ-ZZZZZ",
+  "printer_url": "192.168.1.60"
+}
+```
+
+On every read Edge asks for the login again, connects to the broker at the
+configured address (never at a host the printer names), asks once for the
+state, the ACE units and the spool holder, and disconnects; the login is never
+stored. Edge reports the printer state and current job and, with an ACE Pro,
+each unit's slots: whether filament is loaded, the material, colour, what is
+left and which slot is feeding. The protocol code is a copy of the OrcaSlicer
+plugin's `filamenthub_anycubic.py` (see `scripts/mirror_plugin_modules.py`).
+No usage is deducted yet: the meaning of the job figure the printer reports is
+not confirmed. Not yet tried on a printer. A printer running Rinkhals answers
+through Moonraker and uses the Moonraker adapter instead.
+
 ### Optional Happy Hare automatic refresh
 
 `connections[].auto_refresh` defaults to `false`, including after upgrading.

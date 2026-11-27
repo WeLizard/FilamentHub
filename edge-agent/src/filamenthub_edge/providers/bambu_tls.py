@@ -34,18 +34,20 @@ class CertificateRejected(ProviderUnavailable):
     """The device at the printer's address is not the printer that was linked."""
 
 
-def resolve_printer(host: str, port: int) -> tuple[socket.AddressFamily, tuple[Any, ...]]:
+def resolve_printer(
+    host: str, port: int, *, label: str = "Bambu printer"
+) -> tuple[socket.AddressFamily, tuple[Any, ...]]:
     """Resolve once and accept only an address inside the local network.
 
-    The access code is sent to whatever answers there, so it never goes to an
-    address on the public internet.
+    A printer's access code or LAN login is sent to whatever answers there, so
+    it never goes to an address on the public internet.
     """
     try:
         candidates = socket.getaddrinfo(
             host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
         )
     except (OSError, UnicodeError) as exc:
-        raise ProviderUnavailable("Bambu printer address could not be resolved") from exc
+        raise ProviderUnavailable(f"{label} address could not be resolved") from exc
     for family, _, _, _, sockaddr in candidates:
         try:
             address = ipaddress.ip_address(str(sockaddr[0]).split("%")[0])
@@ -54,7 +56,7 @@ def resolve_printer(host: str, port: int) -> tuple[socket.AddressFamily, tuple[A
         local = address.is_private or address.is_link_local or address.is_loopback
         if local and not (address.is_multicast or address.is_unspecified):
             return family, sockaddr
-    raise ProviderUnavailable("Bambu printer address must be inside the local network")
+    raise ProviderUnavailable(f"{label} address must be inside the local network")
 
 
 def _tls_context(

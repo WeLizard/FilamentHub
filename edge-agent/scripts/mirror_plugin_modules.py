@@ -3,7 +3,8 @@
 The plugin is one file installed into OrcaSlicer and Edge is a package built
 from ``edge-agent/`` alone, so neither can import the other. What both must
 do the same way (read a Bambu status report, judge a Bambu printer
-certificate, count a Bambu job's filament) is written once, in
+certificate, count a Bambu job's filament, open an Anycubic LAN session and
+read its reports) is written once, in
 ``orca-plugin/``, and copied here. Run this after editing a source; the Edge
 tests fail while a copy differs from it.
 
@@ -23,6 +24,7 @@ PROVIDERS = EDGE_ROOT / "src" / "filamenthub_edge" / "providers"
 MODULES = {
     "filamenthub_bambu.py": "_bambu_report.py",
     "filamenthub_bambu_trust.py": "_bambu_trust.py",
+    "filamenthub_anycubic.py": "_anycubic.py",
 }
 PLUGIN_FILE = "filamenthub_plugin.py"
 # How a Bambu job's filament is counted: the per-slot estimate read from the

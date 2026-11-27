@@ -20,19 +20,19 @@ configuration:
         description: 关闭后仅暂停此连接。默认启用；待发送事件会保留。
       adapter:
         name: 适配器
-        description: moonraker 用于 Klipper 打印机；flashforge 用于局域网模式下的闪铸 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro；bambu 用于 Bambu Lab 打印机。省略时默认为 moonraker。
+        description: moonraker 用于 Klipper 打印机；flashforge 用于局域网模式下的闪铸 Adventurer 5M / 5M Pro、AD5X 和 Creator 5 / 5 Pro；bambu 用于 Bambu Lab 打印机；anycubic 用于局域网模式下的 Anycubic Kobra 3、S1 和 X。省略时默认为 moonraker。
       pairing_code:
         name: 配对码
         description: FilamentHub 为此打印机生成的一次性代码。成功配对后请移除此代码。
       material_provider:
         name: 供料系统
-        description: happy_hare 表示 Happy Hare MMU；legacy 表示 Klipper 直送料；flashforge 和 bambu 在使用同名适配器时自动设置。
+        description: happy_hare 表示 Happy Hare MMU；legacy 表示 Klipper 直送料；flashforge、bambu 和 anycubic 在使用同名适配器时自动设置。
       moonraker_url:
         name: Moonraker 地址
         description: HA 可访问的打印机本地 HTTP(S) 地址，例如 http://192.168.1.20:7125，而非 HA 地址。
       printer_url:
         name: 打印机地址
-        description: "HA 可访问的打印机本地地址。闪铸：例如 http://192.168.1.40（省略端口时使用 8898）。Bambu Lab：仅填写 IP 地址，例如 192.168.1.50。"
+        description: "HA 可访问的打印机本地地址。闪铸：例如 http://192.168.1.40（省略端口时使用 8898）。Bambu Lab 和 Anycubic：仅填写 IP 地址，例如 192.168.1.50。"
       serial_number:
         name: 序列号
         description: 适用于闪铸和 Bambu Lab。打印机设置中显示的序列号。

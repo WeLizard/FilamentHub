@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from .cloud import FilamentHubCloud
 from .config import CONNECTION_ID, MAX_CONNECTIONS, EdgeConfig, NodeConfig
 from .errors import AuthenticationError, ConfigurationError, EdgeError, PairingRequired, StateError
+from .providers.anycubic import AnycubicProvider
 from .providers.bambu import MQTT_PORT, BambuProvider
 from .providers.base import EdgeProvider
 from .providers.flashforge import FlashforgeProvider
@@ -61,6 +62,9 @@ def _build_provider(config: EdgeConfig) -> EdgeProvider:
             check_code=config.check_code,
             timeout=config.request_timeout,
         )
+    if config.adapter == "anycubic" and config.material_provider == "anycubic":
+        # The printer hands out its own LAN login; nothing is configured but the address.
+        return AnycubicProvider(config.moonraker_url, timeout=config.request_timeout)
     if config.adapter != "moonraker" or config.material_provider not in {"happy_hare", "legacy"}:
         raise ConfigurationError("This adapter or material provider is not supported")
     return MoonrakerProvider(
