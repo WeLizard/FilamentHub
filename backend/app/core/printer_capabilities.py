@@ -74,6 +74,11 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # Creality's stock firmware reports its CFS slots and the length of filament
     # a job has used, and takes no spool identity. The plugin only reads it.
     ("creality", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
+    # PrusaLink, the local HTTP API of Buddy firmware and of Prusa-Link, gives the
+    # printer's state and, on a single-nozzle printer without an MMU, the material
+    # loaded. It names no MMU slot or XL tool and counts no filament. The plugin
+    # only reads it.
+    ("prusalink", "orca_plugin_lan"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -189,6 +194,22 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
             "A CFS reads the tag of a Creality spool and reports only what it found on it; "
             "FilamentHub does not match that to a spool yet.",
         ),
+    },
+    ("prusalink", "orca_plugin_lan"): {
+        "write": (
+            "device",
+            "PrusaLink has no request that sets the material of a slot or a tool.",
+        ),
+        "spool_identity": (
+            "device",
+            "The printer knows at most the material type loaded, never which spool.",
+        ),
+        "consumption": (
+            "planned",
+            "The printer reports no filament length. The slicer's estimate scaled by the "
+            "job's progress could be counted, as for Flashforge; it is not built.",
+        ),
+        "tag_read": ("device", "The local API reports no spool tag."),
     },
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
     ("legacy", "legacy_adapter"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),

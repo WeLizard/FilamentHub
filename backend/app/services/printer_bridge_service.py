@@ -54,7 +54,7 @@ SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
 # Providers whose OrcaSlicer plugin path is paired with a code from the printer
 # card. A Klipper printer needs no code: the plugin already reaches it through
 # a connection bound to the card, and asks for its usage bridge with that.
-ORCA_BRIDGE_PROVIDERS = frozenset({BAMBU_PROVIDER, "flashforge", "creality"})
+ORCA_BRIDGE_PROVIDERS = frozenset({BAMBU_PROVIDER, "flashforge", "creality", "prusalink"})
 BATCH_RECEIPT_KIND = "usage_batch"
 PRINT_JOB_SOURCE = "printer_bridge"
 
