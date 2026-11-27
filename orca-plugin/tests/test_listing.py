@@ -41,7 +41,7 @@ def _png_texts(path):
         elif kind == b"iTXt":
             key, rest = body.split(b"\0", 1)
             compressed, rest = rest[0], rest[2:]
-            _language, _translated, value = rest.split(b"\0", 2)
+            value = rest.split(b"\0", 2)[2]  # after the language and translated key
             texts[key.decode("latin-1")] = (zlib.decompress(value) if compressed else value).decode("utf-8")
     return texts
 
@@ -67,6 +67,20 @@ def _site_roadmap():
 def test_the_description_fits_what_orcacloud_accepts():
     text = DESCRIPTION.read_text(encoding="utf-8").strip()
     assert 100 <= len(text) <= 10000, len(text)
+
+
+def test_the_card_keeps_its_video_and_hosted_pictures():
+    # Each release replaces the card's text with this file, so media missing
+    # here disappears from the card.
+    text = DESCRIPTION.read_text(encoding="utf-8")
+    assert re.search(r"^https://youtu\.be/xtKIKNYYaAk$", text, re.M)
+    for media in (
+        "36cc1c18-b99c-4acd-b19c-c9beeb77bef4", "3b89760e-c9f7-4575-901a-a8e2bd3dc066",
+        "3823bfcd-fbd7-4c27-9945-94f7fc9fac2a", "3064ff05-e5c0-4f7c-ab58-5528e95a34cd",
+        "3f5d7ba8-d90f-48b0-b5aa-b212a2f99203", "3266072f-2d25-4ef9-a03d-a16629f58f5d",
+        "31beaab3-a3a6-463c-ac73-58b5c9663e45", "3c3709cf-bbf0-404a-b8b0-6277e7b5cf15",
+    ):
+        assert f"https://api.orcaslicer.com/api/v1/bundles/media/{media}/content" in text, media
 
 
 def test_every_image_given_by_a_path_is_in_the_repository():

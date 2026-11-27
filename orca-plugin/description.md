@@ -1,5 +1,9 @@
 FilamentHub connects materials, print settings, your spools and printers. Find a filament and a suitable profile, bring the settings into OrcaSlicer, keep track of your stock and calculate what a print costs.
 
+Explore the full FilamentHub service: [filamenthub.ru](https://filamenthub.ru) · [filamenthub.club](https://filamenthub.club). Manage your materials, spools, printers and print calculations on the website, and sign in to your FilamentHub account in the plugin to synchronize presets with OrcaSlicer.
+
+https://youtu.be/xtKIKNYYaAk
+
 > **OrcaSlicer will ask for permission.** When the plugin loads, OrcaSlicer asks whether it may run work in the background. Answer "Yes": syncing and loading presets run in the background so the slicer does not freeze. OrcaSlicer remembers the answer; with "No" it does not load the plugin.
 
 ![Find the right settings for your filament: the FilamentHub catalogue](https://api.orcaslicer.com/api/v1/bundles/media/36cc1c18-b99c-4acd-b19c-c9beeb77bef4/content)
