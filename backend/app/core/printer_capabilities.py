@@ -74,6 +74,9 @@ ADAPTER_CAPABILITY_MANIFESTS: dict[tuple[str, str], frozenset[str]] = {
     # Creality's stock firmware reports its CFS slots and the length of filament
     # a job has used, and takes no spool identity. The plugin only reads it.
     ("creality", "orca_plugin_lan"): frozenset({"read", "presence", "consumption"}),
+    # Anycubic's LAN mode reports the job and the ACE slots over the printer's
+    # own MQTT broker. The plugin only reads it and claims no usage yet.
+    ("anycubic", "orca_plugin_lan"): frozenset({"read", "presence"}),
     ("legacy", "spoolman_compat"): frozenset(),
     ("legacy", "legacy_adapter"): frozenset(),
 }
@@ -188,6 +191,27 @@ ADAPTER_CAPABILITY_GAPS: dict[tuple[str, str], dict[str, tuple[GapKind, str]]] =
             "planned",
             "A CFS reads the tag of a Creality spool and reports only what it found on it; "
             "FilamentHub does not match that to a spool yet.",
+        ),
+    },
+    ("anycubic", "orca_plugin_lan"): {
+        "consumption": (
+            "planned",
+            "The printer reports a job's filament use, but its unit is not confirmed; the "
+            "plugin does not count it yet.",
+        ),
+        "write": (
+            "planned",
+            "Whether the printer takes a slot's material over LAN mode is not confirmed; the "
+            "plugin only reads it.",
+        ),
+        "spool_identity": (
+            "device",
+            "The printer knows the material in a slot, never which spool is loaded.",
+        ),
+        "tag_read": (
+            "planned",
+            "An ACE reports the product code of an Anycubic spool it recognised; FilamentHub "
+            "does not match that to a spool yet.",
         ),
     },
     ("legacy", "spoolman_compat"): dict.fromkeys(PARITY_CAPABILITIES, _KLIPPER_ELSEWHERE),
