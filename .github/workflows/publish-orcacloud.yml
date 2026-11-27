@@ -62,6 +62,7 @@ jobs:
           import hashlib
           import io
           import json
+          import os
           import sys
           import zipfile
           from pathlib import Path
@@ -144,9 +145,20 @@ jobs:
           changelog = "\n".join(notes).strip()
           if not changelog:
               raise SystemExit("FilamentHub changelog section is empty")
-          encoded = changelog.encode("utf-8")
-          if len(encoded) > 4000:
-              changelog = encoded[:4000].decode("utf-8", errors="ignore").rstrip()
+          # OrcaCloud keeps the first 4000 bytes. A longer section keeps its
+          # whole leading lines and ends with a link to the full notes.
+          limit = 4000
+          if len(changelog.encode("utf-8")) > limit:
+              more = "\n\nFull changelog: https://github.com/%s/releases/tag/%s" % (
+                  os.environ["GITHUB_REPOSITORY"], release["tagName"],
+              )
+              kept = []
+              for line in changelog.splitlines():
+                  candidate = "\n".join(kept + [line]).rstrip() + more
+                  if len(candidate.encode("utf-8")) > limit:
+                      break
+                  kept.append(line)
+              changelog = "\n".join(kept).rstrip() + more
 
           Path(metadata_path).write_text(
               json.dumps({"version": version, "changelog": changelog}),
@@ -158,6 +170,8 @@ jobs:
           echo "METADATA_FILE=$release_dir/metadata.json" >> "$GITHUB_ENV"
 
       - name: Publish release to OrcaCloud
+        env:
+          PUBLISH_URL: https://api.orcaslicer.com/api/v1/plugin-publish/plugins/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e/releases
         shell: bash
         run: |
           set -euo pipefail
@@ -170,16 +184,23 @@ jobs:
             -H "Authorization: Bearer $oidc_token" \
             --form-string "metadata=$metadata" \
             -F "files=@$PLUGIN_FILE" \
-            https://api.orcaslicer.com/api/v1/plugin-publish/releases)"
-          cat response.json
-          echo
+            "$PUBLISH_URL")"
+          # The response holds check results meant for the author only, and this
+          # log is public: print the outcome alone.
           if [[ "$status" == "201" ]]; then
+            jq -c '{version: (.release.version // .version), risk: .security.level}' response.json || true
             exit 0
           fi
           # A flagged upload is accepted and queued for manual review; uploading
           # the same version again would only create a duplicate.
           if [[ "$status" == 2* ]] && jq -e '.status == "held_for_review"' response.json >/dev/null; then
+            echo '{"status":"held_for_review"}'
             echo "::notice::OrcaCloud accepted the upload and holds it for moderation; do not upload it again."
             exit 0
+          fi
+          if [[ "$status" == "503" ]]; then
+            echo "OrcaCloud did not finish its automated checks (HTTP 503); re-run this job." >&2
+          else
+            echo "OrcaCloud rejected FilamentHub (HTTP $status)." >&2
           fi
           exit 1

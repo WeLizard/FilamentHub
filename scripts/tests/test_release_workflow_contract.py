@@ -345,6 +345,16 @@ def test_orcacloud_publish_uses_only_the_release_oidc_event() -> None:
     assert "Wheel metadata version does not match the GitHub release" in workflow
     # A moderation hold is an accepted upload; failing it invites a duplicate.
     assert """jq -e '.status == "held_for_review"' response.json""" in workflow
+    # The release script reads the hold from the run log.
+    assert """echo '{"status":"held_for_review"}'""" in workflow
+    # The log is public and OrcaCloud's response carries the author's check results.
+    assert "cat response.json" not in workflow
+    assert (
+        "/api/v1/plugin-publish/plugins/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e/releases"
+        in workflow
+    )
+    # OrcaCloud keeps 4000 bytes of a changelog: whole lines and a link, not a cut word.
+    assert "Full changelog: https://github.com/%s/releases/tag/%s" in workflow
     assert workflow.rstrip().endswith("exit 1")
 
 
